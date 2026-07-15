@@ -46,6 +46,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import {
+  projectLabelWithClient,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import type {
@@ -576,7 +577,7 @@ export function ScheduleGrid() {
                   <option value="all">All projects</option>
                   {sortedProjects.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {projectLabelWithClient(p, state.clients)}
                     </option>
                   ))}
                 </select>
@@ -1326,7 +1327,7 @@ export function ScheduleGrid() {
               >
                 {sortedProjects.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {projectLabelWithClient(p, state.clients)}
                   </option>
                 ))}
               </select>
