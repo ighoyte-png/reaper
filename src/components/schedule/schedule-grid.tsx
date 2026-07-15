@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { parseISO } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Save, StickyNote, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass } from "@/components/ui/form";
 import {
@@ -120,10 +120,18 @@ export function ScheduleGrid() {
   } | null>(null);
   const dragSnapshot = useRef<{
     id: string;
-    mode: "move" | "resize-end";
+    mode: "move" | "resize-end" | "resize-start";
     before: Assignment;
     dirty: boolean;
   } | null>(null);
+  const [sliceMode, setSliceMode] = useState(false);
+  const [onlyAssignedProjects, setOnlyAssignedProjects] = useState(false);
+  const [extraProjectsByPerson, setExtraProjectsByPerson] = useState<
+    Record<string, string[]>
+  >({});
+  const [addProjectForPerson, setAddProjectForPerson] = useState<string | null>(
+    null,
+  );
   const undoStackRef = useRef<UndoEntry[]>([]);
   const applyingUndoRef = useRef(false);
   const performUndoRef = useRef(() => {});
@@ -554,6 +562,7 @@ export function ScheduleGrid() {
         .filter((o) => o.person_id === personId)
         .map((o) => o.project_id),
     );
+    const extras = new Set(extraProjectsByPerson[personId] ?? []);
     const active = sortProjectsByClientThenName(
       state.projects.filter((p) => p.status === "active"),
       state.clients,
@@ -564,13 +573,50 @@ export function ScheduleGrid() {
       return filtered ? [filtered] : [];
     }
 
-    if (canManage) {
-      // Managers: every active project under each person (paint onto any row)
+    if (canManage && !onlyAssignedProjects) {
       return active;
     }
 
-    // Members: only projects they appear on in the visible range
-    return active.filter((p) => fromOcc.has(p.id));
+    return active.filter((p) => fromOcc.has(p.id) || extras.has(p.id));
+  }
+
+  function sliceAssignmentAt(assignmentId: string, cutDate: string) {
+    const base = state.assignments.find((a) => a.id === assignmentId);
+    if (!base || base.start_date >= base.end_date) return;
+    if (cutDate < base.start_date || cutDate >= base.end_date) return;
+    const days = workingDaysBetween(base.start_date, base.end_date);
+    if (!days.includes(cutDate)) return;
+    const cutIndex = days.indexOf(cutDate);
+    if (cutIndex < 0 || cutIndex >= days.length - 1) return;
+    const leftEnd = cutDate;
+    const rightStart = days[cutIndex + 1];
+    const left: Assignment = { ...base, end_date: leftEnd };
+    const right: Assignment = {
+      ...base,
+      id: newId("asg"),
+      start_date: rightStart,
+      notes: base.notes,
+    };
+    pushUndo({ kind: "restore", assignment: { ...base } });
+    upsertAssignment(left);
+    upsertAssignment(right);
+    selectAssignment(left.id);
+    setSliceMode(false);
+    push("Assignment sliced");
+  }
+
+  function dateKeyAtBlockX(
+    clientX: number,
+    blockLeft: number,
+    occStart: string,
+    occEnd: string,
+  ): string | null {
+    const days = workingDaysBetween(occStart, occEnd);
+    if (days.length === 0) return null;
+    const dayWidth = DAY_W;
+    const offset = Math.max(0, clientX - blockLeft);
+    const index = Math.min(days.length - 1, Math.floor(offset / dayWidth));
+    return days[index] ?? null;
   }
 
   const sortedProjects = useMemo(
@@ -616,18 +662,42 @@ export function ScheduleGrid() {
               <option value="month">By month</option>
             </select>
             {canManage && (
-              <select
-                value={projectFilter}
-                onChange={(e) => setProjectFilter(e.target.value)}
-                className="h-8 max-w-[220px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
-              >
-                <option value="all">All projects</option>
-                {sortedProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {projectLabelWithClient(p, state.clients)}
-                  </option>
-                ))}
-              </select>
+              <>
+                <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                  <input
+                    type="checkbox"
+                    checked={onlyAssignedProjects}
+                    onChange={(e) => setOnlyAssignedProjects(e.target.checked)}
+                  />
+                  Assigned only
+                </label>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs",
+                    sliceMode
+                      ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+                      : "border-[var(--border)] text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSliceMode((v) => !v)}
+                  title="Slice: click a day on a multi-day block to split it"
+                >
+                  <Scissors size={14} />
+                  Slice
+                </button>
+                <select
+                  value={projectFilter}
+                  onChange={(e) => setProjectFilter(e.target.value)}
+                  className="h-8 max-w-[220px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+                >
+                  <option value="all">All projects</option>
+                  {sortedProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {projectLabelWithClient(p, state.clients)}
+                    </option>
+                  ))}
+                </select>
+              </>
             )}
             {canManage && (
               <select
@@ -767,7 +837,7 @@ export function ScheduleGrid() {
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[10px] font-semibold">
                         {initials}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium leading-tight">
                           {person.name}
                         </div>
@@ -778,6 +848,17 @@ export function ScheduleGrid() {
                             : ""}
                         </div>
                       </div>
+                      {canManage && (
+                        <button
+                          type="button"
+                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                          aria-label={`Add project row for ${person.name}`}
+                          title="Add project row"
+                          onClick={() => setAddProjectForPerson(person.id)}
+                        >
+                          <Plus size={14} strokeWidth={2.5} />
+                        </button>
+                      )}
                     </div>
                     <div className="flex min-h-0 flex-1 items-center self-stretch">
                       {capacityBands.map((band) => {
@@ -1170,6 +1251,19 @@ export function ScheduleGrid() {
                                           end_date: end,
                                         });
                                       }
+                                    } else if (snap.mode === "resize-start") {
+                                      const maxStart = snap.before.end_date;
+                                      const start =
+                                        col.startKey <= maxStart
+                                          ? col.startKey
+                                          : maxStart;
+                                      if (start !== current.start_date) {
+                                        snap.dirty = true;
+                                        upsertAssignment({
+                                          ...current,
+                                          start_date: start,
+                                        });
+                                      }
                                     } else {
                                       const length =
                                         workingDaysBetween(
@@ -1246,15 +1340,23 @@ export function ScheduleGrid() {
                                   if (!geo) return null;
                                   const isSelected =
                                     selectedId === occ.assignmentId;
-                                  const hoursLabel = formatHours(
-                                    occ.hours_per_day,
+                                  const spanDays = workingDaysBetween(
+                                    occ.start_date,
+                                    occ.end_date,
                                   );
+                                  const totalHours =
+                                    occ.hours_per_day * spanDays.length;
+                                  const hoursLabel =
+                                    spanDays.length > 1
+                                      ? `${formatHours(occ.hours_per_day)} daily / ${formatHours(totalHours)} total`
+                                      : formatHours(occ.hours_per_day);
                                   return (
                                     <div
                                       key={`${occ.assignmentId}-${occ.weekOffset}`}
                                       className={cn(
                                         "absolute z-10 flex items-center rounded px-1 text-[10px] font-medium leading-none text-white",
                                         canManage && "cursor-grab",
+                                        sliceMode && "cursor-col-resize",
                                         gridDragging && "pointer-events-none",
                                         occ.status === "tentative" &&
                                           "border border-dashed border-white/60 opacity-80",
@@ -1283,6 +1385,31 @@ export function ScheduleGrid() {
                                           (a) => a.id === occ.assignmentId,
                                         );
                                         if (!base) return;
+                                        const rect = (
+                                          e.currentTarget as HTMLElement
+                                        ).getBoundingClientRect();
+                                        const dayKey = dateKeyAtBlockX(
+                                          e.clientX,
+                                          rect.left,
+                                          occ.start_date,
+                                          occ.end_date,
+                                        );
+                                        if (
+                                          sliceMode &&
+                                          dayKey &&
+                                          dayKey !== occ.end_date
+                                        ) {
+                                          sliceAssignmentAt(base.id, dayKey);
+                                          return;
+                                        }
+                                        // Move only when dragging from the starting day;
+                                        // clicks elsewhere just open the edit panel.
+                                        if (
+                                          dayKey &&
+                                          dayKey !== occ.start_date
+                                        ) {
+                                          return;
+                                        }
                                         dragSnapshot.current = {
                                           id: base.id,
                                           mode: "move",
@@ -1291,10 +1418,12 @@ export function ScheduleGrid() {
                                         };
                                         setGridDragging(true);
                                       }}
-                                      title={`${project.name} · ${hoursLabel}/d${occ.recurrence === "weekly" ? " · weekly" : ""}`}
+                                      title={`${project.name} · ${hoursLabel}${occ.recurrence === "weekly" ? " · weekly" : ""}`}
                                     >
                                       <span className="truncate">
-                                        {hoursLabel}
+                                        {spanDays.length > 1
+                                          ? `${formatHours(occ.hours_per_day)}/d · ${formatHours(totalHours)}`
+                                          : formatHours(occ.hours_per_day)}
                                         {occ.recurrence === "weekly"
                                           ? " ↻"
                                           : ""}
@@ -1321,36 +1450,68 @@ export function ScheduleGrid() {
                                         </Tooltip>
                                       ) : null}
                                       {canManage && (
-                                        <span
-                                          className="absolute right-0 top-0 z-20 h-full w-2 cursor-ew-resize"
-                                          onPointerDown={(e) => {
-                                            e.stopPropagation();
-                                            e.preventDefault();
-                                            if (
-                                              isCoarse ||
-                                              e.pointerType === "touch"
-                                            ) {
-                                              selectAssignment(
-                                                occ.assignmentId,
-                                              );
-                                              return;
-                                            }
-                                            const base =
-                                              state.assignments.find(
-                                                (a) =>
-                                                  a.id === occ.assignmentId,
-                                              );
-                                            if (!base) return;
-                                            selectAssignment(base.id);
-                                            dragSnapshot.current = {
-                                              id: base.id,
-                                              mode: "resize-end",
-                                              before: { ...base },
-                                              dirty: false,
-                                            };
-                                            setGridDragging(true);
-                                          }}
-                                        />
+                                        <>
+                                          <span
+                                            className="absolute left-0 top-0 z-20 h-full w-2 cursor-ew-resize"
+                                            onPointerDown={(e) => {
+                                              e.stopPropagation();
+                                              e.preventDefault();
+                                              if (
+                                                isCoarse ||
+                                                e.pointerType === "touch"
+                                              ) {
+                                                selectAssignment(
+                                                  occ.assignmentId,
+                                                );
+                                                return;
+                                              }
+                                              const base =
+                                                state.assignments.find(
+                                                  (a) =>
+                                                    a.id === occ.assignmentId,
+                                                );
+                                              if (!base) return;
+                                              selectAssignment(base.id);
+                                              dragSnapshot.current = {
+                                                id: base.id,
+                                                mode: "resize-start",
+                                                before: { ...base },
+                                                dirty: false,
+                                              };
+                                              setGridDragging(true);
+                                            }}
+                                          />
+                                          <span
+                                            className="absolute right-0 top-0 z-20 h-full w-2 cursor-ew-resize"
+                                            onPointerDown={(e) => {
+                                              e.stopPropagation();
+                                              e.preventDefault();
+                                              if (
+                                                isCoarse ||
+                                                e.pointerType === "touch"
+                                              ) {
+                                                selectAssignment(
+                                                  occ.assignmentId,
+                                                );
+                                                return;
+                                              }
+                                              const base =
+                                                state.assignments.find(
+                                                  (a) =>
+                                                    a.id === occ.assignmentId,
+                                                );
+                                              if (!base) return;
+                                              selectAssignment(base.id);
+                                              dragSnapshot.current = {
+                                                id: base.id,
+                                                mode: "resize-end",
+                                                before: { ...base },
+                                                dirty: false,
+                                              };
+                                              setGridDragging(true);
+                                            }}
+                                          />
+                                        </>
                                       )}
                                     </div>
                                   );
@@ -1710,6 +1871,23 @@ export function ScheduleGrid() {
               <Save size={14} />
               {formDirty ? "Save changes" : "Saved"}
             </button>
+            {editForm.start_date < editForm.end_date && (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border text-sm",
+                  sliceMode
+                    ? "border-[var(--accent)] text-[var(--accent)]"
+                    : "border-[var(--border)]",
+                )}
+                onClick={() => setSliceMode((v) => !v)}
+              >
+                <Scissors size={14} />
+                {sliceMode
+                  ? "Click a day on the block to slice…"
+                  : "Slice multi-day block"}
+              </button>
+            )}
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
@@ -1795,6 +1973,61 @@ export function ScheduleGrid() {
           </div>
         )}
       </aside>
+
+      {addProjectForPerson && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-md rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-md">
+            <h3 className="text-sm font-semibold">Add project row</h3>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Show another project under this person so you can schedule onto
+              it.
+            </p>
+            <select
+              className={`${inputClass} mt-3`}
+              defaultValue=""
+              onChange={(e) => {
+                const projectId = e.target.value;
+                if (!projectId) return;
+                setExtraProjectsByPerson((prev) => {
+                  const list = prev[addProjectForPerson] ?? [];
+                  if (list.includes(projectId)) return prev;
+                  return {
+                    ...prev,
+                    [addProjectForPerson]: [...list, projectId],
+                  };
+                });
+                setOnlyAssignedProjects(true);
+                setAddProjectForPerson(null);
+                push("Project row added");
+              }}
+            >
+              <option value="" disabled>
+                Select a project…
+              </option>
+              {sortedProjects
+                .filter((p) => p.status === "active")
+                .filter((p) => {
+                  const shown = new Set(
+                    projectsForPerson(addProjectForPerson).map((x) => x.id),
+                  );
+                  return !shown.has(p.id);
+                })
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {projectLabelWithClient(p, state.clients)}
+                  </option>
+                ))}
+            </select>
+            <button
+              type="button"
+              className="mt-3 h-9 w-full rounded-md border border-[var(--border)] text-sm"
+              onClick={() => setAddProjectForPerson(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
