@@ -18,6 +18,7 @@ import {
   formatMoney,
 } from "@/lib/domain/budget";
 import { projectForecast } from "@/lib/domain/forecast";
+import { projectDisplayColor } from "@/lib/domain/sorting";
 import type { Milestone, Project } from "@/lib/types";
 
 export default function ProjectDetailPage() {
@@ -107,7 +108,9 @@ export default function ProjectDetailPage() {
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span
               className="h-3 w-3 rounded-full"
-              style={{ background: project.color }}
+              style={{
+                background: projectDisplayColor(project, state.clients),
+              }}
             />
             <span className="text-xs text-[var(--text-muted)]">
               {client?.name ?? "No client"} · {project.status.replace("_", " ")}
@@ -278,6 +281,10 @@ export default function ProjectDetailPage() {
             onChange={setDraft}
             onSave={async () => {
               if (!draft.name.trim()) return;
+              if (!draft.client_id) {
+                push("Choose a client for this project", "warning");
+                return;
+              }
               if (
                 draft.budget_mode === "hours" &&
                 !(draft.budget_hours && draft.budget_hours > 0)

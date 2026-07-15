@@ -47,6 +47,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import {
+  projectDisplayColor,
   projectLabelWithClient,
   sortClientsByName,
   sortProjectsByClientThenName,
@@ -137,8 +138,8 @@ export function ScheduleGrid() {
     mode: "move" | "resize-end" | "resize-start";
     before: Assignment;
     dirty: boolean;
-    /** Working days from assignment start → day under pointer when grab began. */
-    grabOffsetDays: number;
+    /** Day under the pointer when the move grab began (occurrence day for weekly). */
+    grabDateKey: string;
   } | null>(null);
   const leaveDragSnapshot = useRef<{
     mode: "resize-end" | "resize-start";
@@ -186,12 +187,19 @@ export function ScheduleGrid() {
   const endKey = columns[columns.length - 1]?.endKey ?? todayKey;
 
   const headerGroups = useMemo(() => {
+    // Day zoom: one month chip per weekday week (5 days). Do not span the
+    // whole calendar month — that made Jul/Aug headers unreadable.
     const groups: { label: string; width: number; groupIndex: number }[] = [];
     for (const col of columns) {
       const last = groups[groups.length - 1];
-      if (last && last.label === col.groupLabel && last.groupIndex === col.groupIndex) {
+      if (
+        last &&
+        last.label === col.groupLabel &&
+        last.groupIndex === col.groupIndex
+      ) {
         last.width += col.width;
       } else if (last && last.label === col.groupLabel && zoom === "month") {
+        // Month zoom: year label can span consecutive months in the same year.
         last.width += col.width;
       } else {
         groups.push({
@@ -201,14 +209,7 @@ export function ScheduleGrid() {
         });
       }
     }
-    // Merge adjacent same label (day mode weeks in same month)
-    const merged: typeof groups = [];
-    for (const g of groups) {
-      const last = merged[merged.length - 1];
-      if (last && last.label === g.label) last.width += g.width;
-      else merged.push({ ...g });
-    }
-    return merged;
+    return groups;
   }, [columns, zoom]);
 
   const capacityBands = useMemo(() => {
@@ -824,21 +825,16 @@ export function ScheduleGrid() {
   ]);
 
   const addProjectClientOptions = useMemo(() => {
-    const hasOrphan = addableProjectsForPerson.some((p) => !p.client_id);
     return {
       // Full client list (not only those with remaining projects) so the
       // first select is never mysteriously blank.
       withClient: sortedClients,
-      hasOrphan,
       addableCount: addableProjectsForPerson.length,
     };
   }, [addableProjectsForPerson, sortedClients]);
 
   const addableProjectsForSelectedClient = useMemo(() => {
     if (!addProjectClientId) return [];
-    if (addProjectClientId === "__none__") {
-      return addableProjectsForPerson.filter((p) => !p.client_id);
-    }
     return addableProjectsForPerson.filter(
       (p) => p.client_id === addProjectClientId,
     );
@@ -1367,7 +1363,7 @@ export function ScheduleGrid() {
                           </div>
                           <span
                             className="h-3 w-0.5 shrink-0 rounded-full"
-                            style={{ background: project.color }}
+                            style={{ background: projectDisplayColor(project, clientsById) }}
                           />
                         </div>
                         <div
@@ -1500,20 +1496,21 @@ export function ScheduleGrid() {
                                         });
                                       }
                                     } else {
-                                      // Keep grab point under the pointer — don't snap
-                                      // so the hovered column becomes the new start.
-                                      const length =
-                                        workingDaysBetween(
-                                          snap.before.start_date,
-                                          snap.before.end_date,
-                                        ).length || 1;
-                                      const start = subtractWorkingDays(
-                                        col.startKey,
-                                        snap.grabOffsetDays ?? 0,
+                                      // Shift the template by how far the grab day moved.
+                                      // Works for weekly series (any weekOffset) without
+                                      // snapping the hovered day to the series start.
+                                      const hoverKey = col.startKey;
+                                      const delta = workingDayDelta(
+                                        snap.grabDateKey,
+                                        hoverKey,
                                       );
-                                      const end = addWorkingDays(
-                                        start,
-                                        Math.max(0, length - 1),
+                                      const start = shiftWorkingDays(
+                                        snap.before.start_date,
+                                        delta,
+                                      );
+                                      const end = shiftWorkingDays(
+                                        snap.before.end_date,
+                                        delta,
                                       );
                                       if (
                                         start !== current.start_date ||
@@ -1610,7 +1607,7 @@ export function ScheduleGrid() {
                                         width: geo.width,
                                         top: DAY_PAD_Y,
                                         height: DAY_H,
-                                        background: project.color,
+                                        background: projectDisplayColor(project, clientsById),
                                       }}
                                       onPointerDown={(e) => {
                                         e.stopPropagation();
@@ -1648,16 +1645,16 @@ export function ScheduleGrid() {
                                           occ.start_date,
                                           occ.end_date,
                                         );
-                                        const grabOffsetDays =
+                                        const grabDateKey =
                                           dayKey && grabDays.includes(dayKey)
-                                            ? grabDays.indexOf(dayKey)
-                                            : 0;
+                                            ? dayKey
+                                            : occ.start_date;
                                         dragSnapshot.current = {
                                           id: base.id,
                                           mode: "move",
                                           before: { ...base },
                                           dirty: false,
-                                          grabOffsetDays,
+                                          grabDateKey,
                                         };
                                         setGridDragging(true);
                                       }}
@@ -1720,7 +1717,7 @@ export function ScheduleGrid() {
                                                 mode: "resize-start",
                                                 before: { ...base },
                                                 dirty: false,
-                                                grabOffsetDays: 0,
+                                                grabDateKey: base.start_date,
                                               };
                                               setGridDragging(true);
                                             }}
@@ -1751,7 +1748,7 @@ export function ScheduleGrid() {
                                                 mode: "resize-end",
                                                 before: { ...base },
                                                 dirty: false,
-                                                grabOffsetDays: 0,
+                                                grabDateKey: base.start_date,
                                               };
                                               setGridDragging(true);
                                             }}
@@ -1835,7 +1832,7 @@ export function ScheduleGrid() {
                                         width,
                                         top: DAY_PAD_Y,
                                         height: DAY_H,
-                                        background: project.color,
+                                        background: projectDisplayColor(project, clientsById),
                                       }}
                                       onPointerDown={(e) => {
                                         e.stopPropagation();
@@ -1858,7 +1855,7 @@ export function ScheduleGrid() {
                                           mode: "move",
                                           before: { ...base },
                                           dirty: false,
-                                          grabOffsetDays: 0,
+                                          grabDateKey: base.start_date,
                                         };
                                         setGridDragging(true);
                                       }}
@@ -2480,6 +2477,14 @@ export function ScheduleGrid() {
           <ReadOnlyAssignmentDetails
             assignment={selected}
             project={projectsById.get(selected.project_id)}
+            color={
+              projectsById.get(selected.project_id)
+                ? projectDisplayColor(
+                    projectsById.get(selected.project_id)!,
+                    clientsById,
+                  )
+                : "#64748B"
+            }
           />
         ) : (
           <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">
@@ -2512,7 +2517,7 @@ export function ScheduleGrid() {
                       <div className="mb-2 flex items-start gap-2 text-[var(--text)]">
                         <span
                           className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ background: project.color }}
+                          style={{ background: projectDisplayColor(project, clientsById) }}
                         />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-semibold leading-tight">
@@ -2554,9 +2559,6 @@ export function ScheduleGrid() {
                     {c.name}
                   </option>
                 ))}
-                {addProjectClientOptions.hasOrphan && (
-                  <option value="__none__">No client</option>
-                )}
               </select>
             </label>
             {addProjectClientOptions.addableCount === 0 ? (
@@ -2692,9 +2694,11 @@ function Field({
 function ReadOnlyAssignmentDetails({
   assignment,
   project,
+  color,
 }: {
   assignment: Assignment;
   project?: Project;
+  color: string;
 }) {
   return (
     <div className="space-y-4 p-4 text-sm">
@@ -2705,7 +2709,7 @@ function ReadOnlyAssignmentDetails({
             <>
               <span
                 className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ background: project.color }}
+                style={{ background: color }}
               />
               {project.name}
             </>
@@ -2791,4 +2795,19 @@ function subtractWorkingDays(dateKey: string, workingDaysBack: number): string {
     if (day !== 0 && day !== 6) left -= 1;
   }
   return toDateKey(d);
+}
+
+function shiftWorkingDays(dateKey: string, delta: number): string {
+  if (delta === 0) return dateKey;
+  if (delta > 0) return addWorkingDays(dateKey, delta);
+  return subtractWorkingDays(dateKey, -delta);
+}
+
+/** Signed weekday distance from → to (0 if same day). */
+function workingDayDelta(fromKey: string, toKey: string): number {
+  if (fromKey === toKey) return 0;
+  if (toKey > fromKey) {
+    return workingDaysBetween(fromKey, toKey).length - 1;
+  }
+  return -(workingDaysBetween(toKey, fromKey).length - 1);
 }

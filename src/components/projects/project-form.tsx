@@ -1,8 +1,10 @@
 "use client";
 
 import { Field, inputClass } from "@/components/ui/form";
-import { ColorPicker, PRESET_COLORS } from "@/components/ui/color-picker";
+import { PRESET_COLORS } from "@/components/ui/color-picker";
 import type { BudgetMode, Project, ProjectStatus } from "@/lib/types";
+
+const DEFAULT_PROJECT_COLOR = PRESET_COLORS[0];
 
 export function ProjectForm({
   project,
@@ -46,18 +48,25 @@ export function ProjectForm({
       <Field label="Client">
         <select
           className={inputClass}
+          required
           value={project.client_id ?? ""}
           onChange={(e) => {
-            const clientId = e.target.value || null;
+            const clientId = e.target.value;
+            if (!clientId) return;
             const client = clientsSorted.find((c) => c.id === clientId);
+            if (!client) return;
             onChange({
               ...project,
               client_id: clientId,
-              color: client?.color ?? project.color,
+              color: client.color ?? DEFAULT_PROJECT_COLOR,
             });
           }}
         >
-          <option value="">No client</option>
+          <option value="" disabled>
+            {clientsSorted.length === 0
+              ? "Create a client first…"
+              : "Select a client…"}
+          </option>
           {clientsSorted.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
@@ -130,35 +139,23 @@ export function ProjectForm({
           />
         </Field>
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Status">
-          <select
-            className={inputClass}
-            value={project.status}
-            onChange={(e) =>
-              onChange({
-                ...project,
-                status: e.target.value as ProjectStatus,
-              })
-            }
-          >
-            <option value="active">Active</option>
-            <option value="on_hold">On hold</option>
-            <option value="completed">Completed</option>
-            <option value="archived">Archived</option>
-          </select>
-        </Field>
-        <div className="block text-xs text-[var(--text-muted)]">
-          Color
-          <ColorPicker
-            value={project.color}
-            onChange={(color) => onChange({ ...project, color })}
-          />
-          <p className="mt-1 text-[11px]">
-            Defaults to the client color when you pick a client
-          </p>
-        </div>
-      </div>
+      <Field label="Status">
+        <select
+          className={inputClass}
+          value={project.status}
+          onChange={(e) =>
+            onChange({
+              ...project,
+              status: e.target.value as ProjectStatus,
+            })
+          }
+        >
+          <option value="active">Active</option>
+          <option value="on_hold">On hold</option>
+          <option value="completed">Completed</option>
+          <option value="archived">Archived</option>
+        </select>
+      </Field>
       <Field label="Notes">
         <textarea
           className={`${inputClass} h-20 py-2`}
@@ -188,7 +185,8 @@ export function ProjectForm({
           </button>
           <button
             type="button"
-            className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+            className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:opacity-40"
+            disabled={!project.client_id || clientsSorted.length === 0}
             onClick={onSave}
           >
             Save

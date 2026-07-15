@@ -12,6 +12,7 @@ import {
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { leaveKindLabel } from "@/lib/domain/leave";
+import { projectDisplayColor } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 
 export default function DashboardPage() {
@@ -133,7 +134,12 @@ export default function DashboardPage() {
                   <div className="mb-2 flex items-center gap-2">
                     <span
                       className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: project.color }}
+                      style={{
+                        background: projectDisplayColor(
+                          project,
+                          state.clients,
+                        ),
+                      }}
                     />
                     <span className="text-sm font-medium">{project.name}</span>
                     <span

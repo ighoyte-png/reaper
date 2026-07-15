@@ -11,6 +11,22 @@ export function clientNameOf(
   return clients.find((c) => c.id === project.client_id)?.name ?? "";
 }
 
+/** Schedule/UI color comes from the client; fallback for no-client projects. */
+export function projectDisplayColor(
+  project: Pick<Project, "color" | "client_id">,
+  clients: Client[] | Map<string, Client> | { id: string; color: string }[],
+): string {
+  if (!project.client_id) return project.color || "#64748B";
+  if (clients instanceof Map) {
+    return clients.get(project.client_id)?.color ?? project.color ?? "#64748B";
+  }
+  return (
+    clients.find((c) => c.id === project.client_id)?.color ??
+    project.color ??
+    "#64748B"
+  );
+}
+
 /** Sort projects: client name A–Z, then project title A–Z (no-client last). */
 export function sortProjectsByClientThenName(
   projects: Project[],

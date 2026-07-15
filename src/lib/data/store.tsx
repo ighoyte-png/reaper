@@ -634,17 +634,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
       newId: uid,
       upsertClient: (client) => {
         const row = withOrg(client) as Client;
+        let projectsToSync: Project[] = [];
         patch((prev) => {
           const exists = prev.clients.some((c) => c.id === row.id);
+          const projects = prev.projects.map((p) => {
+            if (p.client_id !== row.id || p.color === row.color) return p;
+            return { ...p, color: row.color };
+          });
+          projectsToSync = projects.filter(
+            (p) =>
+              p.client_id === row.id &&
+              prev.projects.find((x) => x.id === p.id)?.color !== p.color,
+          );
           return {
             ...prev,
             clients: exists
               ? prev.clients.map((c) => (c.id === row.id ? row : c))
               : [...prev.clients, row],
+            projects,
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
-          runRemoteSoft(() => upsertClientRow(supabaseRef.current!, row));
+          const clientDb = supabaseRef.current;
+          runRemoteSoft(async () => {
+            await upsertClientRow(clientDb, row);
+            for (const p of projectsToSync) {
+              await upsertProjectRow(clientDb, p);
+            }
+          });
         }
       },
       deleteClient: (id) => {
@@ -660,7 +677,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertProject: async (project) => {
-        const row = withOrg(project) as Project;
+        const inherited = (() => {
+          if (!project.client_id) return project.color;
+          const client = state.clients.find((c) => c.id === project.client_id);
+          return client?.color ?? project.color;
+        })();
+        const row = withOrg({ ...project, color: inherited }) as Project;
         // Persist remotely first so a failed "none" budget type does not
         // briefly show as saved then snap back after refresh.
         if (mode === "supabase" && supabaseRef.current) {

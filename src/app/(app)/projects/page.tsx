@@ -14,7 +14,10 @@ import {
   budgetHealth,
   calendarYearHourBars,
 } from "@/lib/domain/budget";
-import { sortProjectsByClientThenName } from "@/lib/domain/sorting";
+import {
+  projectDisplayColor,
+  sortProjectsByClientThenName,
+} from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Project } from "@/lib/types";
 
@@ -84,7 +87,12 @@ export default function ProjectsPage() {
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     <span
                       className="h-2.5 w-2.5 rounded-full"
-                      style={{ background: project.color }}
+                      style={{
+                        background: projectDisplayColor(
+                          project,
+                          state.clients,
+                        ),
+                      }}
                     />
                     <span className="text-sm font-semibold">{project.name}</span>
                     <span className="text-xs text-[var(--text-muted)]">
@@ -139,6 +147,10 @@ export default function ProjectsPage() {
             onChange={setEditing}
             onSave={async () => {
               if (!editing.name.trim()) return;
+              if (!editing.client_id) {
+                push("Choose a client for this project", "warning");
+                return;
+              }
               if (
                 editing.budget_mode === "hours" &&
                 !(editing.budget_hours && editing.budget_hours > 0)

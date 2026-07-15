@@ -14,7 +14,7 @@ import {
   formatHours,
   formatMoney,
 } from "@/lib/domain/budget";
-import { sortProjectsByClientThenName } from "@/lib/domain/sorting";
+import { sortProjectsByClientThenName, projectDisplayColor } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 
 export default function BudgetsReportPage() {
@@ -94,7 +94,9 @@ export default function BudgetsReportPage() {
               <div className="mb-2 flex items-center gap-2">
                 <span
                   className="h-2.5 w-2.5 rounded-full"
-                  style={{ background: project.color }}
+                  style={{
+                    background: projectDisplayColor(project, state.clients),
+                  }}
                 />
                 <span className="text-sm font-semibold">{project.name}</span>
                 <span className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
