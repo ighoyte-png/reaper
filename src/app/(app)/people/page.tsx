@@ -381,6 +381,8 @@ export default function PeoplePage() {
                               date,
                               kind,
                               status: "approved",
+                              hours_per_day: 8,
+                              notes: "",
                             });
                             push(`${leaveKindLabel(kind)} added`);
                           }}

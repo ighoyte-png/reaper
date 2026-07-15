@@ -12,8 +12,13 @@
   --status-healthy: #16a34a;
   --status-near: #d97706;
   --status-over: #dc2626;
-  --status-unavailable: #9ca3af;
-  --row-hover: rgba(0, 0, 0, 0.03);
+  --status-unavailable: #6b7280;
+  /* Muted wash — intentionally not project-colored / not accent blue */
+  --leave-block: #6b7280;
+  --leave-block-fg: #374151;
+  --leave-block-fill: rgba(107, 114, 128, 0.32);
+  --leave-block-draft: rgba(107, 114, 128, 0.2);
+  --leave-block-hatch: rgba(0, 0, 0, 0.05);
   --zebra: rgba(0, 0, 0, 0.035);
   --today-col: rgba(0, 0, 0, 0.045);
 }
@@ -30,8 +35,13 @@
   --status-healthy: #22c55e;
   --status-near: #f59e0b;
   --status-over: #ef4444;
-  --status-unavailable: #6b7280;
+  --status-unavailable: #9ca3af;
   --row-hover: rgba(255, 255, 255, 0.03);
+  --leave-block: #9ca3af;
+  --leave-block-fg: #e5e7eb;
+  --leave-block-fill: rgba(156, 163, 175, 0.28);
+  --leave-block-draft: rgba(156, 163, 175, 0.18);
+  --leave-block-hatch: rgba(255, 255, 255, 0.06);
   --zebra: rgba(255, 255, 255, 0.035);
   --today-col: rgba(255, 255, 255, 0.07);
 }

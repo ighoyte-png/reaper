@@ -118,6 +118,9 @@ export interface LeaveDay {
   date: string;
   kind: LeaveKind;
   status: LeaveStatus;
+  /** Null = full day (uses capacity); otherwise hours away that day. */
+  hours_per_day: number | null;
+  notes: string;
 }
 
 export interface DemoState {

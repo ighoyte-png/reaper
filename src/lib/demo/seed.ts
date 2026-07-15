@@ -411,6 +411,8 @@ export function createDemoSeed(): DemoState {
         date: d(2, week),
         kind: "vacation", // PTO
         status: "approved",
+        hours_per_day: 8,
+        notes: "Family trip",
       },
       {
         id: "leave-2",
@@ -419,6 +421,8 @@ export function createDemoSeed(): DemoState {
         date: d(3, week),
         kind: "vacation",
         status: "approved",
+        hours_per_day: 8,
+        notes: "Family trip",
       },
       {
         id: "leave-3",
@@ -427,6 +431,8 @@ export function createDemoSeed(): DemoState {
         date: d(4, week),
         kind: "sick",
         status: "approved",
+        hours_per_day: 8,
+        notes: "",
       },
       {
         id: "leave-4",
@@ -435,8 +441,9 @@ export function createDemoSeed(): DemoState {
         date: d(10, week),
         kind: "holiday", // Statutory (CA calendar sample)
         status: "approved",
+        hours_per_day: 8,
+        notes: "",
       },
-      // Applied US calendar sample for Seattle crew
       {
         id: "leave-5",
         organization_id: ORG_ID,
@@ -444,6 +451,8 @@ export function createDemoSeed(): DemoState {
         date: d(10, week),
         kind: "holiday",
         status: "approved",
+        hours_per_day: 8,
+        notes: "",
       },
       {
         id: "leave-6",
@@ -452,6 +461,8 @@ export function createDemoSeed(): DemoState {
         date: d(10, week),
         kind: "holiday",
         status: "approved",
+        hours_per_day: 8,
+        notes: "",
       },
     ],
     sessionProfileId: null,

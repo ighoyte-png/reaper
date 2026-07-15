@@ -82,6 +82,11 @@ function loadDemoState(): DemoState {
         ...p,
         holiday_calendar_id: p.holiday_calendar_id ?? null,
       })),
+      leave_days: (parsed.leave_days ?? seed.leave_days).map((l) => ({
+        ...l,
+        hours_per_day: l.hours_per_day ?? null,
+        notes: l.notes ?? "",
+      })),
       projects: (parsed.projects ?? seed.projects).map((p) => ({
         ...p,
         budget_mode:
@@ -925,6 +930,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 date: day.date,
                 kind: "holiday",
                 status: "approved",
+                hours_per_day: existing?.hours_per_day ?? 8,
+                notes: existing?.notes ?? day.name ?? "",
               };
               newLeaves.push(leaveRow);
               if (existing) {

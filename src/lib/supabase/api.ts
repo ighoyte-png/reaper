@@ -264,6 +264,11 @@ export async function fetchWorkspace(
       date: String(row.date),
       kind: row.kind as LeaveDay["kind"],
       status: row.status as LeaveDay["status"],
+      hours_per_day:
+        row.hours_per_day == null || row.hours_per_day === ""
+          ? null
+          : Number(row.hours_per_day),
+      notes: String(row.notes ?? ""),
     })),
     holiday_calendars,
     holiday_calendar_days,
@@ -545,15 +550,33 @@ export async function upsertLeaveRow(
   supabase: SupabaseClient,
   leave: LeaveDay,
 ) {
-  const { error } = await supabase.from("leave_days").upsert({
+  const payload = {
     id: leave.id,
     organization_id: leave.organization_id,
     person_id: leave.person_id,
     date: leave.date,
     kind: leave.kind,
     status: leave.status,
-  });
-  if (error) throw error;
+    hours_per_day: leave.hours_per_day,
+    notes: leave.notes ?? "",
+  };
+  const { error } = await supabase.from("leave_days").upsert(payload);
+  if (!error) return;
+
+  const missingCols =
+    /Could not find the '(hours_per_day|notes)' column/i.test(error.message) ||
+    (error.code === "PGRST204" &&
+      /(hours_per_day|notes)/i.test(error.message));
+  if (missingCols) {
+    const { hours_per_day: _h, notes: _n, ...rest } = payload;
+    const retry = await supabase.from("leave_days").upsert(rest);
+    if (retry.error) throw retry.error;
+    console.warn(
+      "leave_days.hours_per_day/notes missing — apply supabase/migrations/012_leave_hours_notes.sql",
+    );
+    return;
+  }
+  throw error;
 }
 
 export async function deleteLeaveRow(supabase: SupabaseClient, id: string) {
@@ -628,6 +651,8 @@ export async function applyHolidayCalendarLeave(
         date: day.date,
         kind: "holiday",
         status: "approved",
+        hours_per_day: 8,
+        notes: day.name || "",
       });
     }
   }
@@ -654,6 +679,8 @@ export async function applyHolidayCalendarLeave(
       date: r.date,
       kind: "holiday" as const,
       status: "approved" as const,
+      hours_per_day: r.hours_per_day,
+      notes: r.notes,
     };
   });
 
@@ -666,6 +693,8 @@ export async function applyHolidayCalendarLeave(
     date: p.date,
     kind: p.kind,
     status: p.status,
+    hours_per_day: p.hours_per_day,
+    notes: p.notes,
   }));
 }
 
@@ -774,6 +803,8 @@ export async function seedDemoWorkspace(
     date: l.date,
     kind: l.kind,
     status: l.status,
+    hours_per_day: l.hours_per_day,
+    notes: l.notes ?? "",
   }));
 
   // Calendars first so people FK resolves.

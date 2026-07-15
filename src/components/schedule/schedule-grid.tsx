@@ -52,10 +52,9 @@ import {
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import {
-  isPtoLeave,
-  isStatutoryLeave,
   leaveKindLabel,
 } from "@/lib/domain/leave";
+import { leaveBlocksInRange, type LeaveBlock } from "@/lib/domain/leave-blocks";
 import type {
   Assignment,
   AssignmentStatus,
@@ -100,6 +99,19 @@ export function ScheduleGrid() {
   const [anchor, setAnchor] = useState(() => weekStart(new Date()));
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedLeaveBlockId, setSelectedLeaveBlockId] = useState<
+    string | null
+  >(null);
+  const [leaveEditForm, setLeaveEditForm] = useState<{
+    blockId: string;
+    person_id: string;
+    start_date: string;
+    end_date: string;
+    kind: LeaveKind;
+    hours_per_day: number;
+    notes: string;
+    dayIds: string[];
+  } | null>(null);
   const [editForm, setEditForm] = useState<Assignment | null>(null);
   const [hoverColId, setHoverColId] = useState<string | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
@@ -426,13 +438,41 @@ export function ScheduleGrid() {
 
   function selectAssignment(id: string | null) {
     setSelectedId(id);
+    if (id) {
+      setSelectedLeaveBlockId(null);
+      setLeaveEditForm(null);
+    }
     if (isNarrow && id) setMobilePanelOpen(true);
+  }
+
+  function selectLeaveBlock(block: LeaveBlock | null) {
+    if (!block) {
+      setSelectedLeaveBlockId(null);
+      setLeaveEditForm(null);
+      return;
+    }
+    setSelectedId(null);
+    setEditForm(null);
+    setSelectedLeaveBlockId(block.id);
+    setLeaveEditForm({
+      blockId: block.id,
+      person_id: block.person_id,
+      start_date: block.start_date,
+      end_date: block.end_date,
+      kind: block.kind,
+      hours_per_day: block.hours_per_day ?? 8,
+      notes: block.notes,
+      dayIds: block.dayIds,
+    });
+    if (isNarrow) setMobilePanelOpen(true);
   }
 
   /** Return to the default Budget / plan sidebar (clear assignment + project filter). */
   function closeSidePanel() {
     setSelectedId(null);
     setEditForm(null);
+    setSelectedLeaveBlockId(null);
+    setLeaveEditForm(null);
     setDraft(null);
     setLeaveDraft(null);
     setHoverColId(null);
@@ -515,16 +555,26 @@ export function ScheduleGrid() {
     const startDate = start <= end ? start : end;
     const endDate = start <= end ? end : start;
     const days = workingDaysBetween(startDate, endDate);
+    const person = state.people.find((p) => p.id === personId);
+    const defaultHours = Math.max(
+      0.01,
+      roundAssignmentHours((person?.capacity_hours_week ?? 40) / 5),
+    );
+    let firstId: string | null = null;
     for (const date of days) {
       const existing = state.leave_days.find(
         (l) => l.person_id === personId && l.date === date,
       );
+      const id = existing?.id ?? newId("leave");
+      if (!firstId) firstId = id;
       upsertLeave({
-        id: existing?.id ?? newId("leave"),
+        id,
         person_id: personId,
         date,
         kind,
         status: "approved",
+        hours_per_day: existing?.hours_per_day ?? defaultHours,
+        notes: existing?.notes ?? "",
       });
     }
     if (days.length > 0) {
@@ -533,7 +583,78 @@ export function ScheduleGrid() {
           ? `${leaveKindLabel(kind)} day added`
           : `${days.length} ${leaveKindLabel(kind)} days added`,
       );
+      // Select the new block after state settles — recompute from leave days
+      // on next tick via leaveBlocks (handled by selecting first leave day).
+      if (firstId) {
+        setSelectedId(null);
+        setEditForm(null);
+        setSelectedLeaveBlockId(firstId);
+        setLeaveEditForm({
+          blockId: firstId,
+          person_id: personId,
+          start_date: startDate,
+          end_date: endDate,
+          kind,
+          hours_per_day: defaultHours,
+          notes: "",
+          dayIds: days.map((date) => {
+            const existing = state.leave_days.find(
+              (l) => l.person_id === personId && l.date === date,
+            );
+            return existing?.id ?? firstId!;
+          }),
+        });
+        if (isNarrow) setMobilePanelOpen(true);
+      }
     }
+  }
+
+  function saveLeaveEditForm() {
+    if (!canManage || !leaveEditForm) return;
+    const hours = Math.max(
+      0.01,
+      roundAssignmentHours(leaveEditForm.hours_per_day),
+    );
+    const dates = workingDaysBetween(
+      leaveEditForm.start_date,
+      leaveEditForm.end_date,
+    );
+    // Rebuild block: update/create days in range; delete removed days.
+    const keepDates = new Set(dates);
+    for (const id of leaveEditForm.dayIds) {
+      const row = state.leave_days.find((l) => l.id === id);
+      if (row && !keepDates.has(row.date)) {
+        deleteLeave(id);
+      }
+    }
+    const dayIds: string[] = [];
+    for (const date of dates) {
+      const existing = state.leave_days.find(
+        (l) =>
+          l.person_id === leaveEditForm.person_id &&
+          l.date === date &&
+          keepDates.has(l.date),
+      );
+      const id = existing?.id ?? newId("leave");
+      dayIds.push(id);
+      upsertLeave({
+        id,
+        person_id: leaveEditForm.person_id,
+        date,
+        kind: leaveEditForm.kind,
+        status: "approved",
+        hours_per_day: hours,
+        notes: leaveEditForm.notes,
+      });
+    }
+    setLeaveEditForm({
+      ...leaveEditForm,
+      hours_per_day: hours,
+      dayIds,
+      blockId: dayIds[0] ?? leaveEditForm.blockId,
+    });
+    setSelectedLeaveBlockId(dayIds[0] ?? leaveEditForm.blockId);
+    push("Time off saved");
   }
 
   function finishPointer() {
@@ -642,9 +763,14 @@ export function ScheduleGrid() {
 
   const addableProjectsForPerson = useMemo(() => {
     if (!addProjectForPerson) return [];
-    const shown = new Set(
-      projectsForPerson(addProjectForPerson).map((p) => p.id),
-    );
+    // Use person assignments + extras only — ignore the global project filter so
+    // “already shown” is accurate for the add dialog.
+    const shown = new Set<string>([
+      ...state.assignments
+        .filter((a) => a.person_id === addProjectForPerson)
+        .map((a) => a.project_id),
+      ...(extraProjectsByPerson[addProjectForPerson] ?? []),
+    ]);
     return sortedProjects.filter(
       (p) => p.status === "active" && !shown.has(p.id),
     );
@@ -653,18 +779,17 @@ export function ScheduleGrid() {
     sortedProjects,
     state.assignments,
     extraProjectsByPerson,
-    projectFilter,
   ]);
 
   const addProjectClientOptions = useMemo(() => {
-    const ids = new Set(
-      addableProjectsForPerson
-        .map((p) => p.client_id)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const withClient = sortedClients.filter((c) => ids.has(c.id));
     const hasOrphan = addableProjectsForPerson.some((p) => !p.client_id);
-    return { withClient, hasOrphan };
+    return {
+      // Full client list (not only those with remaining projects) so the
+      // first select is never mysteriously blank.
+      withClient: sortedClients,
+      hasOrphan,
+      addableCount: addableProjectsForPerson.length,
+    };
   }, [addableProjectsForPerson, sortedClients]);
 
   const addableProjectsForSelectedClient = useMemo(() => {
@@ -980,7 +1105,25 @@ export function ScheduleGrid() {
                     </div>
                   </div>
 
-                  {/* Time off row — first under each person; managers paint leave here */}
+                  {/* Assignments body: Time off + projects, with full-height leave overlay */}
+                  {(() => {
+                    const leaveBlocks = leaveBlocksInRange(
+                      state.leave_days,
+                      person.id,
+                      startKey,
+                      endKey,
+                    );
+                    const leaveDraftGeo =
+                      leaveDraft && leaveDraft.personId === person.id
+                        ? spanColumnsPx(
+                            columns,
+                            leaveDraft.start,
+                            leaveDraft.end,
+                          )
+                        : null;
+                    return (
+                  <div className="relative">
+                  {/* Time off row — managers paint leave here */}
                   <div
                     className="flex shrink-0"
                     style={{ height: ROW_H }}
@@ -992,7 +1135,7 @@ export function ScheduleGrid() {
                       <span className="truncate text-[11px] font-medium leading-none text-[var(--text-muted)]">
                         Time off
                       </span>
-                      <span className="h-3 w-0.5 shrink-0 rounded-full bg-[var(--status-unavailable)]" />
+                      <span className="h-3 w-0.5 shrink-0 rounded-full bg-[var(--leave-block)] opacity-70" />
                     </div>
                     <div
                       className="relative min-h-0 shrink-0"
@@ -1034,26 +1177,11 @@ export function ScheduleGrid() {
                               className={cn(
                                 "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
                                 weekZebra(col.groupIndex),
-                                leaveInBand &&
-                                  isStatutoryLeave(leaveInBand.kind) &&
-                                  "bg-slate-500/25",
-                                leaveInBand &&
-                                  isPtoLeave(leaveInBand.kind) &&
-                                  "bg-sky-500/25",
-                                leaveInBand &&
-                                  leaveInBand.kind === "sick" &&
-                                  "bg-amber-500/20",
-                                leaveInBand &&
-                                  leaveInBand.kind === "training" &&
-                                  "bg-violet-500/20",
                                 (inLeaveDraft || isHover) &&
-                                  "bg-[var(--accent)]/35",
+                                  "bg-[var(--leave-block-draft)]",
                                 canManage &&
                                   !leaveInBand &&
-                                  "cursor-pointer hover:bg-[var(--accent)]/20",
-                                canManage &&
-                                  leaveInBand &&
-                                  "cursor-pointer",
+                                  "cursor-pointer hover:bg-[var(--leave-block-draft)]",
                               )}
                               style={{
                                 width: col.width,
@@ -1069,13 +1197,9 @@ export function ScheduleGrid() {
                                   : null),
                               }}
                               title={
-                                leaveInBand
-                                  ? `${leaveKindLabel(leaveInBand.kind)}${
-                                      canManage ? " — click to remove" : ""
-                                    }`
-                                  : canManage
-                                    ? `Paint ${leaveKindLabel(paintLeaveKind)}`
-                                    : undefined
+                                canManage && !leaveInBand
+                                  ? `Paint ${leaveKindLabel(paintLeaveKind)}`
+                                  : undefined
                               }
                               onPointerEnter={() => {
                                 setHoverColId(col.id);
@@ -1117,11 +1241,7 @@ export function ScheduleGrid() {
                               }}
                               onClick={() => {
                                 if (!canManage) return;
-                                if (leaveInBand) {
-                                  deleteLeave(leaveInBand.id);
-                                  push("Time off removed");
-                                  return;
-                                }
+                                if (leaveInBand) return;
                                 if (
                                   !(
                                     isCoarse ||
@@ -1136,25 +1256,7 @@ export function ScheduleGrid() {
                                   col.endKey,
                                 );
                               }}
-                            >
-                              {leaveInBand && zoom === "day" ? (
-                                <div
-                                  className={cn(
-                                    "flex h-full items-center justify-center rounded px-0.5 text-[9px] font-semibold leading-none",
-                                    isStatutoryLeave(leaveInBand.kind) &&
-                                      "bg-slate-600 text-white",
-                                    isPtoLeave(leaveInBand.kind) &&
-                                      "bg-sky-600 text-white",
-                                    leaveInBand.kind === "sick" &&
-                                      "bg-amber-600 text-white",
-                                    leaveInBand.kind === "training" &&
-                                      "bg-violet-600 text-white",
-                                  )}
-                                >
-                                  {leaveKindLabel(leaveInBand.kind)}
-                                </div>
-                              ) : null}
-                            </div>
+                            />
                           );
                         })}
                       </div>
@@ -1257,7 +1359,7 @@ export function ScheduleGrid() {
                                   className={cn(
                                     "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
                                     weekZebra(col.groupIndex),
-                                    leave && "bg-[var(--status-unavailable)]/20",
+                                    leave && "bg-[var(--leave-block-fill)]",
                                     (inDraft || isHover) &&
                                       "bg-[var(--accent)]/35",
                                     !leave &&
@@ -1736,6 +1838,96 @@ export function ScheduleGrid() {
                       </div>
                     </div>
                   )}
+
+                  {/* Full-height leave wash over this person's schedule body */}
+                  <div
+                    className="pointer-events-none absolute bottom-0 top-0 z-[12]"
+                    style={{ left: LABEL_PX, width: tw }}
+                  >
+                    {leaveDraftGeo ? (
+                      <div
+                        className="absolute top-0 bottom-0 border border-[var(--leave-block)]/40"
+                        style={{
+                          left: leaveDraftGeo.left,
+                          width: leaveDraftGeo.width,
+                          background: "var(--leave-block-draft)",
+                        }}
+                      />
+                    ) : null}
+                    {leaveBlocks.map((block) => {
+                      const geo = spanColumnsPx(
+                        columns,
+                        block.start_date,
+                        block.end_date,
+                      );
+                      if (!geo) return null;
+                      const isSelected = selectedLeaveBlockId === block.id;
+                      const hours = block.hours_per_day ?? 8;
+                      const spanDays = workingDaysBetween(
+                        block.start_date,
+                        block.end_date,
+                      );
+                      const label =
+                        spanDays.length > 1
+                          ? `${formatHours(hours)}/d · ${formatHours(hours * spanDays.length)}`
+                          : formatHours(hours);
+                      return (
+                        <div
+                          key={block.id}
+                          className={cn(
+                            "pointer-events-auto absolute inset-y-0 flex flex-col rounded-sm border border-[var(--leave-block)]/50",
+                            "bg-[var(--leave-block-fill)] text-[var(--leave-block-fg)]",
+                            canManage && "cursor-pointer",
+                            isSelected &&
+                              "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
+                          )}
+                          style={{
+                            left: geo.left,
+                            width: geo.width,
+                            backgroundImage:
+                              "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
+                          }}
+                          title={`${leaveKindLabel(block.kind)} · ${label}`}
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            selectLeaveBlock(block);
+                          }}
+                        >
+                          <div
+                            className="flex items-center gap-0.5 px-1 text-[10px] font-medium leading-none"
+                            style={{
+                              height: DAY_H,
+                              marginTop: DAY_PAD_Y,
+                            }}
+                          >
+                            <span className="truncate">
+                              {leaveKindLabel(block.kind)} · {label}
+                            </span>
+                            {notesHasContent(block.notes) ? (
+                              <Tooltip
+                                content={
+                                  <RichNotesHtml html={block.notes} />
+                                }
+                                className="ml-0.5 shrink-0"
+                              >
+                                <span
+                                  className="inline-flex cursor-default opacity-90"
+                                  aria-label="Notes"
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                  <StickyNote size={13} strokeWidth={2.5} />
+                                </span>
+                              </Tooltip>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  </div>
+                    );
+                  })()}
                 </PersonReveal>
               );
             })}
@@ -1768,29 +1960,144 @@ export function ScheduleGrid() {
           <div className="flex items-start justify-between gap-2">
             <div>
               <h2 className="text-sm font-semibold">
-                {selected ? "Assignment" : canManage ? "Budget" : "Your plan"}
+                {leaveEditForm
+                  ? "Time off"
+                  : selected
+                    ? "Assignment"
+                    : canManage
+                      ? "Budget"
+                      : "Your plan"}
               </h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
-                {canManage
-                  ? isCoarse
-                    ? "Tap an empty day to create. Tap a block to edit, then Save."
-                    : "Weekdays only (Mon–Fri). Edit details here, then click Save."
-                  : "Read-only view of your planned work."}
+                {leaveEditForm
+                  ? "Hours and notes for this time-off block. Saves trim overlapping assignments."
+                  : canManage
+                    ? isCoarse
+                      ? "Tap an empty day to create. Tap a block to edit, then Save."
+                      : "Weekdays only (Mon–Fri). Edit details here, then click Save."
+                    : "Read-only view of your planned work."}
               </p>
             </div>
-            {(selected || projectFilter !== "all" || (isNarrow && mobilePanelOpen)) && (
+            {(selected ||
+              leaveEditForm ||
+              projectFilter !== "all" ||
+              (isNarrow && mobilePanelOpen)) && (
               <button
                 type="button"
                 className="shrink-0 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
                 onClick={closeSidePanel}
               >
-                {selected || projectFilter !== "all" ? "Deselect" : "Close"}
+                {selected || leaveEditForm || projectFilter !== "all"
+                  ? "Deselect"
+                  : "Close"}
               </button>
             )}
           </div>
         </div>
 
-        {canManage && editForm ? (
+        {canManage && leaveEditForm ? (
+          <div className="space-y-3 p-4">
+            <Field label="Type">
+              <select
+                className={inputClass}
+                value={leaveEditForm.kind}
+                onChange={(e) =>
+                  setLeaveEditForm({
+                    ...leaveEditForm,
+                    kind: e.target.value as LeaveKind,
+                  })
+                }
+              >
+                <option value="vacation">PTO</option>
+                <option value="holiday">Statutory holiday</option>
+                <option value="sick">Sick</option>
+                <option value="training">Training</option>
+              </select>
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Start">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={leaveEditForm.start_date}
+                  onChange={(e) =>
+                    setLeaveEditForm({
+                      ...leaveEditForm,
+                      start_date: e.target.value,
+                    })
+                  }
+                />
+              </Field>
+              <Field label="End">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={leaveEditForm.end_date}
+                  onChange={(e) =>
+                    setLeaveEditForm({
+                      ...leaveEditForm,
+                      end_date: e.target.value,
+                    })
+                  }
+                />
+              </Field>
+            </div>
+            <Field label="Hours / day">
+              <input
+                type="number"
+                min={0.01}
+                step={0.01}
+                className={inputClass}
+                value={leaveEditForm.hours_per_day}
+                onChange={(e) =>
+                  setLeaveEditForm({
+                    ...leaveEditForm,
+                    hours_per_day: Number(e.target.value) || 0,
+                  })
+                }
+                onBlur={() =>
+                  setLeaveEditForm({
+                    ...leaveEditForm,
+                    hours_per_day: Math.max(
+                      0.01,
+                      roundAssignmentHours(leaveEditForm.hours_per_day),
+                    ),
+                  })
+                }
+              />
+            </Field>
+            <div className="block text-xs text-[var(--text-muted)]">
+              Notes
+              <SimpleRichTextEditor
+                value={leaveEditForm.notes}
+                onChange={(notes) =>
+                  setLeaveEditForm({ ...leaveEditForm, notes })
+                }
+              />
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)]"
+              onClick={saveLeaveEditForm}
+            >
+              <Save size={14} />
+              Save time off
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)]"
+              onClick={() => {
+                for (const id of leaveEditForm.dayIds) {
+                  deleteLeave(id);
+                }
+                selectLeaveBlock(null);
+                push("Time off removed");
+              }}
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+          </div>
+        ) : canManage && editForm ? (
           <div className="space-y-3 p-4">
             <Field label="Project">
               <select
@@ -2081,6 +2388,11 @@ export function ScheduleGrid() {
                 )}
               </select>
             </label>
+            {addProjectClientOptions.addableCount === 0 ? (
+              <p className="mt-3 text-xs text-[var(--text-muted)]">
+                Every active project is already on this person.
+              </p>
+            ) : null}
             {addProjectClientId ? (
               <label className="mt-3 block text-xs text-[var(--text-muted)]">
                 Project
@@ -2089,7 +2401,11 @@ export function ScheduleGrid() {
                   value={addProjectId}
                   onChange={(e) => setAddProjectId(e.target.value)}
                 >
-                  <option value="">Select a project…</option>
+                  <option value="">
+                    {addableProjectsForSelectedClient.length === 0
+                      ? "No projects left for this client"
+                      : "Select a project…"}
+                  </option>
                   {addableProjectsForSelectedClient.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
