@@ -11,6 +11,7 @@ import {
   availableHoursInRange,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
+import { leaveKindLabel } from "@/lib/domain/leave";
 import { cn } from "@/lib/cn";
 
 export default function DashboardPage() {
@@ -201,7 +202,7 @@ export default function DashboardPage() {
                   >
                     <div className="font-medium">{person?.name ?? "Person"}</div>
                     <div className="text-xs text-[var(--text-muted)]">
-                      {leave.date} · {leave.kind}
+                      {leave.date} · {leaveKindLabel(leave.kind)}
                     </div>
                   </div>
                 );

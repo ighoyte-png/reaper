@@ -15,6 +15,10 @@ import {
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { LeaveKind, Person } from "@/lib/types";
+import {
+  leaveKindLabel,
+  normalizeLeaveKind,
+} from "@/lib/domain/leave";
 
 const emptyPerson = (): Omit<Person, "organization_id"> => ({
   id: "",
@@ -28,6 +32,7 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   cost_rate: 70,
   bill_rate: 140,
   timezone: "America/Los_Angeles",
+  holiday_calendar_id: null,
 });
 
 export default function PeoplePage() {
@@ -364,10 +369,12 @@ export default function PeoplePage() {
                               start,
                             );
                             if (!date) return;
-                            const kind = (window.prompt(
-                              "Kind: vacation, holiday, sick, training",
-                              "vacation",
-                            ) || "vacation") as LeaveKind;
+                            const kindRaw =
+                              window.prompt(
+                                "Kind: pto, statutory, sick, training",
+                                "pto",
+                              ) || "pto";
+                            const kind = normalizeLeaveKind(kindRaw) as LeaveKind;
                             upsertLeave({
                               id: newId("leave"),
                               person_id: person.id,
@@ -375,7 +382,7 @@ export default function PeoplePage() {
                               kind,
                               status: "approved",
                             });
-                            push("Leave added");
+                            push(`${leaveKindLabel(kind)} added`);
                           }}
                         >
                           Leave
@@ -453,6 +460,26 @@ export default function PeoplePage() {
                 />
               </Field>
             </div>
+            <Field label="Holiday calendar">
+              <select
+                className={inputClass}
+                value={editing.holiday_calendar_id ?? ""}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    holiday_calendar_id: e.target.value || null,
+                  })
+                }
+              >
+                <option value="">None</option>
+                {state.holiday_calendars.map((cal) => (
+                  <option key={cal.id} value={cal.id}>
+                    {cal.name}
+                    {cal.region ? ` (${cal.region})` : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Capacity hrs/week">
                 <input

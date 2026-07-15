@@ -49,9 +49,15 @@ import {
   projectLabelWithClient,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
+import {
+  isPtoLeave,
+  isStatutoryLeave,
+  leaveKindLabel,
+} from "@/lib/domain/leave";
 import type {
   Assignment,
   AssignmentStatus,
+  LeaveKind,
   Project,
 } from "@/lib/types";
 
@@ -76,6 +82,8 @@ export function ScheduleGrid() {
     state,
     upsertAssignment,
     deleteAssignment,
+    upsertLeave,
+    deleteLeave,
     newId,
     canManage,
     myPerson,
@@ -94,9 +102,17 @@ export function ScheduleGrid() {
   const [hoverColId, setHoverColId] = useState<string | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [paintLeaveKind, setPaintLeaveKind] = useState<LeaveKind>("vacation");
   const [draft, setDraft] = useState<{
     personId: string;
     projectId: string;
+    start: string;
+    end: string;
+    originStart: string;
+    originEnd: string;
+  } | null>(null);
+  const [leaveDraft, setLeaveDraft] = useState<{
+    personId: string;
     start: string;
     end: string;
     originStart: string;
@@ -407,6 +423,7 @@ export function ScheduleGrid() {
     setSelectedId(null);
     setEditForm(null);
     setDraft(null);
+    setLeaveDraft(null);
     setHoverColId(null);
     setProjectFilter("all");
     setMobilePanelOpen(false);
@@ -468,7 +485,47 @@ export function ScheduleGrid() {
     commitAssignment(editForm, "Assignment saved");
   }
 
+  function createLeaveRange(
+    personId: string,
+    start: string,
+    end: string,
+    kind: LeaveKind = paintLeaveKind,
+  ) {
+    if (!canManage) return;
+    const startDate = start <= end ? start : end;
+    const endDate = start <= end ? end : start;
+    const days = workingDaysBetween(startDate, endDate);
+    for (const date of days) {
+      const existing = state.leave_days.find(
+        (l) => l.person_id === personId && l.date === date,
+      );
+      upsertLeave({
+        id: existing?.id ?? newId("leave"),
+        person_id: personId,
+        date,
+        kind,
+        status: "approved",
+      });
+    }
+    if (days.length > 0) {
+      push(
+        days.length === 1
+          ? `${leaveKindLabel(kind)} day added`
+          : `${days.length} ${leaveKindLabel(kind)} days added`,
+      );
+    }
+  }
+
   function finishPointer() {
+    if (leaveDraft) {
+      createLeaveRange(
+        leaveDraft.personId,
+        leaveDraft.start,
+        leaveDraft.end,
+      );
+      setLeaveDraft(null);
+      setHoverColId(null);
+    }
     if (draft) {
       createAssignment(
         draft.personId,
@@ -570,6 +627,22 @@ export function ScheduleGrid() {
                     {projectLabelWithClient(p, state.clients)}
                   </option>
                 ))}
+              </select>
+            )}
+            {canManage && (
+              <select
+                value={paintLeaveKind}
+                onChange={(e) =>
+                  setPaintLeaveKind(e.target.value as LeaveKind)
+                }
+                className="h-8 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+                aria-label="Time-off kind when painting"
+                title="Kind for new time-off on the Time off row"
+              >
+                <option value="vacation">Paint PTO</option>
+                <option value="holiday">Paint Statutory</option>
+                <option value="sick">Paint Sick</option>
+                <option value="training">Paint Training</option>
               </select>
             )}
             {isNarrow && (
@@ -754,6 +827,187 @@ export function ScheduleGrid() {
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  {/* Time off row — first under each person; managers paint leave here */}
+                  <div
+                    className="flex shrink-0"
+                    style={{ height: ROW_H }}
+                  >
+                    <div
+                      className="sticky left-0 z-20 flex min-h-0 shrink-0 items-center justify-end gap-2 border-r border-[var(--border)] bg-[var(--bg)] px-3"
+                      style={{ width: LABEL_PX, height: ROW_H }}
+                    >
+                      <span className="truncate text-[11px] font-medium leading-none text-[var(--text-muted)]">
+                        Time off
+                      </span>
+                      <span className="h-3 w-0.5 shrink-0 rounded-full bg-[var(--status-unavailable)]" />
+                    </div>
+                    <div
+                      className="relative min-h-0 shrink-0"
+                      style={{ width: tw, height: ROW_H }}
+                    >
+                      <div className="absolute inset-0 flex">
+                        {columns.map((col) => {
+                          const leave =
+                            zoom === "day"
+                              ? isOnLeave(
+                                  person.id,
+                                  col.startKey,
+                                  state.leave_days,
+                                )
+                              : undefined;
+                          const leaveInBand =
+                            leave ??
+                            state.leave_days.find(
+                              (l) =>
+                                l.person_id === person.id &&
+                                l.status === "approved" &&
+                                l.date >= col.startKey &&
+                                l.date <= col.endKey,
+                            );
+                          const inLeaveDraft =
+                            !!leaveDraft &&
+                            leaveDraft.personId === person.id &&
+                            columnsOverlapRange(
+                              col,
+                              leaveDraft.start,
+                              leaveDraft.end,
+                            );
+                          const isHover =
+                            hoverColId === col.id &&
+                            leaveDraft?.personId === person.id;
+                          return (
+                            <div
+                              key={col.id}
+                              className={cn(
+                                "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
+                                weekZebra(col.groupIndex),
+                                leaveInBand &&
+                                  isStatutoryLeave(leaveInBand.kind) &&
+                                  "bg-slate-500/25",
+                                leaveInBand &&
+                                  isPtoLeave(leaveInBand.kind) &&
+                                  "bg-sky-500/25",
+                                leaveInBand &&
+                                  leaveInBand.kind === "sick" &&
+                                  "bg-amber-500/20",
+                                leaveInBand &&
+                                  leaveInBand.kind === "training" &&
+                                  "bg-violet-500/20",
+                                (inLeaveDraft || isHover) &&
+                                  "bg-[var(--accent)]/35",
+                                canManage &&
+                                  !leaveInBand &&
+                                  "cursor-pointer hover:bg-[var(--accent)]/20",
+                                canManage &&
+                                  leaveInBand &&
+                                  "cursor-pointer",
+                              )}
+                              style={{
+                                width: col.width,
+                                height: ROW_H,
+                                paddingTop: DAY_PAD_Y,
+                                paddingBottom: DAY_PAD_Y,
+                                boxSizing: "border-box",
+                                ...(col.isToday &&
+                                !leaveInBand &&
+                                !inLeaveDraft &&
+                                !isHover
+                                  ? { backgroundColor: "var(--today-col)" }
+                                  : null),
+                              }}
+                              title={
+                                leaveInBand
+                                  ? `${leaveKindLabel(leaveInBand.kind)}${
+                                      canManage ? " — click to remove" : ""
+                                    }`
+                                  : canManage
+                                    ? `Paint ${leaveKindLabel(paintLeaveKind)}`
+                                    : undefined
+                              }
+                              onPointerEnter={() => {
+                                setHoverColId(col.id);
+                                if (
+                                  leaveDraft &&
+                                  leaveDraft.personId === person.id
+                                ) {
+                                  setLeaveDraft({
+                                    ...leaveDraft,
+                                    start:
+                                      col.startKey < leaveDraft.originStart
+                                        ? col.startKey
+                                        : leaveDraft.originStart,
+                                    end:
+                                      col.endKey > leaveDraft.originEnd
+                                        ? col.endKey
+                                        : leaveDraft.originEnd,
+                                  });
+                                }
+                              }}
+                              onPointerDown={(e) => {
+                                if (!canManage) return;
+                                if (leaveInBand) return;
+                                if (isCoarse || e.pointerType === "touch") {
+                                  return;
+                                }
+                                e.preventDefault();
+                                (e.currentTarget as HTMLElement).setPointerCapture?.(
+                                  e.pointerId,
+                                );
+                                setDraft(null);
+                                setLeaveDraft({
+                                  personId: person.id,
+                                  start: col.startKey,
+                                  end: col.endKey,
+                                  originStart: col.startKey,
+                                  originEnd: col.endKey,
+                                });
+                              }}
+                              onClick={() => {
+                                if (!canManage) return;
+                                if (leaveInBand) {
+                                  deleteLeave(leaveInBand.id);
+                                  push("Time off removed");
+                                  return;
+                                }
+                                if (
+                                  !(
+                                    isCoarse ||
+                                    matchMedia("(pointer: coarse)").matches
+                                  )
+                                ) {
+                                  return;
+                                }
+                                createLeaveRange(
+                                  person.id,
+                                  col.startKey,
+                                  col.endKey,
+                                );
+                              }}
+                            >
+                              {leaveInBand && zoom === "day" ? (
+                                <div
+                                  className={cn(
+                                    "flex h-full items-center justify-center rounded px-0.5 text-[9px] font-semibold leading-none",
+                                    isStatutoryLeave(leaveInBand.kind) &&
+                                      "bg-slate-600 text-white",
+                                    isPtoLeave(leaveInBand.kind) &&
+                                      "bg-sky-600 text-white",
+                                    leaveInBand.kind === "sick" &&
+                                      "bg-amber-600 text-white",
+                                    leaveInBand.kind === "training" &&
+                                      "bg-violet-600 text-white",
+                                  )}
+                                >
+                                  {leaveKindLabel(leaveInBand.kind)}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
