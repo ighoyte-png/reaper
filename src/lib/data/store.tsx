@@ -21,6 +21,8 @@ import {
   bootstrapOrganization,
   deleteAssignmentRow,
   deleteClientRow,
+  deleteHolidayCalendarDayRow,
+  deleteHolidayCalendarRow,
   deleteLeaveRow,
   deleteMilestoneRow,
   deletePersonRow,
@@ -30,6 +32,8 @@ import {
   seedDemoWorkspace,
   upsertAssignmentRow,
   upsertClientRow,
+  upsertHolidayCalendarDayRow,
+  upsertHolidayCalendarRow,
   upsertLeaveRow,
   upsertMilestoneRow,
   upsertPersonRow,
@@ -38,10 +42,14 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { canManage, personForProfile } from "@/lib/auth/roles";
+import { applyFullDayLeaveOverride } from "@/lib/domain/leave-override";
+import { normalizeLeaveKind } from "@/lib/domain/leave";
 import type {
   Assignment,
   Client,
   DemoState,
+  HolidayCalendar,
+  HolidayCalendarDay,
   LeaveDay,
   Milestone,
   Person,
@@ -63,7 +71,19 @@ function loadDemoState(): DemoState {
     if (!raw) return createDemoSeed();
     const parsed = JSON.parse(raw) as DemoState;
     const session = localStorage.getItem(DEMO_SESSION_KEY);
-    return { ...parsed, sessionProfileId: session };
+    const seed = createDemoSeed();
+    return {
+      ...seed,
+      ...parsed,
+      holiday_calendars: parsed.holiday_calendars ?? seed.holiday_calendars,
+      holiday_calendar_days:
+        parsed.holiday_calendar_days ?? seed.holiday_calendar_days,
+      people: (parsed.people ?? []).map((p) => ({
+        ...p,
+        holiday_calendar_id: p.holiday_calendar_id ?? null,
+      })),
+      sessionProfileId: session,
+    };
   } catch {
     return createDemoSeed();
   }
@@ -79,6 +99,8 @@ function emptySupabaseState(): DemoState {
     people: [],
     assignments: [],
     leave_days: [],
+    holiday_calendars: [],
+    holiday_calendar_days: [],
     sessionProfileId: null,
   };
 }
@@ -147,6 +169,20 @@ interface DataContextValue {
     leave: Omit<LeaveDay, "organization_id"> & { organization_id?: string },
   ) => void;
   deleteLeave: (id: string) => void;
+  upsertHolidayCalendar: (
+    calendar: Omit<HolidayCalendar, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteHolidayCalendar: (id: string) => void;
+  upsertHolidayCalendarDay: (
+    day: Omit<HolidayCalendarDay, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteHolidayCalendarDay: (id: string) => void;
+  /** Create statutory leave_days for people assigned to this calendar. */
+  applyHolidayCalendar: (calendarId: string) => Promise<number>;
   newId: (prefix: string) => string;
 }
 
@@ -680,18 +716,74 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertLeave: (leave) => {
-        const row = withOrg(leave) as LeaveDay;
+        const row = {
+          ...withOrg(leave),
+          kind: normalizeLeaveKind(leave.kind),
+        } as LeaveDay;
+
+        let remoteLeaves: LeaveDay[] = [];
+        let remoteUpserts: Assignment[] = [];
+        let remoteDeletes: string[] = [];
+
         patch((prev) => {
-          const exists = prev.leave_days.some((l) => l.id === row.id);
-          return {
-            ...prev,
-            leave_days: exists
-              ? prev.leave_days.map((l) => (l.id === row.id ? row : l))
-              : [...prev.leave_days, row],
-          };
+          const byPersonDate = prev.leave_days.find(
+            (l) =>
+              l.person_id === row.person_id &&
+              l.date === row.date &&
+              l.id !== row.id,
+          );
+          const leaveRow = byPersonDate
+            ? { ...row, id: byPersonDate.id }
+            : row;
+          remoteLeaves = [leaveRow];
+
+          let leave_days = prev.leave_days.some((l) => l.id === leaveRow.id)
+            ? prev.leave_days.map((l) => (l.id === leaveRow.id ? leaveRow : l))
+            : [...prev.leave_days, leaveRow];
+          leave_days = leave_days.filter(
+            (l) =>
+              l.id === leaveRow.id ||
+              !(l.person_id === leaveRow.person_id && l.date === leaveRow.date),
+          );
+
+          let assignments = prev.assignments;
+          if (leaveRow.status === "approved") {
+            const ov = applyFullDayLeaveOverride(
+              prev.assignments,
+              leaveRow.person_id,
+              leaveRow.date,
+              uid,
+            );
+            remoteUpserts = ov.upserts;
+            remoteDeletes = ov.deletes;
+            assignments = prev.assignments.filter(
+              (a) => !ov.deletes.includes(a.id),
+            );
+            for (const a of ov.upserts) {
+              const idx = assignments.findIndex((x) => x.id === a.id);
+              if (idx >= 0) assignments[idx] = a;
+              else assignments.push(a);
+            }
+          }
+
+          return { ...prev, leave_days, assignments };
         });
+
         if (mode === "supabase" && supabaseRef.current) {
-          runRemoteSoft(() => upsertLeaveRow(supabaseRef.current!, row));
+          const client = supabaseRef.current;
+          runRemoteSoft(async () => {
+            for (const l of remoteLeaves) {
+              await upsertLeaveRow(client, l);
+            }
+            for (const id of remoteDeletes) {
+              await deleteAssignmentRow(client, id);
+            }
+            for (const a of remoteUpserts) {
+              if (!remoteDeletes.includes(a.id)) {
+                await upsertAssignmentRow(client, withOrg(a) as Assignment);
+              }
+            }
+          });
         }
       },
       deleteLeave: (id) => {
@@ -702,6 +794,158 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() => deleteLeaveRow(supabaseRef.current!, id));
         }
+      },
+      upsertHolidayCalendar: (calendar) => {
+        const row = withOrg(calendar) as HolidayCalendar;
+        patch((prev) => {
+          const exists = prev.holiday_calendars.some((c) => c.id === row.id);
+          return {
+            ...prev,
+            holiday_calendars: exists
+              ? prev.holiday_calendars.map((c) => (c.id === row.id ? row : c))
+              : [...prev.holiday_calendars, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertHolidayCalendarRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteHolidayCalendar: (id) => {
+        patch((prev) => ({
+          ...prev,
+          holiday_calendars: prev.holiday_calendars.filter((c) => c.id !== id),
+          holiday_calendar_days: prev.holiday_calendar_days.filter(
+            (d) => d.calendar_id !== id,
+          ),
+          people: prev.people.map((p) =>
+            p.holiday_calendar_id === id
+              ? { ...p, holiday_calendar_id: null }
+              : p,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteHolidayCalendarRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      upsertHolidayCalendarDay: (day) => {
+        const row = withOrg(day) as HolidayCalendarDay;
+        patch((prev) => {
+          const exists = prev.holiday_calendar_days.some((d) => d.id === row.id);
+          return {
+            ...prev,
+            holiday_calendar_days: exists
+              ? prev.holiday_calendar_days.map((d) =>
+                  d.id === row.id ? row : d,
+                )
+              : [...prev.holiday_calendar_days, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertHolidayCalendarDayRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteHolidayCalendarDay: (id) => {
+        patch((prev) => ({
+          ...prev,
+          holiday_calendar_days: prev.holiday_calendar_days.filter(
+            (d) => d.id !== id,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteHolidayCalendarDayRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      applyHolidayCalendar: async (calendarId) => {
+        const days = state.holiday_calendar_days.filter(
+          (d) => d.calendar_id === calendarId,
+        );
+        const people = state.people.filter(
+          (p) => p.holiday_calendar_id === calendarId,
+        );
+        if (days.length === 0 || people.length === 0) return 0;
+
+        let created: LeaveDay[] = [];
+        let remoteUpserts: Assignment[] = [];
+        let remoteDeletes: string[] = [];
+
+        patch((prev) => {
+          let leave_days = [...prev.leave_days];
+          let assignments = [...prev.assignments];
+          const newLeaves: LeaveDay[] = [];
+          const upsertMap = new Map<string, Assignment>();
+          const deleteSet = new Set<string>();
+
+          for (const person of people) {
+            for (const day of days) {
+              const existing = leave_days.find(
+                (l) => l.person_id === person.id && l.date === day.date,
+              );
+              const leaveRow: LeaveDay = {
+                id: existing?.id ?? uid("leave"),
+                organization_id: prev.organization.id,
+                person_id: person.id,
+                date: day.date,
+                kind: "holiday",
+                status: "approved",
+              };
+              newLeaves.push(leaveRow);
+              if (existing) {
+                leave_days = leave_days.map((l) =>
+                  l.id === existing.id ? leaveRow : l,
+                );
+              } else {
+                leave_days.push(leaveRow);
+              }
+              const ov = applyFullDayLeaveOverride(
+                assignments,
+                person.id,
+                day.date,
+                uid,
+              );
+              for (const id of ov.deletes) {
+                deleteSet.add(id);
+                upsertMap.delete(id);
+              }
+              assignments = assignments.filter((a) => !ov.deletes.includes(a.id));
+              for (const a of ov.upserts) {
+                upsertMap.set(a.id, a);
+                const idx = assignments.findIndex((x) => x.id === a.id);
+                if (idx >= 0) assignments[idx] = a;
+                else assignments.push(a);
+              }
+            }
+          }
+          created = newLeaves;
+          remoteUpserts = [...upsertMap.values()];
+          remoteDeletes = [...deleteSet];
+          return { ...prev, leave_days, assignments };
+        });
+
+        if (mode === "supabase" && supabaseRef.current) {
+          const client = supabaseRef.current;
+          await runRemote(async () => {
+            for (const leave of created) {
+              await upsertLeaveRow(client, leave);
+            }
+            for (const id of remoteDeletes) {
+              await deleteAssignmentRow(client, id);
+            }
+            for (const a of remoteUpserts) {
+              if (!remoteDeletes.includes(a.id)) {
+                await upsertAssignmentRow(client, withOrg(a) as Assignment);
+              }
+            }
+          });
+        }
+        return created.length;
       },
     }),
     [

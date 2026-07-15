@@ -4,6 +4,8 @@ import type {
   Assignment,
   Client,
   DemoState,
+  HolidayCalendar,
+  HolidayCalendarDay,
   LeaveDay,
   Milestone,
   Organization,
@@ -77,6 +79,9 @@ function mapPerson(row: Record<string, unknown>): Person {
     cost_rate: num(row.cost_rate),
     bill_rate: num(row.bill_rate),
     timezone: String(row.timezone ?? "UTC"),
+    holiday_calendar_id: row.holiday_calendar_id
+      ? String(row.holiday_calendar_id)
+      : null,
   };
 }
 
@@ -111,6 +116,8 @@ function emptyWorkspace(): DemoState {
     people: [],
     assignments: [],
     leave_days: [],
+    holiday_calendars: [],
+    holiday_calendar_days: [],
     sessionProfileId: null,
   };
 }
@@ -166,6 +173,8 @@ export async function fetchWorkspace(
     peopleRes,
     assignmentsRes,
     leaveRes,
+    calendarsRes,
+    calendarDaysRes,
   ] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", orgId).single(),
     supabase.from("profiles").select("*").eq("organization_id", orgId),
@@ -175,6 +184,11 @@ export async function fetchWorkspace(
     supabase.from("people").select("*").eq("organization_id", orgId),
     supabase.from("assignments").select("*").eq("organization_id", orgId),
     supabase.from("leave_days").select("*").eq("organization_id", orgId),
+    supabase.from("holiday_calendars").select("*").eq("organization_id", orgId),
+    supabase
+      .from("holiday_calendar_days")
+      .select("*")
+      .eq("organization_id", orgId),
   ]);
 
   for (const res of [
@@ -189,6 +203,25 @@ export async function fetchWorkspace(
   ]) {
     if (res.error) throw res.error;
   }
+
+  // Calendars are optional until migration 008 is applied.
+  const holiday_calendars: HolidayCalendar[] = calendarsRes.error
+    ? []
+    : (calendarsRes.data ?? []).map((row) => ({
+        id: String(row.id),
+        organization_id: String(row.organization_id),
+        name: String(row.name ?? ""),
+        region: String(row.region ?? ""),
+      }));
+  const holiday_calendar_days: HolidayCalendarDay[] = calendarDaysRes.error
+    ? []
+    : (calendarDaysRes.data ?? []).map((row) => ({
+        id: String(row.id),
+        organization_id: String(row.organization_id),
+        calendar_id: String(row.calendar_id),
+        date: String(row.date),
+        name: String(row.name ?? ""),
+      }));
 
   const organization = orgRes.data as Organization;
 
@@ -232,6 +265,8 @@ export async function fetchWorkspace(
       kind: row.kind as LeaveDay["kind"],
       status: row.status as LeaveDay["status"],
     })),
+    holiday_calendars,
+    holiday_calendar_days,
     sessionProfileId: userId,
   };
 }
@@ -311,6 +346,7 @@ export async function upsertPersonRow(
     cost_rate: person.cost_rate,
     bill_rate: person.bill_rate,
     timezone: person.timezone,
+    holiday_calendar_id: person.holiday_calendar_id,
   };
   const { error } = await supabase.from("people").upsert(payload);
   if (!error) return;
@@ -318,15 +354,29 @@ export async function upsertPersonRow(
   const missingEmailCol =
     /Could not find the 'email' column/i.test(error.message) ||
     (error.code === "PGRST204" && /email/i.test(error.message));
+  const missingCalCol =
+    /Could not find the 'holiday_calendar_id' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /holiday_calendar_id/i.test(error.message));
 
-  if (missingEmailCol) {
-    const { email: _omit, ...withoutEmail } = payload;
-    const retry = await supabase.from("people").upsert(withoutEmail);
+  if (missingEmailCol || missingCalCol) {
+    const { email: _e, holiday_calendar_id: _c, ...rest } = payload;
+    const retryPayload = {
+      ...rest,
+      ...(missingEmailCol ? {} : { email: payload.email }),
+      ...(missingCalCol ? {} : { holiday_calendar_id: payload.holiday_calendar_id }),
+    };
+    const retry = await supabase.from("people").upsert(retryPayload);
     if (retry.error) throw retry.error;
-    // Person saved; warn so the column can be added (email only lived in the invite payload)
-    console.warn(
-      "people.email column missing — ran upsert without it. Apply supabase/migrations/004_people_email.sql",
-    );
+    if (missingCalCol) {
+      console.warn(
+        "people.holiday_calendar_id missing — apply supabase/migrations/008_holiday_calendars.sql",
+      );
+    }
+    if (missingEmailCol) {
+      console.warn(
+        "people.email column missing — ran upsert without it. Apply supabase/migrations/004_people_email.sql",
+      );
+    }
     return;
   }
 
@@ -410,6 +460,114 @@ export async function deleteLeaveRow(supabase: SupabaseClient, id: string) {
   if (error) throw error;
 }
 
+export async function upsertHolidayCalendarRow(
+  supabase: SupabaseClient,
+  calendar: HolidayCalendar,
+) {
+  const { error } = await supabase.from("holiday_calendars").upsert({
+    id: calendar.id,
+    organization_id: calendar.organization_id,
+    name: calendar.name,
+    region: calendar.region,
+  });
+  if (error) throw error;
+}
+
+export async function deleteHolidayCalendarRow(
+  supabase: SupabaseClient,
+  id: string,
+) {
+  const { error } = await supabase.from("holiday_calendars").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function upsertHolidayCalendarDayRow(
+  supabase: SupabaseClient,
+  day: HolidayCalendarDay,
+) {
+  const { error } = await supabase.from("holiday_calendar_days").upsert({
+    id: day.id,
+    organization_id: day.organization_id,
+    calendar_id: day.calendar_id,
+    date: day.date,
+    name: day.name,
+  });
+  if (error) throw error;
+}
+
+export async function deleteHolidayCalendarDayRow(
+  supabase: SupabaseClient,
+  id: string,
+) {
+  const { error } = await supabase
+    .from("holiday_calendar_days")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** Upsert statutory leave days for people assigned to a calendar. */
+export async function applyHolidayCalendarLeave(
+  supabase: SupabaseClient,
+  args: {
+    organizationId: string;
+    calendarId: string;
+    personIds: string[];
+    days: { date: string; name: string }[];
+    newLeaveId: () => string;
+  },
+): Promise<LeaveDay[]> {
+  const rows: LeaveDay[] = [];
+  for (const personId of args.personIds) {
+    for (const day of args.days) {
+      rows.push({
+        id: args.newLeaveId(),
+        organization_id: args.organizationId,
+        person_id: personId,
+        date: day.date,
+        kind: "holiday",
+        status: "approved",
+      });
+    }
+  }
+  if (rows.length === 0) return [];
+
+  // Upsert by (person_id, date) — fetch existing then merge ids.
+  const { data: existing, error: existingError } = await supabase
+    .from("leave_days")
+    .select("id, person_id, date")
+    .eq("organization_id", args.organizationId)
+    .in("person_id", args.personIds);
+  if (existingError) throw existingError;
+
+  const byKey = new Map(
+    (existing ?? []).map((r) => [`${r.person_id}|${r.date}`, String(r.id)]),
+  );
+  const payload = rows.map((r) => {
+    const key = `${r.person_id}|${r.date}`;
+    const id = byKey.get(key) ?? r.id;
+    return {
+      id,
+      organization_id: r.organization_id,
+      person_id: r.person_id,
+      date: r.date,
+      kind: "holiday" as const,
+      status: "approved" as const,
+    };
+  });
+
+  const { error } = await supabase.from("leave_days").upsert(payload);
+  if (error) throw error;
+  return payload.map((p) => ({
+    id: p.id,
+    organization_id: p.organization_id,
+    person_id: p.person_id,
+    date: p.date,
+    kind: p.kind,
+    status: p.status,
+  }));
+}
+
 function remapId(cache: Map<string, string>, oldId: string): string {
   if (!cache.has(oldId)) cache.set(oldId, crypto.randomUUID());
   return cache.get(oldId)!;
@@ -463,6 +621,24 @@ export async function seedDemoWorkspace(
     cost_rate: p.cost_rate,
     bill_rate: p.bill_rate,
     timezone: p.timezone,
+    holiday_calendar_id: p.holiday_calendar_id
+      ? remapId(ids, p.holiday_calendar_id)
+      : null,
+  }));
+
+  const calendars = seed.holiday_calendars.map((c) => ({
+    id: remapId(ids, c.id),
+    organization_id: organizationId,
+    name: c.name,
+    region: c.region,
+  }));
+
+  const calendarDays = seed.holiday_calendar_days.map((d) => ({
+    id: remapId(ids, d.id),
+    organization_id: organizationId,
+    calendar_id: remapId(ids, d.calendar_id),
+    date: d.date,
+    name: d.name,
   }));
 
   const milestones = seed.milestones.map((m) => ({
@@ -498,10 +674,29 @@ export async function seedDemoWorkspace(
     status: l.status,
   }));
 
+  // Calendars first so people FK resolves.
+  const calInsert = await supabase.from("holiday_calendars").insert(calendars);
+  if (calInsert.error) {
+    console.warn(
+      "holiday_calendars insert skipped:",
+      calInsert.error.message,
+      "— apply 008_holiday_calendars.sql",
+    );
+  } else {
+    const daysInsert = await supabase
+      .from("holiday_calendar_days")
+      .insert(calendarDays);
+    if (daysInsert.error) throw daysInsert.error;
+  }
+
   const inserts = [
     supabase.from("clients").insert(clients),
     supabase.from("projects").insert(projects),
-    supabase.from("people").insert(people),
+    supabase.from("people").insert(
+      calInsert.error
+        ? people.map(({ holiday_calendar_id: _h, ...rest }) => rest)
+        : people,
+    ),
   ];
   for (const req of inserts) {
     const { error } = await req;
