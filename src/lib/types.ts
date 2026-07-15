@@ -82,8 +82,10 @@ export interface Assignment {
   allocation_pct: number | null;
   status: AssignmentStatus;
   notes: string;
-  /** Weekly = repeat same weekdays indefinitely (budget counts 52 weeks). */
+  /** Weekly = repeat same weekdays (until recurrence_end_date if set). */
   recurrence: Recurrence;
+  /** Inclusive end of weekly series; null = indefinite (budget uses 52 weeks). */
+  recurrence_end_date: string | null;
 }
 
 export interface LeaveDay {

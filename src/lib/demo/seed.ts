@@ -1,4 +1,4 @@
-﻿import { addDays, format, startOfWeek } from "date-fns";
+import { addDays, format, startOfWeek } from "date-fns";
 import type { DemoState } from "@/lib/types";
 
 function d(offset: number, from = startOfWeek(new Date(), { weekStartsOn: 1 })): string {
@@ -97,7 +97,7 @@ export function createDemoSeed(): DemoState {
         budget_amount: null,
         budget_mode: "none",
         budget_monthly_reset: false,
-        notes: "Internal — no budget",
+        notes: "Internal � no budget",
       },
       {
         id: "proj-4",
@@ -242,6 +242,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 75,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "",
       },
       {
@@ -255,6 +256,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 62,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "",
       },
       {
@@ -268,6 +270,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 50,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "Overbooks Jordan this week",
       },
       {
@@ -281,6 +284,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 94,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "",
       },
       {
@@ -294,6 +298,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 87,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "Pushes Atlas over total budget",
       },
       {
@@ -307,6 +312,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 50,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "",
       },
       {
@@ -320,6 +326,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 37,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "",
       },
       {
@@ -333,6 +340,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 50,
         status: "tentative",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "Does not burn budget",
       },
       {
@@ -346,6 +354,7 @@ export function createDemoSeed(): DemoState {
         allocation_pct: 50,
         status: "confirmed",
         recurrence: "none",
+        recurrence_end_date: null,
         notes: "",
       },
     ],

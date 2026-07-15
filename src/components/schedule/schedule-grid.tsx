@@ -282,6 +282,8 @@ export function ScheduleGrid() {
       (editForm.project_id !== selected.project_id ||
         editForm.status !== selected.status ||
         (editForm.recurrence ?? "none") !== (selected.recurrence ?? "none") ||
+        (editForm.recurrence_end_date ?? null) !==
+          (selected.recurrence_end_date ?? null) ||
         editForm.start_date !== selected.start_date ||
         editForm.end_date !== selected.end_date ||
         editForm.hours_per_day !== selected.hours_per_day ||
@@ -442,6 +444,7 @@ export function ScheduleGrid() {
       status: "confirmed",
       notes: "",
       recurrence: "none",
+      recurrence_end_date: null,
     };
     trackedUpsert(
       row,
@@ -1340,16 +1343,34 @@ export function ScheduleGrid() {
                 onChange={(e) =>
                   patchEditForm({
                     recurrence: e.target.checked ? "weekly" : "none",
+                    recurrence_end_date: e.target.checked
+                      ? editForm.recurrence_end_date
+                      : null,
                   })
                 }
               />
               <span>
                 Recurring weekly
                 <span className="block text-xs text-[var(--text-muted)]">
-                  Same weekdays & hours every week, indefinitely
+                  Same weekdays & hours every week until the end date (or
+                  indefinitely if none)
                 </span>
               </span>
             </label>
+            {(editForm.recurrence ?? "none") === "weekly" && (
+              <Field label="Series end date (optional)">
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={editForm.recurrence_end_date ?? ""}
+                  onChange={(e) =>
+                    patchEditForm({
+                      recurrence_end_date: e.target.value || null,
+                    })
+                  }
+                />
+              </Field>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <Field label="Start">
                 <input
@@ -1648,7 +1669,10 @@ function ReadOnlyAssignmentDetails({
       </div>
       {(assignment.recurrence ?? "none") === "weekly" && (
         <div className="text-xs text-[var(--text-muted)]">
-          Recurring weekly on the same weekdays
+          Recurring weekly
+          {assignment.recurrence_end_date
+            ? ` until ${assignment.recurrence_end_date}`
+            : " (no end date)"}
         </div>
       )}
       <div>

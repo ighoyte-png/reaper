@@ -62,6 +62,7 @@ export function expandAssignmentInRange(
   const rangeEnd = parseISO(rangeEndKey);
   const viewWeekStart = weekStart(rangeStart);
   const viewWeekEnd = weekStart(rangeEnd);
+  const seriesEndKey = assignment.recurrence_end_date ?? null;
 
   const firstOffset = Math.max(
     0,
@@ -78,13 +79,14 @@ export function expandAssignmentInRange(
     const end = addWeeks(templateEnd, offset);
     const startKey = toDateKey(start);
     const endKey = toDateKey(end);
+    if (seriesEndKey && startKey > seriesEndKey) continue;
     if (endKey < rangeStartKey || startKey > rangeEndKey) continue;
     out.push({
       assignmentId: assignment.id,
       person_id: assignment.person_id,
       project_id: assignment.project_id,
       start_date: startKey,
-      end_date: endKey,
+      end_date: seriesEndKey && endKey > seriesEndKey ? seriesEndKey : endKey,
       hours_per_day: assignment.hours_per_day,
       status: assignment.status,
       notes: assignment.notes,
@@ -105,15 +107,24 @@ export function expandAssignmentsInRange(
   );
 }
 
-/** Hours for budget: non-recurring as stored; weekly counted for N weeks ahead. */
+function weeksInSeries(assignment: Assignment): number {
+  const end = assignment.recurrence_end_date;
+  if (!end) return RECURRENCE_BUDGET_WEEKS;
+  const templateWeek = weekStart(parseISO(assignment.start_date));
+  const endWeek = weekStart(parseISO(end));
+  const weeks =
+    differenceInCalendarWeeks(endWeek, templateWeek, { weekStartsOn: 1 }) + 1;
+  return Math.max(1, Math.min(RECURRENCE_BUDGET_WEEKS, weeks));
+}
+
+/** Hours for budget: non-recurring as stored; weekly counted through end or 52 weeks. */
 export function assignmentHoursWithRecurrence(assignment: Assignment): number {
   const recurrence = assignment.recurrence ?? "none";
-  const one = workingDaysBetween(
-    assignment.start_date,
-    assignment.end_date,
-  ).length * assignment.hours_per_day;
+  const one =
+    workingDaysBetween(assignment.start_date, assignment.end_date).length *
+    assignment.hours_per_day;
   if (recurrence !== "weekly") return one;
-  return one * RECURRENCE_BUDGET_WEEKS;
+  return one * weeksInSeries(assignment);
 }
 
 export function occurrenceCoversDay(
