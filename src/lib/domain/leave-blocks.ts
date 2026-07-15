@@ -15,8 +15,14 @@ export interface LeaveBlock {
   dayIds: string[];
 }
 
+function sameDayMeta(a: LeaveDay, b: LeaveDay): boolean {
+  // Hours/notes can drift between days if a prior save was partial — still
+  // treat contiguous same-kind leave as one block so duration edits stick.
+  return a.kind === b.kind && a.status === b.status;
+}
+
 /**
- * Group approved leave into contiguous working-day blocks (same kind + hours + notes).
+ * Group approved leave into contiguous working-day blocks (same kind).
  */
 export function leaveBlocksInRange(
   leaveDays: LeaveDay[],
@@ -43,6 +49,9 @@ export function leaveBlocksInRange(
     if (current.length === 0) return;
     const first = current[0];
     const last = current[current.length - 1];
+    // Prefer first non-empty notes / defined hours across the block.
+    const withHours = current.find((d) => d.hours_per_day != null);
+    const withNotes = current.find((d) => (d.notes ?? "").trim().length > 0);
     blocks.push({
       id: first.id,
       person_id: first.person_id,
@@ -50,8 +59,8 @@ export function leaveBlocksInRange(
       end_date: last.date,
       kind: first.kind,
       status: first.status,
-      hours_per_day: first.hours_per_day ?? null,
-      notes: first.notes ?? "",
+      hours_per_day: withHours?.hours_per_day ?? first.hours_per_day ?? null,
+      notes: withNotes?.notes ?? first.notes ?? "",
       dayIds: current.map((d) => d.id),
     });
     current = [];
@@ -61,11 +70,7 @@ export function leaveBlocksInRange(
     const prev = current[current.length - 1];
     const next = days[i];
     const between = workingDaysBetween(prev.date, next.date);
-    const contiguous =
-      between.length === 2 &&
-      next.kind === prev.kind &&
-      (next.hours_per_day ?? null) === (prev.hours_per_day ?? null) &&
-      (next.notes ?? "") === (prev.notes ?? "");
+    const contiguous = between.length === 2 && sameDayMeta(prev, next);
     if (contiguous) {
       current.push(next);
     } else {

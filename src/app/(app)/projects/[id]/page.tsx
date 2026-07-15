@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Topbar } from "@/components/nav/topbar";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-chart";
 import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { ProjectForm } from "@/components/projects/project-form";
 import { useToast } from "@/components/toast/toast-provider";
@@ -12,6 +13,7 @@ import { useData } from "@/lib/data/store";
 import {
   assignmentHours,
   budgetBurn,
+  calendarYearHourBars,
   formatHours,
   formatMoney,
 } from "@/lib/domain/budget";
@@ -66,6 +68,10 @@ export default function ProjectDetailPage() {
   const forecast = projectForecast(project, state.assignments, state.people);
   const client = state.clients.find((c) => c.id === project.client_id);
   const milestones = state.milestones.filter((m) => m.project_id === project.id);
+  const yearBars =
+    project.budget_mode === "hours" && project.budget_monthly_reset
+      ? calendarYearHourBars(project, state.assignments)
+      : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -126,6 +132,13 @@ export default function ProjectDetailPage() {
             </span>
           </div>
           <BurnBar burn={burn} />
+          {yearBars ? (
+            <MonthlyRetainerChart
+              className="mt-4"
+              bars={yearBars}
+              budgetHours={project.budget_hours ?? 0}
+            />
+          ) : null}
           {project.notes && (
             <p className="mt-3 text-sm text-[var(--text-muted)]">{project.notes}</p>
           )}

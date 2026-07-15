@@ -255,3 +255,34 @@ export function monthlyHourBars(
   }
   return out;
 }
+
+/** Jan–Dec of the given calendar year (defaults to current year). */
+export function calendarYearHourBars(
+  project: Project,
+  assignments: Assignment[],
+  asOf: Date = new Date(),
+): MonthBurnBar[] {
+  const year = asOf.getFullYear();
+  const budgetHours = project.budget_hours ?? 0;
+  const out: MonthBurnBar[] = [];
+  for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+    const d = new Date(year, monthIndex, 1);
+    const plannedHours = projectPlannedHours(project.id, assignments, false, {
+      year,
+      monthIndex,
+    });
+    out.push({
+      key: format(d, "yyyy-MM"),
+      label: format(d, "MMM yyyy"),
+      year,
+      monthIndex,
+      plannedHours,
+      budgetHours,
+      pct:
+        budgetHours <= 0
+          ? 0
+          : Math.min(999, (plannedHours / budgetHours) * 100),
+    });
+  }
+  return out;
+}

@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { Topbar } from "@/components/nav/topbar";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-chart";
 import { useData } from "@/lib/data/store";
 import {
   budgetBurn,
   budgetHealth,
+  calendarYearHourBars,
   formatHours,
   formatMoney,
-  monthlyHourBars,
 } from "@/lib/domain/budget";
 import { sortProjectsByClientThenName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
@@ -34,9 +35,9 @@ export default function BudgetsReportPage() {
         </p>
         {rows.map(({ project, burn }) => {
           const health = budgetHealth(burn);
-          const monthBars =
+          const yearBars =
             project.budget_mode === "hours" && project.budget_monthly_reset
-              ? monthlyHourBars(project, state.assignments, 6)
+              ? calendarYearHourBars(project, state.assignments)
               : null;
           return (
             <Link
@@ -80,53 +81,17 @@ export default function BudgetsReportPage() {
                 </span>
               </div>
               <BurnBar burn={burn} />
-              {monthBars && (
+              {yearBars ? (
                 <div
                   className="mt-4"
                   onClick={(e) => e.preventDefault()}
                 >
-                  <p className="mb-2 text-xs font-medium text-[var(--text-muted)]">
-                    Monthly usage (hours used vs retainer)
-                  </p>
-                  <div className="flex h-28 items-end gap-2">
-                    {monthBars.map((bar) => {
-                      const height = Math.min(
-                        100,
-                        Math.max(4, bar.pct || (bar.plannedHours > 0 ? 4 : 0)),
-                      );
-                      const over = bar.plannedHours > bar.budgetHours;
-                      return (
-                        <div
-                          key={bar.key}
-                          className="flex min-w-0 flex-1 flex-col items-center gap-1"
-                          title={`${bar.label}: ${formatHours(bar.plannedHours)} / ${formatHours(bar.budgetHours)}`}
-                        >
-                          <span className="text-[10px] text-[var(--text-muted)]">
-                            {formatHours(bar.plannedHours)}
-                          </span>
-                          <div className="flex h-20 w-full items-end justify-center">
-                            <div
-                              className={cn(
-                                "w-full max-w-[28px] rounded-t",
-                                over
-                                  ? "bg-[var(--status-over)]"
-                                  : "bg-[var(--accent)]",
-                              )}
-                              style={{ height: `${height}%` }}
-                            />
-                          </div>
-                          <span className="truncate text-[10px] text-[var(--text-muted)]">
-                            {bar.label.split(" ")[0]}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-1 text-[10px] text-[var(--text-muted)]">
-                    Cap {formatHours(project.budget_hours ?? 0)} / month
-                  </p>
+                  <MonthlyRetainerChart
+                    bars={yearBars}
+                    budgetHours={project.budget_hours ?? 0}
+                  />
                 </div>
-              )}
+              ) : null}
             </Link>
           );
         })}

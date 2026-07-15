@@ -5,10 +5,15 @@ import { useState } from "react";
 import { Topbar } from "@/components/nav/topbar";
 import { ProjectForm, COLORS } from "@/components/projects/project-form";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-chart";
 import { EmptyState, Modal } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
-import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import {
+  budgetBurn,
+  budgetHealth,
+  calendarYearHourBars,
+} from "@/lib/domain/budget";
 import { sortProjectsByClientThenName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Project } from "@/lib/types";
@@ -66,6 +71,10 @@ export default function ProjectsPage() {
               const burn = budgetBurn(project, state.assignments, state.people);
               const client = state.clients.find((c) => c.id === project.client_id);
               const health = budgetHealth(burn);
+              const yearBars =
+                project.budget_mode === "hours" && project.budget_monthly_reset
+                  ? calendarYearHourBars(project, state.assignments)
+                  : null;
               return (
                 <Link
                   key={project.id}
@@ -84,6 +93,11 @@ export default function ProjectsPage() {
                     <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
                       {project.status.replace("_", " ")}
                     </span>
+                    {project.budget_monthly_reset ? (
+                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+                        Monthly
+                      </span>
+                    ) : null}
                     <span
                       className={cn(
                         "ml-auto text-xs",
@@ -96,6 +110,17 @@ export default function ProjectsPage() {
                     </span>
                   </div>
                   <BurnBar burn={burn} />
+                  {yearBars ? (
+                    <div
+                      className="mt-4"
+                      onClick={(e) => e.preventDefault()}
+                    >
+                      <MonthlyRetainerChart
+                        bars={yearBars}
+                        budgetHours={project.budget_hours ?? 0}
+                      />
+                    </div>
+                  ) : null}
                 </Link>
               );
             })}

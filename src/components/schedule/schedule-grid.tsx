@@ -83,8 +83,8 @@ export function ScheduleGrid() {
     state,
     upsertAssignment,
     deleteAssignment,
-    upsertLeave,
     deleteLeave,
+    setLeaveBlock,
     newId,
     canManage,
     myPerson,
@@ -136,6 +136,19 @@ export function ScheduleGrid() {
     id: string;
     mode: "move" | "resize-end" | "resize-start";
     before: Assignment;
+    dirty: boolean;
+  } | null>(null);
+  const leaveDragSnapshot = useRef<{
+    mode: "resize-end" | "resize-start";
+    personId: string;
+    kind: LeaveKind;
+    hours_per_day: number;
+    notes: string;
+    previousDayIds: string[];
+    originStart: string;
+    originEnd: string;
+    currentStart: string;
+    currentEnd: string;
     dirty: boolean;
   } | null>(null);
   const [sliceMode, setSliceMode] = useState(false);
@@ -554,59 +567,39 @@ export function ScheduleGrid() {
     if (!canManage) return;
     const startDate = start <= end ? start : end;
     const endDate = start <= end ? end : start;
-    const days = workingDaysBetween(startDate, endDate);
     const person = state.people.find((p) => p.id === personId);
     const defaultHours = Math.max(
       0.01,
       roundAssignmentHours((person?.capacity_hours_week ?? 40) / 5),
     );
-    let firstId: string | null = null;
-    for (const date of days) {
-      const existing = state.leave_days.find(
-        (l) => l.person_id === personId && l.date === date,
-      );
-      const id = existing?.id ?? newId("leave");
-      if (!firstId) firstId = id;
-      upsertLeave({
-        id,
-        person_id: personId,
-        date,
-        kind,
-        status: "approved",
-        hours_per_day: existing?.hours_per_day ?? defaultHours,
-        notes: existing?.notes ?? "",
-      });
-    }
-    if (days.length > 0) {
-      push(
-        days.length === 1
-          ? `${leaveKindLabel(kind)} day added`
-          : `${days.length} ${leaveKindLabel(kind)} days added`,
-      );
-      // Select the new block after state settles — recompute from leave days
-      // on next tick via leaveBlocks (handled by selecting first leave day).
-      if (firstId) {
-        setSelectedId(null);
-        setEditForm(null);
-        setSelectedLeaveBlockId(firstId);
-        setLeaveEditForm({
-          blockId: firstId,
-          person_id: personId,
-          start_date: startDate,
-          end_date: endDate,
-          kind,
-          hours_per_day: defaultHours,
-          notes: "",
-          dayIds: days.map((date) => {
-            const existing = state.leave_days.find(
-              (l) => l.person_id === personId && l.date === date,
-            );
-            return existing?.id ?? firstId!;
-          }),
-        });
-        if (isNarrow) setMobilePanelOpen(true);
-      }
-    }
+    const rows = setLeaveBlock({
+      personId,
+      startDate,
+      endDate,
+      kind,
+      hours_per_day: defaultHours,
+      notes: "",
+    });
+    if (rows.length === 0) return;
+    push(
+      rows.length === 1
+        ? `${leaveKindLabel(kind)} day added`
+        : `${rows.length} ${leaveKindLabel(kind)} days added`,
+    );
+    setSelectedId(null);
+    setEditForm(null);
+    setSelectedLeaveBlockId(rows[0].id);
+    setLeaveEditForm({
+      blockId: rows[0].id,
+      person_id: personId,
+      start_date: startDate,
+      end_date: endDate,
+      kind,
+      hours_per_day: defaultHours,
+      notes: "",
+      dayIds: rows.map((r) => r.id),
+    });
+    if (isNarrow) setMobilePanelOpen(true);
   }
 
   function saveLeaveEditForm() {
@@ -615,46 +608,60 @@ export function ScheduleGrid() {
       0.01,
       roundAssignmentHours(leaveEditForm.hours_per_day),
     );
-    const dates = workingDaysBetween(
-      leaveEditForm.start_date,
-      leaveEditForm.end_date,
-    );
-    // Rebuild block: update/create days in range; delete removed days.
-    const keepDates = new Set(dates);
-    for (const id of leaveEditForm.dayIds) {
-      const row = state.leave_days.find((l) => l.id === id);
-      if (row && !keepDates.has(row.date)) {
-        deleteLeave(id);
-      }
-    }
-    const dayIds: string[] = [];
-    for (const date of dates) {
-      const existing = state.leave_days.find(
-        (l) =>
-          l.person_id === leaveEditForm.person_id &&
-          l.date === date &&
-          keepDates.has(l.date),
-      );
-      const id = existing?.id ?? newId("leave");
-      dayIds.push(id);
-      upsertLeave({
-        id,
-        person_id: leaveEditForm.person_id,
-        date,
-        kind: leaveEditForm.kind,
-        status: "approved",
-        hours_per_day: hours,
-        notes: leaveEditForm.notes,
-      });
+    const startDate =
+      leaveEditForm.start_date <= leaveEditForm.end_date
+        ? leaveEditForm.start_date
+        : leaveEditForm.end_date;
+    const endDate =
+      leaveEditForm.start_date <= leaveEditForm.end_date
+        ? leaveEditForm.end_date
+        : leaveEditForm.start_date;
+    const rows = setLeaveBlock({
+      personId: leaveEditForm.person_id,
+      startDate,
+      endDate,
+      kind: leaveEditForm.kind,
+      hours_per_day: hours,
+      notes: leaveEditForm.notes,
+      previousDayIds: leaveEditForm.dayIds,
+    });
+    if (rows.length === 0) {
+      push("No working days in that range");
+      return;
     }
     setLeaveEditForm({
       ...leaveEditForm,
+      start_date: startDate,
+      end_date: endDate,
       hours_per_day: hours,
-      dayIds,
-      blockId: dayIds[0] ?? leaveEditForm.blockId,
+      dayIds: rows.map((r) => r.id),
+      blockId: rows[0].id,
     });
-    setSelectedLeaveBlockId(dayIds[0] ?? leaveEditForm.blockId);
+    setSelectedLeaveBlockId(rows[0].id);
     push("Time off saved");
+  }
+
+  function applyLeaveResizeToColumn(colStart: string, colEnd: string) {
+    const snap = leaveDragSnapshot.current;
+    if (!snap) return;
+    let start = snap.originStart;
+    let end = snap.originEnd;
+    if (snap.mode === "resize-end") {
+      end = colEnd >= snap.originStart ? colEnd : snap.originStart;
+    } else {
+      start = colStart <= snap.originEnd ? colStart : snap.originEnd;
+    }
+    if (start === snap.currentStart && end === snap.currentEnd) {
+      return;
+    }
+    snap.dirty = true;
+    snap.currentStart = start;
+    snap.currentEnd = end;
+    setLeaveEditForm((prev) =>
+      prev && prev.person_id === snap.personId
+        ? { ...prev, start_date: start, end_date: end }
+        : prev,
+    );
   }
 
   function finishPointer() {
@@ -676,6 +683,39 @@ export function ScheduleGrid() {
       );
       setDraft(null);
       setHoverColId(null);
+    }
+    if (leaveDragSnapshot.current) {
+      const snap = leaveDragSnapshot.current;
+      leaveDragSnapshot.current = null;
+      if (snap.dirty) {
+        const rows = setLeaveBlock({
+          personId: snap.personId,
+          startDate: snap.currentStart,
+          endDate: snap.currentEnd,
+          kind: snap.kind,
+          hours_per_day: snap.hours_per_day,
+          notes: snap.notes,
+          previousDayIds: snap.previousDayIds,
+        });
+        if (rows.length > 0) {
+          setSelectedLeaveBlockId(rows[0].id);
+          setLeaveEditForm({
+            blockId: rows[0].id,
+            person_id: snap.personId,
+            start_date: snap.currentStart <= snap.currentEnd
+              ? snap.currentStart
+              : snap.currentEnd,
+            end_date: snap.currentStart <= snap.currentEnd
+              ? snap.currentEnd
+              : snap.currentStart,
+            kind: snap.kind,
+            hours_per_day: snap.hours_per_day,
+            notes: snap.notes,
+            dayIds: rows.map((r) => r.id),
+          });
+          push("Time off saved");
+        }
+      }
     }
     if (dragSnapshot.current) {
       const snap = dragSnapshot.current;
@@ -1204,6 +1244,17 @@ export function ScheduleGrid() {
                               onPointerEnter={() => {
                                 setHoverColId(col.id);
                                 if (
+                                  leaveDragSnapshot.current &&
+                                  leaveDragSnapshot.current.personId ===
+                                    person.id
+                                ) {
+                                  applyLeaveResizeToColumn(
+                                    col.startKey,
+                                    col.endKey,
+                                  );
+                                  return;
+                                }
+                                if (
                                   leaveDraft &&
                                   leaveDraft.personId === person.id
                                 ) {
@@ -1382,6 +1433,17 @@ export function ScheduleGrid() {
                                   onPointerEnter={() => {
                                     setHoverColId(col.id);
                                     if (
+                                      leaveDragSnapshot.current &&
+                                      leaveDragSnapshot.current.personId ===
+                                        person.id
+                                    ) {
+                                      applyLeaveResizeToColumn(
+                                        col.startKey,
+                                        col.endKey,
+                                      );
+                                      return;
+                                    }
+                                    if (
                                       draft &&
                                       draft.personId === person.id &&
                                       draft.projectId === project.id
@@ -1526,8 +1588,10 @@ export function ScheduleGrid() {
                                       key={`${occ.assignmentId}-${occ.weekOffset}`}
                                       className={cn(
                                         "absolute z-10 flex items-center rounded px-1 text-[10px] font-medium leading-none text-white",
-                                        canManage && "cursor-grab",
-                                        sliceMode && "cursor-col-resize",
+                                        canManage &&
+                                          (sliceMode
+                                            ? "cursor-crosshair"
+                                            : "cursor-grab"),
                                         gridDragging && "pointer-events-none",
                                         occ.status === "tentative" &&
                                           "border border-dashed border-white/60 opacity-80",
@@ -1746,7 +1810,10 @@ export function ScheduleGrid() {
                                       key={`${project.id}-${col.id}-agg`}
                                       className={cn(
                                         "absolute z-10 flex items-center rounded px-1 text-[10px] font-medium leading-none text-white",
-                                        canManage && "cursor-pointer",
+                                        canManage &&
+                                          (sliceMode
+                                            ? "cursor-crosshair"
+                                            : "cursor-pointer"),
                                         gridDragging && "pointer-events-none",
                                         tentative &&
                                           "border border-dashed border-white/60 opacity-80",
@@ -1855,17 +1922,25 @@ export function ScheduleGrid() {
                       />
                     ) : null}
                     {leaveBlocks.map((block) => {
+                      const isSelected = selectedLeaveBlockId === block.id;
+                      const preview =
+                        isSelected && leaveEditForm
+                          ? leaveEditForm
+                          : null;
+                      const blockStart =
+                        preview?.start_date ?? block.start_date;
+                      const blockEnd = preview?.end_date ?? block.end_date;
                       const geo = spanColumnsPx(
                         columns,
-                        block.start_date,
-                        block.end_date,
+                        blockStart,
+                        blockEnd,
                       );
                       if (!geo) return null;
-                      const isSelected = selectedLeaveBlockId === block.id;
-                      const hours = block.hours_per_day ?? 8;
+                      const hours =
+                        preview?.hours_per_day ?? block.hours_per_day ?? 8;
                       const spanDays = workingDaysBetween(
-                        block.start_date,
-                        block.end_date,
+                        blockStart,
+                        blockEnd,
                       );
                       const label =
                         spanDays.length > 1
@@ -1895,7 +1970,7 @@ export function ScheduleGrid() {
                           }}
                         >
                           <div
-                            className="flex items-center gap-0.5 px-1 text-[10px] font-medium leading-none"
+                            className="relative flex items-center gap-0.5 px-1 text-[10px] font-medium leading-none"
                             style={{
                               height: DAY_H,
                               marginTop: DAY_PAD_Y,
@@ -1904,10 +1979,14 @@ export function ScheduleGrid() {
                             <span className="truncate">
                               {leaveKindLabel(block.kind)} · {label}
                             </span>
-                            {notesHasContent(block.notes) ? (
+                            {notesHasContent(
+                              preview?.notes ?? block.notes,
+                            ) ? (
                               <Tooltip
                                 content={
-                                  <RichNotesHtml html={block.notes} />
+                                  <RichNotesHtml
+                                    html={preview?.notes ?? block.notes}
+                                  />
                                 }
                                 className="ml-0.5 shrink-0"
                               >
@@ -1921,6 +2000,76 @@ export function ScheduleGrid() {
                               </Tooltip>
                             ) : null}
                           </div>
+                          {canManage ? (
+                            <>
+                              <span
+                                className="absolute left-0 top-0 z-20 h-full w-2 cursor-ew-resize"
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (
+                                    isCoarse ||
+                                    e.pointerType === "touch"
+                                  ) {
+                                    selectLeaveBlock(block);
+                                    return;
+                                  }
+                                  selectLeaveBlock(block);
+                                  leaveDragSnapshot.current = {
+                                    mode: "resize-start",
+                                    personId: block.person_id,
+                                    kind: preview?.kind ?? block.kind,
+                                    hours_per_day:
+                                      preview?.hours_per_day ??
+                                      block.hours_per_day ??
+                                      8,
+                                    notes: preview?.notes ?? block.notes,
+                                    previousDayIds:
+                                      preview?.dayIds ?? block.dayIds,
+                                    originStart: blockStart,
+                                    originEnd: blockEnd,
+                                    currentStart: blockStart,
+                                    currentEnd: blockEnd,
+                                    dirty: false,
+                                  };
+                                  setGridDragging(true);
+                                }}
+                              />
+                              <span
+                                className="absolute right-0 top-0 z-20 h-full w-2 cursor-ew-resize"
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (
+                                    isCoarse ||
+                                    e.pointerType === "touch"
+                                  ) {
+                                    selectLeaveBlock(block);
+                                    return;
+                                  }
+                                  selectLeaveBlock(block);
+                                  leaveDragSnapshot.current = {
+                                    mode: "resize-end",
+                                    personId: block.person_id,
+                                    kind: preview?.kind ?? block.kind,
+                                    hours_per_day:
+                                      preview?.hours_per_day ??
+                                      block.hours_per_day ??
+                                      8,
+                                    notes: preview?.notes ?? block.notes,
+                                    previousDayIds:
+                                      preview?.dayIds ?? block.dayIds,
+                                    originStart: blockStart,
+                                    originEnd: blockEnd,
+                                    currentStart: blockStart,
+                                    currentEnd: blockEnd,
+                                    dirty: false,
+                                  };
+                                  setGridDragging(true);
+                                }}
+                              />
+                            </>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -1970,7 +2119,7 @@ export function ScheduleGrid() {
               </h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
                 {leaveEditForm
-                  ? "Hours and notes for this time-off block. Saves trim overlapping assignments."
+                  ? "Drag the block edges or edit start/end dates, then Save. Overlapping assignments are trimmed."
                   : canManage
                     ? isCoarse
                       ? "Tap an empty day to create. Tap a block to edit, then Save."
@@ -2333,29 +2482,40 @@ export function ScheduleGrid() {
             {canManage &&
               sortedProjects
                 .filter((p) => p.status === "active")
-                .map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    onClick={() => setProjectFilter(project.id)}
-                    className="w-full rounded-md border border-[var(--border)] p-3 text-left hover:bg-[var(--row-hover)]"
-                  >
-                    <div className="mb-2 flex items-center gap-2 text-[var(--text)]">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ background: project.color }}
-                      />
-                      <span className="text-sm font-medium">{project.name}</span>
-                    </div>
-                    <BurnBar
-                      burn={budgetBurn(
-                        project,
-                        state.assignments,
-                        state.people,
-                      )}
-                    />
-                  </button>
-                ))}
+                .map((project) => {
+                  const client = project.client_id
+                    ? clientsById.get(project.client_id)
+                    : undefined;
+                  const burn = budgetBurn(
+                    project,
+                    state.assignments,
+                    state.people,
+                  );
+                  return (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() => setProjectFilter(project.id)}
+                      className="w-full rounded-md border border-[var(--border)] p-3 text-left hover:bg-[var(--row-hover)]"
+                    >
+                      <div className="mb-2 flex items-start gap-2 text-[var(--text)]">
+                        <span
+                          className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ background: project.color }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold leading-tight">
+                            {client?.name ?? "No client"}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-[var(--text-muted)]">
+                            {project.name}
+                          </div>
+                        </div>
+                      </div>
+                      <BurnBar burn={burn} />
+                    </button>
+                  );
+                })}
           </div>
         )}
       </aside>

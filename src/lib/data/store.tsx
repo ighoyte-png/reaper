@@ -42,8 +42,9 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { canManage, personForProfile } from "@/lib/auth/roles";
-import { applyFullDayLeaveOverride } from "@/lib/domain/leave-override";
+import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { normalizeLeaveKind } from "@/lib/domain/leave";
+import { workingDaysBetween } from "@/lib/domain/dates";
 import type {
   Assignment,
   Client,
@@ -51,6 +52,7 @@ import type {
   HolidayCalendar,
   HolidayCalendarDay,
   LeaveDay,
+  LeaveKind,
   Milestone,
   Person,
   Profile,
@@ -193,6 +195,20 @@ interface DataContextValue {
   upsertLeave: (
     leave: Omit<LeaveDay, "organization_id"> & { organization_id?: string },
   ) => void;
+  /**
+   * Atomically set a multi-day leave block (create/update days in range,
+   * remove prior block days outside the range, punch assignments once).
+   */
+  setLeaveBlock: (args: {
+    personId: string;
+    startDate: string;
+    endDate: string;
+    kind: LeaveKind;
+    hours_per_day: number | null;
+    notes: string;
+    /** Days that belonged to the block before this edit (may be shrunk). */
+    previousDayIds?: string[];
+  }) => LeaveDay[];
   deleteLeave: (id: string) => void;
   upsertHolidayCalendar: (
     calendar: Omit<HolidayCalendar, "organization_id"> & {
@@ -806,20 +822,138 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         if (mode === "supabase" && supabaseRef.current) {
           const client = supabaseRef.current;
+          // Capture payloads now — do not close over vars mutated by later patches.
+          const leavesToWrite = [...remoteLeaves];
+          const asgDeletes = [...remoteDeletes];
+          const asgUpserts = [...remoteUpserts];
           runRemoteSoft(async () => {
-            for (const l of remoteLeaves) {
+            for (const l of leavesToWrite) {
               await upsertLeaveRow(client, l);
             }
-            for (const id of remoteDeletes) {
+            for (const id of asgDeletes) {
               await deleteAssignmentRow(client, id);
             }
-            for (const a of remoteUpserts) {
-              if (!remoteDeletes.includes(a.id)) {
+            for (const a of asgUpserts) {
+              if (!asgDeletes.includes(a.id)) {
                 await upsertAssignmentRow(client, withOrg(a) as Assignment);
               }
             }
           });
         }
+      },
+      setLeaveBlock: ({
+        personId,
+        startDate,
+        endDate,
+        kind,
+        hours_per_day,
+        notes,
+        previousDayIds = [],
+      }) => {
+        const rangeStart = startDate <= endDate ? startDate : endDate;
+        const rangeEnd = startDate <= endDate ? endDate : startDate;
+        const dates = workingDaysBetween(rangeStart, rangeEnd);
+        const kindNorm = normalizeLeaveKind(kind);
+        const notesNorm = notes ?? "";
+
+        const payload: {
+          rows: LeaveDay[];
+          leaveDeleteIds: string[];
+          asgUpserts: Assignment[];
+          asgDeletes: string[];
+        } = {
+          rows: [],
+          leaveDeleteIds: [],
+          asgUpserts: [],
+          asgDeletes: [],
+        };
+
+        patch((prev) => {
+          const prevIdSet = new Set(previousDayIds);
+          const dateSet = new Set(dates);
+          const reuseIdByDate = new Map<string, string>();
+          for (const l of prev.leave_days) {
+            if (l.person_id !== personId) continue;
+            if (prevIdSet.has(l.id) || dateSet.has(l.date)) {
+              if (!reuseIdByDate.has(l.date)) {
+                reuseIdByDate.set(l.date, l.id);
+              }
+            }
+          }
+
+          const removeIds = new Set<string>();
+          for (const l of prev.leave_days) {
+            if (l.person_id !== personId) continue;
+            if (prevIdSet.has(l.id) || dateSet.has(l.date)) {
+              removeIds.add(l.id);
+            }
+          }
+
+          const newRows: LeaveDay[] = dates.map((date) => ({
+            id: reuseIdByDate.get(date) ?? uid("leave"),
+            organization_id: prev.organization.id || orgId,
+            person_id: personId,
+            date,
+            kind: kindNorm,
+            status: "approved" as const,
+            hours_per_day,
+            notes: notesNorm,
+          }));
+          const leaveDeleteIds = [...removeIds].filter(
+            (id) => !newRows.some((r) => r.id === id),
+          );
+
+          let leave_days = prev.leave_days.filter((l) => !removeIds.has(l.id));
+          leave_days = [...leave_days, ...newRows];
+
+          const ov = applyFullDayLeaveOverrideForDates(
+            prev.assignments,
+            personId,
+            dates,
+            uid,
+          );
+          let assignments = prev.assignments.filter(
+            (a) => !ov.deletes.includes(a.id),
+          );
+          for (const a of ov.upserts) {
+            const idx = assignments.findIndex((x) => x.id === a.id);
+            if (idx >= 0) assignments[idx] = a;
+            else assignments.push(a);
+          }
+
+          payload.rows = newRows;
+          payload.leaveDeleteIds = leaveDeleteIds;
+          payload.asgUpserts = ov.upserts;
+          payload.asgDeletes = ov.deletes;
+
+          return { ...prev, leave_days, assignments };
+        });
+
+        if (mode === "supabase" && supabaseRef.current) {
+          const client = supabaseRef.current;
+          const leavesToWrite = [...payload.rows];
+          const leaveDeleteIds = [...payload.leaveDeleteIds];
+          const asgDeletes = [...payload.asgDeletes];
+          const asgUpserts = [...payload.asgUpserts];
+          runRemoteSoft(async () => {
+            for (const id of leaveDeleteIds) {
+              await deleteLeaveRow(client, id);
+            }
+            for (const l of leavesToWrite) {
+              await upsertLeaveRow(client, l);
+            }
+            for (const id of asgDeletes) {
+              await deleteAssignmentRow(client, id);
+            }
+            for (const a of asgUpserts) {
+              if (!asgDeletes.includes(a.id)) {
+                await upsertAssignmentRow(client, withOrg(a) as Assignment);
+              }
+            }
+          });
+        }
+
+        return payload.rows;
       },
       deleteLeave: (id) => {
         patch((prev) => ({
