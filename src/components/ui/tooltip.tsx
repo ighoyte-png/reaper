@@ -30,7 +30,7 @@ export function Tooltip({
         <span
           id={id}
           role="tooltip"
-          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-max max-w-[220px] -translate-x-1/2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg"
+          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 w-max max-w-[220px] -translate-x-1/2 whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg"
         >
           {content}
         </span>
