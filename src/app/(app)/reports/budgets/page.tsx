@@ -5,16 +5,16 @@ import { Topbar } from "@/components/nav/topbar";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { useData } from "@/lib/data/store";
 import { budgetBurn, budgetHealth, formatHours } from "@/lib/domain/budget";
+import { sortProjectsByClientThenName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 
 export default function BudgetsReportPage() {
   const { state } = useData();
-  const rows = state.projects
+  const rows = sortProjectsByClientThenName(state.projects, state.clients)
     .map((project) => ({
       project,
       burn: budgetBurn(project, state.assignments, state.people),
-    }))
-    .sort((a, b) => b.burn.pct - a.burn.pct);
+    }));
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">

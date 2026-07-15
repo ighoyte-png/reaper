@@ -34,6 +34,9 @@ export function ProjectForm({
   onCancel: () => void;
   onDelete?: () => void;
 }) {
+  const clientsSorted = [...clients].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
   return (
     <div className="grid gap-3">
       <Field label="Name">
@@ -55,7 +58,7 @@ export function ProjectForm({
           }
         >
           <option value="">No client</option>
-          {clients.map((c) => (
+          {clientsSorted.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
             </option>

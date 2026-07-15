@@ -9,6 +9,7 @@ import { EmptyState, Modal } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { sortProjectsByClientThenName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { BudgetMode, Project } from "@/lib/types";
 
@@ -35,6 +36,7 @@ export default function ProjectsPage() {
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
     null,
   );
+  const projects = sortProjectsByClientThenName(state.projects, state.clients);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -59,7 +61,7 @@ export default function ProjectsPage() {
           />
         ) : (
           <div className="grid gap-3">
-            {state.projects.map((project) => {
+            {projects.map((project) => {
               const burn = budgetBurn(project, state.assignments, state.people);
               const client = state.clients.find((c) => c.id === project.client_id);
               const health = budgetHealth(burn);

@@ -44,6 +44,9 @@ import {
 } from "@/lib/domain/schedule-zoom";
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import {
+  sortProjectsByClientThenName,
+} from "@/lib/domain/sorting";
 import type {
   Assignment,
   AssignmentStatus,
@@ -491,7 +494,10 @@ export function ScheduleGrid() {
         .filter((o) => o.person_id === personId)
         .map((o) => o.project_id),
     );
-    const active = state.projects.filter((p) => p.status === "active");
+    const active = sortProjectsByClientThenName(
+      state.projects.filter((p) => p.status === "active"),
+      state.clients,
+    );
 
     if (projectFilter !== "all") {
       const filtered = projectsById.get(projectFilter);
@@ -506,6 +512,11 @@ export function ScheduleGrid() {
     // Members: only projects they appear on in the visible range
     return active.filter((p) => fromOcc.has(p.id));
   }
+
+  const sortedProjects = useMemo(
+    () => sortProjectsByClientThenName(state.projects, state.clients),
+    [state.projects, state.clients],
+  );
 
   return (
     <div
@@ -562,7 +573,7 @@ export function ScheduleGrid() {
                   className="h-8 max-w-[220px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
                 >
                   <option value="all">All projects</option>
-                  {state.projects.map((p) => (
+                  {sortedProjects.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
@@ -1312,7 +1323,7 @@ export function ScheduleGrid() {
                   patchEditForm({ project_id: e.target.value })
                 }
               >
-                {state.projects.map((p) => (
+                {sortedProjects.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
@@ -1489,7 +1500,7 @@ export function ScheduleGrid() {
                 : "Tap a block to see details and notes."}
             </p>
             {canManage &&
-              state.projects
+              sortedProjects
                 .filter((p) => p.status === "active")
                 .map((project) => (
                   <button

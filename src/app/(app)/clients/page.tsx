@@ -5,6 +5,7 @@ import { Topbar } from "@/components/nav/topbar";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { sortClientsByName } from "@/lib/domain/sorting";
 import type { Client } from "@/lib/types";
 
 export default function ClientsPage() {
@@ -14,6 +15,7 @@ export default function ClientsPage() {
     null,
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const clients = sortClientsByName(state.clients);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -52,7 +54,7 @@ export default function ClientsPage() {
                 </tr>
               </thead>
               <tbody>
-                {state.clients.map((client) => {
+                {clients.map((client) => {
                   const count = state.projects.filter(
                     (p) => p.client_id === client.id,
                   ).length;
