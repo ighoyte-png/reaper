@@ -1,10 +1,9 @@
 "use client";
 
 import { Field, inputClass } from "@/components/ui/form";
-import { PRESET_COLORS } from "@/components/ui/color-picker";
 import type { BudgetMode, Project, ProjectStatus } from "@/lib/types";
 
-const DEFAULT_PROJECT_COLOR = PRESET_COLORS[0];
+const DEFAULT_PROJECT_COLOR = "#3498DB";
 
 export function ProjectForm({
   project,
@@ -196,5 +195,3 @@ export function ProjectForm({
     </div>
   );
 }
-
-export { PRESET_COLORS as COLORS };

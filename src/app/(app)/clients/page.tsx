@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Topbar } from "@/components/nav/topbar";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
-import { ColorPicker, PRESET_COLORS } from "@/components/ui/color-picker";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { sortClientsByName } from "@/lib/domain/sorting";
@@ -23,7 +23,7 @@ export default function ClientsPage() {
       id: newId("client"),
       name: "",
       notes: "",
-      color: PRESET_COLORS[0],
+      color: "#3498DB",
     };
   }
 
@@ -113,7 +113,7 @@ export default function ClientsPage() {
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               />
             </Field>
-            <Field label="Color">
+            <Field label="Color" className="w-full">
               <ColorPicker
                 value={editing.color}
                 onChange={(color) => setEditing({ ...editing, color })}
