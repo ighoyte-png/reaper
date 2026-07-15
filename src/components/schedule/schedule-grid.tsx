@@ -137,6 +137,8 @@ export function ScheduleGrid() {
     mode: "move" | "resize-end" | "resize-start";
     before: Assignment;
     dirty: boolean;
+    /** Working days from assignment start → day under pointer when grab began. */
+    grabOffsetDays: number;
   } | null>(null);
   const leaveDragSnapshot = useRef<{
     mode: "resize-end" | "resize-start";
@@ -1498,12 +1500,17 @@ export function ScheduleGrid() {
                                         });
                                       }
                                     } else {
+                                      // Keep grab point under the pointer — don't snap
+                                      // so the hovered column becomes the new start.
                                       const length =
                                         workingDaysBetween(
                                           snap.before.start_date,
                                           snap.before.end_date,
                                         ).length || 1;
-                                      const start = col.startKey;
+                                      const start = subtractWorkingDays(
+                                        col.startKey,
+                                        snap.grabOffsetDays ?? 0,
+                                      );
                                       const end = addWorkingDays(
                                         start,
                                         Math.max(0, length - 1),
@@ -1637,19 +1644,20 @@ export function ScheduleGrid() {
                                           sliceAssignmentAt(base.id, dayKey);
                                           return;
                                         }
-                                        // Move only when dragging from the starting day;
-                                        // clicks elsewhere just open the edit panel.
-                                        if (
-                                          dayKey &&
-                                          dayKey !== occ.start_date
-                                        ) {
-                                          return;
-                                        }
+                                        const grabDays = workingDaysBetween(
+                                          occ.start_date,
+                                          occ.end_date,
+                                        );
+                                        const grabOffsetDays =
+                                          dayKey && grabDays.includes(dayKey)
+                                            ? grabDays.indexOf(dayKey)
+                                            : 0;
                                         dragSnapshot.current = {
                                           id: base.id,
                                           mode: "move",
                                           before: { ...base },
                                           dirty: false,
+                                          grabOffsetDays,
                                         };
                                         setGridDragging(true);
                                       }}
@@ -1712,6 +1720,7 @@ export function ScheduleGrid() {
                                                 mode: "resize-start",
                                                 before: { ...base },
                                                 dirty: false,
+                                                grabOffsetDays: 0,
                                               };
                                               setGridDragging(true);
                                             }}
@@ -1742,6 +1751,7 @@ export function ScheduleGrid() {
                                                 mode: "resize-end",
                                                 before: { ...base },
                                                 dirty: false,
+                                                grabOffsetDays: 0,
                                               };
                                               setGridDragging(true);
                                             }}
@@ -1848,6 +1858,7 @@ export function ScheduleGrid() {
                                           mode: "move",
                                           before: { ...base },
                                           dirty: false,
+                                          grabOffsetDays: 0,
                                         };
                                         setGridDragging(true);
                                       }}
@@ -2762,6 +2773,20 @@ function addWorkingDays(dateKey: string, workingDaysAhead: number): string {
   while (left > 0) {
     d = new Date(d);
     d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) left -= 1;
+  }
+  return toDateKey(d);
+}
+
+/** Go back by N weekdays (skips Sat/Sun). */
+function subtractWorkingDays(dateKey: string, workingDaysBack: number): string {
+  if (workingDaysBack <= 0) return dateKey;
+  let d = parseISO(dateKey);
+  let left = workingDaysBack;
+  while (left > 0) {
+    d = new Date(d);
+    d.setDate(d.getDate() - 1);
     const day = d.getDay();
     if (day !== 0 && day !== 6) left -= 1;
   }
