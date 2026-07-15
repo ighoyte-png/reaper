@@ -29,6 +29,7 @@ export interface Client {
   organization_id: string;
   name: string;
   notes: string;
+  color: string;
 }
 
 export interface Project {

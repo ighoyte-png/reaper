@@ -36,18 +36,21 @@ export function createDemoSeed(): DemoState {
         organization_id: ORG_ID,
         name: "Harbor Retail",
         notes: "E-commerce redesign",
+        color: "#3B82F6",
       },
       {
         id: "client-2",
         organization_id: ORG_ID,
         name: "Atlas Health",
         notes: "Patient portal",
+        color: "#10B981",
       },
       {
         id: "client-3",
         organization_id: ORG_ID,
         name: "Internal",
         notes: "Ops and R&D",
+        color: "#F59E0B",
       },
     ],
     projects: [

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Topbar } from "@/components/nav/topbar";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
+import { ColorPicker, PRESET_COLORS } from "@/components/ui/color-picker";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { sortClientsByName } from "@/lib/domain/sorting";
@@ -17,6 +18,15 @@ export default function ClientsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const clients = sortClientsByName(state.clients);
 
+  function emptyClient(): Omit<Client, "organization_id"> {
+    return {
+      id: newId("client"),
+      name: "",
+      notes: "",
+      color: PRESET_COLORS[0],
+    };
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <Topbar
@@ -25,9 +35,7 @@ export default function ClientsPage() {
           <button
             type="button"
             className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-            onClick={() =>
-              setEditing({ id: newId("client"), name: "", notes: "" })
-            }
+            onClick={() => setEditing(emptyClient())}
           >
             Add client
           </button>
@@ -38,9 +46,7 @@ export default function ClientsPage() {
           <EmptyState
             title="No clients yet"
             cta="Create your first client"
-            onClick={() =>
-              setEditing({ id: newId("client"), name: "", notes: "" })
-            }
+            onClick={() => setEditing(emptyClient())}
           />
         ) : (
           <div className="overflow-x-auto rounded-md border border-[var(--border)]">
@@ -63,7 +69,15 @@ export default function ClientsPage() {
                       key={client.id}
                       className="border-t border-[var(--border)] hover:bg-[var(--row-hover)]"
                     >
-                      <td className="px-3 py-2.5 font-medium">{client.name}</td>
+                      <td className="px-3 py-2.5 font-medium">
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ background: client.color }}
+                          />
+                          {client.name}
+                        </span>
+                      </td>
                       <td className="px-3 py-2.5">{count}</td>
                       <td className="px-3 py-2.5 text-[var(--text-muted)]">
                         {client.notes || "—"}
@@ -97,6 +111,12 @@ export default function ClientsPage() {
                 className={inputClass}
                 value={editing.name}
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              />
+            </Field>
+            <Field label="Color">
+              <ColorPicker
+                value={editing.color}
+                onChange={(color) => setEditing({ ...editing, color })}
               />
             </Field>
             <Field label="Notes">

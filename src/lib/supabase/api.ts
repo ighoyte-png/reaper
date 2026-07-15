@@ -239,6 +239,7 @@ export async function fetchWorkspace(
       organization_id: String(row.organization_id),
       name: String(row.name ?? ""),
       notes: String(row.notes ?? ""),
+      color: String(row.color ?? "#64748B"),
     })),
     projects: (projectsRes.data ?? []).map((row) =>
       mapProject(row as Record<string, unknown>),
@@ -292,6 +293,7 @@ export async function upsertClientRow(
     organization_id: client.organization_id,
     name: client.name,
     notes: client.notes,
+    color: client.color,
   });
   if (error) throw error;
 }
@@ -589,6 +591,7 @@ export async function seedDemoWorkspace(
     organization_id: organizationId,
     name: c.name,
     notes: c.notes,
+    color: c.color,
   }));
 
   const projects = seed.projects.map((p) => ({

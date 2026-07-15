@@ -1,23 +1,8 @@
 "use client";
 
 import { Field, inputClass } from "@/components/ui/form";
-import { cn } from "@/lib/cn";
+import { ColorPicker, PRESET_COLORS } from "@/components/ui/color-picker";
 import type { BudgetMode, Project, ProjectStatus } from "@/lib/types";
-
-const COLORS = [
-  "#3B82F6", // blue
-  "#10B981", // emerald
-  "#F59E0B", // amber
-  "#EF4444", // red
-  "#8B5CF6", // violet
-  "#06B6D4", // cyan
-  "#EC4899", // pink
-  "#F97316", // orange
-  "#14B8A6", // teal
-  "#84CC16", // lime
-  "#6366F1", // indigo
-  "#D946EF", // fuchsia
-];
 
 export function ProjectForm({
   project,
@@ -28,7 +13,7 @@ export function ProjectForm({
   onDelete,
 }: {
   project: Omit<Project, "organization_id">;
-  clients: { id: string; name: string }[];
+  clients: { id: string; name: string; color?: string }[];
   onChange: (p: Omit<Project, "organization_id">) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -62,12 +47,15 @@ export function ProjectForm({
         <select
           className={inputClass}
           value={project.client_id ?? ""}
-          onChange={(e) =>
+          onChange={(e) => {
+            const clientId = e.target.value || null;
+            const client = clientsSorted.find((c) => c.id === clientId);
             onChange({
               ...project,
-              client_id: e.target.value || null,
-            })
-          }
+              client_id: clientId,
+              color: client?.color ?? project.color,
+            });
+          }}
         >
           <option value="">No client</option>
           {clientsSorted.map((c) => (
@@ -142,7 +130,7 @@ export function ProjectForm({
           />
         </Field>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Status">
           <select
             className={inputClass}
@@ -160,24 +148,16 @@ export function ProjectForm({
             <option value="archived">Archived</option>
           </select>
         </Field>
-        <Field label="Color">
-          <div className="mt-1 flex gap-2">
-            {COLORS.map((color) => (
-              <button
-                key={color}
-                type="button"
-                className={cn(
-                  "h-7 w-7 rounded-full border-2",
-                  project.color === color
-                    ? "border-[var(--text)]"
-                    : "border-transparent",
-                )}
-                style={{ background: color }}
-                onClick={() => onChange({ ...project, color })}
-              />
-            ))}
-          </div>
-        </Field>
+        <div className="block text-xs text-[var(--text-muted)]">
+          Color
+          <ColorPicker
+            value={project.color}
+            onChange={(color) => onChange({ ...project, color })}
+          />
+          <p className="mt-1 text-[11px]">
+            Defaults to the client color when you pick a client
+          </p>
+        </div>
       </div>
       <Field label="Notes">
         <textarea
@@ -219,4 +199,4 @@ export function ProjectForm({
   );
 }
 
-export { COLORS };
+export { PRESET_COLORS as COLORS };
