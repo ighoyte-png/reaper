@@ -30,12 +30,11 @@ function mapProject(row: Record<string, unknown>): Project {
     row.budget_amount == null || row.budget_amount === ""
       ? null
       : num(row.budget_amount);
-  const budget_mode =
-    row.budget_mode === "none" ||
-    row.budget_mode === "hours" ||
-    row.budget_mode === "amount"
-      ? (row.budget_mode as Project["budget_mode"])
-      : row.budget_mode === "both"
+  const rawMode = String(row.budget_mode ?? "");
+  const budget_mode: Project["budget_mode"] =
+    rawMode === "none" || rawMode === "hours" || rawMode === "amount"
+      ? rawMode
+      : rawMode === "both"
         ? (rawHours ?? 0) > 0
           ? "hours"
           : rawAmount != null && rawAmount > 0
@@ -313,6 +312,7 @@ export async function upsertProjectRow(
     project.budget_mode === "amount"
       ? project.budget_mode
       : "hours";
+
   const payload = {
     id: project.id,
     organization_id: project.organization_id,
@@ -323,39 +323,106 @@ export async function upsertProjectRow(
     color: project.color,
     start_date: project.start_date,
     end_date: project.end_date,
-    budget_hours: project.budget_hours,
-    budget_amount: project.budget_amount,
+    budget_hours:
+      mode === "hours" ? (project.budget_hours ?? 0) : null,
+    budget_amount: mode === "amount" ? project.budget_amount : null,
     budget_mode: mode,
-    budget_monthly_reset: Boolean(project.budget_monthly_reset),
+    budget_monthly_reset: mode === "hours" && Boolean(project.budget_monthly_reset),
     notes: project.notes,
   };
-  const { error } = await supabase.from("projects").upsert(payload);
-  if (!error) return;
 
-  const missingMonthly =
-    /Could not find the 'budget_monthly_reset' column/i.test(error.message) ||
-    (error.code === "PGRST204" && /budget_monthly_reset/i.test(error.message));
-  const badMode =
-    /invalid input value for enum.*budget_mode|budget_mode/i.test(
-      error.message,
-    ) || error.code === "22P02";
+  const missingMonthly = (message: string, code?: string) =>
+    /Could not find the 'budget_monthly_reset' column/i.test(message) ||
+    (code === "PGRST204" && /budget_monthly_reset/i.test(message));
 
-  if (missingMonthly || badMode) {
+  const invalidNoneEnum = (message: string, code?: string) =>
+    (code === "22P02" || /invalid input value for enum/i.test(message)) &&
+    /budget_mode/i.test(message) &&
+    /none/i.test(message);
+
+  const nullHoursNotAllowed = (message: string) =>
+    /budget_hours/i.test(message) &&
+    (/null value/i.test(message) || /not-null|not null/i.test(message));
+
+  let { error } = await supabase.from("projects").upsert(payload);
+
+  // Retry without budget_monthly_reset if the column is not migrated yet.
+  // Never soft-succeed when the user is turning monthly reset ON — that would
+  // leave true only in local state and get wiped by a later failed save refresh.
+  if (error && missingMonthly(error.message, error.code)) {
+    if (payload.budget_monthly_reset) {
+      throw new Error(
+        "Missing DB column `budget_monthly_reset`. In Supabase SQL Editor run supabase/migrations/010_budget_monthly_reset_fix.sql, then try again.",
+      );
+    }
     const { budget_monthly_reset: _m, ...rest } = payload;
-    const retryPayload = {
-      ...rest,
-      budget_mode: mode === "none" ? "hours" : mode,
-    };
-    const retry = await supabase.from("projects").upsert(retryPayload);
-    if (retry.error) throw retry.error;
-    console.warn(
-      "projects.budget_monthly_reset / budget_mode enum out of date — apply supabase/migrations/006_budget_types.sql and 010_budget_monthly_reset_fix.sql",
-    );
-    // Soft-succeed so optimistic UI (e.g. monthly reset checkbox) is not reverted.
-    return;
+    const retry = await supabase.from("projects").upsert(rest);
+    if (!retry.error) {
+      console.warn(
+        "projects.budget_monthly_reset missing — apply supabase/migrations/010_budget_monthly_reset_fix.sql",
+      );
+      return;
+    }
+    error = retry.error;
   }
 
-  throw error;
+  // Pre-migration DBs still have budget_hours NOT NULL — store 0 for none/amount.
+  if (error && nullHoursNotAllowed(error.message) && mode !== "hours") {
+    const retryPayload = {
+      ...payload,
+      budget_hours: 0,
+    };
+    if (!payload.budget_monthly_reset) {
+      const { budget_monthly_reset: _m, ...rest } = retryPayload;
+      const retry = await supabase.from("projects").upsert(rest);
+      if (!retry.error) return;
+      error = retry.error;
+    } else {
+      const retry = await supabase.from("projects").upsert(retryPayload);
+      if (!retry.error) return;
+      error = retry.error;
+    }
+  }
+
+  // Combined: strip monthly + zero hours for none/amount on older schemas.
+  if (
+    error &&
+    (missingMonthly(error.message, error.code) ||
+      nullHoursNotAllowed(error.message)) &&
+    mode !== "hours" &&
+    !payload.budget_monthly_reset
+  ) {
+    const retry = await supabase.from("projects").upsert({
+      id: payload.id,
+      organization_id: payload.organization_id,
+      client_id: payload.client_id,
+      name: payload.name,
+      status: payload.status,
+      priority: payload.priority,
+      color: payload.color,
+      start_date: payload.start_date,
+      end_date: payload.end_date,
+      budget_hours: 0,
+      budget_amount: payload.budget_amount,
+      budget_mode: payload.budget_mode,
+      notes: payload.notes,
+    });
+    if (!retry.error) {
+      console.warn(
+        "projects budget columns partially migrated — apply supabase/migrations/010_budget_monthly_reset_fix.sql",
+      );
+      return;
+    }
+    error = retry.error;
+  }
+
+  if (error && invalidNoneEnum(error.message, error.code)) {
+    throw new Error(
+      'Budget type "None" needs a DB update. In Supabase SQL Editor run supabase/migrations/010_budget_monthly_reset_fix.sql, then try again.',
+    );
+  }
+
+  if (error) throw error;
 }
 
 export async function deleteProjectRow(supabase: SupabaseClient, id: string) {

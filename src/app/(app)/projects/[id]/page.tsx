@@ -263,7 +263,7 @@ export default function ProjectDetailPage() {
             project={draft}
             clients={state.clients}
             onChange={setDraft}
-            onSave={() => {
+            onSave={async () => {
               if (!draft.name.trim()) return;
               if (
                 draft.budget_mode === "hours" &&
@@ -277,20 +277,27 @@ export default function ProjectDetailPage() {
               ) {
                 return;
               }
-              upsertProject({
-                ...draft,
-                budget_hours:
-                  draft.budget_mode === "hours" ? draft.budget_hours : null,
-                budget_amount:
-                  draft.budget_mode === "amount" ? draft.budget_amount : null,
-                budget_monthly_reset:
-                  draft.budget_mode === "hours"
-                    ? Boolean(draft.budget_monthly_reset)
-                    : false,
-              });
-              setEditing(false);
-              setDraft(null);
-              push("Project saved");
+              try {
+                await upsertProject({
+                  ...draft,
+                  budget_hours:
+                    draft.budget_mode === "hours" ? draft.budget_hours : null,
+                  budget_amount:
+                    draft.budget_mode === "amount" ? draft.budget_amount : null,
+                  budget_monthly_reset:
+                    draft.budget_mode === "hours"
+                      ? Boolean(draft.budget_monthly_reset)
+                      : false,
+                });
+                setEditing(false);
+                setDraft(null);
+                push("Project saved");
+              } catch (err) {
+                push(
+                  err instanceof Error ? err.message : "Could not save project",
+                  "warning",
+                );
+              }
             }}
             onCancel={() => {
               setEditing(false);

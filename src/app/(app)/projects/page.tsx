@@ -112,7 +112,7 @@ export default function ProjectsPage() {
             project={editing}
             clients={state.clients}
             onChange={setEditing}
-            onSave={() => {
+            onSave={async () => {
               if (!editing.name.trim()) return;
               if (
                 editing.budget_mode === "hours" &&
@@ -126,23 +126,30 @@ export default function ProjectsPage() {
               ) {
                 return;
               }
-              upsertProject({
-                ...editing,
-                budget_hours:
-                  editing.budget_mode === "hours"
-                    ? editing.budget_hours
-                    : null,
-                budget_amount:
-                  editing.budget_mode === "amount"
-                    ? editing.budget_amount
-                    : null,
-                budget_monthly_reset:
-                  editing.budget_mode === "hours"
-                    ? editing.budget_monthly_reset
-                    : false,
-              });
-              setEditing(null);
-              push("Project saved");
+              try {
+                await upsertProject({
+                  ...editing,
+                  budget_hours:
+                    editing.budget_mode === "hours"
+                      ? editing.budget_hours
+                      : null,
+                  budget_amount:
+                    editing.budget_mode === "amount"
+                      ? editing.budget_amount
+                      : null,
+                  budget_monthly_reset:
+                    editing.budget_mode === "hours"
+                      ? editing.budget_monthly_reset
+                      : false,
+                });
+                setEditing(null);
+                push("Project saved");
+              } catch (err) {
+                push(
+                  err instanceof Error ? err.message : "Could not save project",
+                  "warning",
+                );
+              }
             }}
             onCancel={() => setEditing(null)}
           />

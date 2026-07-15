@@ -167,7 +167,7 @@ interface DataContextValue {
   deleteClient: (id: string) => void;
   upsertProject: (
     project: Omit<Project, "organization_id"> & { organization_id?: string },
-  ) => void;
+  ) => Promise<void>;
   deleteProject: (id: string) => void;
   upsertPerson: (
     person: Omit<Person, "organization_id"> & { organization_id?: string },
@@ -394,7 +394,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? "Missing DB column `email` on people. In Supabase SQL Editor run supabase/migrations/004_people_email.sql, then try again."
           : /budget_monthly_reset/i.test(raw)
             ? "Missing DB column `budget_monthly_reset`. In Supabase SQL Editor run supabase/migrations/010_budget_monthly_reset_fix.sql, then try again."
-            : raw;
+            : /Budget type \"None\"|budget_mode.*none|010_budget_monthly_reset/i.test(
+                  raw,
+                )
+              ? 'Budget type "None" needs a DB update. In Supabase SQL Editor run supabase/migrations/010_budget_monthly_reset_fix.sql, then try again.'
+              : raw;
       setAuthError(message);
       const client = supabaseRef.current;
       if (client) await refreshSupabase(client);
@@ -634,8 +638,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           runRemoteSoft(() => deleteClientRow(supabaseRef.current!, id));
         }
       },
-      upsertProject: (project) => {
+      upsertProject: async (project) => {
         const row = withOrg(project) as Project;
+        // Persist remotely first so a failed "none" budget type does not
+        // briefly show as saved then snap back after refresh.
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            upsertProjectRow(supabaseRef.current!, row),
+          );
+        }
         patch((prev) => {
           const exists = prev.projects.some((p) => p.id === row.id);
           return {
@@ -645,9 +656,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
               : [...prev.projects, row],
           };
         });
-        if (mode === "supabase" && supabaseRef.current) {
-          runRemoteSoft(() => upsertProjectRow(supabaseRef.current!, row));
-        }
       },
       deleteProject: (id) => {
         patch((prev) => ({
