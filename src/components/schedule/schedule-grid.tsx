@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
@@ -51,6 +51,7 @@ import {
   projectDisplayColor,
   projectLabelWithClient,
   sortClientsByName,
+  sortPeopleByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import {
@@ -104,6 +105,7 @@ export function ScheduleGrid() {
   const [zoom, setZoom] = useState<ScheduleZoom>("day");
   const [anchor, setAnchor] = useState(() => weekStart(new Date()));
   const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [personFilter, setPersonFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLeaveBlockId, setSelectedLeaveBlockId] = useState<
     string | null
@@ -284,9 +286,18 @@ export function ScheduleGrid() {
   }
 
   const visiblePeople = useMemo(() => {
-    if (canManage) return state.people;
-    return myPerson ? [myPerson] : [];
-  }, [canManage, state.people, myPerson]);
+    const base = canManage ? state.people : myPerson ? [myPerson] : [];
+    const filtered =
+      canManage && personFilter !== "all"
+        ? base.filter((p) => p.id === personFilter)
+        : base;
+    return sortPeopleByName(filtered);
+  }, [canManage, state.people, myPerson, personFilter]);
+
+  const peopleForFilter = useMemo(
+    () => sortPeopleByName(state.people),
+    [state.people],
+  );
 
   const projectsById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
@@ -465,6 +476,29 @@ export function ScheduleGrid() {
     if (isNarrow && id) setMobilePanelOpen(true);
   }
 
+  /** Clear assignment/leave selection (keeps project filter & toolbar state). */
+  function deselectScheduleItem() {
+    setSelectedId(null);
+    setEditForm(null);
+    setSelectedLeaveBlockId(null);
+    setLeaveEditForm(null);
+    if (isNarrow) setMobilePanelOpen(false);
+  }
+
+  /**
+   * Click empty schedule chrome (not a block, not the sidebar) clears
+   * selection. Blocks stopPropagation so a re-click stays selected.
+   */
+  function onScheduleBackgroundPointerDown(e: ReactPointerEvent) {
+    if (e.button !== 0) return;
+    if (dragSnapshot.current || leaveDragSnapshot.current) return;
+    if (draft || leaveDraft) return;
+    if (!selectedId && !leaveEditForm && !selectedLeaveBlockId) return;
+    const target = e.target as Element | null;
+    if (target?.closest("[data-schedule-block]")) return;
+    deselectScheduleItem();
+  }
+
   function selectLeaveBlock(block: LeaveBlock | null) {
     if (!block) {
       setSelectedLeaveBlockId(null);
@@ -497,6 +531,7 @@ export function ScheduleGrid() {
     setLeaveDraft(null);
     setHoverColId(null);
     setProjectFilter("all");
+    setPersonFilter("all");
     setMobilePanelOpen(false);
     dragSnapshot.current = null;
   }
@@ -906,24 +941,11 @@ export function ScheduleGrid() {
             </select>
             {canManage && (
               <>
-                <button
-                  type="button"
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1 rounded-md border px-2 text-xs",
-                    sliceMode
-                      ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
-                      : "border-[var(--border)] text-[var(--text-muted)]",
-                  )}
-                  onClick={() => setSliceMode((v) => !v)}
-                  title="Slice: click a day on a multi-day block to split it"
-                >
-                  <Scissors size={14} />
-                  Slice
-                </button>
                 <select
                   value={projectFilter}
                   onChange={(e) => setProjectFilter(e.target.value)}
                   className="h-8 max-w-[220px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+                  aria-label="Filter by project"
                 >
                   <option value="all">All projects</option>
                   {sortedProjects.map((p) => (
@@ -932,6 +954,33 @@ export function ScheduleGrid() {
                     </option>
                   ))}
                 </select>
+                <select
+                  value={personFilter}
+                  onChange={(e) => setPersonFilter(e.target.value)}
+                  className="h-8 max-w-[200px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+                  aria-label="Filter by person"
+                >
+                  <option value="all">All people</option>
+                  {peopleForFilter.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-8 w-8 items-center justify-center rounded-md border",
+                    sliceMode
+                      ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+                      : "border-[var(--border)] text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSliceMode((v) => !v)}
+                  title="Slice: click a day on a multi-day block to split it"
+                  aria-label="Slice"
+                >
+                  <Scissors size={14} />
+                </button>
               </>
             )}
             {isNarrow && (
@@ -955,6 +1004,7 @@ export function ScheduleGrid() {
         <div
           ref={scrollRef}
           className="min-h-0 flex-1 overflow-auto overscroll-contain touch-pan-x touch-pan-y"
+          onPointerDown={onScheduleBackgroundPointerDown}
         >
           <div style={{ width: LABEL_PX + tw, minWidth: "100%" }}>
             {/* Group labels (month / year) */}
@@ -1200,6 +1250,7 @@ export function ScheduleGrid() {
                       return (
                         <div
                           key={block.id}
+                          data-schedule-block
                           className={cn(
                             "pointer-events-auto absolute z-10 flex items-center rounded-sm border border-[var(--leave-block)]/50 px-1 text-[10px] font-medium leading-none",
                             "bg-[var(--leave-block-fill)] text-[var(--leave-block-fg)]",
@@ -1779,6 +1830,7 @@ export function ScheduleGrid() {
                                   return (
                                     <div
                                       key={`${occ.assignmentId}-${occ.weekOffset}`}
+                                      data-schedule-block
                                       className={cn(
                                         "absolute z-10 flex items-center rounded px-1 text-[10px] font-medium leading-none text-white",
                                         canManage &&
@@ -2004,6 +2056,7 @@ export function ScheduleGrid() {
                                   return [
                                     <div
                                       key={`${project.id}-${col.id}-agg`}
+                                      data-schedule-block
                                       className={cn(
                                         "absolute z-10 flex items-center rounded px-1 text-[10px] font-medium leading-none text-white",
                                         canManage &&
@@ -2173,13 +2226,17 @@ export function ScheduleGrid() {
             {(selected ||
               leaveEditForm ||
               projectFilter !== "all" ||
+              personFilter !== "all" ||
               (isNarrow && mobilePanelOpen)) && (
               <button
                 type="button"
                 className="shrink-0 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
                 onClick={closeSidePanel}
               >
-                {selected || leaveEditForm || projectFilter !== "all"
+                {selected ||
+                leaveEditForm ||
+                projectFilter !== "all" ||
+                personFilter !== "all"
                   ? "Deselect"
                   : "Close"}
               </button>

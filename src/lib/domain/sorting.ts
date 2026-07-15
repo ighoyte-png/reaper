@@ -51,6 +51,12 @@ export function sortClientsByName(clients: Client[]): Client[] {
   );
 }
 
+export function sortPeopleByName<T extends { name: string }>(people: T[]): T[] {
+  return [...people].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+}
+
 export function projectLabelWithClient(
   project: Project,
   clients: Client[] | Map<string, Client>,
