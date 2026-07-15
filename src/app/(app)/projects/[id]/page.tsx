@@ -16,7 +16,7 @@ import {
   formatMoney,
 } from "@/lib/domain/budget";
 import { projectForecast } from "@/lib/domain/forecast";
-import type { Milestone } from "@/lib/types";
+import type { Milestone, Project } from "@/lib/types";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -25,6 +25,9 @@ export default function ProjectDetailPage() {
     useData();
   const { push } = useToast();
   const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<Omit<Project, "organization_id"> | null>(
+    null,
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [milestoneForm, setMilestoneForm] = useState<Omit<
     Milestone,
@@ -79,7 +82,14 @@ export default function ProjectDetailPage() {
             <button
               type="button"
               className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={() => setEditing(true)}
+              onClick={() => {
+                const { organization_id: _org, ...rest } = project;
+                setDraft({
+                  ...rest,
+                  budget_monthly_reset: Boolean(rest.budget_monthly_reset),
+                });
+                setEditing(true);
+              }}
             >
               Edit
             </button>
@@ -241,17 +251,51 @@ export default function ProjectDetailPage() {
         </section>
       </div>
 
-      {editing && (
-        <Modal title="Edit project" onClose={() => setEditing(false)}>
+      {editing && draft && (
+        <Modal
+          title="Edit project"
+          onClose={() => {
+            setEditing(false);
+            setDraft(null);
+          }}
+        >
           <ProjectForm
-            project={project}
+            project={draft}
             clients={state.clients}
-            onChange={(p) => upsertProject(p)}
+            onChange={setDraft}
             onSave={() => {
+              if (!draft.name.trim()) return;
+              if (
+                draft.budget_mode === "hours" &&
+                !(draft.budget_hours && draft.budget_hours > 0)
+              ) {
+                return;
+              }
+              if (
+                draft.budget_mode === "amount" &&
+                (draft.budget_amount == null || draft.budget_amount < 0)
+              ) {
+                return;
+              }
+              upsertProject({
+                ...draft,
+                budget_hours:
+                  draft.budget_mode === "hours" ? draft.budget_hours : null,
+                budget_amount:
+                  draft.budget_mode === "amount" ? draft.budget_amount : null,
+                budget_monthly_reset:
+                  draft.budget_mode === "hours"
+                    ? Boolean(draft.budget_monthly_reset)
+                    : false,
+              });
               setEditing(false);
+              setDraft(null);
               push("Project saved");
             }}
-            onCancel={() => setEditing(false)}
+            onCancel={() => {
+              setEditing(false);
+              setDraft(null);
+            }}
             onDelete={() => setConfirmDelete(true)}
           />
         </Modal>

@@ -82,6 +82,26 @@ function loadDemoState(): DemoState {
         ...p,
         holiday_calendar_id: p.holiday_calendar_id ?? null,
       })),
+      projects: (parsed.projects ?? seed.projects).map((p) => ({
+        ...p,
+        budget_mode:
+          p.budget_mode === "none" ||
+          p.budget_mode === "hours" ||
+          p.budget_mode === "amount"
+            ? p.budget_mode
+            : (p.budget_hours ?? 0) > 0
+              ? "hours"
+              : p.budget_amount != null
+                ? "amount"
+                : "hours",
+        budget_monthly_reset: Boolean(p.budget_monthly_reset),
+        budget_hours: p.budget_hours ?? null,
+        budget_amount: p.budget_amount ?? null,
+      })),
+      clients: (parsed.clients ?? seed.clients).map((c) => ({
+        ...c,
+        color: c.color ?? "#64748B",
+      })),
       sessionProfileId: session,
     };
   } catch {
@@ -372,7 +392,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ? "Missing DB column `recurrence`. In Supabase SQL Editor run supabase/migrations/003_recurrence.sql, then try again."
         : /'email' column of 'people'|people\.email|email.*people/i.test(raw)
           ? "Missing DB column `email` on people. In Supabase SQL Editor run supabase/migrations/004_people_email.sql, then try again."
-          : raw;
+          : /budget_monthly_reset/i.test(raw)
+            ? "Missing DB column `budget_monthly_reset`. In Supabase SQL Editor run supabase/migrations/010_budget_monthly_reset_fix.sql, then try again."
+            : raw;
       setAuthError(message);
       const client = supabaseRef.current;
       if (client) await refreshSupabase(client);

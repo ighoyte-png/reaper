@@ -307,7 +307,13 @@ export async function upsertProjectRow(
   supabase: SupabaseClient,
   project: Project,
 ) {
-  const { error } = await supabase.from("projects").upsert({
+  const mode =
+    project.budget_mode === "none" ||
+    project.budget_mode === "hours" ||
+    project.budget_mode === "amount"
+      ? project.budget_mode
+      : "hours";
+  const payload = {
     id: project.id,
     organization_id: project.organization_id,
     client_id: project.client_id,
@@ -319,11 +325,37 @@ export async function upsertProjectRow(
     end_date: project.end_date,
     budget_hours: project.budget_hours,
     budget_amount: project.budget_amount,
-    budget_mode: project.budget_mode,
-    budget_monthly_reset: project.budget_monthly_reset,
+    budget_mode: mode,
+    budget_monthly_reset: Boolean(project.budget_monthly_reset),
     notes: project.notes,
-  });
-  if (error) throw error;
+  };
+  const { error } = await supabase.from("projects").upsert(payload);
+  if (!error) return;
+
+  const missingMonthly =
+    /Could not find the 'budget_monthly_reset' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /budget_monthly_reset/i.test(error.message));
+  const badMode =
+    /invalid input value for enum.*budget_mode|budget_mode/i.test(
+      error.message,
+    ) || error.code === "22P02";
+
+  if (missingMonthly || badMode) {
+    const { budget_monthly_reset: _m, ...rest } = payload;
+    const retryPayload = {
+      ...rest,
+      budget_mode: mode === "none" ? "hours" : mode,
+    };
+    const retry = await supabase.from("projects").upsert(retryPayload);
+    if (retry.error) throw retry.error;
+    console.warn(
+      "projects.budget_monthly_reset / budget_mode enum out of date — apply supabase/migrations/006_budget_types.sql and 010_budget_monthly_reset_fix.sql",
+    );
+    // Soft-succeed so optimistic UI (e.g. monthly reset checkbox) is not reverted.
+    return;
+  }
+
+  throw error;
 }
 
 export async function deleteProjectRow(supabase: SupabaseClient, id: string) {

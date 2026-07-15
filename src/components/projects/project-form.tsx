@@ -30,7 +30,7 @@ export function ProjectForm({
       budget_hours: mode === "hours" ? (project.budget_hours ?? 80) : null,
       budget_amount: mode === "amount" ? (project.budget_amount ?? 0) : null,
       budget_monthly_reset:
-        mode === "hours" ? project.budget_monthly_reset : false,
+        mode === "hours" ? Boolean(project.budget_monthly_reset) : false,
     });
   }
 
@@ -96,7 +96,7 @@ export function ProjectForm({
             <input
               type="checkbox"
               className="mt-1"
-              checked={project.budget_monthly_reset}
+              checked={Boolean(project.budget_monthly_reset)}
               onChange={(e) =>
                 onChange({
                   ...project,
