@@ -20,6 +20,31 @@ function num(value: unknown, fallback = 0): number {
 }
 
 function mapProject(row: Record<string, unknown>): Project {
+  const rawHours =
+    row.budget_hours == null || row.budget_hours === ""
+      ? null
+      : num(row.budget_hours);
+  const rawAmount =
+    row.budget_amount == null || row.budget_amount === ""
+      ? null
+      : num(row.budget_amount);
+  const budget_mode =
+    row.budget_mode === "none" ||
+    row.budget_mode === "hours" ||
+    row.budget_mode === "amount"
+      ? (row.budget_mode as Project["budget_mode"])
+      : row.budget_mode === "both"
+        ? (rawHours ?? 0) > 0
+          ? "hours"
+          : rawAmount != null && rawAmount > 0
+            ? "amount"
+            : "none"
+        : (rawHours ?? 0) > 0
+          ? "hours"
+          : rawAmount != null
+            ? "amount"
+            : "hours";
+
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -30,10 +55,10 @@ function mapProject(row: Record<string, unknown>): Project {
     color: String(row.color ?? "#3B82F6"),
     start_date: row.start_date ? String(row.start_date) : null,
     end_date: row.end_date ? String(row.end_date) : null,
-    budget_hours: num(row.budget_hours),
-    budget_amount:
-      row.budget_amount == null ? null : num(row.budget_amount),
-    budget_mode: (row.budget_mode as Project["budget_mode"]) ?? "hours",
+    budget_hours: budget_mode === "hours" ? (rawHours ?? 0) : null,
+    budget_amount: budget_mode === "amount" ? rawAmount : null,
+    budget_mode,
+    budget_monthly_reset: Boolean(row.budget_monthly_reset),
     notes: String(row.notes ?? ""),
   };
 }
@@ -255,6 +280,7 @@ export async function upsertProjectRow(
     budget_hours: project.budget_hours,
     budget_amount: project.budget_amount,
     budget_mode: project.budget_mode,
+    budget_monthly_reset: project.budget_monthly_reset,
     notes: project.notes,
   });
   if (error) throw error;
@@ -416,6 +442,7 @@ export async function seedDemoWorkspace(
     budget_hours: p.budget_hours,
     budget_amount: p.budget_amount,
     budget_mode: p.budget_mode,
+    budget_monthly_reset: p.budget_monthly_reset,
     notes: p.notes,
   }));
 

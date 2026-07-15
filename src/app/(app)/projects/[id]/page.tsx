@@ -98,11 +98,21 @@ export default function ProjectDetailPage() {
             </span>
           </div>
           <div className="mb-2 flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-semibold">Total budget</h2>
+            <h2 className="text-sm font-semibold">
+              {burn.mode === "none"
+                ? "Budget"
+                : burn.mode === "amount"
+                  ? "Dollar budget"
+                  : project.budget_monthly_reset
+                    ? "Monthly hours budget"
+                    : "Hours budget"}
+            </h2>
             <span className="text-sm text-[var(--text-muted)]">
-              {formatHours(burn.plannedHours)} planned ·{" "}
-              {formatHours(Math.max(0, burn.remainingHours))} remaining of{" "}
-              {formatHours(burn.totalHours)}
+              {burn.mode === "none"
+                ? "No budget tracking"
+                : burn.mode === "amount"
+                  ? `${formatMoney(burn.plannedAmount)} planned · ${formatMoney(Math.max(0, burn.remainingAmount ?? 0))} remaining of ${formatMoney(burn.totalAmount ?? 0)}`
+                  : `${formatHours(burn.plannedHours)} planned · ${formatHours(Math.max(0, burn.remainingHours))} remaining of ${formatHours(burn.totalHours)}`}
             </span>
           </div>
           <BurnBar burn={burn} />

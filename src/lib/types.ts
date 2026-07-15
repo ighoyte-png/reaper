@@ -1,6 +1,6 @@
 export type Role = "admin" | "manager" | "member";
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
-export type BudgetMode = "hours" | "amount" | "both";
+export type BudgetMode = "none" | "hours" | "amount";
 export type AssignmentStatus = "tentative" | "confirmed";
 export type LeaveKind = "vacation" | "holiday" | "sick" | "training";
 export type LeaveStatus = "pending" | "approved";
@@ -37,9 +37,12 @@ export interface Project {
   color: string;
   start_date: string | null;
   end_date: string | null;
-  budget_hours: number;
+  /** Null / unused when budget_mode is none or amount. */
+  budget_hours: number | null;
   budget_amount: number | null;
   budget_mode: BudgetMode;
+  /** When true, hourly budget resets each calendar month (retainer). */
+  budget_monthly_reset: boolean;
   notes: string;
 }
 
@@ -114,6 +117,8 @@ export interface BudgetBurn {
   plannedAmount: number;
   remainingAmount: number | null;
   amountOverBy: number;
+  /** Active ledger for this burn (exclusive: never both hours and amount). */
+  mode: BudgetMode;
 }
 
 export type CapacityLevel = "healthy" | "near" | "over" | "unavailable";

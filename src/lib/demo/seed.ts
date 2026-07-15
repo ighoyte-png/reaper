@@ -6,7 +6,7 @@ function d(offset: number, from = startOfWeek(new Date(), { weekStartsOn: 1 })):
 }
 
 export const ORG_ID = "org-demo";
-export const DEMO_STORAGE_KEY = "reaper-demo-state-v1";
+export const DEMO_STORAGE_KEY = "reaper-demo-state-v2";
 export const DEMO_SESSION_KEY = "reaper-demo-session";
 
 export function createDemoSeed(): DemoState {
@@ -62,8 +62,9 @@ export function createDemoSeed(): DemoState {
         start_date: d(-14, week),
         end_date: d(60, week),
         budget_hours: 120,
-        budget_amount: 18000,
-        budget_mode: "both",
+        budget_amount: null,
+        budget_mode: "hours",
+        budget_monthly_reset: false,
         notes: "Mid-burn project",
       },
       {
@@ -77,8 +78,9 @@ export function createDemoSeed(): DemoState {
         start_date: d(-7, week),
         end_date: d(45, week),
         budget_hours: 80,
-        budget_amount: 14000,
-        budget_mode: "both",
+        budget_amount: null,
+        budget_mode: "hours",
+        budget_monthly_reset: false,
         notes: "Over-planned on purpose for demo",
       },
       {
@@ -91,10 +93,11 @@ export function createDemoSeed(): DemoState {
         color: "#F59E0B",
         start_date: d(0, week),
         end_date: d(90, week),
-        budget_hours: 200,
+        budget_hours: null,
         budget_amount: null,
-        budget_mode: "hours",
-        notes: "Healthy headroom",
+        budget_mode: "none",
+        budget_monthly_reset: false,
+        notes: "Internal — no budget",
       },
       {
         id: "proj-4",
@@ -106,10 +109,27 @@ export function createDemoSeed(): DemoState {
         color: "#8B5CF6",
         start_date: d(14, week),
         end_date: d(75, week),
-        budget_hours: 40,
+        budget_hours: null,
         budget_amount: 6000,
-        budget_mode: "both",
-        notes: "Mostly tentative",
+        budget_mode: "amount",
+        budget_monthly_reset: false,
+        notes: "Dollar budget",
+      },
+      {
+        id: "proj-5",
+        organization_id: ORG_ID,
+        client_id: "client-2",
+        name: "Atlas Retainer",
+        status: "active",
+        priority: 2,
+        color: "#06B6D4",
+        start_date: d(-30, week),
+        end_date: d(90, week),
+        budget_hours: 40,
+        budget_amount: null,
+        budget_mode: "hours",
+        budget_monthly_reset: true,
+        notes: "Monthly hours retainer",
       },
     ],
     milestones: [

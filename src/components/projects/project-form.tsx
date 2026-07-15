@@ -2,7 +2,7 @@
 
 import { Field, inputClass } from "@/components/ui/form";
 import { cn } from "@/lib/cn";
-import type { Project, ProjectStatus } from "@/lib/types";
+import type { BudgetMode, Project, ProjectStatus } from "@/lib/types";
 
 const COLORS = [
   "#3B82F6", // blue
@@ -37,6 +37,18 @@ export function ProjectForm({
   const clientsSorted = [...clients].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
+
+  function setMode(mode: BudgetMode) {
+    onChange({
+      ...project,
+      budget_mode: mode,
+      budget_hours: mode === "hours" ? (project.budget_hours ?? 80) : null,
+      budget_amount: mode === "amount" ? (project.budget_amount ?? 0) : null,
+      budget_monthly_reset:
+        mode === "hours" ? project.budget_monthly_reset : false,
+    });
+  }
+
   return (
     <div className="grid gap-3">
       <Field label="Name">
@@ -65,22 +77,56 @@ export function ProjectForm({
           ))}
         </select>
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Total budget (hours)">
-          <input
-            type="number"
-            min={1}
-            className={inputClass}
-            value={project.budget_hours}
-            onChange={(e) =>
-              onChange({
-                ...project,
-                budget_hours: Number(e.target.value) || 0,
-              })
-            }
-          />
-        </Field>
-        <Field label="Total budget ($) optional">
+      <Field label="Budget type">
+        <select
+          className={inputClass}
+          value={project.budget_mode}
+          onChange={(e) => setMode(e.target.value as BudgetMode)}
+        >
+          <option value="none">None (internal / time-off tracking)</option>
+          <option value="hours">Hourly (total hours bucket)</option>
+          <option value="amount">Dollar amount (hours × bill rates)</option>
+        </select>
+      </Field>
+      {project.budget_mode === "hours" && (
+        <>
+          <Field label="Total budget (hours)">
+            <input
+              type="number"
+              min={1}
+              className={inputClass}
+              value={project.budget_hours ?? ""}
+              onChange={(e) =>
+                onChange({
+                  ...project,
+                  budget_hours: Number(e.target.value) || 0,
+                })
+              }
+            />
+          </Field>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={project.budget_monthly_reset}
+              onChange={(e) =>
+                onChange({
+                  ...project,
+                  budget_monthly_reset: e.target.checked,
+                })
+              }
+            />
+            <span>
+              Monthly reset
+              <span className="block text-xs text-[var(--text-muted)]">
+                Treat the hours budget as a recurring monthly retainer
+              </span>
+            </span>
+          </label>
+        </>
+      )}
+      {project.budget_mode === "amount" && (
+        <Field label="Total budget ($)">
           <input
             type="number"
             min={0}
@@ -95,7 +141,7 @@ export function ProjectForm({
             }
           />
         </Field>
-      </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Status">
           <select

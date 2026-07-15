@@ -11,7 +11,7 @@ import { useData } from "@/lib/data/store";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { sortProjectsByClientThenName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
-import type { BudgetMode, Project } from "@/lib/types";
+import type { Project } from "@/lib/types";
 
 function emptyProject(id: string): Omit<Project, "organization_id"> {
   return {
@@ -26,6 +26,7 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
     budget_hours: 80,
     budget_amount: null,
     budget_mode: "hours",
+    budget_monthly_reset: false,
     notes: "",
   };
 }
@@ -112,10 +113,34 @@ export default function ProjectsPage() {
             clients={state.clients}
             onChange={setEditing}
             onSave={() => {
-              if (!editing.name.trim() || editing.budget_hours <= 0) return;
-              const mode: BudgetMode =
-                editing.budget_amount != null ? "both" : "hours";
-              upsertProject({ ...editing, budget_mode: mode });
+              if (!editing.name.trim()) return;
+              if (
+                editing.budget_mode === "hours" &&
+                !(editing.budget_hours && editing.budget_hours > 0)
+              ) {
+                return;
+              }
+              if (
+                editing.budget_mode === "amount" &&
+                (editing.budget_amount == null || editing.budget_amount < 0)
+              ) {
+                return;
+              }
+              upsertProject({
+                ...editing,
+                budget_hours:
+                  editing.budget_mode === "hours"
+                    ? editing.budget_hours
+                    : null,
+                budget_amount:
+                  editing.budget_mode === "amount"
+                    ? editing.budget_amount
+                    : null,
+                budget_monthly_reset:
+                  editing.budget_mode === "hours"
+                    ? editing.budget_monthly_reset
+                    : false,
+              });
               setEditing(null);
               push("Project saved");
             }}

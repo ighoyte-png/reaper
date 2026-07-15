@@ -72,7 +72,10 @@ export default function DashboardPage() {
       project: p,
       burn: budgetBurn(p, state.assignments, state.people),
     }))
-    .filter(({ burn }) => budgetHealth(burn) !== "healthy")
+    .filter(({ burn }) => {
+      const health = budgetHealth(burn);
+      return health === "over" || health === "near";
+    })
     .sort((a, b) => b.burn.pct - a.burn.pct);
 
   const peopleLoad = state.people

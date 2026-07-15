@@ -18,6 +18,7 @@ import {
   budgetBurn,
   budgetHealth,
   formatHours,
+  formatMoney,
 } from "@/lib/domain/budget";
 import {
   availableHoursInRange,
@@ -1422,7 +1423,11 @@ export function ScheduleGrid() {
                           "text-[var(--status-over)]",
                       )}
                     >
-                      {formatHours(Math.max(0, burn.remainingHours))} left
+                      {burn.mode === "none"
+                        ? "No budget"
+                        : burn.mode === "amount"
+                          ? `${formatMoney(Math.max(0, burn.remainingAmount ?? 0))} left`
+                          : `${formatHours(Math.max(0, burn.remainingHours))} left`}
                     </span>
                   </div>
                   <BurnBar burn={burn} />
