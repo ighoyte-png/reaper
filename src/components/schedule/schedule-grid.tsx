@@ -108,6 +108,7 @@ export function ScheduleGrid() {
   const undoStackRef = useRef<UndoEntry[]>([]);
   const applyingUndoRef = useRef(false);
   const performUndoRef = useRef(() => {});
+  const closeSidePanelRef = useRef(() => {});
   const assignmentsRef = useRef(state.assignments);
   assignmentsRef.current = state.assignments;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -302,11 +303,7 @@ export function ScheduleGrid() {
 
       if (e.key === "Escape") {
         e.preventDefault();
-        setSelectedId(null);
-        setEditForm(null);
-        setDraft(null);
-        setHoverColId(null);
-        dragSnapshot.current = null;
+        closeSidePanelRef.current();
         if (target && typeof target.blur === "function") {
           target.blur();
         }
@@ -399,6 +396,18 @@ export function ScheduleGrid() {
     setSelectedId(id);
     if (isNarrow && id) setMobilePanelOpen(true);
   }
+
+  /** Return to the default Budget / plan sidebar (clear assignment + project filter). */
+  function closeSidePanel() {
+    setSelectedId(null);
+    setEditForm(null);
+    setDraft(null);
+    setHoverColId(null);
+    setProjectFilter("all");
+    setMobilePanelOpen(false);
+    dragSnapshot.current = null;
+  }
+  closeSidePanelRef.current = closeSidePanel;
 
   function warnBudget(projectId: string, assignments: Assignment[]) {
     const project = projectsById.get(projectId);
@@ -1251,7 +1260,7 @@ export function ScheduleGrid() {
           type="button"
           className="fixed inset-0 z-40 bg-black/40 lg:hidden"
           aria-label="Close details"
-          onClick={() => setMobilePanelOpen(false)}
+          onClick={closeSidePanel}
         />
       ) : null}
 
@@ -1281,13 +1290,13 @@ export function ScheduleGrid() {
                   : "Read-only view of your planned work."}
               </p>
             </div>
-            {isNarrow && (
+            {(selected || projectFilter !== "all" || (isNarrow && mobilePanelOpen)) && (
               <button
                 type="button"
-                className="text-sm text-[var(--text-muted)]"
-                onClick={() => setMobilePanelOpen(false)}
+                className="shrink-0 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+                onClick={closeSidePanel}
               >
-                Close
+                {selected || projectFilter !== "all" ? "Deselect" : "Close"}
               </button>
             )}
           </div>
