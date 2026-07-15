@@ -6,7 +6,12 @@ import { parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, Save, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass } from "@/components/ui/form";
+import {
+  RichNotesHtml,
+  SimpleRichTextEditor,
+} from "@/components/ui/simple-rich-text";
 import { Tooltip } from "@/components/ui/tooltip";
+import { notesHasContent } from "@/lib/notes-html";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import {
@@ -291,7 +296,9 @@ export function ScheduleGrid() {
       const target = e.target as HTMLElement | null;
       const inField =
         !!target &&
-        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+        (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) ||
+          target.isContentEditable ||
+          !!target.closest("[contenteditable='true']"));
 
       if (e.key === "Escape") {
         e.preventDefault();
@@ -1027,9 +1034,11 @@ export function ScheduleGrid() {
                                           ? " ↻"
                                           : ""}
                                       </span>
-                                      {occ.notes?.trim() ? (
+                                      {notesHasContent(occ.notes) ? (
                                         <Tooltip
-                                          content={occ.notes.trim()}
+                                          content={
+                                            <RichNotesHtml html={occ.notes!} />
+                                          }
                                           className="ml-0.5 shrink-0"
                                         >
                                           <span
@@ -1131,10 +1140,9 @@ export function ScheduleGrid() {
                                   const tentative = overlapping.every(
                                     (o) => o.status === "tentative",
                                   );
-                                  const notes = overlapping
-                                    .map((o) => o.notes?.trim())
-                                    .filter(Boolean)
-                                    .join(" · ");
+                                  const noteHtmls = overlapping
+                                    .map((o) => o.notes)
+                                    .filter((n) => notesHasContent(n));
 
                                   return [
                                     <div
@@ -1185,9 +1193,18 @@ export function ScheduleGrid() {
                                         {hoursLabel}
                                         {hasWeekly ? " ↻" : ""}
                                       </span>
-                                      {notes ? (
+                                      {noteHtmls.length > 0 ? (
                                         <Tooltip
-                                          content={notes}
+                                          content={
+                                            <span className="flex flex-col gap-1.5">
+                                              {noteHtmls.map((html, i) => (
+                                                <RichNotesHtml
+                                                  key={i}
+                                                  html={html!}
+                                                />
+                                              ))}
+                                            </span>
+                                          }
                                           className="ml-0.5 shrink-0"
                                         >
                                           <span
@@ -1359,13 +1376,13 @@ export function ScheduleGrid() {
                 }
               />
             </Field>
-            <Field label="Notes">
-              <textarea
-                className={`${inputClass} min-h-20 py-2`}
+            <div className="block text-xs text-[var(--text-muted)]">
+              Notes
+              <SimpleRichTextEditor
                 value={editForm.notes}
-                onChange={(e) => patchEditForm({ notes: e.target.value })}
+                onChange={(notes) => patchEditForm({ notes })}
               />
-            </Field>
+            </div>
             {(() => {
               const project = projectsById.get(editForm.project_id);
               if (!project) return null;
@@ -1373,16 +1390,12 @@ export function ScheduleGrid() {
               return (
                 <div>
                   <div className="mb-1 flex justify-between text-xs">
-                    {canManage ? (
-                      <Link
-                        href={`/projects/${project.id}`}
-                        className="font-medium hover:text-[var(--accent)] hover:underline"
-                      >
-                        {project.name}
-                      </Link>
-                    ) : (
-                      <span className="font-medium">{project.name}</span>
-                    )}
+                    <Link
+                      href={`/projects/${project.id}`}
+                      className="font-medium hover:text-[var(--accent)] hover:underline"
+                    >
+                      {project.name}
+                    </Link>
                     <span
                       className={cn(
                         budgetHealth(burn) === "over" &&
@@ -1452,12 +1465,19 @@ export function ScheduleGrid() {
               </button>
             </div>
           </div>
+        ) : selected ? (
+          <ReadOnlyAssignmentDetails
+            assignment={selected}
+            project={projectsById.get(selected.project_id)}
+          />
         ) : (
           <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">
             <p>
-              {isCoarse
-                ? "Tap a column to create a block. Switch Day / Week / Month above; swipe to see more."
-                : "Drag on a project row to create. Use Day / Week / Month to change column size."}
+              {canManage
+                ? isCoarse
+                  ? "Tap a column to create a block. Switch Day / Week / Month above; swipe to see more."
+                  : "Drag on a project row to create. Use Day / Week / Month to change column size."
+                : "Tap a block to see details and notes."}
             </p>
             {canManage &&
               state.projects
@@ -1564,6 +1584,73 @@ function Field({
       {label}
       {children}
     </label>
+  );
+}
+
+function ReadOnlyAssignmentDetails({
+  assignment,
+  project,
+}: {
+  assignment: Assignment;
+  project?: Project;
+}) {
+  return (
+    <div className="space-y-4 p-4 text-sm">
+      <div>
+        <div className="text-xs text-[var(--text-muted)]">Project</div>
+        <div className="mt-0.5 flex items-center gap-2 font-medium text-[var(--text)]">
+          {project ? (
+            <>
+              <span
+                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                style={{ background: project.color }}
+              />
+              {project.name}
+            </>
+          ) : (
+            "—"
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <div className="text-xs text-[var(--text-muted)]">Status</div>
+          <div className="mt-0.5 capitalize text-[var(--text)]">
+            {assignment.status}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[var(--text-muted)]">Hours / day</div>
+          <div className="mt-0.5 text-[var(--text)]">
+            {formatHours(assignment.hours_per_day)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[var(--text-muted)]">Start</div>
+          <div className="mt-0.5 text-[var(--text)]">{assignment.start_date}</div>
+        </div>
+        <div>
+          <div className="text-xs text-[var(--text-muted)]">End</div>
+          <div className="mt-0.5 text-[var(--text)]">{assignment.end_date}</div>
+        </div>
+      </div>
+      {(assignment.recurrence ?? "none") === "weekly" && (
+        <div className="text-xs text-[var(--text-muted)]">
+          Recurring weekly on the same weekdays
+        </div>
+      )}
+      <div>
+        <div className="text-xs text-[var(--text-muted)]">Notes</div>
+        {notesHasContent(assignment.notes) ? (
+          <RichNotesHtml
+            html={assignment.notes}
+            className="mt-1.5 text-sm leading-relaxed text-[var(--text)]"
+          />
+        ) : (
+          <p className="mt-1.5 text-[var(--text-muted)]">No notes</p>
+        )}
+      </div>
+    </div>
   );
 }
 

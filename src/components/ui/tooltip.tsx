@@ -16,7 +16,7 @@ export function Tooltip({
   children,
   className,
 }: {
-  content: string;
+  content: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -25,7 +25,21 @@ export function Tooltip({
     null,
   );
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const tipRef = useRef<HTMLSpanElement>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = useId();
+
+  function clearClose() {
+    if (closeTimer.current) {
+      clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  }
+
+  function scheduleClose() {
+    clearClose();
+    closeTimer.current = setTimeout(() => setOpen(false), 120);
+  }
 
   function updatePosition() {
     const el = triggerRef.current;
@@ -56,7 +70,11 @@ export function Tooltip({
     };
   }, [open]);
 
-  if (!content.trim()) return <>{children}</>;
+  useEffect(() => () => clearClose(), []);
+
+  if (content == null || content === false || content === "") {
+    return <>{children}</>;
+  }
 
   const tooltip =
     open &&
@@ -64,10 +82,16 @@ export function Tooltip({
     typeof document !== "undefined" &&
     createPortal(
       <span
+        ref={tipRef}
         id={id}
         role="tooltip"
-        className="pointer-events-none fixed z-[200] w-max max-w-[220px] -translate-x-1/2 -translate-y-full whitespace-pre-wrap rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg"
+        className="pointer-events-auto fixed z-[200] w-max max-w-[240px] -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg"
         style={{ top: coords.top, left: coords.left }}
+        onMouseEnter={() => {
+          clearClose();
+          setOpen(true);
+        }}
+        onMouseLeave={scheduleClose}
       >
         {content}
       </span>,
@@ -78,10 +102,16 @@ export function Tooltip({
     <span
       ref={triggerRef}
       className={cn("relative inline-flex", className)}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
+      onMouseEnter={() => {
+        clearClose();
+        setOpen(true);
+      }}
+      onMouseLeave={scheduleClose}
+      onFocus={() => {
+        clearClose();
+        setOpen(true);
+      }}
+      onBlur={scheduleClose}
     >
       <span aria-describedby={open ? id : undefined}>{children}</span>
       {tooltip}
