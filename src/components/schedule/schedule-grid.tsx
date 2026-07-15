@@ -53,7 +53,6 @@ import type {
   Assignment,
   AssignmentStatus,
   Project,
-  Recurrence,
 } from "@/lib/types";
 
 const DAY_W_DESKTOP = 48;
@@ -92,7 +91,6 @@ export function ScheduleGrid() {
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Assignment | null>(null);
-  const [draftRecurrence, setDraftRecurrence] = useState<Recurrence>("none");
   const [hoverColId, setHoverColId] = useState<string | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
@@ -443,7 +441,7 @@ export function ScheduleGrid() {
       allocation_pct: 50,
       status: "confirmed",
       notes: "",
-      recurrence: draftRecurrence,
+      recurrence: "none",
     };
     trackedUpsert(
       row,
@@ -558,30 +556,18 @@ export function ScheduleGrid() {
               <option value="month">By month</option>
             </select>
             {canManage && (
-              <>
-                <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                  <input
-                    type="checkbox"
-                    checked={draftRecurrence === "weekly"}
-                    onChange={(e) =>
-                      setDraftRecurrence(e.target.checked ? "weekly" : "none")
-                    }
-                  />
-                  Recur weekly
-                </label>
-                <select
-                  value={projectFilter}
-                  onChange={(e) => setProjectFilter(e.target.value)}
-                  className="h-8 max-w-[220px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
-                >
-                  <option value="all">All projects</option>
-                  {sortedProjects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {projectLabelWithClient(p, state.clients)}
-                    </option>
-                  ))}
-                </select>
-              </>
+              <select
+                value={projectFilter}
+                onChange={(e) => setProjectFilter(e.target.value)}
+                className="h-8 max-w-[220px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+              >
+                <option value="all">All projects</option>
+                {sortedProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {projectLabelWithClient(p, state.clients)}
+                  </option>
+                ))}
+              </select>
             )}
             {isNarrow && (
               <button
