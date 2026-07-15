@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Reaper
 
-## Getting Started
+Forecast-first resource planning. Set a **project total budget**, put people on the **schedule**, and confirmed planned hours burn the remaining budget — no timesheets.
 
-First, run the development server:
+## Stack
+
+- Next.js (App Router) + TypeScript + Tailwind
+- Supabase (Auth + Postgres + RLS) when configured
+- Local demo store (localStorage) when Supabase env vars are unset
+
+## Run (local demo)
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) → **Enter demo workspace**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Connect Supabase
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create a project at [supabase.com](https://supabase.com).
+2. **Project Settings → API**
+   - Project URL → `NEXT_PUBLIC_SUPABASE_URL`
+   - **anon / publishable** key → `NEXT_PUBLIC_SUPABASE_ANON_KEY` (not the secret `service_role` key)
+3. Copy env file and fill values:
 
-## Learn More
+```bash
+copy .env.example .env.local
+```
 
-To learn more about Next.js, take a look at the following resources:
+Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+4. In **SQL Editor**, run migrations in order:
+   - [`supabase/migrations/001_init.sql`](supabase/migrations/001_init.sql)
+   - [`supabase/migrations/002_bootstrap.sql`](supabase/migrations/002_bootstrap.sql)
+   - [`supabase/migrations/003_recurrence.sql`](supabase/migrations/003_recurrence.sql) (weekly recurring assignments)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+5. **Authentication → Providers → Email**: for local testing, turn **off** “Confirm email” so signup works immediately.
 
-## Deploy on Vercel
+6. Open the app → **Create workspace** (email/password) → **Settings → Load demo data**.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+7. **Member invites** (optional): add `SUPABASE_SERVICE_ROLE_KEY` to `.env` (service_role secret — server only). In Supabase **Authentication → URL configuration**, set Site URL to `http://localhost:3000`. Then **People → Invite** sends an email; the member lands on **My schedule** only.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+With env vars set, the UI switches from local demo login to real Supabase auth and persists schedule/projects/people in Postgres.
+
+## Features
+
+- Schedule grid (week / 2-week): create, move, resize, duplicate assignments
+- Project total budget with planned / remaining burn bars
+- Capacity colors + leave overlays + over-budget warnings
+- People, projects, clients CRUD
+- Utilization heatmap, budgets report, financial forecast
+- Light / dark theme toggle

@@ -1,0 +1,488 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createDemoSeed } from "@/lib/demo/seed";
+import type {
+  Assignment,
+  Client,
+  DemoState,
+  LeaveDay,
+  Milestone,
+  Organization,
+  Person,
+  Profile,
+  Project,
+} from "@/lib/types";
+
+function num(value: unknown, fallback = 0): number {
+  if (typeof value === "number") return value;
+  if (value == null || value === "") return fallback;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function mapProject(row: Record<string, unknown>): Project {
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    client_id: row.client_id ? String(row.client_id) : null,
+    name: String(row.name ?? ""),
+    status: row.status as Project["status"],
+    priority: num(row.priority, 3),
+    color: String(row.color ?? "#3B82F6"),
+    start_date: row.start_date ? String(row.start_date) : null,
+    end_date: row.end_date ? String(row.end_date) : null,
+    budget_hours: num(row.budget_hours),
+    budget_amount:
+      row.budget_amount == null ? null : num(row.budget_amount),
+    budget_mode: (row.budget_mode as Project["budget_mode"]) ?? "hours",
+    notes: String(row.notes ?? ""),
+  };
+}
+
+function mapPerson(row: Record<string, unknown>): Person {
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    profile_id: row.profile_id ? String(row.profile_id) : null,
+    name: String(row.name ?? ""),
+    email: String(row.email ?? ""),
+    role_title: String(row.role_title ?? ""),
+    department: String(row.department ?? ""),
+    office: String(row.office ?? ""),
+    capacity_hours_week: num(row.capacity_hours_week, 40),
+    cost_rate: num(row.cost_rate),
+    bill_rate: num(row.bill_rate),
+    timezone: String(row.timezone ?? "UTC"),
+  };
+}
+
+function mapAssignment(row: Record<string, unknown>): Assignment {
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    person_id: String(row.person_id),
+    project_id: String(row.project_id),
+    start_date: String(row.start_date),
+    end_date: String(row.end_date),
+    hours_per_day: num(row.hours_per_day),
+    allocation_pct:
+      row.allocation_pct == null ? null : num(row.allocation_pct),
+    status: (row.status as Assignment["status"]) ?? "confirmed",
+    notes: String(row.notes ?? ""),
+    recurrence:
+      row.recurrence === "weekly" ? "weekly" : "none",
+  };
+}
+
+function emptyWorkspace(): DemoState {
+  return {
+    organization: { id: "", name: "" },
+    profiles: [],
+    clients: [],
+    projects: [],
+    milestones: [],
+    people: [],
+    assignments: [],
+    leave_days: [],
+    sessionProfileId: null,
+  };
+}
+
+/** Create org/profile if the auth user has none (common after email confirm). */
+export async function ensureProfileForUser(
+  supabase: SupabaseClient,
+  user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
+): Promise<boolean> {
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error) throw error;
+  if (profile) return false;
+
+  const meta = user.user_metadata ?? {};
+  const fullName =
+    (typeof meta.full_name === "string" && meta.full_name) ||
+    user.email?.split("@")[0] ||
+    "Owner";
+  const orgName =
+    (typeof meta.org_name === "string" && meta.org_name) || "My workspace";
+
+  await bootstrapOrganization(supabase, orgName, fullName);
+  return true;
+}
+
+export async function fetchWorkspace(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<DemoState> {
+  const { data: profile, error: profileError } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (profileError) throw profileError;
+  if (!profile) {
+    return { ...emptyWorkspace(), sessionProfileId: null };
+  }
+
+  const orgId = profile.organization_id as string;
+
+  const [
+    orgRes,
+    profilesRes,
+    clientsRes,
+    projectsRes,
+    milestonesRes,
+    peopleRes,
+    assignmentsRes,
+    leaveRes,
+  ] = await Promise.all([
+    supabase.from("organizations").select("*").eq("id", orgId).single(),
+    supabase.from("profiles").select("*").eq("organization_id", orgId),
+    supabase.from("clients").select("*").eq("organization_id", orgId),
+    supabase.from("projects").select("*").eq("organization_id", orgId),
+    supabase.from("milestones").select("*").eq("organization_id", orgId),
+    supabase.from("people").select("*").eq("organization_id", orgId),
+    supabase.from("assignments").select("*").eq("organization_id", orgId),
+    supabase.from("leave_days").select("*").eq("organization_id", orgId),
+  ]);
+
+  for (const res of [
+    orgRes,
+    profilesRes,
+    clientsRes,
+    projectsRes,
+    milestonesRes,
+    peopleRes,
+    assignmentsRes,
+    leaveRes,
+  ]) {
+    if (res.error) throw res.error;
+  }
+
+  const organization = orgRes.data as Organization;
+
+  return {
+    organization: { id: organization.id, name: organization.name },
+    profiles: (profilesRes.data ?? []).map((row) => ({
+      id: String(row.id),
+      organization_id: String(row.organization_id),
+      email: String(row.email ?? ""),
+      full_name: String(row.full_name ?? ""),
+      role: row.role as Profile["role"],
+    })),
+    clients: (clientsRes.data ?? []).map((row) => ({
+      id: String(row.id),
+      organization_id: String(row.organization_id),
+      name: String(row.name ?? ""),
+      notes: String(row.notes ?? ""),
+    })),
+    projects: (projectsRes.data ?? []).map((row) =>
+      mapProject(row as Record<string, unknown>),
+    ),
+    milestones: (milestonesRes.data ?? []).map((row) => ({
+      id: String(row.id),
+      organization_id: String(row.organization_id),
+      project_id: String(row.project_id),
+      name: String(row.name ?? ""),
+      due_date: String(row.due_date),
+      status: row.status as Milestone["status"],
+    })),
+    people: (peopleRes.data ?? []).map((row) =>
+      mapPerson(row as Record<string, unknown>),
+    ),
+    assignments: (assignmentsRes.data ?? []).map((row) =>
+      mapAssignment(row as Record<string, unknown>),
+    ),
+    leave_days: (leaveRes.data ?? []).map((row) => ({
+      id: String(row.id),
+      organization_id: String(row.organization_id),
+      person_id: String(row.person_id),
+      date: String(row.date),
+      kind: row.kind as LeaveDay["kind"],
+      status: row.status as LeaveDay["status"],
+    })),
+    sessionProfileId: userId,
+  };
+}
+
+export async function bootstrapOrganization(
+  supabase: SupabaseClient,
+  orgName: string,
+  fullName: string,
+) {
+  const { error } = await supabase.rpc("bootstrap_organization", {
+    org_name: orgName,
+    user_full_name: fullName,
+  });
+  if (error) throw error;
+}
+
+export async function upsertClientRow(
+  supabase: SupabaseClient,
+  client: Client,
+) {
+  const { error } = await supabase.from("clients").upsert({
+    id: client.id,
+    organization_id: client.organization_id,
+    name: client.name,
+    notes: client.notes,
+  });
+  if (error) throw error;
+}
+
+export async function deleteClientRow(supabase: SupabaseClient, id: string) {
+  const { error } = await supabase.from("clients").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function upsertProjectRow(
+  supabase: SupabaseClient,
+  project: Project,
+) {
+  const { error } = await supabase.from("projects").upsert({
+    id: project.id,
+    organization_id: project.organization_id,
+    client_id: project.client_id,
+    name: project.name,
+    status: project.status,
+    priority: project.priority,
+    color: project.color,
+    start_date: project.start_date,
+    end_date: project.end_date,
+    budget_hours: project.budget_hours,
+    budget_amount: project.budget_amount,
+    budget_mode: project.budget_mode,
+    notes: project.notes,
+  });
+  if (error) throw error;
+}
+
+export async function deleteProjectRow(supabase: SupabaseClient, id: string) {
+  const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function upsertPersonRow(
+  supabase: SupabaseClient,
+  person: Person,
+) {
+  const payload = {
+    id: person.id,
+    organization_id: person.organization_id,
+    profile_id: person.profile_id,
+    name: person.name,
+    email: person.email || null,
+    role_title: person.role_title,
+    department: person.department,
+    office: person.office,
+    capacity_hours_week: person.capacity_hours_week,
+    cost_rate: person.cost_rate,
+    bill_rate: person.bill_rate,
+    timezone: person.timezone,
+  };
+  const { error } = await supabase.from("people").upsert(payload);
+  if (!error) return;
+
+  const missingEmailCol =
+    /Could not find the 'email' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /email/i.test(error.message));
+
+  if (missingEmailCol) {
+    const { email: _omit, ...withoutEmail } = payload;
+    const retry = await supabase.from("people").upsert(withoutEmail);
+    if (retry.error) throw retry.error;
+    // Person saved; warn so the column can be added (email only lived in the invite payload)
+    console.warn(
+      "people.email column missing — ran upsert without it. Apply supabase/migrations/004_people_email.sql",
+    );
+    return;
+  }
+
+  throw error;
+}
+
+export async function deletePersonRow(supabase: SupabaseClient, id: string) {
+  const { error } = await supabase.from("people").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function upsertAssignmentRow(
+  supabase: SupabaseClient,
+  assignment: Assignment,
+) {
+  const { error } = await supabase.from("assignments").upsert({
+    id: assignment.id,
+    organization_id: assignment.organization_id,
+    person_id: assignment.person_id,
+    project_id: assignment.project_id,
+    start_date: assignment.start_date,
+    end_date: assignment.end_date,
+    hours_per_day: assignment.hours_per_day,
+    allocation_pct: assignment.allocation_pct,
+    status: assignment.status,
+    notes: assignment.notes,
+    recurrence: assignment.recurrence ?? "none",
+  });
+  if (error) throw error;
+}
+
+export async function deleteAssignmentRow(
+  supabase: SupabaseClient,
+  id: string,
+) {
+  const { error } = await supabase.from("assignments").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function upsertMilestoneRow(
+  supabase: SupabaseClient,
+  milestone: Milestone,
+) {
+  const { error } = await supabase.from("milestones").upsert({
+    id: milestone.id,
+    organization_id: milestone.organization_id,
+    project_id: milestone.project_id,
+    name: milestone.name,
+    due_date: milestone.due_date,
+    status: milestone.status,
+  });
+  if (error) throw error;
+}
+
+export async function deleteMilestoneRow(
+  supabase: SupabaseClient,
+  id: string,
+) {
+  const { error } = await supabase.from("milestones").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function upsertLeaveRow(
+  supabase: SupabaseClient,
+  leave: LeaveDay,
+) {
+  const { error } = await supabase.from("leave_days").upsert({
+    id: leave.id,
+    organization_id: leave.organization_id,
+    person_id: leave.person_id,
+    date: leave.date,
+    kind: leave.kind,
+    status: leave.status,
+  });
+  if (error) throw error;
+}
+
+export async function deleteLeaveRow(supabase: SupabaseClient, id: string) {
+  const { error } = await supabase.from("leave_days").delete().eq("id", id);
+  if (error) throw error;
+}
+
+function remapId(cache: Map<string, string>, oldId: string): string {
+  if (!cache.has(oldId)) cache.set(oldId, crypto.randomUUID());
+  return cache.get(oldId)!;
+}
+
+/** Wipe org planning data and insert the narrative demo seed with fresh UUIDs. */
+export async function seedDemoWorkspace(
+  supabase: SupabaseClient,
+  organizationId: string,
+) {
+  const { error: clearError } = await supabase.rpc("clear_organization_data");
+  if (clearError) throw clearError;
+
+  const seed = createDemoSeed();
+  const ids = new Map<string, string>();
+
+  const clients = seed.clients.map((c) => ({
+    id: remapId(ids, c.id),
+    organization_id: organizationId,
+    name: c.name,
+    notes: c.notes,
+  }));
+
+  const projects = seed.projects.map((p) => ({
+    id: remapId(ids, p.id),
+    organization_id: organizationId,
+    client_id: p.client_id ? remapId(ids, p.client_id) : null,
+    name: p.name,
+    status: p.status,
+    priority: p.priority,
+    color: p.color,
+    start_date: p.start_date,
+    end_date: p.end_date,
+    budget_hours: p.budget_hours,
+    budget_amount: p.budget_amount,
+    budget_mode: p.budget_mode,
+    notes: p.notes,
+  }));
+
+  const people = seed.people.map((p) => ({
+    id: remapId(ids, p.id),
+    organization_id: organizationId,
+    profile_id: null as string | null,
+    name: p.name,
+    email: p.email || null,
+    role_title: p.role_title,
+    department: p.department,
+    office: p.office,
+    capacity_hours_week: p.capacity_hours_week,
+    cost_rate: p.cost_rate,
+    bill_rate: p.bill_rate,
+    timezone: p.timezone,
+  }));
+
+  const milestones = seed.milestones.map((m) => ({
+    id: remapId(ids, m.id),
+    organization_id: organizationId,
+    project_id: remapId(ids, m.project_id),
+    name: m.name,
+    due_date: m.due_date,
+    status: m.status,
+  }));
+
+  const assignments = seed.assignments.map((a) => ({
+    id: remapId(ids, a.id),
+    organization_id: organizationId,
+    person_id: remapId(ids, a.person_id),
+    project_id: remapId(ids, a.project_id),
+    start_date: a.start_date,
+    end_date: a.end_date,
+    hours_per_day: a.hours_per_day,
+    allocation_pct: a.allocation_pct,
+    status: a.status,
+    notes: a.notes,
+    recurrence: a.recurrence ?? "none",
+  }));
+
+  const leaveDays = seed.leave_days.map((l) => ({
+    id: remapId(ids, l.id),
+    organization_id: organizationId,
+    person_id: remapId(ids, l.person_id),
+    date: l.date,
+    kind: l.kind,
+    status: l.status,
+  }));
+
+  const inserts = [
+    supabase.from("clients").insert(clients),
+    supabase.from("projects").insert(projects),
+    supabase.from("people").insert(people),
+  ];
+  for (const req of inserts) {
+    const { error } = await req;
+    if (error) throw error;
+  }
+
+  const second = [
+    supabase.from("milestones").insert(milestones),
+    supabase.from("assignments").insert(assignments),
+    supabase.from("leave_days").insert(leaveDays),
+  ];
+  for (const req of second) {
+    const { error } = await req;
+    if (error) throw error;
+  }
+}

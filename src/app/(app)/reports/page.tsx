@@ -1,0 +1,44 @@
+"use client";
+
+import Link from "next/link";
+import { Topbar } from "@/components/nav/topbar";
+
+const reports = [
+  {
+    href: "/reports/utilization",
+    title: "Utilization",
+    description: "People × weeks heatmap of planned load vs capacity.",
+  },
+  {
+    href: "/reports/budgets",
+    title: "Budgets",
+    description: "Planned hours vs project total budget for every project.",
+  },
+  {
+    href: "/reports/forecast",
+    title: "Financial forecast",
+    description: "Revenue, cost, and margin implied by the schedule.",
+  },
+];
+
+export default function ReportsPage() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <Topbar title="Reports" />
+      <div className="grid gap-3 p-3 sm:p-5 md:grid-cols-3">
+        {reports.map((report) => (
+          <Link
+            key={report.href}
+            href={report.href}
+            className="rounded-md border border-[var(--border)] p-4 hover:bg-[var(--row-hover)]"
+          >
+            <h2 className="text-sm font-semibold">{report.title}</h2>
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
+              {report.description}
+            </p>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
