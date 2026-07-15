@@ -409,9 +409,9 @@ export function createDemoSeed(): DemoState {
         organization_id: ORG_ID,
         person_id: "person-3",
         date: d(2, week),
-        kind: "vacation", // PTO
+        kind: "vacation",
         status: "approved",
-        hours_per_day: 8,
+        hours_per_day: null, // Full Day
         notes: "Family trip",
       },
       {
@@ -421,7 +421,7 @@ export function createDemoSeed(): DemoState {
         date: d(3, week),
         kind: "vacation",
         status: "approved",
-        hours_per_day: 8,
+        hours_per_day: null,
         notes: "Family trip",
       },
       {
@@ -431,7 +431,7 @@ export function createDemoSeed(): DemoState {
         date: d(4, week),
         kind: "sick",
         status: "approved",
-        hours_per_day: 8,
+        hours_per_day: null,
         notes: "",
       },
       {
@@ -439,9 +439,9 @@ export function createDemoSeed(): DemoState {
         organization_id: ORG_ID,
         person_id: "person-4",
         date: d(10, week),
-        kind: "holiday", // Statutory (CA calendar sample)
+        kind: "holiday",
         status: "approved",
-        hours_per_day: 8,
+        hours_per_day: null,
         notes: "",
       },
       {
@@ -451,7 +451,7 @@ export function createDemoSeed(): DemoState {
         date: d(10, week),
         kind: "holiday",
         status: "approved",
-        hours_per_day: 8,
+        hours_per_day: null,
         notes: "",
       },
       {
@@ -461,7 +461,7 @@ export function createDemoSeed(): DemoState {
         date: d(10, week),
         kind: "holiday",
         status: "approved",
-        hours_per_day: 8,
+        hours_per_day: null,
         notes: "",
       },
     ],

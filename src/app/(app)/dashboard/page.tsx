@@ -11,7 +11,7 @@ import {
   availableHoursInRange,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
-import { leaveKindLabel } from "@/lib/domain/leave";
+import { leaveBlockLabel } from "@/lib/domain/leave";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 
@@ -208,7 +208,7 @@ export default function DashboardPage() {
                   >
                     <div className="font-medium">{person?.name ?? "Person"}</div>
                     <div className="text-xs text-[var(--text-muted)]">
-                      {leave.date} · {leaveKindLabel(leave.kind)}
+                      {leave.date} · {leaveBlockLabel(leave.kind, leave.hours_per_day)}
                     </div>
                   </div>
                 );

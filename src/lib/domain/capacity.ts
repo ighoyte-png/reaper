@@ -1,5 +1,6 @@
 import type { Assignment, CapacityLevel, LeaveDay, Person } from "@/lib/types";
 import { toDateKey, workingDaysBetween } from "@/lib/domain/dates";
+import { isFullDayLeave } from "@/lib/domain/leave";
 import {
   expandAssignmentsInRange,
   occurrenceCoversDay,
@@ -23,6 +24,16 @@ export function isOnLeave(
   );
 }
 
+/** True when approved full-day leave blocks the entire workday. */
+export function isOnFullDayLeave(
+  personId: string,
+  dateKey: string,
+  leaveDays: LeaveDay[],
+): LeaveDay | undefined {
+  const leave = isOnLeave(personId, dateKey, leaveDays);
+  return leave && isFullDayLeave(leave) ? leave : undefined;
+}
+
 export function personBookedHoursOnDay(
   personId: string,
   dateKey: string,
@@ -30,8 +41,12 @@ export function personBookedHoursOnDay(
   leaveDays: LeaveDay[],
   includeTentative = true,
 ): number {
-  if (isOnLeave(personId, dateKey, leaveDays)) return 0;
   if (isWeekend(parseISO(dateKey))) return 0;
+  if (isOnFullDayLeave(personId, dateKey, leaveDays)) return 0;
+
+  const leave = isOnLeave(personId, dateKey, leaveDays);
+  const leaveHours =
+    leave && !isFullDayLeave(leave) ? (leave.hours_per_day ?? 0) : 0;
 
   const occs = expandAssignmentsInRange(assignments, dateKey, dateKey).filter(
     (o) => {
@@ -41,7 +56,7 @@ export function personBookedHoursOnDay(
     },
   );
 
-  return occs.reduce((sum, o) => sum + o.hours_per_day, 0);
+  return leaveHours + occs.reduce((sum, o) => sum + o.hours_per_day, 0);
 }
 
 export function personBookedHoursInRange(
@@ -76,7 +91,7 @@ export function availableHoursInRange(
   const days = workingDaysBetween(startKey, endKey);
   const perDay = dailyCapacityHours(person);
   return days.reduce((sum, day) => {
-    if (isOnLeave(person.id, day, leaveDays)) return sum;
+    if (isOnFullDayLeave(person.id, day, leaveDays)) return sum;
     return sum + perDay;
   }, 0);
 }
@@ -94,7 +109,7 @@ export function capacityLevel(
   if (onLeave || available <= 0) return "unavailable";
   const pct = utilizationPct(booked, available);
   if (pct > 100) return "over";
-  if (pct >= 85) return "near";
+  if (pct >= 95) return "near";
   return "healthy";
 }
 

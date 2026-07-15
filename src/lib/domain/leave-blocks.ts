@@ -16,9 +16,11 @@ export interface LeaveBlock {
 }
 
 function sameDayMeta(a: LeaveDay, b: LeaveDay): boolean {
-  // Hours/notes can drift between days if a prior save was partial — still
-  // treat contiguous same-kind leave as one block so duration edits stick.
-  return a.kind === b.kind && a.status === b.status;
+  // Contiguous same-kind leave stays one block. Full vs partial (null hours)
+  // must not merge — they paint and override differently.
+  const aFull = a.hours_per_day == null;
+  const bFull = b.hours_per_day == null;
+  return a.kind === b.kind && a.status === b.status && aFull === bFull;
 }
 
 /**

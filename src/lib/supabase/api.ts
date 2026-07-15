@@ -651,7 +651,7 @@ export async function applyHolidayCalendarLeave(
         date: day.date,
         kind: "holiday",
         status: "approved",
-        hours_per_day: 8,
+        hours_per_day: null,
         notes: day.name || "",
       });
     }

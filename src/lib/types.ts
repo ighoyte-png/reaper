@@ -3,7 +3,8 @@ export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
 export type BudgetMode = "none" | "hours" | "amount";
 export type AssignmentStatus = "tentative" | "confirmed";
 /**
- * Stored leave kinds. UI labels: vacation→PTO, holiday→Statutory.
+ * Stored leave kinds. UI: vacation + null hours → Full Day;
+ * vacation + hours → Partial Day; holiday → Statutory.
  * Aliases "pto" / "statutory" are normalized before persist.
  */
 export type LeaveKind = "vacation" | "holiday" | "sick" | "training";
@@ -118,7 +119,10 @@ export interface LeaveDay {
   date: string;
   kind: LeaveKind;
   status: LeaveStatus;
-  /** Null = full day (uses capacity); otherwise hours away that day. */
+  /**
+   * Null = full-day leave (clears overlapping assignments on save).
+   * Number = partial-day hours away (keeps other assignments).
+   */
   hours_per_day: number | null;
   notes: string;
 }

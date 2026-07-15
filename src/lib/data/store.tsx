@@ -820,7 +820,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           );
 
           let assignments = prev.assignments;
-          if (leaveRow.status === "approved") {
+          if (
+            leaveRow.status === "approved" &&
+            leaveRow.hours_per_day == null
+          ) {
             const ov = applyFullDayLeaveOverride(
               prev.assignments,
               leaveRow.person_id,
@@ -928,25 +931,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
           let leave_days = prev.leave_days.filter((l) => !removeIds.has(l.id));
           leave_days = [...leave_days, ...newRows];
 
-          const ov = applyFullDayLeaveOverrideForDates(
-            prev.assignments,
-            personId,
-            dates,
-            uid,
-          );
-          let assignments = prev.assignments.filter(
-            (a) => !ov.deletes.includes(a.id),
-          );
-          for (const a of ov.upserts) {
-            const idx = assignments.findIndex((x) => x.id === a.id);
-            if (idx >= 0) assignments[idx] = a;
-            else assignments.push(a);
+          let assignments = prev.assignments;
+          let asgUpserts: Assignment[] = [];
+          let asgDeletes: string[] = [];
+          // Full-day leave (null hours) clears overlapping assignments;
+          // partial-day leave leaves them alone.
+          if (hours_per_day == null) {
+            const ov = applyFullDayLeaveOverrideForDates(
+              prev.assignments,
+              personId,
+              dates,
+              uid,
+            );
+            asgUpserts = ov.upserts;
+            asgDeletes = ov.deletes;
+            assignments = prev.assignments.filter(
+              (a) => !ov.deletes.includes(a.id),
+            );
+            for (const a of ov.upserts) {
+              const idx = assignments.findIndex((x) => x.id === a.id);
+              if (idx >= 0) assignments[idx] = a;
+              else assignments.push(a);
+            }
           }
 
           payload.rows = newRows;
           payload.leaveDeleteIds = leaveDeleteIds;
-          payload.asgUpserts = ov.upserts;
-          payload.asgDeletes = ov.deletes;
+          payload.asgUpserts = asgUpserts;
+          payload.asgDeletes = asgDeletes;
 
           return { ...prev, leave_days, assignments };
         });
@@ -1086,7 +1098,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 date: day.date,
                 kind: "holiday",
                 status: "approved",
-                hours_per_day: existing?.hours_per_day ?? 8,
+                hours_per_day: null,
                 notes: existing?.notes ?? day.name ?? "",
               };
               newLeaves.push(leaveRow);

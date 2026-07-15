@@ -24,6 +24,7 @@ import {
 import {
   availableHoursInRange,
   capacityLevel,
+  isOnFullDayLeave,
   isOnLeave,
   personBookedHoursInRange,
   utilizationPct,
@@ -53,7 +54,11 @@ import {
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import {
-  leaveKindLabel,
+  isFullDayLeave,
+  leaveBlockLabel,
+  leaveFromTypeOption,
+  leaveTypeFromLeave,
+  type LeaveTypeOption,
 } from "@/lib/domain/leave";
 import { leaveBlocksInRange, type LeaveBlock } from "@/lib/domain/leave-blocks";
 import type {
@@ -109,7 +114,7 @@ export function ScheduleGrid() {
     start_date: string;
     end_date: string;
     kind: LeaveKind;
-    hours_per_day: number;
+    hours_per_day: number | null;
     notes: string;
     dayIds: string[];
   } | null>(null);
@@ -117,7 +122,6 @@ export function ScheduleGrid() {
   const [hoverColId, setHoverColId] = useState<string | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
-  const [paintLeaveKind, setPaintLeaveKind] = useState<LeaveKind>("vacation");
   const [draft, setDraft] = useState<{
     personId: string;
     projectId: string;
@@ -145,7 +149,7 @@ export function ScheduleGrid() {
     mode: "resize-end" | "resize-start";
     personId: string;
     kind: LeaveKind;
-    hours_per_day: number;
+    hours_per_day: number | null;
     notes: string;
     previousDayIds: string[];
     originStart: string;
@@ -476,7 +480,7 @@ export function ScheduleGrid() {
       start_date: block.start_date,
       end_date: block.end_date,
       kind: block.kind,
-      hours_per_day: block.hours_per_day ?? 8,
+      hours_per_day: block.hours_per_day,
       notes: block.notes,
       dayIds: block.dayIds,
     });
@@ -565,16 +569,13 @@ export function ScheduleGrid() {
     personId: string,
     start: string,
     end: string,
-    kind: LeaveKind = paintLeaveKind,
   ) {
     if (!canManage) return;
     const startDate = start <= end ? start : end;
     const endDate = start <= end ? end : start;
-    const person = state.people.find((p) => p.id === personId);
-    const defaultHours = Math.max(
-      0.01,
-      roundAssignmentHours((person?.capacity_hours_week ?? 40) / 5),
-    );
+    // New paints default to Partial Day — keep other assignments intact.
+    const defaultHours = 4;
+    const kind: LeaveKind = "vacation";
     const rows = setLeaveBlock({
       personId,
       startDate,
@@ -586,8 +587,8 @@ export function ScheduleGrid() {
     if (rows.length === 0) return;
     push(
       rows.length === 1
-        ? `${leaveKindLabel(kind)} day added`
-        : `${rows.length} ${leaveKindLabel(kind)} days added`,
+        ? "Partial Day added"
+        : `${rows.length} Partial Day days added`,
     );
     setSelectedId(null);
     setEditForm(null);
@@ -607,10 +608,13 @@ export function ScheduleGrid() {
 
   function saveLeaveEditForm() {
     if (!canManage || !leaveEditForm) return;
-    const hours = Math.max(
-      0.01,
-      roundAssignmentHours(leaveEditForm.hours_per_day),
-    );
+    const fullDay = leaveEditForm.hours_per_day == null;
+    const hours = fullDay
+      ? null
+      : Math.max(
+          0.01,
+          roundAssignmentHours(leaveEditForm.hours_per_day ?? 4),
+        );
     const startDate =
       leaveEditForm.start_date <= leaveEditForm.end_date
         ? leaveEditForm.start_date
@@ -641,7 +645,7 @@ export function ScheduleGrid() {
       blockId: rows[0].id,
     });
     setSelectedLeaveBlockId(rows[0].id);
-    push("Time off saved");
+    push(fullDay ? "Full-day time off saved" : "Time off saved");
   }
 
   function applyLeaveResizeToColumn(colStart: string, colEnd: string) {
@@ -927,22 +931,6 @@ export function ScheduleGrid() {
                 </select>
               </>
             )}
-            {canManage && (
-              <select
-                value={paintLeaveKind}
-                onChange={(e) =>
-                  setPaintLeaveKind(e.target.value as LeaveKind)
-                }
-                className="h-8 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
-                aria-label="Time-off kind when painting"
-                title="Kind for new time-off on the Time off row"
-              >
-                <option value="vacation">Paint PTO</option>
-                <option value="holiday">Paint Statutory</option>
-                <option value="sick">Paint Sick</option>
-                <option value="training">Paint Training</option>
-              </select>
-            )}
             {isNarrow && (
               <button
                 type="button"
@@ -1151,6 +1139,14 @@ export function ScheduleGrid() {
                       startKey,
                       endKey,
                     );
+                    // Only saved Full Day expands / washes — Type in the
+                    // sidebar is pending until Save.
+                    const partialLeaveBlocks = leaveBlocks.filter(
+                      (b) => !isFullDayLeave(b),
+                    );
+                    const fullLeaveBlocks = leaveBlocks.filter((b) =>
+                      isFullDayLeave(b),
+                    );
                     const leaveDraftGeo =
                       leaveDraft && leaveDraft.personId === person.id
                         ? spanColumnsPx(
@@ -1159,9 +1155,184 @@ export function ScheduleGrid() {
                             leaveDraft.end,
                           )
                         : null;
+
+                    function leaveBlockEditors(
+                      block: LeaveBlock,
+                      fullHeight: boolean,
+                    ) {
+                      const isSelected = selectedLeaveBlockId === block.id;
+                      const preview =
+                        isSelected && leaveEditForm ? leaveEditForm : null;
+                      const blockStart =
+                        preview?.start_date ?? block.start_date;
+                      const blockEnd = preview?.end_date ?? block.end_date;
+                      const geo = spanColumnsPx(
+                        columns,
+                        blockStart,
+                        blockEnd,
+                      );
+                      if (!geo) return null;
+                      const spanDays = workingDaysBetween(
+                        blockStart,
+                        blockEnd,
+                      );
+                      // Label follows sidebar Type before Save; height /
+                      // wipe still use saved hours until Save.
+                      const typeLabel = leaveBlockLabel(
+                        preview?.kind ?? block.kind,
+                        preview ? preview.hours_per_day : block.hours_per_day,
+                      );
+                      const hoursLabel =
+                        (preview?.hours_per_day ?? block.hours_per_day) ==
+                        null
+                          ? null
+                          : (preview?.hours_per_day ??
+                              block.hours_per_day);
+                      const label =
+                        hoursLabel == null
+                          ? typeLabel
+                          : spanDays.length > 1
+                            ? `${typeLabel} · ${formatHours(hoursLabel)}/d · ${formatHours(hoursLabel * spanDays.length)}`
+                            : `${typeLabel} · ${formatHours(hoursLabel)}`;
+                      return (
+                        <div
+                          key={block.id}
+                          className={cn(
+                            "pointer-events-auto absolute z-10 flex items-center rounded-sm border border-[var(--leave-block)]/50 px-1 text-[10px] font-medium leading-none",
+                            "bg-[var(--leave-block-fill)] text-[var(--leave-block-fg)]",
+                            canManage && "cursor-pointer",
+                            isSelected &&
+                              "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
+                            fullHeight && "inset-y-0 z-[12] flex-col rounded-sm",
+                          )}
+                          style={{
+                            left: geo.left,
+                            width: geo.width,
+                            ...(fullHeight
+                              ? {}
+                              : {
+                                  top: DAY_PAD_Y,
+                                  height: DAY_H,
+                                }),
+                            backgroundImage:
+                              "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
+                          }}
+                          title={label}
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            selectLeaveBlock(block);
+                          }}
+                        >
+                          <div
+                            className={cn(
+                              "relative flex w-full items-center gap-0.5",
+                              fullHeight && "px-0",
+                            )}
+                            style={
+                              fullHeight
+                                ? {
+                                    height: DAY_H,
+                                    marginTop: DAY_PAD_Y,
+                                  }
+                                : undefined
+                            }
+                          >
+                            <span className="truncate">{label}</span>
+                            {notesHasContent(
+                              preview?.notes ?? block.notes,
+                            ) ? (
+                              <Tooltip
+                                content={
+                                  <RichNotesHtml
+                                    html={preview?.notes ?? block.notes}
+                                  />
+                                }
+                                className="ml-0.5 shrink-0"
+                              >
+                                <span
+                                  className="inline-flex cursor-default opacity-90"
+                                  aria-label="Notes"
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                  <StickyNote size={13} strokeWidth={2.5} />
+                                </span>
+                              </Tooltip>
+                            ) : null}
+                          </div>
+                          {canManage ? (
+                            <>
+                              <span
+                                className="absolute left-0 top-0 z-20 h-full w-2 cursor-ew-resize"
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (
+                                    isCoarse ||
+                                    e.pointerType === "touch"
+                                  ) {
+                                    selectLeaveBlock(block);
+                                    return;
+                                  }
+                                  selectLeaveBlock(block);
+                                  leaveDragSnapshot.current = {
+                                    mode: "resize-start",
+                                    personId: block.person_id,
+                                    // Keep saved type/hours — pending Full Day
+                                    // only applies via Save time off.
+                                    kind: block.kind,
+                                    hours_per_day: block.hours_per_day,
+                                    notes: preview?.notes ?? block.notes,
+                                    previousDayIds:
+                                      preview?.dayIds ?? block.dayIds,
+                                    originStart: blockStart,
+                                    originEnd: blockEnd,
+                                    currentStart: blockStart,
+                                    currentEnd: blockEnd,
+                                    dirty: false,
+                                  };
+                                  setGridDragging(true);
+                                }}
+                              />
+                              <span
+                                className="absolute right-0 top-0 z-20 h-full w-2 cursor-ew-resize"
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (
+                                    isCoarse ||
+                                    e.pointerType === "touch"
+                                  ) {
+                                    selectLeaveBlock(block);
+                                    return;
+                                  }
+                                  selectLeaveBlock(block);
+                                  leaveDragSnapshot.current = {
+                                    mode: "resize-end",
+                                    personId: block.person_id,
+                                    kind: block.kind,
+                                    hours_per_day: block.hours_per_day,
+                                    notes: preview?.notes ?? block.notes,
+                                    previousDayIds:
+                                      preview?.dayIds ?? block.dayIds,
+                                    originStart: blockStart,
+                                    originEnd: blockEnd,
+                                    currentStart: blockStart,
+                                    currentEnd: blockEnd,
+                                    dirty: false,
+                                  };
+                                  setGridDragging(true);
+                                }}
+                              />
+                            </>
+                          ) : null}
+                        </div>
+                      );
+                    }
+
                     return (
                   <div className="relative">
-                  {/* Time off row — managers paint leave here */}
+                  {/* Time off row — managers paint partial-day leave here */}
                   <div
                     className="flex shrink-0"
                     style={{ height: ROW_H }}
@@ -1236,7 +1407,7 @@ export function ScheduleGrid() {
                               }}
                               title={
                                 canManage && !leaveInBand
-                                  ? `Paint ${leaveKindLabel(paintLeaveKind)}`
+                                  ? "Paint Partial Day"
                                   : undefined
                               }
                               onPointerEnter={() => {
@@ -1309,6 +1480,21 @@ export function ScheduleGrid() {
                           );
                         })}
                       </div>
+                      {leaveDraftGeo ? (
+                        <div
+                          className="pointer-events-none absolute z-[11] rounded-sm border border-[var(--leave-block)]/40"
+                          style={{
+                            left: leaveDraftGeo.left,
+                            width: leaveDraftGeo.width,
+                            top: DAY_PAD_Y,
+                            height: DAY_H,
+                            background: "var(--leave-block-draft)",
+                          }}
+                        />
+                      ) : null}
+                      {partialLeaveBlocks.map((block) =>
+                        leaveBlockEditors(block, false),
+                      )}
                     </div>
                   </div>
 
@@ -1378,7 +1564,7 @@ export function ScheduleGrid() {
                             {columns.map((col) => {
                               const leave =
                                 zoom === "day"
-                                  ? isOnLeave(
+                                  ? isOnFullDayLeave(
                                       person.id,
                                       col.startKey,
                                       state.leave_days,
@@ -1914,173 +2100,14 @@ export function ScheduleGrid() {
                     </div>
                   )}
 
-                  {/* Full-height leave wash over this person's schedule body */}
+                  {/* Full-height wash for Full Day / Statutory / Sick / Training */}
                   <div
                     className="pointer-events-none absolute bottom-0 top-0 z-[12]"
                     style={{ left: LABEL_PX, width: tw }}
                   >
-                    {leaveDraftGeo ? (
-                      <div
-                        className="absolute top-0 bottom-0 border border-[var(--leave-block)]/40"
-                        style={{
-                          left: leaveDraftGeo.left,
-                          width: leaveDraftGeo.width,
-                          background: "var(--leave-block-draft)",
-                        }}
-                      />
-                    ) : null}
-                    {leaveBlocks.map((block) => {
-                      const isSelected = selectedLeaveBlockId === block.id;
-                      const preview =
-                        isSelected && leaveEditForm
-                          ? leaveEditForm
-                          : null;
-                      const blockStart =
-                        preview?.start_date ?? block.start_date;
-                      const blockEnd = preview?.end_date ?? block.end_date;
-                      const geo = spanColumnsPx(
-                        columns,
-                        blockStart,
-                        blockEnd,
-                      );
-                      if (!geo) return null;
-                      const hours =
-                        preview?.hours_per_day ?? block.hours_per_day ?? 8;
-                      const spanDays = workingDaysBetween(
-                        blockStart,
-                        blockEnd,
-                      );
-                      const label =
-                        spanDays.length > 1
-                          ? `${formatHours(hours)}/d · ${formatHours(hours * spanDays.length)}`
-                          : formatHours(hours);
-                      return (
-                        <div
-                          key={block.id}
-                          className={cn(
-                            "pointer-events-auto absolute inset-y-0 flex flex-col rounded-sm border border-[var(--leave-block)]/50",
-                            "bg-[var(--leave-block-fill)] text-[var(--leave-block-fg)]",
-                            canManage && "cursor-pointer",
-                            isSelected &&
-                              "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
-                          )}
-                          style={{
-                            left: geo.left,
-                            width: geo.width,
-                            backgroundImage:
-                              "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
-                          }}
-                          title={`${leaveKindLabel(block.kind)} · ${label}`}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            selectLeaveBlock(block);
-                          }}
-                        >
-                          <div
-                            className="relative flex items-center gap-0.5 px-1 text-[10px] font-medium leading-none"
-                            style={{
-                              height: DAY_H,
-                              marginTop: DAY_PAD_Y,
-                            }}
-                          >
-                            <span className="truncate">
-                              {leaveKindLabel(block.kind)} · {label}
-                            </span>
-                            {notesHasContent(
-                              preview?.notes ?? block.notes,
-                            ) ? (
-                              <Tooltip
-                                content={
-                                  <RichNotesHtml
-                                    html={preview?.notes ?? block.notes}
-                                  />
-                                }
-                                className="ml-0.5 shrink-0"
-                              >
-                                <span
-                                  className="inline-flex cursor-default opacity-90"
-                                  aria-label="Notes"
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                >
-                                  <StickyNote size={13} strokeWidth={2.5} />
-                                </span>
-                              </Tooltip>
-                            ) : null}
-                          </div>
-                          {canManage ? (
-                            <>
-                              <span
-                                className="absolute left-0 top-0 z-20 h-full w-2 cursor-ew-resize"
-                                onPointerDown={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  if (
-                                    isCoarse ||
-                                    e.pointerType === "touch"
-                                  ) {
-                                    selectLeaveBlock(block);
-                                    return;
-                                  }
-                                  selectLeaveBlock(block);
-                                  leaveDragSnapshot.current = {
-                                    mode: "resize-start",
-                                    personId: block.person_id,
-                                    kind: preview?.kind ?? block.kind,
-                                    hours_per_day:
-                                      preview?.hours_per_day ??
-                                      block.hours_per_day ??
-                                      8,
-                                    notes: preview?.notes ?? block.notes,
-                                    previousDayIds:
-                                      preview?.dayIds ?? block.dayIds,
-                                    originStart: blockStart,
-                                    originEnd: blockEnd,
-                                    currentStart: blockStart,
-                                    currentEnd: blockEnd,
-                                    dirty: false,
-                                  };
-                                  setGridDragging(true);
-                                }}
-                              />
-                              <span
-                                className="absolute right-0 top-0 z-20 h-full w-2 cursor-ew-resize"
-                                onPointerDown={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  if (
-                                    isCoarse ||
-                                    e.pointerType === "touch"
-                                  ) {
-                                    selectLeaveBlock(block);
-                                    return;
-                                  }
-                                  selectLeaveBlock(block);
-                                  leaveDragSnapshot.current = {
-                                    mode: "resize-end",
-                                    personId: block.person_id,
-                                    kind: preview?.kind ?? block.kind,
-                                    hours_per_day:
-                                      preview?.hours_per_day ??
-                                      block.hours_per_day ??
-                                      8,
-                                    notes: preview?.notes ?? block.notes,
-                                    previousDayIds:
-                                      preview?.dayIds ?? block.dayIds,
-                                    originStart: blockStart,
-                                    originEnd: blockEnd,
-                                    currentStart: blockStart,
-                                    currentEnd: blockEnd,
-                                    dirty: false,
-                                  };
-                                  setGridDragging(true);
-                                }}
-                              />
-                            </>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                    {fullLeaveBlocks.map((block) =>
+                      leaveBlockEditors(block, true),
+                    )}
                   </div>
                   </div>
                     );
@@ -2127,7 +2154,9 @@ export function ScheduleGrid() {
               </h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
                 {leaveEditForm
-                  ? "Drag the block edges or edit start/end dates, then Save. Overlapping assignments are trimmed."
+                  ? leaveEditForm.hours_per_day == null
+                    ? "Full-day time off clears overlapping assignments when you Save."
+                    : "Partial day keeps other assignments. Switch to Full Day and Save to clear the day."
                   : canManage
                     ? isCoarse
                       ? "Tap an empty day to create. Tap a block to edit, then Save."
@@ -2157,15 +2186,24 @@ export function ScheduleGrid() {
             <Field label="Type">
               <select
                 className={inputClass}
-                value={leaveEditForm.kind}
-                onChange={(e) =>
+                value={leaveTypeFromLeave(
+                  leaveEditForm.kind,
+                  leaveEditForm.hours_per_day,
+                )}
+                onChange={(e) => {
+                  const next = leaveFromTypeOption(
+                    e.target.value as LeaveTypeOption,
+                    leaveEditForm.hours_per_day,
+                  );
                   setLeaveEditForm({
                     ...leaveEditForm,
-                    kind: e.target.value as LeaveKind,
-                  })
-                }
+                    kind: next.kind,
+                    hours_per_day: next.hours_per_day,
+                  });
+                }}
               >
-                <option value="vacation">PTO</option>
+                <option value="partial">Partial Day</option>
+                <option value="full">Full Day</option>
                 <option value="holiday">Statutory holiday</option>
                 <option value="sick">Sick</option>
                 <option value="training">Training</option>
@@ -2199,30 +2237,34 @@ export function ScheduleGrid() {
                 />
               </Field>
             </div>
-            <Field label="Hours / day">
-              <input
-                type="number"
-                min={0.01}
-                step={0.01}
-                className={inputClass}
-                value={leaveEditForm.hours_per_day}
-                onChange={(e) =>
-                  setLeaveEditForm({
-                    ...leaveEditForm,
-                    hours_per_day: Number(e.target.value) || 0,
-                  })
-                }
-                onBlur={() =>
-                  setLeaveEditForm({
-                    ...leaveEditForm,
-                    hours_per_day: Math.max(
-                      0.01,
-                      roundAssignmentHours(leaveEditForm.hours_per_day),
-                    ),
-                  })
-                }
-              />
-            </Field>
+            {leaveEditForm.hours_per_day != null ? (
+              <Field label="Hours / day">
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  className={inputClass}
+                  value={leaveEditForm.hours_per_day}
+                  onChange={(e) =>
+                    setLeaveEditForm({
+                      ...leaveEditForm,
+                      hours_per_day: Number(e.target.value) || 0,
+                    })
+                  }
+                  onBlur={() =>
+                    setLeaveEditForm({
+                      ...leaveEditForm,
+                      hours_per_day: Math.max(
+                        0.01,
+                        roundAssignmentHours(
+                          leaveEditForm.hours_per_day ?? 4,
+                        ),
+                      ),
+                    })
+                  }
+                />
+              </Field>
+            ) : null}
             <div className="block text-xs text-[var(--text-muted)]">
               Notes
               <SimpleRichTextEditor
