@@ -213,6 +213,10 @@ export function ScheduleGrid() {
     () => new Map(state.projects.map((p) => [p.id, p])),
     [state.projects],
   );
+  const clientsById = useMemo(
+    () => new Map(state.clients.map((c) => [c.id, c])),
+    [state.clients],
+  );
 
   const selectedProject =
     projectFilter === "all"
@@ -709,6 +713,9 @@ export function ScheduleGrid() {
                         o.person_id === person.id &&
                         o.project_id === project.id,
                     );
+                    const clientName = project.client_id
+                      ? clientsById.get(project.client_id)?.name
+                      : null;
                     return (
                       <div
                         key={project.id}
@@ -719,19 +726,34 @@ export function ScheduleGrid() {
                           className="sticky left-0 z-20 flex min-h-0 shrink-0 items-center justify-end gap-2 border-r border-[var(--border)] bg-[var(--bg)] px-3"
                           style={{ width: LABEL_PX, height: ROW_H }}
                         >
-                          {canManage ? (
-                            <Link
-                              href={`/projects/${project.id}`}
-                              className="min-w-0 truncate text-right text-[11px] leading-none text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {project.name}
-                            </Link>
-                          ) : (
-                            <span className="min-w-0 truncate text-right text-[11px] leading-none text-[var(--text-muted)]">
-                              {project.name}
-                            </span>
-                          )}
+                          <div className="min-w-0 text-right">
+                            {clientName ? (
+                              <div className="truncate text-[9px] leading-none text-[var(--text-muted)] opacity-50">
+                                {clientName}
+                              </div>
+                            ) : null}
+                            {canManage ? (
+                              <Link
+                                href={`/projects/${project.id}`}
+                                className={cn(
+                                  "block min-w-0 truncate text-[11px] leading-none text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline",
+                                  clientName && "mt-0.5",
+                                )}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {project.name}
+                              </Link>
+                            ) : (
+                              <span
+                                className={cn(
+                                  "block min-w-0 truncate text-[11px] leading-none text-[var(--text-muted)]",
+                                  clientName && "mt-0.5",
+                                )}
+                              >
+                                {project.name}
+                              </span>
+                            )}
+                          </div>
                           <span
                             className="h-3 w-0.5 shrink-0 rounded-full"
                             style={{ background: project.color }}
