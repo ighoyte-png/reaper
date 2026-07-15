@@ -194,8 +194,15 @@ export function budgetHealth(
 }
 
 export function formatHours(hours: number): string {
-  const rounded = Math.round(hours * 10) / 10;
-  return Number.isInteger(rounded) ? `${rounded}h` : `${rounded.toFixed(1)}h`;
+  const rounded = Math.round(hours * 100) / 100;
+  if (Number.isInteger(rounded)) return `${rounded}h`;
+  return `${parseFloat(rounded.toFixed(2))}h`;
+}
+
+/** Clamp assignment hours to two decimal places (e.g. 0.25). */
+export function roundAssignmentHours(hours: number): number {
+  if (!Number.isFinite(hours) || hours <= 0) return 0;
+  return Math.round(hours * 100) / 100;
 }
 
 export function formatMoney(amount: number): string {

@@ -19,6 +19,7 @@ import {
   budgetHealth,
   formatHours,
   formatMoney,
+  roundAssignmentHours,
 } from "@/lib/domain/budget";
 import {
   availableHoursInRange,
@@ -490,7 +491,16 @@ export function ScheduleGrid() {
 
   function saveEditForm() {
     if (!canManage || !editForm) return;
-    commitAssignment(editForm, "Assignment saved");
+    commitAssignment(
+      {
+        ...editForm,
+        hours_per_day: Math.max(
+          0.01,
+          roundAssignmentHours(editForm.hours_per_day),
+        ),
+      },
+      "Assignment saved",
+    );
   }
 
   function createLeaveRange(
@@ -1809,13 +1819,21 @@ export function ScheduleGrid() {
             <Field label="Hours / day">
               <input
                 type="number"
-                min={0.5}
-                step={0.5}
+                min={0.01}
+                step={0.01}
                 className={inputClass}
                 value={editForm.hours_per_day}
                 onChange={(e) =>
                   patchEditForm({
                     hours_per_day: Number(e.target.value) || 0,
+                  })
+                }
+                onBlur={() =>
+                  patchEditForm({
+                    hours_per_day: Math.max(
+                      0.01,
+                      roundAssignmentHours(editForm.hours_per_day),
+                    ),
                   })
                 }
               />
