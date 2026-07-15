@@ -716,26 +716,26 @@ export function ScheduleGrid() {
                         style={{ height: ROW_H }}
                       >
                         <div
-                          className="sticky left-0 z-20 flex min-h-0 shrink-0 items-center gap-2 border-r border-[var(--border)] bg-[var(--bg)] px-3"
+                          className="sticky left-0 z-20 flex min-h-0 shrink-0 items-center justify-end gap-2 border-r border-[var(--border)] bg-[var(--bg)] px-3"
                           style={{ width: LABEL_PX, height: ROW_H }}
                         >
-                          <span
-                            className="h-3 w-0.5 shrink-0 rounded-full"
-                            style={{ background: project.color }}
-                          />
                           {canManage ? (
                             <Link
                               href={`/projects/${project.id}`}
-                              className="truncate text-[11px] leading-none text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline"
+                              className="min-w-0 truncate text-right text-[11px] leading-none text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline"
                               onClick={(e) => e.stopPropagation()}
                             >
                               {project.name}
                             </Link>
                           ) : (
-                            <span className="truncate text-[11px] leading-none text-[var(--text-muted)]">
+                            <span className="min-w-0 truncate text-right text-[11px] leading-none text-[var(--text-muted)]">
                               {project.name}
                             </span>
                           )}
+                          <span
+                            className="h-3 w-0.5 shrink-0 rounded-full"
+                            style={{ background: project.color }}
+                          />
                         </div>
                         <div
                           className="relative min-h-0 shrink-0"
