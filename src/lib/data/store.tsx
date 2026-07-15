@@ -43,7 +43,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { canManage, personForProfile } from "@/lib/auth/roles";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
-import { normalizeLeaveKind } from "@/lib/domain/leave";
+import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { workingDaysBetween } from "@/lib/domain/dates";
 import type {
   Assignment,
@@ -789,9 +789,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertLeave: (leave) => {
+        const kindNorm = normalizeLeaveKind(leave.kind);
         const row = {
           ...withOrg(leave),
-          kind: normalizeLeaveKind(leave.kind),
+          kind: kindNorm,
+          hours_per_day: isAlwaysFullDayKind(kindNorm)
+            ? null
+            : leave.hours_per_day,
         } as LeaveDay;
 
         let remoteLeaves: LeaveDay[] = [];
@@ -820,10 +824,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           );
 
           let assignments = prev.assignments;
-          if (
-            leaveRow.status === "approved" &&
-            leaveRow.hours_per_day == null
-          ) {
+          if (leaveRow.status === "approved" && isFullDayLeave(leaveRow)) {
             const ov = applyFullDayLeaveOverride(
               prev.assignments,
               leaveRow.person_id,
@@ -914,6 +915,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             }
           }
 
+          const hoursNorm = isAlwaysFullDayKind(kindNorm)
+            ? null
+            : hours_per_day;
           const newRows: LeaveDay[] = dates.map((date) => ({
             id: reuseIdByDate.get(date) ?? uid("leave"),
             organization_id: prev.organization.id || orgId,
@@ -921,7 +925,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             date,
             kind: kindNorm,
             status: "approved" as const,
-            hours_per_day,
+            hours_per_day: hoursNorm,
             notes: notesNorm,
           }));
           const leaveDeleteIds = [...removeIds].filter(
@@ -934,9 +938,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           let assignments = prev.assignments;
           let asgUpserts: Assignment[] = [];
           let asgDeletes: string[] = [];
-          // Full-day leave (null hours) clears overlapping assignments;
-          // partial-day leave leaves them alone.
-          if (hours_per_day == null) {
+          // Full Day / Statutory / Sick / Training clear overlapping work;
+          // Partial Day leaves assignments alone.
+          if (newRows.some((r) => isFullDayLeave(r))) {
             const ov = applyFullDayLeaveOverrideForDates(
               prev.assignments,
               personId,

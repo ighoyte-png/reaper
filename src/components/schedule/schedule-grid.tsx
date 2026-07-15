@@ -608,7 +608,10 @@ export function ScheduleGrid() {
 
   function saveLeaveEditForm() {
     if (!canManage || !leaveEditForm) return;
-    const fullDay = leaveEditForm.hours_per_day == null;
+    const fullDay = isFullDayLeave({
+      kind: leaveEditForm.kind,
+      hours_per_day: leaveEditForm.hours_per_day,
+    });
     const hours = fullDay
       ? null
       : Math.max(
@@ -2154,7 +2157,10 @@ export function ScheduleGrid() {
               </h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
                 {leaveEditForm
-                  ? leaveEditForm.hours_per_day == null
+                  ? isFullDayLeave({
+                      kind: leaveEditForm.kind,
+                      hours_per_day: leaveEditForm.hours_per_day,
+                    })
                     ? "Full-day time off clears overlapping assignments when you Save."
                     : "Partial day keeps other assignments. Switch to Full Day and Save to clear the day."
                   : canManage
@@ -2237,7 +2243,8 @@ export function ScheduleGrid() {
                 />
               </Field>
             </div>
-            {leaveEditForm.hours_per_day != null ? (
+            {leaveEditForm.hours_per_day != null &&
+            leaveEditForm.kind === "vacation" ? (
               <Field label="Hours / day">
                 <input
                   type="number"

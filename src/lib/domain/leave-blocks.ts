@@ -1,4 +1,5 @@
 import { workingDaysBetween } from "@/lib/domain/dates";
+import { isFullDayLeave } from "@/lib/domain/leave";
 import type { LeaveDay, LeaveKind } from "@/lib/types";
 
 export interface LeaveBlock {
@@ -16,11 +17,12 @@ export interface LeaveBlock {
 }
 
 function sameDayMeta(a: LeaveDay, b: LeaveDay): boolean {
-  // Contiguous same-kind leave stays one block. Full vs partial (null hours)
-  // must not merge — they paint and override differently.
-  const aFull = a.hours_per_day == null;
-  const bFull = b.hours_per_day == null;
-  return a.kind === b.kind && a.status === b.status && aFull === bFull;
+  // Contiguous same-kind leave stays one block. Full vs partial must not merge.
+  return (
+    a.kind === b.kind &&
+    a.status === b.status &&
+    isFullDayLeave(a) === isFullDayLeave(b)
+  );
 }
 
 /**
@@ -61,7 +63,9 @@ export function leaveBlocksInRange(
       end_date: last.date,
       kind: first.kind,
       status: first.status,
-      hours_per_day: withHours?.hours_per_day ?? first.hours_per_day ?? null,
+      hours_per_day: isFullDayLeave(first)
+        ? null
+        : (withHours?.hours_per_day ?? first.hours_per_day ?? null),
       notes: withNotes?.notes ?? first.notes ?? "",
       dayIds: current.map((d) => d.id),
     });

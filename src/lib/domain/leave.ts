@@ -16,11 +16,30 @@ export type LeaveTypeOption =
   | "sick"
   | "training";
 
-/** Null hours_per_day means full-day leave (clears overlapping assignments). */
+/** Full-day leave: Vacation Full Day (null hours), plus Statutory /
+ * Sick / Training and holiday-calendar days (always full height). */
 export function isFullDayLeave(
-  leave: Pick<LeaveDay, "hours_per_day"> | null | undefined,
+  leave: Pick<LeaveDay, "hours_per_day" | "kind"> | null | undefined,
 ): boolean {
-  return leave != null && leave.hours_per_day == null;
+  if (leave == null) return false;
+  if (
+    leave.kind === "holiday" ||
+    leave.kind === "sick" ||
+    leave.kind === "training"
+  ) {
+    return true;
+  }
+  return leave.hours_per_day == null;
+}
+
+/** Kinds that are always stored/saved as full day (null hours). */
+export function isAlwaysFullDayKind(kind: LeaveKind | string): boolean {
+  return (
+    kind === "holiday" ||
+    kind === "sick" ||
+    kind === "training" ||
+    kind === "statutory"
+  );
 }
 
 /** User-facing labels for stored kinds (legacy / reports). */
