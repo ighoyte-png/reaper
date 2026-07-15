@@ -48,6 +48,7 @@ import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import {
   projectLabelWithClient,
+  sortClientsByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import {
@@ -126,13 +127,14 @@ export function ScheduleGrid() {
     dirty: boolean;
   } | null>(null);
   const [sliceMode, setSliceMode] = useState(false);
-  const [onlyAssignedProjects, setOnlyAssignedProjects] = useState(false);
   const [extraProjectsByPerson, setExtraProjectsByPerson] = useState<
     Record<string, string[]>
   >({});
   const [addProjectForPerson, setAddProjectForPerson] = useState<string | null>(
     null,
   );
+  const [addProjectClientId, setAddProjectClientId] = useState<string>("");
+  const [addProjectId, setAddProjectId] = useState<string>("");
   const undoStackRef = useRef<UndoEntry[]>([]);
   const applyingUndoRef = useRef(false);
   const performUndoRef = useRef(() => {});
@@ -567,10 +569,10 @@ export function ScheduleGrid() {
   }
 
   function projectsForPerson(personId: string): Project[] {
-    const fromOcc = new Set(
-      occurrences
-        .filter((o) => o.person_id === personId)
-        .map((o) => o.project_id),
+    const fromAssignments = new Set(
+      state.assignments
+        .filter((a) => a.person_id === personId)
+        .map((a) => a.project_id),
     );
     const extras = new Set(extraProjectsByPerson[personId] ?? []);
     const active = sortProjectsByClientThenName(
@@ -578,16 +580,16 @@ export function ScheduleGrid() {
       state.clients,
     );
 
+    // Global project filter: focus that one row under everyone for scheduling.
     if (projectFilter !== "all") {
       const filtered = projectsById.get(projectFilter);
       return filtered ? [filtered] : [];
     }
 
-    if (canManage && !onlyAssignedProjects) {
-      return active;
-    }
-
-    return active.filter((p) => fromOcc.has(p.id) || extras.has(p.id));
+    // Only projects this person already has, or that were explicitly added.
+    return active.filter(
+      (p) => fromAssignments.has(p.id) || extras.has(p.id),
+    );
   }
 
   function sliceAssignmentAt(assignmentId: string, cutDate: string) {
@@ -633,6 +635,67 @@ export function ScheduleGrid() {
     () => sortProjectsByClientThenName(state.projects, state.clients),
     [state.projects, state.clients],
   );
+  const sortedClients = useMemo(
+    () => sortClientsByName(state.clients),
+    [state.clients],
+  );
+
+  const addableProjectsForPerson = useMemo(() => {
+    if (!addProjectForPerson) return [];
+    const shown = new Set(
+      projectsForPerson(addProjectForPerson).map((p) => p.id),
+    );
+    return sortedProjects.filter(
+      (p) => p.status === "active" && !shown.has(p.id),
+    );
+  }, [
+    addProjectForPerson,
+    sortedProjects,
+    state.assignments,
+    extraProjectsByPerson,
+    projectFilter,
+  ]);
+
+  const addProjectClientOptions = useMemo(() => {
+    const ids = new Set(
+      addableProjectsForPerson
+        .map((p) => p.client_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const withClient = sortedClients.filter((c) => ids.has(c.id));
+    const hasOrphan = addableProjectsForPerson.some((p) => !p.client_id);
+    return { withClient, hasOrphan };
+  }, [addableProjectsForPerson, sortedClients]);
+
+  const addableProjectsForSelectedClient = useMemo(() => {
+    if (!addProjectClientId) return [];
+    if (addProjectClientId === "__none__") {
+      return addableProjectsForPerson.filter((p) => !p.client_id);
+    }
+    return addableProjectsForPerson.filter(
+      (p) => p.client_id === addProjectClientId,
+    );
+  }, [addableProjectsForPerson, addProjectClientId]);
+
+  function closeAddProjectModal() {
+    setAddProjectForPerson(null);
+    setAddProjectClientId("");
+    setAddProjectId("");
+  }
+
+  function confirmAddProjectRow() {
+    if (!addProjectForPerson || !addProjectId) return;
+    setExtraProjectsByPerson((prev) => {
+      const list = prev[addProjectForPerson] ?? [];
+      if (list.includes(addProjectId)) return prev;
+      return {
+        ...prev,
+        [addProjectForPerson]: [...list, addProjectId],
+      };
+    });
+    closeAddProjectModal();
+    push("Project row added");
+  }
 
   return (
     <div
@@ -673,14 +736,6 @@ export function ScheduleGrid() {
             </select>
             {canManage && (
               <>
-                <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                  <input
-                    type="checkbox"
-                    checked={onlyAssignedProjects}
-                    onChange={(e) => setOnlyAssignedProjects(e.target.checked)}
-                  />
-                  Assigned only
-                </label>
                 <button
                   type="button"
                   className={cn(
@@ -864,7 +919,11 @@ export function ScheduleGrid() {
                           className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
                           aria-label={`Add project row for ${person.name}`}
                           title="Add project row"
-                          onClick={() => setAddProjectForPerson(person.id)}
+                          onClick={() => {
+                            setAddProjectClientId("");
+                            setAddProjectId("");
+                            setAddProjectForPerson(person.id);
+                          }}
                         >
                           <Plus size={14} strokeWidth={2.5} />
                         </button>
@@ -1671,7 +1730,9 @@ export function ScheduleGrid() {
                         className="sticky left-0 z-20 px-3 py-2 text-xs text-[var(--text-muted)]"
                         style={{ width: LABEL_PX }}
                       >
-                        No projects in view
+                        {canManage
+                          ? "No projects — use + to add a row"
+                          : "No projects in view"}
                       </div>
                     </div>
                   )}
@@ -1997,52 +2058,68 @@ export function ScheduleGrid() {
           <div className="w-full max-w-md rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-md">
             <h3 className="text-sm font-semibold">Add project row</h3>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Show another project under this person so you can schedule onto
-              it.
+              Choose a client, then a project to show under this person.
             </p>
-            <select
-              className={`${inputClass} mt-3`}
-              defaultValue=""
-              onChange={(e) => {
-                const projectId = e.target.value;
-                if (!projectId) return;
-                setExtraProjectsByPerson((prev) => {
-                  const list = prev[addProjectForPerson] ?? [];
-                  if (list.includes(projectId)) return prev;
-                  return {
-                    ...prev,
-                    [addProjectForPerson]: [...list, projectId],
-                  };
-                });
-                setOnlyAssignedProjects(true);
-                setAddProjectForPerson(null);
-                push("Project row added");
-              }}
-            >
-              <option value="" disabled>
-                Select a project…
-              </option>
-              {sortedProjects
-                .filter((p) => p.status === "active")
-                .filter((p) => {
-                  const shown = new Set(
-                    projectsForPerson(addProjectForPerson).map((x) => x.id),
-                  );
-                  return !shown.has(p.id);
-                })
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {projectLabelWithClient(p, state.clients)}
+            <label className="mt-3 block text-xs text-[var(--text-muted)]">
+              Client
+              <select
+                className={inputClass}
+                value={addProjectClientId}
+                onChange={(e) => {
+                  setAddProjectClientId(e.target.value);
+                  setAddProjectId("");
+                }}
+              >
+                <option value="">Select a client…</option>
+                {addProjectClientOptions.withClient.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
                   </option>
                 ))}
-            </select>
-            <button
-              type="button"
-              className="mt-3 h-9 w-full rounded-md border border-[var(--border)] text-sm"
-              onClick={() => setAddProjectForPerson(null)}
-            >
-              Cancel
-            </button>
+                {addProjectClientOptions.hasOrphan && (
+                  <option value="__none__">No client</option>
+                )}
+              </select>
+            </label>
+            {addProjectClientId ? (
+              <label className="mt-3 block text-xs text-[var(--text-muted)]">
+                Project
+                <select
+                  className={inputClass}
+                  value={addProjectId}
+                  onChange={(e) => setAddProjectId(e.target.value)}
+                >
+                  <option value="">Select a project…</option>
+                  {addableProjectsForSelectedClient.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                className="h-9 flex-1 rounded-md border border-[var(--border)] text-sm"
+                onClick={closeAddProjectModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!addProjectId}
+                className={cn(
+                  "h-9 flex-1 rounded-md text-sm font-medium",
+                  addProjectId
+                    ? "bg-[var(--accent)] text-[var(--accent-fg)]"
+                    : "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+                )}
+                onClick={confirmAddProjectRow}
+              >
+                Add
+              </button>
+            </div>
           </div>
         </div>
       )}
