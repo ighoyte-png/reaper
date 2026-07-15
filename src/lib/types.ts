@@ -2,6 +2,10 @@ export type Role = "admin" | "manager" | "member";
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
 export type BudgetMode = "none" | "hours" | "amount";
 export type AssignmentStatus = "tentative" | "confirmed";
+/**
+ * Stored leave kinds. UI labels: vacation→PTO, holiday→Statutory.
+ * Aliases "pto" / "statutory" are normalized before persist.
+ */
 export type LeaveKind = "vacation" | "holiday" | "sick" | "training";
 export type LeaveStatus = "pending" | "approved";
 export type MilestoneStatus = "upcoming" | "done" | "missed";
@@ -69,6 +73,24 @@ export interface Person {
   cost_rate: number;
   bill_rate: number;
   timezone: string;
+  /** Optional holiday calendar (statutory dates applied into leave_days). */
+  holiday_calendar_id: string | null;
+}
+
+export interface HolidayCalendar {
+  id: string;
+  organization_id: string;
+  name: string;
+  /** Region label, e.g. US, CA. */
+  region: string;
+}
+
+export interface HolidayCalendarDay {
+  id: string;
+  organization_id: string;
+  calendar_id: string;
+  date: string;
+  name: string;
 }
 
 export interface Assignment {
@@ -106,6 +128,8 @@ export interface DemoState {
   people: Person[];
   assignments: Assignment[];
   leave_days: LeaveDay[];
+  holiday_calendars: HolidayCalendar[];
+  holiday_calendar_days: HolidayCalendarDay[];
   sessionProfileId: string | null;
 }
 

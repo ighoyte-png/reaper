@@ -6,7 +6,7 @@ function d(offset: number, from = startOfWeek(new Date(), { weekStartsOn: 1 })):
 }
 
 export const ORG_ID = "org-demo";
-export const DEMO_STORAGE_KEY = "reaper-demo-state-v2";
+export const DEMO_STORAGE_KEY = "reaper-demo-state-v3";
 export const DEMO_SESSION_KEY = "reaper-demo-session";
 
 export function createDemoSeed(): DemoState {
@@ -97,7 +97,7 @@ export function createDemoSeed(): DemoState {
         budget_amount: null,
         budget_mode: "none",
         budget_monthly_reset: false,
-        notes: "Internal — no budget",
+        notes: "Internal ? no budget",
       },
       {
         id: "proj-4",
@@ -158,6 +158,43 @@ export function createDemoSeed(): DemoState {
         status: "upcoming",
       },
     ],
+    holiday_calendars: [
+      {
+        id: "cal-us",
+        organization_id: ORG_ID,
+        name: "US Federal",
+        region: "US",
+      },
+      {
+        id: "cal-ca",
+        organization_id: ORG_ID,
+        name: "Canada Federal",
+        region: "CA",
+      },
+    ],
+    holiday_calendar_days: [
+      {
+        id: "calday-us-1",
+        organization_id: ORG_ID,
+        calendar_id: "cal-us",
+        date: d(10, week),
+        name: "Sample US holiday",
+      },
+      {
+        id: "calday-us-2",
+        organization_id: ORG_ID,
+        calendar_id: "cal-us",
+        date: d(25, week),
+        name: "Sample US holiday 2",
+      },
+      {
+        id: "calday-ca-1",
+        organization_id: ORG_ID,
+        calendar_id: "cal-ca",
+        date: d(11, week),
+        name: "Sample Canada holiday",
+      },
+    ],
     people: [
       {
         id: "person-1",
@@ -172,6 +209,7 @@ export function createDemoSeed(): DemoState {
         cost_rate: 75,
         bill_rate: 150,
         timezone: "America/Los_Angeles",
+        holiday_calendar_id: "cal-us",
       },
       {
         id: "person-2",
@@ -186,6 +224,7 @@ export function createDemoSeed(): DemoState {
         cost_rate: 90,
         bill_rate: 175,
         timezone: "America/Los_Angeles",
+        holiday_calendar_id: "cal-us",
       },
       {
         id: "person-3",
@@ -200,6 +239,7 @@ export function createDemoSeed(): DemoState {
         cost_rate: 65,
         bill_rate: 140,
         timezone: "America/Denver",
+        holiday_calendar_id: "cal-us",
       },
       {
         id: "person-4",
@@ -214,6 +254,7 @@ export function createDemoSeed(): DemoState {
         cost_rate: 70,
         bill_rate: 155,
         timezone: "America/Chicago",
+        holiday_calendar_id: "cal-ca",
       },
       {
         id: "person-5",
@@ -228,6 +269,7 @@ export function createDemoSeed(): DemoState {
         cost_rate: 80,
         bill_rate: 160,
         timezone: "America/Los_Angeles",
+        holiday_calendar_id: "cal-us",
       },
     ],
     assignments: [
@@ -364,7 +406,7 @@ export function createDemoSeed(): DemoState {
         organization_id: ORG_ID,
         person_id: "person-3",
         date: d(2, week),
-        kind: "vacation",
+        kind: "vacation", // PTO
         status: "approved",
       },
       {
@@ -387,6 +429,23 @@ export function createDemoSeed(): DemoState {
         id: "leave-4",
         organization_id: ORG_ID,
         person_id: "person-4",
+        date: d(10, week),
+        kind: "holiday", // Statutory (CA calendar sample)
+        status: "approved",
+      },
+      // Applied US calendar sample for Seattle crew
+      {
+        id: "leave-5",
+        organization_id: ORG_ID,
+        person_id: "person-1",
+        date: d(10, week),
+        kind: "holiday",
+        status: "approved",
+      },
+      {
+        id: "leave-6",
+        organization_id: ORG_ID,
+        person_id: "person-2",
         date: d(10, week),
         kind: "holiday",
         status: "approved",
