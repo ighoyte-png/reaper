@@ -45,6 +45,7 @@ import { canManage, personForProfile } from "@/lib/auth/roles";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { workingDaysBetween } from "@/lib/domain/dates";
+import { generateShareToken, publicShareUrl } from "@/lib/share/token";
 import type {
   Assignment,
   Client,
@@ -109,6 +110,12 @@ function loadDemoState(): DemoState {
         ...c,
         color: c.color ?? "#64748B",
       })),
+      organization: {
+        ...seed.organization,
+        ...parsed.organization,
+        share_enabled: Boolean(parsed.organization?.share_enabled),
+        share_token: parsed.organization?.share_token ?? null,
+      },
       sessionProfileId: session,
     };
   } catch {
@@ -140,6 +147,10 @@ interface DataContextValue {
   myPerson: Person | null;
   canManage: boolean;
   isAuthenticated: boolean;
+  /** True when viewing /share/[token] (read-only public board). */
+  isPublicShare: boolean;
+  /** Prefix for in-app links when isPublicShare, e.g. /share/abc. */
+  shareBasePath: string | null;
   authError: string | null;
   loginDemo: () => void;
   login: (email: string, password: string) => Promise<void>;
@@ -168,6 +179,10 @@ interface DataContextValue {
   ) => { profileId: string };
   /** Demo-only: switch which local profile is signed in. */
   switchDemoProfile: (profileId: string) => void;
+  /** Demo-only: enable/disable/rotate the public share link. */
+  updateDemoShare: (
+    action: "enable" | "disable" | "rotate",
+  ) => { enabled: boolean; token: string | null; url: string | null };
   upsertClient: (
     client: Omit<Client, "organization_id"> & { organization_id?: string },
   ) => void;
@@ -228,6 +243,9 @@ interface DataContextValue {
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
+
+export { DataContext };
+export type { DataContextValue };
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const mode: "demo" | "supabase" = isSupabaseConfigured()
@@ -451,6 +469,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       myPerson,
       canManage: manage,
       isAuthenticated: Boolean(profile),
+      isPublicShare: false,
+      shareBasePath: null,
       authError,
       loginDemo: () => {
         if (mode !== "demo") return;
@@ -486,6 +506,44 @@ export function DataProvider({ children }: { children: ReactNode }) {
       switchDemoProfile: (profileId) => {
         if (mode !== "demo") return;
         patch((prev) => ({ ...prev, sessionProfileId: profileId }));
+      },
+      updateDemoShare: (action) => {
+        if (mode !== "demo") {
+          return { enabled: false, token: null, url: null };
+        }
+        let result = { enabled: false, token: null as string | null, url: null as string | null };
+        patch((prev) => {
+          let share_enabled = Boolean(prev.organization.share_enabled);
+          let share_token = prev.organization.share_token ?? null;
+          if (action === "disable") {
+            share_enabled = false;
+          } else if (action === "enable") {
+            share_enabled = true;
+            if (!share_token) share_token = generateShareToken();
+          } else {
+            share_enabled = true;
+            share_token = generateShareToken();
+          }
+          const origin =
+            typeof window !== "undefined" ? window.location.origin : "";
+          result = {
+            enabled: share_enabled,
+            token: share_enabled ? share_token : null,
+            url:
+              share_enabled && share_token
+                ? publicShareUrl(origin, share_token)
+                : null,
+          };
+          return {
+            ...prev,
+            organization: {
+              ...prev.organization,
+              share_enabled,
+              share_token,
+            },
+          };
+        });
+        return result;
       },
       login: async (email, password) => {
         setAuthError(null);

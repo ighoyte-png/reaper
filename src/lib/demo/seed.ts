@@ -13,7 +13,12 @@ export function createDemoSeed(): DemoState {
   const week = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   return {
-    organization: { id: ORG_ID, name: "Northwind Studio" },
+    organization: {
+      id: ORG_ID,
+      name: "Northwind Studio",
+      share_enabled: false,
+      share_token: null,
+    },
     profiles: [
       {
         id: "profile-admin",

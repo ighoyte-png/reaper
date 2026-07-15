@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/nav/topbar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { Field, inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
+import { publicShareUrl } from "@/lib/share/token";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 
 export default function SettingsPage() {
@@ -28,6 +29,7 @@ export default function SettingsPage() {
     applyHolidayCalendar,
     upsertPerson,
     newId,
+    updateDemoShare,
   } = useData();
   const { push } = useToast();
   const router = useRouter();
@@ -43,6 +45,106 @@ export default function SettingsPage() {
   const [newCalRegion, setNewCalRegion] = useState("US");
   const [dayDate, setDayDate] = useState("");
   const [dayName, setDayName] = useState("");
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareEnabled, setShareEnabled] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!canManage) return;
+    let cancelled = false;
+    async function loadShare() {
+      if (mode === "demo") {
+        const enabled = Boolean(state.organization.share_enabled);
+        const token = state.organization.share_token ?? null;
+        if (!cancelled) {
+          setShareEnabled(enabled);
+          setShareUrl(
+            enabled && token
+              ? publicShareUrl(window.location.origin, token)
+              : null,
+          );
+        }
+        return;
+      }
+      try {
+        const res = await fetch("/api/share");
+        const body = (await res.json()) as {
+          enabled?: boolean;
+          url?: string | null;
+          error?: string;
+        };
+        if (!res.ok) {
+          if (!cancelled && body.error) {
+            // Soft fail — columns may be missing until migration.
+            setShareEnabled(false);
+            setShareUrl(null);
+          }
+          return;
+        }
+        if (!cancelled) {
+          setShareEnabled(Boolean(body.enabled));
+          setShareUrl(body.url ?? null);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    void loadShare();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canManage,
+    mode,
+    state.organization.share_enabled,
+    state.organization.share_token,
+  ]);
+
+  async function setShare(action: "enable" | "disable" | "rotate") {
+    setShareBusy(true);
+    try {
+      if (mode === "demo") {
+        const result = updateDemoShare(action);
+        setShareEnabled(result.enabled);
+        setShareUrl(result.url);
+        push(
+          action === "disable"
+            ? "Public link turned off"
+            : action === "rotate"
+              ? "Public link regenerated"
+              : "Public link turned on",
+        );
+        return;
+      }
+      const res = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = (await res.json()) as {
+        enabled?: boolean;
+        url?: string | null;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(body.error || "Could not update public link");
+      setShareEnabled(Boolean(body.enabled));
+      setShareUrl(body.url ?? null);
+      push(
+        action === "disable"
+          ? "Public link turned off"
+          : action === "rotate"
+            ? "Public link regenerated"
+            : "Public link turned on",
+      );
+    } catch (err) {
+      push(
+        err instanceof Error ? err.message : "Could not update public link",
+        "warning",
+      );
+    } finally {
+      setShareBusy(false);
+    }
+  }
 
   async function onChangePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -146,6 +248,69 @@ export default function SettingsPage() {
             {mode === "supabase" ? "Supabase" : "Local demo"}
           </p>
         </section>
+
+        {canManage && (
+          <section className="rounded-md border border-[var(--border)] p-4">
+            <h2 className="text-sm font-semibold">Public link</h2>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Share a read-only board with schedule, people, projects, clients,
+              and reports. Anyone with the link can view — nothing is editable.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={shareBusy}
+                className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:opacity-60"
+                onClick={() =>
+                  void setShare(shareEnabled ? "disable" : "enable")
+                }
+              >
+                {shareBusy
+                  ? "Updating…"
+                  : shareEnabled
+                    ? "Turn off public link"
+                    : "Turn on public link"}
+              </button>
+              {shareEnabled ? (
+                <button
+                  type="button"
+                  disabled={shareBusy}
+                  className="h-9 rounded-md border border-[var(--border)] px-3 text-sm disabled:opacity-60"
+                  onClick={() => void setShare("rotate")}
+                >
+                  Regenerate link
+                </button>
+              ) : null}
+            </div>
+            {shareEnabled && shareUrl ? (
+              <div className="mt-3 space-y-2">
+                <label className="block text-xs text-[var(--text-muted)]">
+                  Public URL
+                  <input
+                    readOnly
+                    className={inputClass}
+                    value={shareUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="text-xs text-[var(--accent)]"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(shareUrl);
+                      push("Public link copied", "success");
+                    } catch {
+                      push("Could not copy — select the URL manually", "warning");
+                    }
+                  }}
+                >
+                  Copy link
+                </button>
+              </div>
+            ) : null}
+          </section>
+        )}
 
         {mode === "supabase" && (
           <section className="rounded-md border border-[var(--border)] p-4">

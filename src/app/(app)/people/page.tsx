@@ -43,6 +43,7 @@ export default function PeoplePage() {
     upsertLeave,
     newId,
     canManage,
+    isPublicShare,
     mode,
     inviteDemoMember,
     refresh,
@@ -65,10 +66,10 @@ export default function PeoplePage() {
   const end = toDateKey(weekEnd(new Date()));
 
   useEffect(() => {
-    if (!canManage) router.replace("/schedule");
-  }, [canManage, router]);
+    if (!canManage && !isPublicShare) router.replace("/schedule");
+  }, [canManage, isPublicShare, router]);
 
-  if (!canManage) {
+  if (!canManage && !isPublicShare) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-[var(--text-muted)]">
         Redirecting…
@@ -216,33 +217,43 @@ export default function PeoplePage() {
       <Topbar
         title="People"
         actions={
-          <button
-            type="button"
-            className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-            onClick={() => {
-              setIsNewPerson(true);
-              setEditing({ ...emptyPerson(), id: newId("person") });
-            }}
-          >
-            Add person
-          </button>
+          canManage ? (
+            <button
+              type="button"
+              className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+              onClick={() => {
+                setIsNewPerson(true);
+                setEditing({ ...emptyPerson(), id: newId("person") });
+              }}
+            >
+              Add person
+            </button>
+          ) : undefined
         }
       />
       <div className="p-5">
-        <p className="mb-4 text-sm text-[var(--text-muted)]">
-          Add people with their work email — <strong>Add & invite</strong>{" "}
-          emails them. <strong>Invite</strong> / Create invite link only gives
-          you a copyable link. Members only see My schedule.
-        </p>
+        {canManage ? (
+          <p className="mb-4 text-sm text-[var(--text-muted)]">
+            Add people with their work email — <strong>Add & invite</strong>{" "}
+            emails them. <strong>Invite</strong> / Create invite link only gives
+            you a copyable link. Members only see My schedule.
+          </p>
+        ) : null}
         {state.people.length === 0 ? (
-          <EmptyState
-            title="No people yet"
-            cta="Add your first person"
-            onClick={() => {
-              setIsNewPerson(true);
-              setEditing({ ...emptyPerson(), id: newId("person") });
-            }}
-          />
+          canManage ? (
+            <EmptyState
+              title="No people yet"
+              cta="Add your first person"
+              onClick={() => {
+                setIsNewPerson(true);
+                setEditing({ ...emptyPerson(), id: newId("person") });
+              }}
+            />
+          ) : (
+            <p className="py-16 text-center text-sm text-[var(--text-muted)]">
+              No people yet
+            </p>
+          )
         ) : (
           <div className="overflow-x-auto rounded-md border border-[var(--border)]">
             <table className="w-full text-left text-sm">
@@ -250,10 +261,16 @@ export default function PeoplePage() {
                 <tr>
                   <th className="px-3 py-2 font-medium">Name</th>
                   <th className="px-3 py-2 font-medium">Role</th>
-                  <th className="px-3 py-2 font-medium">Access</th>
+                  {canManage ? (
+                    <th className="px-3 py-2 font-medium">Access</th>
+                  ) : null}
                   <th className="px-3 py-2 font-medium">This week</th>
-                  <th className="px-3 py-2 font-medium">Rates</th>
-                  <th className="px-3 py-2 font-medium" />
+                  {canManage ? (
+                    <th className="px-3 py-2 font-medium">Rates</th>
+                  ) : null}
+                  {canManage ? (
+                    <th className="px-3 py-2 font-medium" />
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -287,17 +304,19 @@ export default function PeoplePage() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">{person.role_title || "—"}</td>
-                      <td className="px-3 py-2.5">
-                        {linked ? (
-                          <span className="text-xs text-[var(--status-healthy)]">
-                            Member · {linked.email}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-[var(--text-muted)]">
-                            No login
-                          </span>
-                        )}
-                      </td>
+                      {canManage ? (
+                        <td className="px-3 py-2.5">
+                          {linked ? (
+                            <span className="text-xs text-[var(--status-healthy)]">
+                              Member · {linked.email}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-[var(--text-muted)]">
+                              No login
+                            </span>
+                          )}
+                        </td>
+                      ) : null}
                       <td className="px-3 py-2.5">
                         <span className="inline-flex items-center gap-1.5">
                           <span
@@ -313,9 +332,12 @@ export default function PeoplePage() {
                           {formatHours(booked)} / {formatHours(available)}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5 text-[var(--text-muted)]">
-                        ${person.cost_rate} / ${person.bill_rate}
-                      </td>
+                      {canManage ? (
+                        <td className="px-3 py-2.5 text-[var(--text-muted)]">
+                          ${person.cost_rate} / ${person.bill_rate}
+                        </td>
+                      ) : null}
+                      {canManage ? (
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">
                         {!person.profile_id ? (
                           <button
@@ -390,6 +412,7 @@ export default function PeoplePage() {
                           Leave
                         </button>
                       </td>
+                      ) : null}
                     </tr>
                   );
                 })}
@@ -399,7 +422,7 @@ export default function PeoplePage() {
         )}
       </div>
 
-      {editing && (
+      {canManage && editing && (
         <Modal
           title={isNewPerson ? "Add person" : "Edit person"}
           onClose={() => {
@@ -563,7 +586,7 @@ export default function PeoplePage() {
         </Modal>
       )}
 
-      {confirmDelete && editing && (
+      {canManage && confirmDelete && editing && (
         <ConfirmDialog
           title="Delete person?"
           message={`Delete ${editing.name || "this person"}? Their assignments and leave will be removed. This can’t be undone.`}
@@ -579,7 +602,7 @@ export default function PeoplePage() {
         />
       )}
 
-      {inviteTarget && (
+      {canManage && inviteTarget && (
         <Modal
           title={
             inviteUrl

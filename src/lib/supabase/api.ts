@@ -162,7 +162,15 @@ export async function fetchWorkspace(
   }
 
   const orgId = profile.organization_id as string;
+  return loadOrgWorkspace(supabase, orgId, userId);
+}
 
+/** Load org planning data by id (service role for public share). */
+export async function loadOrgWorkspace(
+  supabase: SupabaseClient,
+  orgId: string,
+  sessionProfileId: string | null,
+): Promise<DemoState> {
   const [
     orgRes,
     profilesRes,
@@ -225,7 +233,13 @@ export async function fetchWorkspace(
   const organization = orgRes.data as Organization;
 
   return {
-    organization: { id: organization.id, name: organization.name },
+    organization: {
+      id: organization.id,
+      name: organization.name,
+      share_enabled: Boolean(
+        (organization as { share_enabled?: boolean }).share_enabled,
+      ),
+    },
     profiles: (profilesRes.data ?? []).map((row) => ({
       id: String(row.id),
       organization_id: String(row.organization_id),
@@ -272,7 +286,7 @@ export async function fetchWorkspace(
     })),
     holiday_calendars,
     holiday_calendar_days,
-    sessionProfileId: userId,
+    sessionProfileId,
   };
 }
 

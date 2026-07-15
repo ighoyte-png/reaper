@@ -10,7 +10,7 @@ import { sortClientsByName } from "@/lib/domain/sorting";
 import type { Client } from "@/lib/types";
 
 export default function ClientsPage() {
-  const { state, upsertClient, deleteClient, newId } = useData();
+  const { state, upsertClient, deleteClient, newId, canManage } = useData();
   const { push } = useToast();
   const [editing, setEditing] = useState<Omit<Client, "organization_id"> | null>(
     null,
@@ -32,22 +32,30 @@ export default function ClientsPage() {
       <Topbar
         title="Clients"
         actions={
-          <button
-            type="button"
-            className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-            onClick={() => setEditing(emptyClient())}
-          >
-            Add client
-          </button>
+          canManage ? (
+            <button
+              type="button"
+              className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+              onClick={() => setEditing(emptyClient())}
+            >
+              Add client
+            </button>
+          ) : undefined
         }
       />
       <div className="p-5">
         {state.clients.length === 0 ? (
-          <EmptyState
-            title="No clients yet"
-            cta="Create your first client"
-            onClick={() => setEditing(emptyClient())}
-          />
+          canManage ? (
+            <EmptyState
+              title="No clients yet"
+              cta="Create your first client"
+              onClick={() => setEditing(emptyClient())}
+            />
+          ) : (
+            <p className="py-16 text-center text-sm text-[var(--text-muted)]">
+              No clients yet
+            </p>
+          )
         ) : (
           <div className="overflow-x-auto rounded-md border border-[var(--border)]">
             <table className="w-full text-left text-sm">
@@ -56,7 +64,9 @@ export default function ClientsPage() {
                   <th className="px-3 py-2 font-medium">Client</th>
                   <th className="px-3 py-2 font-medium">Projects</th>
                   <th className="px-3 py-2 font-medium">Notes</th>
-                  <th className="px-3 py-2 font-medium" />
+                  {canManage ? (
+                    <th className="px-3 py-2 font-medium" />
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -82,15 +92,17 @@ export default function ClientsPage() {
                       <td className="px-3 py-2.5 text-[var(--text-muted)]">
                         {client.notes || "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <button
-                          type="button"
-                          className="text-xs text-[var(--accent)]"
-                          onClick={() => setEditing(client)}
-                        >
-                          Edit
-                        </button>
-                      </td>
+                      {canManage ? (
+                        <td className="px-3 py-2.5 text-right">
+                          <button
+                            type="button"
+                            className="text-xs text-[var(--accent)]"
+                            onClick={() => setEditing(client)}
+                          >
+                            Edit
+                          </button>
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
@@ -100,7 +112,7 @@ export default function ClientsPage() {
         )}
       </div>
 
-      {editing && (
+      {canManage && editing && (
         <Modal
           title={editing.name ? "Edit client" : "Add client"}
           onClose={() => setEditing(null)}
@@ -162,7 +174,7 @@ export default function ClientsPage() {
         </Modal>
       )}
 
-      {confirmDelete && editing && (
+      {canManage && confirmDelete && editing && (
         <ConfirmDialog
           title="Delete client?"
           message={`Delete ${editing.name || "this client"}? Linked projects will keep their work, but the client association is removed. This can’t be undone.`}

@@ -10,6 +10,7 @@ import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-cha
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
   budgetBurn,
   budgetHealth,
@@ -41,7 +42,8 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
 }
 
 export default function ProjectsPage() {
-  const { state, upsertProject, newId } = useData();
+  const { state, upsertProject, newId, canManage } = useData();
+  const appHref = useAppHref();
   const { push } = useToast();
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
     null,
@@ -71,22 +73,30 @@ export default function ProjectsPage() {
       <Topbar
         title="Projects"
         actions={
-          <button
-            type="button"
-            className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-            onClick={() => setEditing(emptyProject(newId("proj")))}
-          >
-            Add project
-          </button>
+          canManage ? (
+            <button
+              type="button"
+              className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+              onClick={() => setEditing(emptyProject(newId("proj")))}
+            >
+              Add project
+            </button>
+          ) : undefined
         }
       />
       <div className="p-5">
         {state.projects.length === 0 ? (
-          <EmptyState
-            title="No projects yet"
-            cta="Create your first project"
-            onClick={() => setEditing(emptyProject(newId("proj")))}
-          />
+          canManage ? (
+            <EmptyState
+              title="No projects yet"
+              cta="Create your first project"
+              onClick={() => setEditing(emptyProject(newId("proj")))}
+            />
+          ) : (
+            <p className="py-16 text-center text-sm text-[var(--text-muted)]">
+              No projects yet
+            </p>
+          )
         ) : (
           <div className="grid gap-3">
             <label className="relative block">
@@ -127,7 +137,7 @@ export default function ProjectsPage() {
                 return (
                   <Link
                     key={project.id}
-                    href={`/projects/${project.id}`}
+                    href={appHref(`/projects/${project.id}`)}
                     className="rounded-md border border-[var(--border)] p-4 hover:bg-[var(--row-hover)]"
                   >
                     <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -185,7 +195,7 @@ export default function ProjectsPage() {
         )}
       </div>
 
-      {editing && (
+      {canManage && editing && (
         <Modal
           title={editing.name ? "Edit project" : "Add project"}
           onClose={() => setEditing(null)}

@@ -15,6 +15,10 @@ export type Recurrence = "none" | "weekly";
 export interface Organization {
   id: string;
   name: string;
+  /** When true, /share/[token] serves a read-only view. Token is not always loaded client-side. */
+  share_enabled?: boolean;
+  /** Present in demo local state; supabase managers load token via /api/share. */
+  share_token?: string | null;
 }
 
 export interface Profile {

@@ -2,34 +2,36 @@
 
 import Link from "next/link";
 import { Topbar } from "@/components/nav/topbar";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 
 const reports = [
   {
-    href: "/reports/utilization",
+    path: "/reports/utilization",
     title: "Utilization",
     description: "People × weeks heatmap of planned load vs capacity.",
   },
   {
-    href: "/reports/budgets",
+    path: "/reports/budgets",
     title: "Budgets",
     description: "Planned hours vs project total budget for every project.",
   },
   {
-    href: "/reports/forecast",
+    path: "/reports/forecast",
     title: "Financial forecast",
     description: "Revenue, cost, and margin implied by the schedule.",
   },
 ];
 
 export default function ReportsPage() {
+  const appHref = useAppHref();
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <Topbar title="Reports" />
       <div className="grid gap-3 p-3 sm:p-5 md:grid-cols-3">
         {reports.map((report) => (
           <Link
-            key={report.href}
-            href={report.href}
+            key={report.path}
+            href={appHref(report.path)}
             className="rounded-md border border-[var(--border)] p-4 hover:bg-[var(--row-hover)]"
           >
             <h2 className="text-sm font-semibold">{report.title}</h2>

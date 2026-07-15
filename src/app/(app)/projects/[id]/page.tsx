@@ -19,13 +19,22 @@ import {
 } from "@/lib/domain/budget";
 import { projectForecast } from "@/lib/domain/forecast";
 import { projectDisplayColor } from "@/lib/domain/sorting";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import type { Milestone, Project } from "@/lib/types";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { state, upsertProject, deleteProject, upsertMilestone, deleteMilestone, newId } =
-    useData();
+  const appHref = useAppHref();
+  const {
+    state,
+    upsertProject,
+    deleteProject,
+    upsertMilestone,
+    deleteMilestone,
+    newId,
+    canManage,
+  } = useData();
   const { push } = useToast();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Omit<Project, "organization_id"> | null>(
@@ -57,7 +66,7 @@ export default function ProjectDetailPage() {
         <Topbar title="Project" />
         <div className="p-5 text-sm text-[var(--text-muted)]">
           Project not found.{" "}
-          <Link href="/projects" className="text-[var(--accent)]">
+          <Link href={appHref("/projects")} className="text-[var(--accent)]">
             Back to projects
           </Link>
         </div>
@@ -81,25 +90,27 @@ export default function ProjectDetailPage() {
         actions={
           <>
             <Link
-              href="/schedule"
+              href={appHref("/schedule")}
               className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm"
             >
               Schedule
             </Link>
-            <button
-              type="button"
-              className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={() => {
-                const { organization_id: _org, ...rest } = project;
-                setDraft({
-                  ...rest,
-                  budget_monthly_reset: Boolean(rest.budget_monthly_reset),
-                });
-                setEditing(true);
-              }}
-            >
-              Edit
-            </button>
+            {canManage ? (
+              <button
+                type="button"
+                className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                onClick={() => {
+                  const { organization_id: _org, ...rest } = project;
+                  setDraft({
+                    ...rest,
+                    budget_monthly_reset: Boolean(rest.budget_monthly_reset),
+                  });
+                  setEditing(true);
+                }}
+              >
+                Edit
+              </button>
+            ) : null}
           </>
         }
       />
@@ -153,7 +164,7 @@ export default function ProjectDetailPage() {
             {allocations.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">
                 No assignments yet.{" "}
-                <Link href="/schedule" className="text-[var(--accent)]">
+                <Link href={appHref("/schedule")} className="text-[var(--accent)]">
                   Book on the schedule
                 </Link>
               </p>
@@ -219,21 +230,23 @@ export default function ProjectDetailPage() {
         <section className="rounded-md border border-[var(--border)] p-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold">Milestones</h2>
-            <button
-              type="button"
-              className="text-xs text-[var(--accent)]"
-              onClick={() =>
-                setMilestoneForm({
-                  id: newId("ms"),
-                  project_id: project.id,
-                  name: "",
-                  due_date: new Date().toISOString().slice(0, 10),
-                  status: "upcoming",
-                })
-              }
-            >
-              Add milestone
-            </button>
+            {canManage ? (
+              <button
+                type="button"
+                className="text-xs text-[var(--accent)]"
+                onClick={() =>
+                  setMilestoneForm({
+                    id: newId("ms"),
+                    project_id: project.id,
+                    name: "",
+                    due_date: new Date().toISOString().slice(0, 10),
+                    status: "upcoming",
+                  })
+                }
+              >
+                Add milestone
+              </button>
+            ) : null}
           </div>
           {milestones.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No milestones yet.</p>
@@ -250,16 +263,18 @@ export default function ProjectDetailPage() {
                       {m.due_date} · {m.status}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="text-xs text-[var(--text-muted)]"
-                    onClick={() => {
-                      deleteMilestone(m.id);
-                      push("Milestone deleted");
-                    }}
-                  >
-                    Remove
-                  </button>
+                  {canManage ? (
+                    <button
+                      type="button"
+                      className="text-xs text-[var(--text-muted)]"
+                      onClick={() => {
+                        deleteMilestone(m.id);
+                        push("Milestone deleted");
+                      }}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -267,7 +282,7 @@ export default function ProjectDetailPage() {
         </section>
       </div>
 
-      {editing && draft && (
+      {canManage && editing && draft && (
         <Modal
           title="Edit project"
           onClose={() => {
@@ -339,12 +354,12 @@ export default function ProjectDetailPage() {
             setConfirmDelete(false);
             setEditing(false);
             push("Project deleted");
-            router.push("/projects");
+            router.push(appHref("/projects"));
           }}
         />
       )}
 
-      {milestoneForm && (
+      {canManage && milestoneForm && (
         <Modal title="Add milestone" onClose={() => setMilestoneForm(null)}>
           <div className="grid gap-3">
             <Field label="Name">

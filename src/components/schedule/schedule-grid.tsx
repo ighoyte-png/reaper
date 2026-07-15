@@ -94,6 +94,7 @@ export function ScheduleGrid() {
     setLeaveBlock,
     newId,
     canManage,
+    isPublicShare,
     myPerson,
     authError,
   } = useData();
@@ -286,13 +287,14 @@ export function ScheduleGrid() {
   }
 
   const visiblePeople = useMemo(() => {
-    const base = canManage ? state.people : myPerson ? [myPerson] : [];
+    const showAll = canManage || isPublicShare;
+    const base = showAll ? state.people : myPerson ? [myPerson] : [];
     const filtered =
-      canManage && personFilter !== "all"
+      showAll && personFilter !== "all"
         ? base.filter((p) => p.id === personFilter)
         : base;
     return sortPeopleByName(filtered);
-  }, [canManage, state.people, myPerson, personFilter]);
+  }, [canManage, isPublicShare, state.people, myPerson, personFilter]);
 
   const peopleForFilter = useMemo(
     () => sortPeopleByName(state.people),
@@ -939,7 +941,7 @@ export function ScheduleGrid() {
               <option value="week">By week</option>
               <option value="month">By month</option>
             </select>
-            {canManage && (
+            {(canManage || isPublicShare) && (
               <>
                 <select
                   value={projectFilter}
@@ -967,20 +969,22 @@ export function ScheduleGrid() {
                     </option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  className={cn(
-                    "inline-flex h-8 w-8 items-center justify-center rounded-md border",
-                    sliceMode
-                      ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
-                      : "border-[var(--border)] text-[var(--text-muted)]",
-                  )}
-                  onClick={() => setSliceMode((v) => !v)}
-                  title="Slice: click a day on a multi-day block to split it"
-                  aria-label="Slice"
-                >
-                  <Scissors size={14} />
-                </button>
+                {canManage ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-8 w-8 items-center justify-center rounded-md border",
+                      sliceMode
+                        ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+                        : "border-[var(--border)] text-[var(--text-muted)]",
+                    )}
+                    onClick={() => setSliceMode((v) => !v)}
+                    title="Slice: click a day on a multi-day block to split it"
+                    aria-label="Slice"
+                  >
+                    <Scissors size={14} />
+                  </button>
+                ) : null}
               </>
             )}
             {isNarrow && (
@@ -989,7 +993,13 @@ export function ScheduleGrid() {
                 className="h-8 rounded-md border border-[var(--border)] px-3 text-sm"
                 onClick={() => setMobilePanelOpen(true)}
               >
-                {selected ? "Details" : canManage ? "Budgets" : "My plan"}
+                {selected
+                  ? "Details"
+                  : canManage
+                    ? "Budgets"
+                    : isPublicShare
+                      ? "Plan"
+                      : "My plan"}
               </button>
             )}
           </div>
