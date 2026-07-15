@@ -1034,7 +1034,7 @@ export function ScheduleGrid() {
                         >
                           <div className="min-w-0 text-right">
                             {clientName ? (
-                              <div className="truncate text-[9px] leading-none text-[var(--text-muted)] opacity-50">
+                              <div className="truncate text-xs leading-tight text-[var(--text-muted)]">
                                 {clientName}
                               </div>
                             ) : null}
