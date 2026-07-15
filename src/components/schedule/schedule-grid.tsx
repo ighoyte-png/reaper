@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { parseISO } from "date-fns";
-import { ChevronLeft, ChevronRight, Copy, Save, StickyNote, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, Save, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass } from "@/components/ui/form";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -191,7 +191,9 @@ export function ScheduleGrid() {
     setAnchor(weekStart(new Date()));
   }
 
-  // Visible people intersection — only paint assignment blocks when on-screen
+  const [collapsedPeople, setCollapsedPeople] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [revealedPeople, setRevealedPeople] = useState<Set<string>>(
     () => new Set(),
   );
@@ -203,6 +205,15 @@ export function ScheduleGrid() {
       return next;
     });
   }, []);
+
+  function togglePersonCollapsed(personId: string) {
+    setCollapsedPeople((prev) => {
+      const next = new Set(prev);
+      if (next.has(personId)) next.delete(personId);
+      else next.add(personId);
+      return next;
+    });
+  }
 
   const visiblePeople = useMemo(() => {
     if (canManage) return state.people;
@@ -628,6 +639,7 @@ export function ScheduleGrid() {
                 .slice(0, 2)
                 .toUpperCase();
               const blocksReady = revealedPeople.has(person.id);
+              const collapsed = collapsedPeople.has(person.id);
 
               return (
                 <PersonReveal
@@ -640,9 +652,27 @@ export function ScheduleGrid() {
                   {/* Util strip */}
                   <div className="flex items-stretch">
                     <div
-                      className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-[var(--border)] bg-[var(--bg)] px-3 py-1.5"
+                      className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 sm:px-3"
                       style={{ width: LABEL_PX }}
                     >
+                      <button
+                        type="button"
+                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:opacity-30"
+                        aria-label={
+                          collapsed
+                            ? `Expand assignments for ${person.name}`
+                            : `Collapse assignments for ${person.name}`
+                        }
+                        aria-expanded={!collapsed}
+                        disabled={personProjects.length === 0}
+                        onClick={() => togglePersonCollapsed(person.id)}
+                      >
+                        {collapsed ? (
+                          <ChevronRight size={14} strokeWidth={2} />
+                        ) : (
+                          <ChevronDown size={14} strokeWidth={2} />
+                        )}
+                      </button>
                       <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[10px] font-semibold">
                         {initials}
                       </div>
@@ -652,6 +682,9 @@ export function ScheduleGrid() {
                         </div>
                         <div className="truncate text-[10px] text-[var(--text-muted)]">
                           {person.role_title || "—"}
+                          {collapsed && personProjects.length > 0
+                            ? ` · ${personProjects.length} project${personProjects.length === 1 ? "" : "s"}`
+                            : ""}
                         </div>
                       </div>
                     </div>
@@ -707,7 +740,8 @@ export function ScheduleGrid() {
                   </div>
 
                   {/* Project rows — blocks live here (no empty gap) */}
-                  {personProjects.map((project) => {
+                  {!collapsed &&
+                    personProjects.map((project) => {
                     const rowOccs = occurrences.filter(
                       (o) =>
                         o.person_id === person.id &&
@@ -1178,7 +1212,7 @@ export function ScheduleGrid() {
                     );
                   })}
 
-                  {personProjects.length === 0 && (
+                  {!collapsed && personProjects.length === 0 && (
                     <div className="flex">
                       <div
                         className="sticky left-0 z-20 px-3 py-2 text-xs text-[var(--text-muted)]"
