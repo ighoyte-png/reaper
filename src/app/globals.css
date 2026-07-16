@@ -17,6 +17,7 @@
   --leave-block: #6b7280;
   --leave-block-fg: #374151;
   --leave-block-fill: rgba(107, 114, 128, 0.32);
+  --leave-block-wash: color-mix(in srgb, var(--leave-block) 28%, var(--bg));
   --leave-block-draft: rgba(107, 114, 128, 0.2);
   --leave-block-hatch: rgba(0, 0, 0, 0.05);
   --zebra: rgba(0, 0, 0, 0.035);
@@ -40,6 +41,7 @@
   --leave-block: #9ca3af;
   --leave-block-fg: #e5e7eb;
   --leave-block-fill: rgba(156, 163, 175, 0.28);
+  --leave-block-wash: color-mix(in srgb, var(--leave-block) 24%, var(--bg));
   --leave-block-draft: rgba(156, 163, 175, 0.18);
   --leave-block-hatch: rgba(255, 255, 255, 0.06);
   --zebra: rgba(255, 255, 255, 0.035);

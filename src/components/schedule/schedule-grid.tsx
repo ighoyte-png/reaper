@@ -1264,7 +1264,7 @@ export function ScheduleGrid() {
                           data-schedule-block
                           className={cn(
                             "pointer-events-auto absolute z-10 flex items-center rounded-sm border border-[var(--leave-block)]/50 px-1 text-[10px] font-medium leading-none",
-                            "bg-[var(--leave-block-fill)] text-[var(--leave-block-fg)]",
+                            "text-[var(--leave-block-fg)]",
                             canManage && "cursor-pointer",
                             isSelected &&
                               "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
@@ -1273,14 +1273,15 @@ export function ScheduleGrid() {
                           style={{
                             left: geo.left,
                             width: geo.width,
+                            backgroundColor: "var(--leave-block-wash)",
+                            backgroundImage:
+                              "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
                             ...(fullHeight
                               ? {}
                               : {
                                   top: DAY_PAD_Y,
                                   height: DAY_H,
                                 }),
-                            backgroundImage:
-                              "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
                           }}
                           title={label}
                           onPointerDown={(e) => {
@@ -1606,7 +1607,7 @@ export function ScheduleGrid() {
                                 data-schedule-block
                                 className={cn(
                                   "pointer-events-auto absolute z-10 flex items-center rounded-sm border border-[var(--leave-block)]/50 px-1 text-[10px] font-medium leading-none",
-                                  "bg-[var(--leave-block-fill)] text-[var(--leave-block-fg)]",
+                                  "text-[var(--leave-block-fg)]",
                                   canManage && "cursor-pointer",
                                   isSelected &&
                                     "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
@@ -1616,6 +1617,7 @@ export function ScheduleGrid() {
                                   width,
                                   top: DAY_PAD_Y,
                                   height: DAY_H,
+                                  backgroundColor: "var(--leave-block-wash)",
                                   backgroundImage:
                                     "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
                                 }}
@@ -1727,13 +1729,16 @@ export function ScheduleGrid() {
                           {/* Column hit targets */}
                           <div className="absolute inset-0 flex">
                             {columns.map((col) => {
+                              const fullDayLeave =
+                                zoom === "day" &&
+                                !!isOnFullDayLeave(
+                                  person.id,
+                                  col.startKey,
+                                  state.leave_days,
+                                );
                               const leave =
                                 zoom === "day"
-                                  ? isOnFullDayLeave(
-                                      person.id,
-                                      col.startKey,
-                                      state.leave_days,
-                                    )
+                                  ? fullDayLeave
                                   : availableHoursInRange(
                                       person,
                                       col.startKey,
@@ -1759,7 +1764,9 @@ export function ScheduleGrid() {
                                   className={cn(
                                     "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
                                     weekZebra(col.groupIndex),
-                                    leave && "bg-[var(--leave-block-fill)]",
+                                    leave &&
+                                      !fullDayLeave &&
+                                      "bg-[var(--leave-block-fill)]",
                                     (inDraft || isHover) &&
                                       "bg-[var(--accent)]/35",
                                     !leave &&
