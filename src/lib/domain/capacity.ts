@@ -82,6 +82,23 @@ export function personBookedHoursInRange(
   );
 }
 
+/** Sum approved leave hours in a date range (full days use daily capacity). */
+export function personLeaveHoursInRange(
+  person: Person,
+  startKey: string,
+  endKey: string,
+  leaveDays: LeaveDay[],
+): number {
+  const perDay = dailyCapacityHours(person);
+  const days = workingDaysBetween(startKey, endKey);
+  return days.reduce((sum, day) => {
+    const leave = isOnLeave(person.id, day, leaveDays);
+    if (!leave) return sum;
+    if (isFullDayLeave(leave)) return sum + perDay;
+    return sum + (leave.hours_per_day ?? 0);
+  }, 0);
+}
+
 export function availableHoursInRange(
   person: Person,
   startKey: string,

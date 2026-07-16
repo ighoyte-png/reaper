@@ -27,6 +27,7 @@ import {
   isOnFullDayLeave,
   isOnLeave,
   personBookedHoursInRange,
+  personLeaveHoursInRange,
   utilizationPct,
 } from "@/lib/domain/capacity";
 import {
@@ -1556,9 +1557,109 @@ export function ScheduleGrid() {
                           }}
                         />
                       ) : null}
-                      {partialLeaveBlocks.map((block) =>
-                        leaveBlockEditors(block, false),
-                      )}
+                      {zoom === "day"
+                        ? partialLeaveBlocks.map((block) =>
+                            leaveBlockEditors(block, false),
+                          )
+                        : columns.flatMap((col, colIndex) => {
+                            const leaveHours = personLeaveHoursInRange(
+                              person,
+                              col.startKey,
+                              col.endKey,
+                              state.leave_days,
+                            );
+                            if (leaveHours <= 0) return [];
+
+                            const overlapping = leaveBlocks.filter((b) =>
+                              columnsOverlapRange(
+                                col,
+                                b.start_date,
+                                b.end_date,
+                              ),
+                            );
+                            const primary = [...overlapping].sort(
+                              (a, b) =>
+                                overlapWorkingDays(
+                                  b.start_date,
+                                  b.end_date,
+                                  col,
+                                ).length -
+                                overlapWorkingDays(
+                                  a.start_date,
+                                  a.end_date,
+                                  col,
+                                ).length,
+                            )[0];
+                            const isSelected =
+                              !!primary &&
+                              selectedLeaveBlockId === primary.id;
+                            const hoursLabel = formatHours(leaveHours);
+                            const left = columnOffsetPx(columns, colIndex) + 2;
+                            const width = Math.max(col.width - 4, 8);
+                            const noteHtmls = overlapping
+                              .map((b) => b.notes)
+                              .filter((n) => notesHasContent(n));
+
+                            return [
+                              <div
+                                key={`leave-${person.id}-${col.id}`}
+                                data-schedule-block
+                                className={cn(
+                                  "pointer-events-auto absolute z-10 flex items-center rounded-sm border border-[var(--leave-block)]/50 px-1 text-[10px] font-medium leading-none",
+                                  "bg-[var(--leave-block-fill)] text-[var(--leave-block-fg)]",
+                                  canManage && "cursor-pointer",
+                                  isSelected &&
+                                    "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
+                                )}
+                                style={{
+                                  left,
+                                  width,
+                                  top: DAY_PAD_Y,
+                                  height: DAY_H,
+                                  backgroundImage:
+                                    "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
+                                }}
+                                title={
+                                  overlapping.length > 1
+                                    ? `Time off · ${hoursLabel} · ${overlapping.length} blocks`
+                                    : `Time off · ${hoursLabel}`
+                                }
+                                onPointerDown={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (primary) selectLeaveBlock(primary);
+                                }}
+                              >
+                                <span className="truncate">{hoursLabel}</span>
+                                {noteHtmls.length > 0 ? (
+                                  <Tooltip
+                                    content={
+                                      <span className="flex flex-col gap-1.5">
+                                        {noteHtmls.map((html, i) => (
+                                          <RichNotesHtml
+                                            key={i}
+                                            html={html!}
+                                          />
+                                        ))}
+                                      </span>
+                                    }
+                                    className="ml-0.5 shrink-0"
+                                  >
+                                    <span
+                                      className="inline-flex cursor-default opacity-90"
+                                      aria-label="Notes"
+                                      onMouseDown={(e) => e.stopPropagation()}
+                                    >
+                                      <StickyNote
+                                        size={13}
+                                        strokeWidth={2.5}
+                                      />
+                                    </span>
+                                  </Tooltip>
+                                ) : null}
+                              </div>,
+                            ];
+                          })}
                     </div>
                   </div>
 
@@ -2166,15 +2267,17 @@ export function ScheduleGrid() {
                     </div>
                   )}
 
-                  {/* Full-height wash for Full Day / Statutory / Sick / Training */}
-                  <div
-                    className="pointer-events-none absolute bottom-0 top-0 z-[12]"
-                    style={{ left: LABEL_PX, width: tw }}
-                  >
-                    {fullLeaveBlocks.map((block) =>
-                      leaveBlockEditors(block, true),
-                    )}
-                  </div>
+                  {/* Full-height wash for Full Day / Statutory / Sick / Training (day view only) */}
+                  {zoom === "day" ? (
+                    <div
+                      className="pointer-events-none absolute bottom-0 top-0 z-[12]"
+                      style={{ left: LABEL_PX, width: tw }}
+                    >
+                      {fullLeaveBlocks.map((block) =>
+                        leaveBlockEditors(block, true),
+                      )}
+                    </div>
+                  ) : null}
                   </div>
                     );
                   })()}
