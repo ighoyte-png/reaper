@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
-import { parseISO } from "date-fns";
+import { format, isWeekend, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass } from "@/components/ui/form";
@@ -24,9 +24,11 @@ import {
 import {
   availableHoursInRange,
   capacityLevel,
+  dailyCapacityHours,
   isOnFullDayLeave,
   isOnLeave,
   personBookedHoursInRange,
+  personBookedHoursOnDay,
   personLeaveHoursInRange,
   utilizationPct,
 } from "@/lib/domain/capacity";
@@ -37,7 +39,7 @@ import {
   weekStart,
   workingDaysBetween,
 } from "@/lib/domain/dates";
-import { expandAssignmentsInRange } from "@/lib/domain/recurrence";
+import { expandAssignmentsInRange, occurrenceCoversDay } from "@/lib/domain/recurrence";
 import {
   buildScheduleColumns,
   columnOffsetPx,
@@ -49,6 +51,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import {
+  clientNameOf,
   projectDisplayColor,
   projectLabelWithClient,
   sortClientsByName,
@@ -66,7 +69,10 @@ import { leaveBlocksInRange, type LeaveBlock } from "@/lib/domain/leave-blocks";
 import type {
   Assignment,
   AssignmentStatus,
+  Client,
+  LeaveDay,
   LeaveKind,
+  Person,
   Project,
 } from "@/lib/types";
 
@@ -2754,7 +2760,7 @@ export function ScheduleGrid() {
           />
         ) : (
           <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">
-            {canManage &&
+            {canManage ? (
               sortedProjects
                 .filter((p) => p.status === "active")
                 .map((project) => {
@@ -2790,7 +2796,18 @@ export function ScheduleGrid() {
                       <BurnBar burn={burn} />
                     </button>
                   );
-                })}
+                })
+            ) : (
+              <MemberTodaySummary
+                myPerson={myPerson}
+                todayKey={todayKey}
+                assignments={state.assignments}
+                leaveDays={state.leave_days}
+                projectsById={projectsById}
+                clientsById={clientsById}
+                onSelectAssignment={selectAssignment}
+              />
+            )}
           </div>
         )}
       </aside>
@@ -2947,6 +2964,171 @@ function Field({
       {label}
       {children}
     </label>
+  );
+}
+
+function MemberTodaySummary({
+  myPerson,
+  todayKey,
+  assignments,
+  leaveDays,
+  projectsById,
+  clientsById,
+  onSelectAssignment,
+}: {
+  myPerson: Person | null;
+  todayKey: string;
+  assignments: Assignment[];
+  leaveDays: LeaveDay[];
+  projectsById: Map<string, Project>;
+  clientsById: Map<string, Client>;
+  onSelectAssignment: (id: string) => void;
+}) {
+  const summary = useMemo(() => {
+    if (!myPerson) return null;
+    const dayDate = parseISO(todayKey);
+    const weekend = isWeekend(dayDate);
+    const leave = isOnLeave(myPerson.id, todayKey, leaveDays);
+    const assignmentsToday = expandAssignmentsInRange(
+      assignments.filter((a) => a.person_id === myPerson.id),
+      todayKey,
+      todayKey,
+    )
+      .filter((o) => occurrenceCoversDay(o, todayKey))
+      .sort((a, b) => {
+        const pa = projectsById.get(a.project_id);
+        const pb = projectsById.get(b.project_id);
+        if (!pa && !pb) return 0;
+        if (!pa) return 1;
+        if (!pb) return -1;
+        const ca = clientNameOf(pa, clientsById);
+        const cb = clientNameOf(pb, clientsById);
+        const aBlank = !ca;
+        const bBlank = !cb;
+        if (aBlank !== bBlank) return aBlank ? 1 : -1;
+        const byClient = ca.localeCompare(cb, undefined, {
+          sensitivity: "base",
+        });
+        if (byClient !== 0) return byClient;
+        return pa.name.localeCompare(pb.name, undefined, { sensitivity: "base" });
+      });
+    const bookedHours = personBookedHoursOnDay(
+      myPerson.id,
+      todayKey,
+      assignments,
+      leaveDays,
+    );
+    const capacity = dailyCapacityHours(myPerson);
+    return { dayDate, weekend, leave, assignmentsToday, bookedHours, capacity };
+  }, [myPerson, todayKey, assignments, leaveDays, projectsById, clientsById]);
+
+  if (!myPerson) {
+    return (
+      <p>
+        Your account is not linked to a person record. Ask an admin to link your
+        profile in Settings.
+      </p>
+    );
+  }
+
+  if (!summary) return null;
+
+  const { dayDate, weekend, leave, assignmentsToday, bookedHours, capacity } =
+    summary;
+  const dateLabel = format(dayDate, "EEEE, MMM d");
+  const fullDayOff = leave != null && isFullDayLeave(leave);
+  const level = capacityLevel(bookedHours, capacity, fullDayOff);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+          Today
+        </p>
+        <p className="mt-0.5 text-sm font-semibold text-[var(--text)]">
+          {dateLabel}
+        </p>
+      </div>
+
+      {weekend ? (
+        <p>Weekend — no work scheduled.</p>
+      ) : (
+        <>
+          {leave ? (
+            <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-[var(--text)]">
+              <div className="text-sm font-medium">
+                {leaveBlockLabel(leave.kind, leave.hours_per_day)}
+              </div>
+              {leave.hours_per_day != null && !isFullDayLeave(leave) ? (
+                <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                  {formatHours(leave.hours_per_day)} off
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {assignmentsToday.length > 0 ? (
+            <ul className="space-y-2">
+              {assignmentsToday.map((occ) => {
+                const project = projectsById.get(occ.project_id);
+                const client = project?.client_id
+                  ? clientsById.get(project.client_id)
+                  : undefined;
+                const color = project
+                  ? projectDisplayColor(project, clientsById)
+                  : "#64748B";
+                return (
+                  <li key={`${occ.assignmentId}-${occ.weekOffset}`}>
+                    <button
+                      type="button"
+                      onClick={() => onSelectAssignment(occ.assignmentId)}
+                      className="w-full cursor-pointer rounded-md border border-[var(--border)] p-3 text-left hover:bg-[var(--row-hover)]"
+                    >
+                      <div className="flex items-start gap-2 text-[var(--text)]">
+                        <span
+                          className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ background: color }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold leading-tight">
+                            {client?.name ?? "No client"}
+                          </div>
+                          <div className="mt-0.5 truncate text-xs text-[var(--text-muted)]">
+                            {project?.name ?? "Project"}
+                          </div>
+                          <div className="mt-1.5 text-xs capitalize text-[var(--text-muted)]">
+                            {formatHours(occ.hours_per_day)} · {occ.status}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : !leave ? (
+            <p>Nothing scheduled today.</p>
+          ) : null}
+
+          {fullDayOff ? (
+            <p className="border-t border-[var(--border)] pt-3 text-xs">
+              Full day off
+            </p>
+          ) : capacity > 0 ? (
+            <p
+              className={cn(
+                "border-t border-[var(--border)] pt-3 text-xs",
+                level === "over" && "text-[var(--status-over)]",
+                level === "near" && "text-[var(--status-near)]",
+                level === "healthy" && "text-[var(--text-muted)]",
+              )}
+            >
+              {formatHours(bookedHours)} booked of {formatHours(capacity)}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 
