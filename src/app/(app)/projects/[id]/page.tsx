@@ -63,7 +63,16 @@ export default function ProjectDetailPage() {
   if (!project) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <PageHeader title="Project" />
+        <PageHeader
+          title="Project"
+          onBack={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              router.back();
+            } else {
+              router.push(appHref("/projects"));
+            }
+          }}
+        />
         <div className="p-5 text-sm text-[var(--text-muted)]">
           Project not found.{" "}
           <Link href={appHref("/projects")} className="text-[var(--accent)]">
@@ -83,10 +92,19 @@ export default function ProjectDetailPage() {
       ? calendarYearHourBars(project, state.assignments)
       : null;
 
+  function goBack() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push(appHref("/projects"));
+    }
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <PageHeader
         title={project.name}
+        onBack={goBack}
         actions={
           <>
             <Link
