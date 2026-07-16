@@ -1,0 +1,20 @@
+"use client";
+
+export function PageHeader({
+  title,
+  actions,
+}: {
+  title: string;
+  actions?: React.ReactNode;
+}) {
+  return (
+    <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--bg)] px-4">
+      <h1 className="truncate text-sm font-semibold tracking-tight">{title}</h1>
+      {actions ? (
+        <div className="flex max-w-[60vw] shrink-0 items-center gap-2 overflow-x-auto sm:max-w-none">
+          {actions}
+        </div>
+      ) : null}
+    </header>
+  );
+}

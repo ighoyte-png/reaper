@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Topbar } from "@/components/nav/topbar";
+import { PageHeader } from "@/components/nav/page-header";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { Field, inputClass } from "@/components/ui/form";
@@ -237,7 +237,7 @@ export default function SettingsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Topbar title="Settings" />
+      <PageHeader title="Settings" />
       <div className="mx-auto max-w-2xl space-y-4 p-5">
         <section className="rounded-md border border-[var(--border)] p-4">
           <h2 className="text-sm font-semibold">Organization</h2>

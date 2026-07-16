@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Topbar } from "@/components/nav/topbar";
+import { PageHeader } from "@/components/nav/page-header";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { useData } from "@/lib/data/store";
 import { budgetBurn, budgetHealth, formatHours } from "@/lib/domain/budget";
@@ -30,7 +30,7 @@ export default function DashboardPage() {
     );
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <Topbar title="Dashboard" />
+        <PageHeader title="Dashboard" />
         <div className="space-y-4 p-5">
           <section className="rounded-md border border-[var(--border)] p-4">
             <h2 className="mb-2 text-sm font-semibold">This week for you</h2>
@@ -110,7 +110,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Topbar title="Dashboard" />
+      <PageHeader title="Dashboard" />
       <div className="grid gap-4 p-3 sm:p-5 md:grid-cols-2 xl:grid-cols-3">
         <section className="rounded-md border border-[var(--border)] p-4 md:col-span-2">
           <div className="mb-3 flex items-center justify-between">

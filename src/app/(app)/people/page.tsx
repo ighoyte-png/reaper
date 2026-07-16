@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Topbar } from "@/components/nav/topbar";
+import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
@@ -214,7 +214,7 @@ export default function PeoplePage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Topbar
+      <PageHeader
         title="People"
         actions={
           canManage ? (

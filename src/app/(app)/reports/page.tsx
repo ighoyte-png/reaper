@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Topbar } from "@/components/nav/topbar";
+import { PageHeader } from "@/components/nav/page-header";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 
 const reports = [
@@ -26,7 +26,7 @@ export default function ReportsPage() {
   const appHref = useAppHref();
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Topbar title="Reports" />
+      <PageHeader title="Reports" />
       <div className="grid gap-3 p-3 sm:p-5 md:grid-cols-3">
         {reports.map((report) => (
           <Link

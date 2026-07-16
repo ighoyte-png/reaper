@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { parseISO } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass } from "@/components/ui/form";
 import {
@@ -126,6 +126,7 @@ export function ScheduleGrid() {
   const [hoverColId, setHoverColId] = useState<string | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [sidebarMinimized, setSidebarMinimized] = useState(false);
   const [draft, setDraft] = useState<{
     personId: string;
     projectId: string;
@@ -363,6 +364,18 @@ export function ScheduleGrid() {
         editForm.notes !== selected.notes),
   );
 
+  const sidebarExpandLabel = leaveEditForm
+    ? "Time off"
+    : selected
+      ? formDirty
+        ? "Assignment · unsaved"
+        : "Assignment"
+      : canManage
+        ? "Budget"
+        : isPublicShare
+          ? "Plan"
+          : "My plan";
+
   const occurrences = useMemo(() => {
     const filtered = state.assignments.filter(
       (a) => projectFilter === "all" || a.project_id === projectFilter,
@@ -476,7 +489,10 @@ export function ScheduleGrid() {
       setSelectedLeaveBlockId(null);
       setLeaveEditForm(null);
     }
-    if (isNarrow && id) setMobilePanelOpen(true);
+    if (id) {
+      if (isNarrow) setMobilePanelOpen(true);
+      else setSidebarMinimized(false);
+    }
   }
 
   /** Clear assignment/leave selection (keeps project filter & toolbar state). */
@@ -522,6 +538,16 @@ export function ScheduleGrid() {
       dayIds: block.dayIds,
     });
     if (isNarrow) setMobilePanelOpen(true);
+    else setSidebarMinimized(false);
+  }
+
+  /** Hide the sidebar without clearing selection or in-progress edits. */
+  function minimizeSidePanel() {
+    if (isNarrow) {
+      setMobilePanelOpen(false);
+      return;
+    }
+    setSidebarMinimized(true);
   }
 
   /** Return to the default Budget / plan sidebar (clear assignment + project filter). */
@@ -536,6 +562,7 @@ export function ScheduleGrid() {
     setProjectFilter("all");
     setPersonFilter("all");
     setMobilePanelOpen(false);
+    setSidebarMinimized(false);
     dragSnapshot.current = null;
   }
   closeSidePanelRef.current = closeSidePanel;
@@ -642,6 +669,7 @@ export function ScheduleGrid() {
       dayIds: rows.map((r) => r.id),
     });
     if (isNarrow) setMobilePanelOpen(true);
+    else setSidebarMinimized(false);
   }
 
   function saveLeaveEditForm() {
@@ -988,21 +1016,29 @@ export function ScheduleGrid() {
                 ) : null}
               </>
             )}
-            {isNarrow && (
+            {isNarrow ? (
               <button
                 type="button"
                 className="h-8 rounded-md border border-[var(--border)] px-3 text-sm"
                 onClick={() => setMobilePanelOpen(true)}
               >
-                {selected
-                  ? "Details"
-                  : canManage
-                    ? "Budgets"
-                    : isPublicShare
-                      ? "Plan"
-                      : "My plan"}
+                {sidebarExpandLabel}
               </button>
-            )}
+            ) : sidebarMinimized ? (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm",
+                  formDirty
+                    ? "border-[var(--status-near)]/50 text-[var(--status-near)]"
+                    : "border-[var(--border)]",
+                )}
+                onClick={() => setSidebarMinimized(false)}
+              >
+                <PanelRightOpen size={14} strokeWidth={1.75} />
+                {sidebarExpandLabel}
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -2306,15 +2342,20 @@ export function ScheduleGrid() {
 
       <aside
         className={cn(
-          "overflow-y-auto border-[var(--border)] bg-[var(--bg)]",
-          "lg:w-80 lg:shrink-0 lg:border-l",
+          "border-[var(--border)] bg-[var(--bg)]",
           isNarrow
             ? cn(
-                "fixed inset-x-0 bottom-0 z-50 max-h-[75dvh] rounded-t-xl border-t shadow-2xl transition-transform duration-200",
+                "fixed inset-x-0 bottom-0 z-50 max-h-[75dvh] overflow-y-auto rounded-t-xl border-t shadow-2xl transition-transform duration-200",
                 mobilePanelOpen ? "translate-y-0" : "translate-y-full pointer-events-none",
               )
-            : "w-80 shrink-0 border-l",
+            : cn(
+                "shrink-0 overflow-y-auto border-l transition-[width] duration-200 ease-out",
+                sidebarMinimized
+                  ? "pointer-events-none w-0 overflow-hidden border-l-0"
+                  : "w-80",
+              ),
         )}
+        aria-hidden={!isNarrow && sidebarMinimized}
       >
         <div className="border-b border-[var(--border)] px-4 py-3">
           <div className="flex items-start justify-between gap-2">
@@ -2328,39 +2369,38 @@ export function ScheduleGrid() {
                       ? "Budget"
                       : "Your plan"}
               </h2>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">
-                {leaveEditForm
-                  ? isFullDayLeave({
-                      kind: leaveEditForm.kind,
-                      hours_per_day: leaveEditForm.hours_per_day,
-                    })
-                    ? "Full-day time off clears overlapping assignments when you Save."
-                    : "Partial day keeps other assignments. Switch to Full Day and Save to clear the day."
-                  : canManage
-                    ? isCoarse
-                      ? "Tap an empty day to create. Tap a block to edit, then Save."
-                      : "Weekdays only (Mon–Fri). Edit details here, then click Save."
-                    : "Read-only view of your planned work."}
-              </p>
             </div>
-            {(selected ||
-              leaveEditForm ||
-              projectFilter !== "all" ||
-              personFilter !== "all" ||
-              (isNarrow && mobilePanelOpen)) && (
-              <button
-                type="button"
-                className="shrink-0 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
-                onClick={closeSidePanel}
-              >
-                {selected ||
+            <div className="flex shrink-0 items-center gap-1">
+              {!isNarrow ? (
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                  onClick={minimizeSidePanel}
+                  aria-label="Minimize sidebar"
+                  title="Minimize sidebar"
+                >
+                  <PanelRightClose size={16} strokeWidth={1.75} />
+                </button>
+              ) : null}
+              {(selected ||
                 leaveEditForm ||
                 projectFilter !== "all" ||
-                personFilter !== "all"
-                  ? "Deselect"
-                  : "Close"}
-              </button>
-            )}
+                personFilter !== "all" ||
+                (isNarrow && mobilePanelOpen)) && (
+                <button
+                  type="button"
+                  className="shrink-0 cursor-pointer text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+                  onClick={closeSidePanel}
+                >
+                  {selected ||
+                  leaveEditForm ||
+                  projectFilter !== "all" ||
+                  personFilter !== "all"
+                    ? "Deselect"
+                    : "Close"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2714,13 +2754,6 @@ export function ScheduleGrid() {
           />
         ) : (
           <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">
-            <p>
-              {canManage
-                ? isCoarse
-                  ? "Tap a column to create a block. Switch Day / Week / Month above; swipe to see more."
-                  : "Drag on a project row to create. Use Day / Week / Month to change column size."
-                : "Tap a block to see details and notes."}
-            </p>
             {canManage &&
               sortedProjects
                 .filter((p) => p.status === "active")

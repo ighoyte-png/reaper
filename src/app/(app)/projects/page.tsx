@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
-import { Topbar } from "@/components/nav/topbar";
+import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-chart";
@@ -70,7 +70,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Topbar
+      <PageHeader
         title="Projects"
         actions={
           canManage ? (

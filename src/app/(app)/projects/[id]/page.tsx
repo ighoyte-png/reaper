@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { Topbar } from "@/components/nav/topbar";
+import { PageHeader } from "@/components/nav/page-header";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-chart";
 import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
@@ -63,7 +63,7 @@ export default function ProjectDetailPage() {
   if (!project) {
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <Topbar title="Project" />
+        <PageHeader title="Project" />
         <div className="p-5 text-sm text-[var(--text-muted)]">
           Project not found.{" "}
           <Link href={appHref("/projects")} className="text-[var(--accent)]">
@@ -85,7 +85,7 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <Topbar
+      <PageHeader
         title={project.name}
         actions={
           <>
