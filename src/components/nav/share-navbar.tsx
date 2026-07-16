@@ -37,7 +37,7 @@ export function ShareNavbar() {
         </button>
         <Link
           href={`${base}/schedule`}
-          className="inline-flex shrink-0 items-center"
+          className="inline-flex shrink-0 items-center py-1"
           aria-label="Reaper"
         >
           <BrandLockup showVersion compact />

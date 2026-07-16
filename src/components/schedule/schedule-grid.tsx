@@ -1085,11 +1085,10 @@ export function ScheduleGrid() {
             {/* Column labels */}
             <div className="sticky top-[29px] z-30 flex border-b border-[var(--border)] bg-[var(--bg)]">
               <div
-                className="sticky left-0 z-40 flex shrink-0 items-center border-r border-[var(--border)] bg-[var(--bg)] px-3 text-xs text-[var(--text-muted)]"
+                className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
                 style={{ width: LABEL_PX }}
-              >
-                People
-              </div>
+                aria-hidden
+              />
               <div className="flex min-w-0 flex-1">
                 {columns.map((col) => (
                   <div

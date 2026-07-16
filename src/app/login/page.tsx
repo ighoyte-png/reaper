@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useData } from "@/lib/data/store";
 import { inputClass } from "@/components/ui/form";
 import { BrandLockup } from "@/components/brand/brand-lockup";
+import { APP_VERSION } from "@/lib/version";
 
 function LoginForm() {
   const {
@@ -98,13 +99,11 @@ function LoginForm() {
   return (
     <div className="w-full max-w-md">
       <BrandLockup
-        showVersion
-        logoClassName="h-16"
+        stacked
+        className="w-full"
+        logoClassName="h-32"
         wordmarkClassName="text-3xl"
       />
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight">
-        Plan work. Burn budget.
-      </h1>
 
       {mode === "demo" ? (
         <>
@@ -229,6 +228,9 @@ function LoginForm() {
           )}
         </>
       )}
+      <p className="mt-6 text-center text-[10px] font-medium tracking-wide text-[var(--text-muted)] opacity-50">
+        v{APP_VERSION}
+      </p>
     </div>
   );
 }

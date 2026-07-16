@@ -15,7 +15,7 @@ export function ReaperLogo({
       width={506}
       height={626}
       priority
-      className={cn("h-10 w-auto", className)}
+      className={cn("w-auto shrink-0", className ?? "h-10")}
     />
   );
 }
