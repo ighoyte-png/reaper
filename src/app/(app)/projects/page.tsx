@@ -6,22 +6,17 @@ import { Search } from "lucide-react";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
 import { BurnBar } from "@/components/ui/burn-bar";
-import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-chart";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import {
-  budgetBurn,
-  budgetHealth,
-  calendarYearHourBars,
-} from "@/lib/domain/budget";
-import {
-  projectDisplayColor,
+  sortClientsByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
-import type { Project } from "@/lib/types";
+import type { Client, Project } from "@/lib/types";
 
 function emptyProject(id: string): Omit<Project, "organization_id"> {
   return {
@@ -41,6 +36,8 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
   };
 }
 
+type ClientFilter = "all" | "none" | string;
+
 export default function ProjectsPage() {
   const { state, upsertProject, newId, canManage } = useData();
   const appHref = useAppHref();
@@ -49,11 +46,23 @@ export default function ProjectsPage() {
     null,
   );
   const [query, setQuery] = useState("");
+  const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
+
   const projects = sortProjectsByClientThenName(state.projects, state.clients);
+  const clients = sortClientsByName(state.clients);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
     return projects.filter((project) => {
+      if (clientFilter === "none" && project.client_id) return false;
+      if (
+        clientFilter !== "all" &&
+        clientFilter !== "none" &&
+        project.client_id !== clientFilter
+      ) {
+        return false;
+      }
+      if (!q) return true;
       const client = state.clients.find((c) => c.id === project.client_id);
       const haystack = [
         project.name,
@@ -66,10 +75,38 @@ export default function ProjectsPage() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [projects, query, state.clients]);
+  }, [projects, query, state.clients, clientFilter]);
+
+  const groups = useMemo(() => {
+    const byClient = new Map<string | null, Project[]>();
+    for (const project of filtered) {
+      const key = project.client_id;
+      const list = byClient.get(key) ?? [];
+      list.push(project);
+      byClient.set(key, list);
+    }
+
+    const ordered: { client: Client | null; projects: Project[] }[] = [];
+    for (const client of clients) {
+      const list = byClient.get(client.id);
+      if (list?.length) ordered.push({ client, projects: list });
+    }
+    const noClient = byClient.get(null);
+    if (noClient?.length) ordered.push({ client: null, projects: noClient });
+    return ordered;
+  }, [filtered, clients]);
+
+  const clientCounts = useMemo(() => {
+    const counts = new Map<string | "none", number>();
+    for (const p of projects) {
+      const key = p.client_id ?? "none";
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [projects]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <PageHeader
         title="Projects"
         actions={
@@ -84,9 +121,9 @@ export default function ProjectsPage() {
           ) : undefined
         }
       />
-      <div className="p-5">
-        {state.projects.length === 0 ? (
-          canManage ? (
+      {state.projects.length === 0 ? (
+        <div className="overflow-y-auto p-5">
+          {canManage ? (
             <EmptyState
               title="No projects yet"
               cta="Create your first project"
@@ -96,10 +133,41 @@ export default function ProjectsPage() {
             <p className="py-16 text-center text-sm text-[var(--text-muted)]">
               No projects yet
             </p>
-          )
-        ) : (
-          <div className="grid gap-3">
-            <label className="relative block">
+          )}
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+          <aside className="hidden w-52 shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] md:block">
+            <nav className="space-y-0.5 p-2" aria-label="Clients">
+              <ClientNavButton
+                active={clientFilter === "all"}
+                onClick={() => setClientFilter("all")}
+                label="All clients"
+                count={projects.length}
+              />
+              {clients.map((client) => (
+                <ClientNavButton
+                  key={client.id}
+                  active={clientFilter === client.id}
+                  onClick={() => setClientFilter(client.id)}
+                  label={client.name}
+                  count={clientCounts.get(client.id) ?? 0}
+                  color={client.color}
+                />
+              ))}
+              {(clientCounts.get("none") ?? 0) > 0 ? (
+                <ClientNavButton
+                  active={clientFilter === "none"}
+                  onClick={() => setClientFilter("none")}
+                  label="No client"
+                  count={clientCounts.get("none") ?? 0}
+                />
+              ) : null}
+            </nav>
+          </aside>
+
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-5">
+            <label className="relative mb-4 block">
               <Search
                 size={16}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
@@ -114,86 +182,71 @@ export default function ProjectsPage() {
                 aria-label="Search projects"
               />
             </label>
-            {filtered.length === 0 ? (
+
+            <div className="mb-4 flex gap-1 overflow-x-auto md:hidden">
+              <MobileClientChip
+                active={clientFilter === "all"}
+                onClick={() => setClientFilter("all")}
+                label="All"
+              />
+              {clients.map((c) => (
+                <MobileClientChip
+                  key={c.id}
+                  active={clientFilter === c.id}
+                  onClick={() => setClientFilter(c.id)}
+                  label={c.name}
+                  color={c.color}
+                />
+              ))}
+              {(clientCounts.get("none") ?? 0) > 0 ? (
+                <MobileClientChip
+                  active={clientFilter === "none"}
+                  onClick={() => setClientFilter("none")}
+                  label="No client"
+                />
+              ) : null}
+            </div>
+
+            {groups.length === 0 ? (
               <p className="py-8 text-center text-sm text-[var(--text-muted)]">
-                No projects match “{query.trim()}”.
+                No projects match
+                {query.trim() ? ` “${query.trim()}”` : ""}.
               </p>
             ) : (
-              filtered.map((project) => {
-                const burn = budgetBurn(
-                  project,
-                  state.assignments,
-                  state.people,
-                );
-                const client = state.clients.find(
-                  (c) => c.id === project.client_id,
-                );
-                const health = budgetHealth(burn);
-                const yearBars =
-                  project.budget_mode === "hours" &&
-                  project.budget_monthly_reset
-                    ? calendarYearHourBars(project, state.assignments)
-                    : null;
-                return (
-                  <Link
-                    key={project.id}
-                    href={appHref(`/projects/${project.id}`)}
-                    className="rounded-md border border-[var(--border)] p-4 hover:bg-[var(--row-hover)]"
-                  >
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{
-                          background: projectDisplayColor(
-                            project,
-                            state.clients,
-                          ),
-                        }}
-                      />
-                      <span className="text-sm font-semibold">
-                        {project.name}
-                      </span>
-                      <span className="text-xs text-[var(--text-muted)]">
-                        {client?.name ?? "No client"}
-                      </span>
-                      <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                        {project.status.replace("_", " ")}
-                      </span>
-                      {project.budget_monthly_reset ? (
-                        <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-                          Monthly
-                        </span>
+              <div className="space-y-6">
+                {groups.map(({ client, projects: groupProjects }) => (
+                  <section key={client?.id ?? "none"}>
+                    <div className="mb-4 flex items-center gap-2 border-b border-[var(--border)] px-1 pb-2">
+                      {client ? (
+                        <span
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ background: client.color }}
+                        />
                       ) : null}
-                      <span
-                        className={cn(
-                          "ml-auto text-xs",
-                          health === "over" && "text-[var(--status-over)]",
-                          health === "near" && "text-[var(--status-near)]",
-                          health === "healthy" && "text-[var(--text-muted)]",
-                        )}
-                      >
-                        Total {burn.totalHours}h
+                      <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
+                        {client?.name ?? "No client"}
+                      </h2>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {groupProjects.length} project
+                        {groupProjects.length === 1 ? "" : "s"}
                       </span>
                     </div>
-                    <BurnBar burn={burn} />
-                    {yearBars ? (
-                      <div
-                        className="mt-4"
-                        onClick={(e) => e.preventDefault()}
-                      >
-                        <MonthlyRetainerChart
-                          bars={yearBars}
-                          budgetHours={project.budget_hours ?? 0}
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {groupProjects.map((project) => (
+                        <ProjectCard
+                          key={project.id}
+                          project={project}
+                          href={appHref(`/projects/${project.id}`)}
                         />
-                      </div>
-                    ) : null}
-                  </Link>
-                );
-              })
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {canManage && editing && (
         <Modal
@@ -252,5 +305,127 @@ export default function ProjectsPage() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function ClientNavButton({
+  active,
+  onClick,
+  label,
+  count,
+  color,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+        active
+          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+      )}
+    >
+      {color ? (
+        <span
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ background: color }}
+        />
+      ) : (
+        <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--border)]" />
+      )}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="text-[11px] tabular-nums text-[var(--text-muted)]">
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function MobileClientChip({
+  active,
+  onClick,
+  label,
+  color,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs",
+        active
+          ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+          : "border-[var(--border)] text-[var(--text-muted)]",
+      )}
+    >
+      {color ? (
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: color }}
+        />
+      ) : null}
+      {label}
+    </button>
+  );
+}
+
+function ProjectCard({
+  project,
+  href,
+}: {
+  project: Project;
+  href: string;
+}) {
+  const { state } = useData();
+  const burn = budgetBurn(project, state.assignments, state.people);
+  const health = budgetHealth(burn);
+
+  return (
+    <Link
+      href={href}
+      className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]"
+    >
+      <div className="mb-3 flex min-w-0 items-center gap-2">
+        <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
+          {project.name}
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+            {project.status.replace("_", " ")}
+          </span>
+          {project.budget_monthly_reset ? (
+            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+              Monthly
+            </span>
+          ) : null}
+        </div>
+      </div>
+      <div className="mt-auto space-y-2">
+        <div
+          className={cn(
+            "text-xs",
+            health === "over" && "text-[var(--status-over)]",
+            health === "near" && "text-[var(--status-near)]",
+            (health === "healthy" || health === "none") &&
+              "text-[var(--text-muted)]",
+          )}
+        >
+          Total {burn.totalHours}h
+        </div>
+        <BurnBar burn={burn} compact />
+      </div>
+    </Link>
   );
 }

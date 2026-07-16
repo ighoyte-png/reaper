@@ -1,6 +1,7 @@
 "use client";
 
 import { PageHeader } from "@/components/nav/page-header";
+import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { useData } from "@/lib/data/store";
 import { formatHours, formatMoney } from "@/lib/domain/budget";
 import { orgForecast, projectForecast } from "@/lib/domain/forecast";
@@ -15,7 +16,7 @@ export default function ForecastReportPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <PageHeader title="Financial forecast" />
+      <PageHeader title={<ReportBreadcrumb current="Financial forecast" />} />
       <div className="space-y-4 p-3 sm:p-5">
         <div className="grid gap-3 sm:grid-cols-4">
           <Stat label="Planned hours" value={formatHours(org.plannedHours)} />
