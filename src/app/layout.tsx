@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   title: "Reaper",
   description: "Resource planning — schedule blocks that burn project budgets",
   icons: {
-    icon: "/icon.svg",
-    apple: "/icon.svg",
+    icon: "/reaper_logo.svg",
+    apple: "/reaper_logo.svg",
   },
 };
 

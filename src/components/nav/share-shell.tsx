@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
-import { ReaperLogo } from "@/components/brand/reaper-logo";
+import { BrandLockup } from "@/components/brand/brand-lockup";
 import { MobileNavProvider, useMobileNav } from "@/components/nav/mobile-nav";
 
 const tabDefs = [
@@ -29,14 +29,14 @@ function ShareSidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <aside className="flex h-full w-56 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar)]">
-      <div className="flex h-14 items-center px-4">
+      <div className="flex min-h-14 items-center px-4 py-3">
         <Link
           href={`${base}/schedule`}
           className="inline-flex items-center"
           aria-label="Reaper"
           onClick={onNavigate}
         >
-          <ReaperLogo className="h-9" />
+          <BrandLockup showVersion logoClassName="h-8" wordmarkClassName="text-base" />
         </Link>
       </div>
       <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-4">

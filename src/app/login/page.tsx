@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useData } from "@/lib/data/store";
 import { inputClass } from "@/components/ui/form";
-import { ReaperLogo } from "@/components/brand/reaper-logo";
+import { BrandLockup } from "@/components/brand/brand-lockup";
 
 function LoginForm() {
   const {
@@ -97,14 +97,14 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-md">
-      <ReaperLogo className="h-12" />
+      <BrandLockup
+        showVersion
+        logoClassName="h-16"
+        wordmarkClassName="text-3xl"
+      />
       <h1 className="mt-4 text-3xl font-semibold tracking-tight">
         Plan work. Burn budget.
       </h1>
-      <p className="mt-3 text-sm leading-relaxed text-[var(--text-muted)]">
-        Drop people onto the schedule. Confirmed hours eat the project total
-        budget — no timesheets required.
-      </p>
 
       {mode === "demo" ? (
         <>
@@ -227,11 +227,6 @@ function LoginForm() {
               Forgot password?
             </button>
           )}
-
-          <p className="mt-3 text-xs text-[var(--text-muted)]">
-            Connected to Supabase. Invited members open the invite link to
-            choose a password, then sign in here.
-          </p>
         </>
       )}
     </div>
