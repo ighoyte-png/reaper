@@ -182,6 +182,7 @@ export function ScheduleGrid() {
   const applyingUndoRef = useRef(false);
   const performUndoRef = useRef(() => {});
   const closeSidePanelRef = useRef(() => {});
+  const deleteSelectedAssignmentRef = useRef(() => {});
   const assignmentsRef = useRef(state.assignments);
   assignmentsRef.current = state.assignments;
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -442,6 +443,12 @@ export function ScheduleGrid() {
 
       if (inField) return;
 
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        deleteSelectedAssignmentRef.current();
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         performUndoRef.current();
@@ -522,6 +529,16 @@ export function ScheduleGrid() {
     assignmentsRef.current = assignmentsRef.current.filter((a) => a.id !== id);
   }
 
+  function deleteSelectedAssignment() {
+    if (!canManage || !editForm) return;
+    trackedDelete(editForm.id);
+    selectAssignment(null);
+    setEditForm(null);
+    setMobilePanelOpen(false);
+    push("Assignment deleted");
+  }
+  deleteSelectedAssignmentRef.current = deleteSelectedAssignment;
+
   function selectAssignment(id: string | null) {
     setSelectedId(id);
     if (id) {
@@ -584,8 +601,12 @@ export function ScheduleGrid() {
     else setSidebarMinimized(false);
   }
 
-  /** Hide the sidebar without clearing selection or in-progress edits. */
+  /** Hide the sidebar and clear the current assignment/leave selection. */
   function minimizeSidePanel() {
+    setSelectedId(null);
+    setEditForm(null);
+    setSelectedLeaveBlockId(null);
+    setLeaveEditForm(null);
     if (isNarrow) {
       setMobilePanelOpen(false);
       return;
@@ -2802,13 +2823,7 @@ export function ScheduleGrid() {
               <button
                 type="button"
                 className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)]"
-                onClick={() => {
-                  trackedDelete(editForm.id);
-                  selectAssignment(null);
-                  setEditForm(null);
-                  setMobilePanelOpen(false);
-                  push("Assignment deleted");
-                }}
+                onClick={deleteSelectedAssignment}
               >
                 <Trash2 size={14} /> Delete
               </button>
