@@ -1089,26 +1089,38 @@ export function ScheduleGrid() {
             {isNarrow ? (
               <button
                 type="button"
-                className="h-8 rounded-md border border-[var(--border)] px-3 text-sm"
+                className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
                 onClick={() => setMobilePanelOpen(true)}
               >
                 {sidebarExpandLabel}
               </button>
-            ) : sidebarMinimized ? (
+            ) : (
               <button
                 type="button"
                 className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm",
+                  "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-3 text-sm hover:bg-[var(--row-hover)]",
                   formDirty
                     ? "border-[var(--status-near)]/50 text-[var(--status-near)]"
                     : "border-[var(--border)]",
                 )}
-                onClick={expandSidePanel}
+                onClick={
+                  sidebarMinimized ? expandSidePanel : minimizeSidePanel
+                }
+                aria-pressed={!sidebarMinimized}
+                title={
+                  sidebarMinimized
+                    ? `Open ${sidebarExpandLabel}`
+                    : "Minimize sidebar"
+                }
               >
-                <PanelRightOpen size={14} strokeWidth={1.75} />
+                {sidebarMinimized ? (
+                  <PanelRightOpen size={14} strokeWidth={1.75} />
+                ) : (
+                  <PanelRightClose size={14} strokeWidth={1.75} />
+                )}
                 {sidebarExpandLabel}
               </button>
-            ) : null}
+            )}
           </div>
         </div>
 
