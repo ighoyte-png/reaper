@@ -84,10 +84,6 @@ const ROW_H = DAY_H + DAY_PAD_Y * 2;
 const LABEL_DESKTOP = 196;
 const LABEL_MOBILE = 112;
 
-function weekZebra(weekIndex: number) {
-  return weekIndex % 2 === 1 ? "bg-[var(--zebra)]" : undefined;
-}
-
 type UndoEntry =
   | { kind: "restore"; assignment: Assignment }
   | { kind: "remove"; id: string };
@@ -204,7 +200,17 @@ export function ScheduleGrid() {
   const headerGroups = useMemo(() => {
     // Day zoom: one month chip per weekday week (5 days). Do not span the
     // whole calendar month — that made Jul/Aug headers unreadable.
-    const groups: { label: string; width: number; groupIndex: number }[] = [];
+    type HeaderGroup = {
+      label: string;
+      width: number;
+      groupIndex: number;
+      startKey: string;
+      isCurrent: boolean;
+      weekOfYear: number | null;
+      year: number;
+      cornerLabel: string | null;
+    };
+    const groups: HeaderGroup[] = [];
     for (const col of columns) {
       const last = groups[groups.length - 1];
       if (
@@ -213,6 +219,7 @@ export function ScheduleGrid() {
         last.groupIndex === col.groupIndex
       ) {
         last.width += col.width;
+        last.isCurrent = last.isCurrent || col.isCurrentWeek || col.isToday;
       } else if (last && last.label === col.groupLabel && zoom === "month") {
         // Month zoom: year label can span consecutive months in the same year.
         last.width += col.width;
@@ -221,7 +228,27 @@ export function ScheduleGrid() {
           label: col.groupLabel,
           width: col.width,
           groupIndex: col.groupIndex,
+          startKey: col.startKey,
+          isCurrent:
+            zoom === "day" || zoom === "week" ? col.isCurrentWeek : false,
+          weekOfYear: col.weekOfYear,
+          year: col.year,
+          cornerLabel: null,
         });
+      }
+    }
+
+    // Day: week-of-year on every week. Week: year only when it changes
+    // (first visible week of that year). Month groups already show the year.
+    let prevYear: number | null = null;
+    for (const g of groups) {
+      if (zoom === "day" && g.weekOfYear != null) {
+        g.cornerLabel = String(g.weekOfYear);
+      } else if (zoom === "week") {
+        if (prevYear !== g.year) {
+          g.cornerLabel = String(g.year);
+          prevYear = g.year;
+        }
       }
     }
     return groups;
@@ -1060,55 +1087,91 @@ export function ScheduleGrid() {
           onPointerDown={onScheduleBackgroundPointerDown}
         >
           <div style={{ width: LABEL_PX + tw, minWidth: "100%" }}>
-            {/* Group labels (month / year) */}
-            <div className="sticky top-0 z-30 flex border-b border-[var(--border)] bg-[var(--bg)]">
-              <div
-                className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
-                style={{ width: LABEL_PX }}
-              />
-              <div className="flex min-w-0 flex-1">
-                {headerGroups.map((g, i) => (
-                  <div
-                    key={`${g.label}-${i}`}
-                    className={cn(
-                      "flex items-center justify-center border-r border-[var(--border)] py-1 text-xs font-semibold text-[var(--text-muted)]",
-                      weekZebra(i),
-                    )}
-                    style={{ width: g.width }}
-                  >
-                    {g.label}
-                  </div>
-                ))}
+            <div className="sticky top-0 z-30 bg-[var(--bg)]">
+              {/* Group labels (month / year) */}
+              <div className="flex border-b border-[var(--border)]">
+                <div
+                  className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
+                  style={{ width: LABEL_PX }}
+                />
+                <div className="flex min-w-0 flex-1">
+                  {headerGroups.map((g, i) => (
+                    <div
+                      key={`${g.label}-${g.startKey}-${i}`}
+                      className={cn(
+                        "relative flex items-center justify-center border-r border-[var(--border)] py-1.5 text-xs font-semibold leading-none text-[var(--text-muted)]",
+                        g.isCurrent && "bg-[var(--today-col)]",
+                      )}
+                      style={{ width: g.width }}
+                    >
+                      {g.isCurrent ? (
+                        <span
+                          className="absolute inset-x-0 top-0 h-px bg-[var(--accent)]"
+                          aria-hidden
+                        />
+                      ) : null}
+                      {g.cornerLabel ? (
+                        <span
+                          className={cn(
+                            "absolute left-1 top-1/2 -translate-y-1/2 text-[10px] font-medium tabular-nums",
+                            g.isCurrent
+                              ? "text-[var(--accent)]"
+                              : "text-[var(--text-muted)] opacity-70",
+                          )}
+                        >
+                          {g.cornerLabel}
+                        </span>
+                      ) : null}
+                      <span className={g.cornerLabel ? "px-4" : undefined}>
+                        {g.label}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Column labels */}
-            <div className="sticky top-[29px] z-30 flex border-b border-[var(--border)] bg-[var(--bg)]">
-              <div
-                className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
-                style={{ width: LABEL_PX }}
-                aria-hidden
-              />
-              <div className="flex min-w-0 flex-1">
-                {columns.map((col) => (
-                  <div
-                    key={col.id}
-                    className={cn(
-                      "flex items-center justify-center border-r border-[var(--border)] text-xs",
-                      weekZebra(col.groupIndex),
-                      col.isToday && "font-semibold text-[var(--accent)]",
-                    )}
-                    style={{
-                      width: col.width,
-                      height: DAY_H,
-                      ...(col.isToday
-                        ? { backgroundColor: "var(--today-col)" }
-                        : null),
-                    }}
-                  >
-                    {col.label}
-                  </div>
-                ))}
+              {/* Column labels */}
+              <div className="flex border-b border-[var(--border)]">
+                <div
+                  className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
+                  style={{ width: LABEL_PX }}
+                  aria-hidden
+                />
+                <div className="flex min-w-0 flex-1">
+                  {columns.map((col) => (
+                    <div
+                      key={col.id}
+                      className={cn(
+                        "relative flex items-center justify-center border-r border-[var(--border)] text-xs",
+                        (col.isCurrentWeek ||
+                          (zoom === "month" && col.isToday) ||
+                          (zoom === "week" && col.isToday)) &&
+                          "bg-[var(--today-col)]",
+                        col.isToday &&
+                          (zoom === "day" || zoom === "week") &&
+                          "font-semibold text-[var(--accent)]",
+                      )}
+                      style={{
+                        width: col.width,
+                        height: DAY_H,
+                      }}
+                    >
+                      {col.isToday && zoom === "month" ? (
+                        <span
+                          className="absolute inset-x-0 top-0 h-px bg-[var(--accent)]"
+                          aria-hidden
+                        />
+                      ) : null}
+                      {col.isToday && zoom === "day" ? (
+                        <span
+                          className="absolute inset-x-1 bottom-0.5 h-0.5 rounded-full bg-[var(--accent)]"
+                          aria-hidden
+                        />
+                      ) : null}
+                      {col.label}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1492,7 +1555,6 @@ export function ScheduleGrid() {
                               key={col.id}
                               className={cn(
                                 "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
-                                weekZebra(col.groupIndex),
                                 (inLeaveDraft || isHover) &&
                                   "bg-[var(--leave-block-draft)]",
                                 canManage &&
@@ -1804,7 +1866,6 @@ export function ScheduleGrid() {
                                   key={col.id}
                                   className={cn(
                                     "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
-                                    weekZebra(col.groupIndex),
                                     leave &&
                                       !fullDayLeave &&
                                       "bg-[var(--leave-block-fill)]",

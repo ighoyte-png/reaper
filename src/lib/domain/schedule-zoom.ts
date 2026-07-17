@@ -1,4 +1,4 @@
-import { addMonths, addWeeks, format } from "date-fns";
+import { addMonths, addWeeks, format, getWeek } from "date-fns";
 import {
   endOfMonth,
   getWeekdays,
@@ -22,8 +22,21 @@ export type ScheduleColumn = {
   endKey: string;
   width: number;
   groupIndex: number;
+  /** Exact today (day) or band containing today (week/month). */
   isToday: boolean;
+  /** Day/week zoom: column belongs to the calendar week that contains today. */
+  isCurrentWeek: boolean;
+  /** ISO-style week number (Mon-based), when applicable. */
+  weekOfYear: number | null;
+  year: number;
 };
+
+function weekMeta(ws: Date) {
+  return {
+    weekOfYear: getWeek(ws, { weekStartsOn: 1 }),
+    year: ws.getFullYear(),
+  };
+}
 
 export function buildScheduleColumns(opts: {
   zoom: ScheduleZoom;
@@ -39,7 +52,11 @@ export function buildScheduleColumns(opts: {
     const columns: ScheduleColumn[] = [];
     for (let w = 0; w < weeksShown; w++) {
       const ws = addWeeks(weekStart(anchor), w);
-      for (const day of getWeekdays(ws)) {
+      const weekDays = getWeekdays(ws);
+      const weekKeys = weekDays.map(toDateKey);
+      const isCurrentWeek = weekKeys.includes(todayKey);
+      const meta = weekMeta(ws);
+      for (const day of weekDays) {
         const key = toDateKey(day);
         columns.push({
           id: key,
@@ -50,6 +67,9 @@ export function buildScheduleColumns(opts: {
           width: dayW,
           groupIndex: w,
           isToday: key === todayKey,
+          isCurrentWeek,
+          weekOfYear: meta.weekOfYear,
+          year: meta.year,
         });
       }
     }
@@ -72,6 +92,8 @@ export function buildScheduleColumns(opts: {
       const startKey = toDateKey(ws);
       const endKey = toDateKey(weekEnd(ws));
       const weekDays = getWeekdays(ws).map(toDateKey);
+      const isCurrentWeek = weekDays.includes(todayKey);
+      const meta = weekMeta(ws);
       return {
         id: startKey,
         label: format(ws, "d"),
@@ -80,7 +102,10 @@ export function buildScheduleColumns(opts: {
         endKey,
         width: colW,
         groupIndex: w,
-        isToday: weekDays.includes(todayKey),
+        isToday: isCurrentWeek,
+        isCurrentWeek,
+        weekOfYear: meta.weekOfYear,
+        year: meta.year,
       };
     });
     const totalWidth = columns.reduce((s, c) => s + c.width, 0);
@@ -102,6 +127,7 @@ export function buildScheduleColumns(opts: {
     const { startKey, endKey } = monthWorkingBounds(month);
     const monthStart = toDateKey(month);
     const monthEnd = toDateKey(endOfMonth(month));
+    const isCurrentMonth = todayKey >= monthStart && todayKey <= monthEnd;
     return {
       id: startKey,
       label: format(month, "MMM"),
@@ -110,7 +136,10 @@ export function buildScheduleColumns(opts: {
       endKey,
       width: colW,
       groupIndex: m,
-      isToday: todayKey >= monthStart && todayKey <= monthEnd,
+      isToday: isCurrentMonth,
+      isCurrentWeek: false,
+      weekOfYear: null,
+      year: month.getFullYear(),
     };
   });
 
