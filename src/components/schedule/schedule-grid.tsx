@@ -129,9 +129,9 @@ export function ScheduleGrid() {
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   /** User's preferred minimized state (restored after temporary expand for editing). */
-  const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(false);
-  const [sidebarMinimized, setSidebarMinimized] = useState(false);
-  const sidebarPreferMinimizedRef = useRef(false);
+  const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(true);
+  const [sidebarMinimized, setSidebarMinimized] = useState(true);
+  const sidebarPreferMinimizedRef = useRef(true);
   sidebarPreferMinimizedRef.current = sidebarPreferMinimized;
   const [draft, setDraft] = useState<{
     personId: string;
@@ -2458,51 +2458,25 @@ export function ScheduleGrid() {
         )}
         aria-hidden={!isNarrow && sidebarMinimized}
       >
-        <div className="border-b border-[var(--border)] px-4 py-3">
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold">
-                {leaveEditForm
-                  ? "Time off"
-                  : selected
-                    ? "Assignment"
-                    : canManage
-                      ? "Budget"
-                      : "Your plan"}
-              </h2>
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {!isNarrow ? (
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                  onClick={minimizeSidePanel}
-                  aria-label="Minimize sidebar"
-                  title="Minimize sidebar"
-                >
-                  <PanelRightClose size={16} strokeWidth={1.75} />
-                </button>
-              ) : null}
-              {(selected ||
-                leaveEditForm ||
-                projectFilter !== "all" ||
-                personFilter !== "all" ||
-                (isNarrow && mobilePanelOpen)) && (
-                <button
-                  type="button"
-                  className="shrink-0 cursor-pointer text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
-                  onClick={closeSidePanel}
-                >
-                  {selected ||
-                  leaveEditForm ||
-                  projectFilter !== "all" ||
-                  personFilter !== "all"
-                    ? "Deselect"
-                    : "Close"}
-                </button>
-              )}
-            </div>
-          </div>
+        <div className="flex h-[57px] shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4">
+          <h2 className="text-sm font-semibold">
+            {leaveEditForm
+              ? "Time off"
+              : selected
+                ? "Assignment"
+                : canManage
+                  ? "Budget"
+                  : "Your plan"}
+          </h2>
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            onClick={minimizeSidePanel}
+            aria-label={isNarrow ? "Close sidebar" : "Minimize sidebar"}
+            title={isNarrow ? "Close sidebar" : "Minimize sidebar"}
+          >
+            <PanelRightClose size={16} strokeWidth={1.75} />
+          </button>
         </div>
 
         {canManage && leaveEditForm ? (
