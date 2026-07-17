@@ -219,7 +219,9 @@ export function ScheduleGrid() {
         last.groupIndex === col.groupIndex
       ) {
         last.width += col.width;
-        last.isCurrent = last.isCurrent || col.isCurrentWeek || col.isToday;
+        if (zoom === "week") {
+          last.isCurrent = last.isCurrent || col.isCurrentWeek;
+        }
       } else if (last && last.label === col.groupLabel && zoom === "month") {
         // Month zoom: year label can span consecutive months in the same year.
         last.width += col.width;
@@ -229,8 +231,7 @@ export function ScheduleGrid() {
           width: col.width,
           groupIndex: col.groupIndex,
           startKey: col.startKey,
-          isCurrent:
-            zoom === "day" || zoom === "week" ? col.isCurrentWeek : false,
+          isCurrent: zoom === "week" ? col.isCurrentWeek : false,
           weekOfYear: col.weekOfYear,
           year: col.year,
           cornerLabel: null,
@@ -1149,13 +1150,18 @@ export function ScheduleGrid() {
                         col.isWeekBoundaryEnd
                           ? "border-r-2 border-[var(--border)]"
                           : "border-r border-[var(--border)]",
-                        (col.isCurrentWeek ||
-                          (zoom === "month" && col.isToday) ||
-                          (zoom === "week" && col.isToday)) &&
+                        zoom === "day" &&
+                          col.isToday &&
+                          "bg-[var(--today-col)] font-semibold text-[var(--accent)]",
+                        zoom === "week" &&
+                          col.isCurrentWeek &&
                           "bg-[var(--today-col)]",
-                        col.isToday &&
-                          (zoom === "day" || zoom === "week") &&
+                        zoom === "week" &&
+                          col.isToday &&
                           "font-semibold text-[var(--accent)]",
+                        zoom === "month" &&
+                          col.isToday &&
+                          "bg-[var(--today-col)]",
                       )}
                       style={{
                         width: col.width,
@@ -1523,7 +1529,7 @@ export function ScheduleGrid() {
                       <span className="truncate text-[11px] font-medium leading-none text-[var(--text-muted)]">
                         Time off
                       </span>
-                      <span className="h-3 w-0.5 shrink-0 rounded-full bg-[var(--leave-block)] opacity-70" />
+                      <span className="h-5 w-1 shrink-0 rounded-full bg-[var(--leave-block)] opacity-70" />
                     </div>
                     <div
                       className="relative min-h-0 shrink-0"
@@ -1830,7 +1836,7 @@ export function ScheduleGrid() {
                             )}
                           </div>
                           <span
-                            className="h-3 w-0.5 shrink-0 rounded-full"
+                            className="h-5 w-1 shrink-0 rounded-full"
                             style={{ background: projectDisplayColor(project, clientsById) }}
                           />
                         </div>

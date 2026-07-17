@@ -21,7 +21,7 @@
   --leave-block-draft: rgba(107, 114, 128, 0.2);
   --leave-block-hatch: rgba(0, 0, 0, 0.05);
   --zebra: rgba(0, 0, 0, 0.035);
-  --today-col: rgba(0, 0, 0, 0.045);
+  --today-col: color-mix(in srgb, var(--accent) 12%, var(--bg));
 }
 
 .dark {
@@ -45,7 +45,7 @@
   --leave-block-draft: rgba(156, 163, 175, 0.18);
   --leave-block-hatch: rgba(255, 255, 255, 0.06);
   --zebra: rgba(255, 255, 255, 0.035);
-  --today-col: rgba(255, 255, 255, 0.07);
+  --today-col: color-mix(in srgb, var(--accent) 18%, var(--bg));
 }
 
 @theme inline {
