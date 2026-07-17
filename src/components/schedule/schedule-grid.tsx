@@ -300,6 +300,7 @@ export function ScheduleGrid() {
 
   function goToday() {
     setAnchor(weekStart(new Date()));
+    if (scrollRef.current) scrollRef.current.scrollLeft = 0;
   }
 
   const [collapsedPeople, setCollapsedPeople] = useState<Set<string>>(
