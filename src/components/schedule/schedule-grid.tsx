@@ -1236,7 +1236,6 @@ export function ScheduleGrid() {
                             : `Collapse assignments for ${person.name}`
                         }
                         aria-expanded={!collapsed}
-                        disabled={personProjects.length === 0}
                         onClick={() => togglePersonCollapsed(person.id)}
                       >
                         {collapsed ? (
@@ -1330,7 +1329,7 @@ export function ScheduleGrid() {
                   </div>
 
                   {/* Assignments body: Time off + projects, with full-height leave overlay */}
-                  {(() => {
+                  {!collapsed && (() => {
                     const leaveBlocks = leaveBlocksInRange(
                       state.leave_days,
                       person.id,
