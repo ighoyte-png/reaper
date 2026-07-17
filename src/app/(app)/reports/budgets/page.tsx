@@ -99,8 +99,28 @@ export default function BudgetsReportPage() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <aside className="hidden w-52 shrink-0 overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] md:block">
-            <nav className="space-y-0.5 p-2" aria-label="Clients">
+          <aside className="hidden w-52 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
+            <div className="shrink-0 border-b border-[var(--border)] p-2">
+              <label className="relative block">
+                <Search
+                  size={14}
+                  className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                  aria-hidden
+                />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search…"
+                  className={cn(inputClass, "h-8 pl-8 text-sm")}
+                  aria-label="Search projects"
+                />
+              </label>
+            </div>
+            <nav
+              className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2"
+              aria-label="Clients"
+            >
               <ClientNavButton
                 active={clientFilter === "all"}
                 onClick={() => setClientFilter("all")}
@@ -129,7 +149,7 @@ export default function BudgetsReportPage() {
           </aside>
 
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-5">
-            <label className="relative mb-4 block">
+            <label className="relative mb-4 block md:hidden">
               <Search
                 size={16}
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
