@@ -128,7 +128,11 @@ export function ScheduleGrid() {
   const [hoverColId, setHoverColId] = useState<string | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  /** User's preferred minimized state (restored after temporary expand for editing). */
+  const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(false);
   const [sidebarMinimized, setSidebarMinimized] = useState(false);
+  const sidebarPreferMinimizedRef = useRef(false);
+  sidebarPreferMinimizedRef.current = sidebarPreferMinimized;
   const [draft, setDraft] = useState<{
     personId: string;
     projectId: string;
@@ -526,6 +530,8 @@ export function ScheduleGrid() {
     if (id) {
       if (isNarrow) setMobilePanelOpen(true);
       else setSidebarMinimized(false);
+    } else if (!isNarrow) {
+      setSidebarMinimized(sidebarPreferMinimizedRef.current);
     }
   }
 
@@ -536,6 +542,7 @@ export function ScheduleGrid() {
     setSelectedLeaveBlockId(null);
     setLeaveEditForm(null);
     if (isNarrow) setMobilePanelOpen(false);
+    else setSidebarMinimized(sidebarPreferMinimizedRef.current);
   }
 
   /**
@@ -556,6 +563,7 @@ export function ScheduleGrid() {
     if (!block) {
       setSelectedLeaveBlockId(null);
       setLeaveEditForm(null);
+      if (!isNarrow) setSidebarMinimized(sidebarPreferMinimizedRef.current);
       return;
     }
     setSelectedId(null);
@@ -581,7 +589,13 @@ export function ScheduleGrid() {
       setMobilePanelOpen(false);
       return;
     }
+    setSidebarPreferMinimized(true);
     setSidebarMinimized(true);
+  }
+
+  function expandSidePanel() {
+    setSidebarPreferMinimized(false);
+    setSidebarMinimized(false);
   }
 
   /** Return to the default Budget / plan sidebar (clear assignment + project filter). */
@@ -596,7 +610,7 @@ export function ScheduleGrid() {
     setProjectFilter("all");
     setPersonFilter("all");
     setMobilePanelOpen(false);
-    setSidebarMinimized(false);
+    setSidebarMinimized(sidebarPreferMinimizedRef.current);
     dragSnapshot.current = null;
   }
   closeSidePanelRef.current = closeSidePanel;
@@ -1067,7 +1081,7 @@ export function ScheduleGrid() {
                     ? "border-[var(--status-near)]/50 text-[var(--status-near)]"
                     : "border-[var(--border)]",
                 )}
-                onClick={() => setSidebarMinimized(false)}
+                onClick={expandSidePanel}
               >
                 <PanelRightOpen size={14} strokeWidth={1.75} />
                 {sidebarExpandLabel}
@@ -2436,10 +2450,10 @@ export function ScheduleGrid() {
                 mobilePanelOpen ? "translate-y-0" : "translate-y-full pointer-events-none",
               )
             : cn(
-                "shrink-0 overflow-y-auto border-l transition-[width] duration-200 ease-out",
+                "absolute inset-y-0 right-0 z-30 w-80 overflow-y-auto border-l shadow-[-8px_0_24px_rgba(0,0,0,0.06)] transition-transform duration-200 ease-out",
                 sidebarMinimized
-                  ? "pointer-events-none w-0 overflow-hidden border-l-0"
-                  : "w-80",
+                  ? "pointer-events-none translate-x-full"
+                  : "translate-x-0",
               ),
         )}
         aria-hidden={!isNarrow && sidebarMinimized}
