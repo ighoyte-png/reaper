@@ -26,6 +26,8 @@ export type ScheduleColumn = {
   isToday: boolean;
   /** Day/week zoom: column belongs to the calendar week that contains today. */
   isCurrentWeek: boolean;
+  /** Last column of a week — thicker separator before the next week. */
+  isWeekBoundaryEnd: boolean;
   /** ISO-style week number (Mon-based), when applicable. */
   weekOfYear: number | null;
   year: number;
@@ -56,7 +58,8 @@ export function buildScheduleColumns(opts: {
       const weekKeys = weekDays.map(toDateKey);
       const isCurrentWeek = weekKeys.includes(todayKey);
       const meta = weekMeta(ws);
-      for (const day of weekDays) {
+      for (let di = 0; di < weekDays.length; di++) {
+        const day = weekDays[di];
         const key = toDateKey(day);
         columns.push({
           id: key,
@@ -68,6 +71,7 @@ export function buildScheduleColumns(opts: {
           groupIndex: w,
           isToday: key === todayKey,
           isCurrentWeek,
+          isWeekBoundaryEnd: di === weekDays.length - 1,
           weekOfYear: meta.weekOfYear,
           year: meta.year,
         });
@@ -104,6 +108,7 @@ export function buildScheduleColumns(opts: {
         groupIndex: w,
         isToday: isCurrentWeek,
         isCurrentWeek,
+        isWeekBoundaryEnd: true,
         weekOfYear: meta.weekOfYear,
         year: meta.year,
       };
@@ -138,6 +143,7 @@ export function buildScheduleColumns(opts: {
       groupIndex: m,
       isToday: isCurrentMonth,
       isCurrentWeek: false,
+      isWeekBoundaryEnd: false,
       weekOfYear: null,
       year: month.getFullYear(),
     };

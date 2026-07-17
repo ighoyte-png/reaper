@@ -1099,7 +1099,10 @@ export function ScheduleGrid() {
                     <div
                       key={`${g.label}-${g.startKey}-${i}`}
                       className={cn(
-                        "relative flex items-center justify-center border-r border-[var(--border)] py-1.5 text-xs font-semibold leading-none text-[var(--text-muted)]",
+                        "relative flex items-center justify-center py-1.5 text-xs font-semibold leading-none text-[var(--text-muted)]",
+                        zoom === "month"
+                          ? "border-r border-[var(--border)]"
+                          : "border-r-2 border-[var(--border)]",
                         g.isCurrent && "bg-[var(--today-col)]",
                       )}
                       style={{ width: g.width }}
@@ -1142,7 +1145,10 @@ export function ScheduleGrid() {
                     <div
                       key={col.id}
                       className={cn(
-                        "relative flex items-center justify-center border-r border-[var(--border)] text-xs",
+                        "relative flex items-center justify-center text-xs",
+                        col.isWeekBoundaryEnd
+                          ? "border-r-2 border-[var(--border)]"
+                          : "border-r border-[var(--border)]",
                         (col.isCurrentWeek ||
                           (zoom === "month" && col.isToday) ||
                           (zoom === "week" && col.isToday)) &&
@@ -1273,7 +1279,10 @@ export function ScheduleGrid() {
                           <div
                             key={band.id}
                             className={cn(
-                              "flex items-center border-r border-[var(--border)] px-1 text-[10px] font-medium",
+                              "flex items-center px-1 text-[10px] font-medium",
+                              zoom === "month"
+                                ? "border-r border-[var(--border)]"
+                                : "border-r-2 border-[var(--border)]",
                               level === "over" &&
                                 "bg-[var(--status-over)]/30 text-[var(--status-over)]",
                               level === "near" &&
@@ -1554,7 +1563,10 @@ export function ScheduleGrid() {
                             <div
                               key={col.id}
                               className={cn(
-                                "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
+                                "box-border shrink-0 transition-colors",
+                                col.isWeekBoundaryEnd
+                                  ? "border-r-2 border-[var(--border)]"
+                                  : "border-r border-[var(--border)]/40",
                                 (inLeaveDraft || isHover) &&
                                   "bg-[var(--leave-block-draft)]",
                                 canManage &&
@@ -1865,7 +1877,10 @@ export function ScheduleGrid() {
                                 <div
                                   key={col.id}
                                   className={cn(
-                                    "box-border shrink-0 border-r border-[var(--border)]/40 transition-colors",
+                                    "box-border shrink-0 transition-colors",
+                                    col.isWeekBoundaryEnd
+                                      ? "border-r-2 border-[var(--border)]"
+                                      : "border-r border-[var(--border)]/40",
                                     leave &&
                                       !fullDayLeave &&
                                       "bg-[var(--leave-block-fill)]",
