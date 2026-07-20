@@ -31,13 +31,14 @@ export interface ProjectPortalPayload {
   };
   clientName: string | null;
   /** Team members with contact emails — shown to the client, unlike the org-wide share. */
-  team: { name: string; email: string }[];
+  team: { name: string; email: string; title: string }[];
   milestones: {
     id: string;
     name: string;
     due_date: string;
     status: string;
     client_approved: boolean;
+    sort_order: number;
   }[];
   taskLists: { id: string; name: string; milestone_id: string | null }[];
   /** Titles/status only — no assignee, notes, or internal cost data. */
@@ -81,7 +82,11 @@ export function sanitizeProjectPortal(
   }
   const team = state.people
     .filter((p) => teamIds.has(p.id))
-    .map((p) => ({ name: p.name, email: p.email }))
+    .map((p) => ({
+      name: p.name,
+      email: p.email,
+      title: p.role_title,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   return {
@@ -98,12 +103,17 @@ export function sanitizeProjectPortal(
     team,
     milestones: state.milestones
       .filter((m) => m.project_id === projectId)
+      .sort(
+        (a, b) =>
+          a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
+      )
       .map((m) => ({
         id: m.id,
         name: m.name,
         due_date: m.due_date,
         status: m.status,
         client_approved: m.client_approved,
+        sort_order: m.sort_order,
       })),
     taskLists: state.task_lists
       .filter((l) => l.project_id === projectId)

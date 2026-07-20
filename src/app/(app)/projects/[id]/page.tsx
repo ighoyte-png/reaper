@@ -10,12 +10,12 @@ import { PageHeader } from "@/components/nav/page-header";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { ProgressBar } from "@/components/projects/progress-bar";
-import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
+import { SortableMilestoneList } from "@/components/projects/sortable-milestone-list";
+import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { ProjectForm } from "@/components/projects/project-form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import {
-  milestoneDateProgress,
   projectDateProgress,
 } from "@/lib/domain/progress";
 import { projectDisplayColor } from "@/lib/domain/sorting";
@@ -113,7 +113,10 @@ export default function ProjectDetailPage() {
   const client = state.clients.find((c) => c.id === project.client_id);
   const milestones = state.milestones
     .filter((m) => m.project_id === project.id)
-    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+    .sort(
+      (a, b) =>
+        a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
+    );
   const overallPct = projectDateProgress(project, today) ?? 0;
 
   const shareResult =
@@ -277,6 +280,7 @@ export default function ProjectDetailPage() {
                             due_date: today,
                             status: "upcoming",
                             client_approved: false,
+                            sort_order: milestones.length,
                           };
                           upsertMilestone(m);
                         }}
@@ -290,43 +294,24 @@ export default function ProjectDetailPage() {
                       No milestones yet.
                     </p>
                   ) : (
-                    milestones.map((m) => {
-                      const pct =
-                        milestoneDateProgress(m, project, today) ?? 0;
-                      return (
-                        <div key={m.id} className="space-y-1.5">
-                          <ProgressBar
-                            pct={pct}
-                            label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
-                            approved={m.client_approved}
-                          />
-                          {canManage ? (
-                            <div className="flex items-center justify-between gap-2">
-                              <label className="inline-flex cursor-pointer items-center gap-1 text-[10px] text-[var(--text-muted)]">
-                                <input
-                                  type="checkbox"
-                                  checked={m.client_approved}
-                                  onChange={(e) =>
-                                    upsertMilestone({
-                                      ...m,
-                                      client_approved: e.target.checked,
-                                    })
-                                  }
-                                />
-                                Approved
-                              </label>
-                              <button
-                                type="button"
-                                className="cursor-pointer text-[10px] text-[var(--accent)]"
-                                onClick={() => setEditingMilestone(m)}
-                              >
-                                Edit
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })
+                    <SortableMilestoneList
+                      milestones={milestones}
+                      project={project}
+                      today={today}
+                      canManage={canManage}
+                      formatDisplayDate={formatDisplayDate}
+                      onReorder={(reordered) => {
+                        reordered.forEach((m, i) => {
+                          if (m.sort_order !== i) {
+                            upsertMilestone({ ...m, sort_order: i });
+                          }
+                        });
+                      }}
+                      onToggleApproved={(m, approved) =>
+                        upsertMilestone({ ...m, client_approved: approved })
+                      }
+                      onEdit={setEditingMilestone}
+                    />
                   )}
                 </div>
               ) : null}
@@ -352,7 +337,15 @@ export default function ProjectDetailPage() {
                           .slice(0, 2)
                           .toUpperCase()}
                       </span>
-                      <span className="min-w-0 truncate">{p.name}</span>
+                      <span className="min-w-0 truncate">
+                        {p.name}
+                        {p.role_title ? (
+                          <span className="text-[var(--text-muted)]">
+                            {" "}
+                            · {p.role_title}
+                          </span>
+                        ) : null}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -506,8 +499,7 @@ export default function ProjectDetailPage() {
               />
             </Field>
             <Field label="Due date">
-              <input
-                type="date"
+              <DateInput
                 className={inputClass}
                 value={editingMilestone.due_date}
                 onChange={(e) =>

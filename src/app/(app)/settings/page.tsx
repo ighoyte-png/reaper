@@ -6,7 +6,7 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
-import { Field, inputClass } from "@/components/ui/form";
+import { Field, inputClass, DateInput } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { publicShareUrl } from "@/lib/share/token";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
@@ -557,8 +557,7 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-[8rem_1fr_auto]">
-                  <input
-                    type="date"
+                  <DateInput
                     className={inputClass}
                     value={dayDate}
                     onChange={(e) => setDayDate(e.target.value)}

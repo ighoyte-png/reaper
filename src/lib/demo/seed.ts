@@ -166,6 +166,7 @@ export function createDemoSeed(): DemoState {
         due_date: d(5, week),
         status: "upcoming",
         client_approved: true,
+        sort_order: 0,
       },
       {
         id: "ms-2",
@@ -175,6 +176,7 @@ export function createDemoSeed(): DemoState {
         due_date: d(40, week),
         status: "upcoming",
         client_approved: false,
+        sort_order: 1,
       },
       {
         id: "ms-3",
@@ -184,6 +186,7 @@ export function createDemoSeed(): DemoState {
         due_date: d(18, week),
         status: "upcoming",
         client_approved: false,
+        sort_order: 0,
       },
     ],
     holiday_calendars: [

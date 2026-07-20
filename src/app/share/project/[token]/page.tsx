@@ -159,8 +159,9 @@ export default function ProjectSharePage() {
     dateProgress(portal.project.start_date, portal.project.end_date, todayKey) ??
     0;
 
-  const milestonesSorted = [...portal.milestones].sort((a, b) =>
-    a.due_date.localeCompare(b.due_date),
+  const milestonesSorted = [...portal.milestones].sort(
+    (a, b) =>
+      a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
   );
   const assetsSorted = [...portal.assets];
   const teamSorted = [...portal.team];
@@ -186,6 +187,12 @@ export default function ProjectSharePage() {
             {teamSorted.map((member) => (
               <li key={member.email || member.name} className="text-sm">
                 <span className="font-medium">{member.name}</span>
+                {member.title ? (
+                  <span className="text-[var(--text-muted)]">
+                    {" "}
+                    · {member.title}
+                  </span>
+                ) : null}
                 {member.email ? (
                   <a
                     href={`mailto:${member.email}`}

@@ -145,9 +145,11 @@ function loadDemoState(): DemoState {
         color: c.color ?? "#64748B",
         status: c.status ?? "active",
       })),
-      milestones: (parsed.milestones ?? seed.milestones).map((m) => ({
+      milestones: (parsed.milestones ?? seed.milestones).map((m, idx) => ({
         ...m,
         client_approved: Boolean(m.client_approved),
+        sort_order:
+          typeof m.sort_order === "number" ? m.sort_order : idx,
       })),
       organization: {
         ...seed.organization,
@@ -1655,6 +1657,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             due_date: offsetDate(m.offset_days) ?? anchorDate,
             status: "upcoming",
             client_approved: false,
+            sort_order: m.sort_order,
           };
         });
 
@@ -1710,6 +1713,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 name: m.name,
                 due_date: m.due_date,
                 status: "upcoming" as const,
+                sort_order: m.sort_order,
               })),
               taskLists: newLists.map((l) => ({
                 id: l.id,
@@ -1734,9 +1738,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       exportProjectAsTemplate: async (projectId, name) => {
         const organizationId = state.organization.id || orgId;
         const project = state.projects.find((p) => p.id === projectId);
-        const projectMilestones = state.milestones.filter(
-          (m) => m.project_id === projectId,
-        );
+        const projectMilestones = state.milestones
+          .filter((m) => m.project_id === projectId)
+          .sort(
+            (a, b) =>
+              a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
+          );
         const projectLists = state.task_lists.filter(
           (l) => l.project_id === projectId,
         );
@@ -1781,7 +1788,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               template_id: templateId,
               name: m.name,
               offset_days: diffDays(m.due_date),
-              sort_order: idx,
+              sort_order: m.sort_order ?? idx,
             };
           },
         );

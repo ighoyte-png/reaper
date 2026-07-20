@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 export function Field({
   label,
@@ -6,7 +7,7 @@ export function Field({
   className,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   return (
@@ -20,13 +21,36 @@ export function Field({
 export const inputClass =
   "mt-1 h-9 w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm text-[var(--text)]";
 
+/** Native date input that opens the calendar when clicking anywhere on the field. */
+export function DateInput({
+  className,
+  onClick,
+  ...props
+}: Omit<ComponentPropsWithoutRef<"input">, "type">) {
+  return (
+    <input
+      {...props}
+      type="date"
+      className={cn("cursor-pointer", className)}
+      onClick={(e) => {
+        onClick?.(e);
+        if (e.defaultPrevented || props.disabled || props.readOnly) return;
+        try {
+          e.currentTarget.showPicker?.();
+        } catch {
+          // Unsupported browser or non-gesture context — native control still works.
+        }
+      }}
+    />
+  );
+}
 export function Modal({
   title,
   children,
   onClose,
 }: {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
   onClose: () => void;
 }) {
   return (

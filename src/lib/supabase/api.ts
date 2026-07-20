@@ -96,6 +96,7 @@ function mapMilestone(row: Record<string, unknown>): Milestone {
     due_date: String(row.due_date),
     status: row.status as Milestone["status"],
     client_approved: Boolean(row.client_approved),
+    sort_order: num(row.sort_order),
   };
 }
 
@@ -821,6 +822,7 @@ export async function upsertMilestoneRow(
     due_date: milestone.due_date,
     status: milestone.status,
     client_approved: Boolean(milestone.client_approved),
+    sort_order: milestone.sort_order,
   };
   const { error } = await supabase.from("milestones").upsert(payload);
   if (!error) return;
@@ -828,13 +830,26 @@ export async function upsertMilestoneRow(
   const missingApproved =
     /Could not find the 'client_approved' column/i.test(error.message) ||
     (error.code === "PGRST204" && /client_approved/i.test(error.message));
-  if (missingApproved) {
-    const { client_approved: _c, ...rest } = payload;
+  const missingSort =
+    /Could not find the 'sort_order' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /sort_order/i.test(error.message));
+
+  if (missingApproved || missingSort) {
+    const rest = { ...payload };
+    if (missingApproved) delete (rest as { client_approved?: boolean }).client_approved;
+    if (missingSort) delete (rest as { sort_order?: number }).sort_order;
     const retry = await supabase.from("milestones").upsert(rest);
     if (!retry.error) {
-      console.warn(
-        "milestones.client_approved missing — apply supabase/migrations/015_pm_execution.sql",
-      );
+      if (missingApproved) {
+        console.warn(
+          "milestones.client_approved missing — apply supabase/migrations/015_pm_execution.sql",
+        );
+      }
+      if (missingSort) {
+        console.warn(
+          "milestones.sort_order missing — apply supabase/migrations/018_milestone_sort_order.sql",
+        );
+      }
       return;
     }
     throw retry.error;
@@ -1231,7 +1246,7 @@ export async function applyProjectTemplateRows(
     organizationId: string;
     projectId: string;
     startDate: string;
-    milestones: { id: string; name: string; due_date: string; status: "upcoming" }[];
+    milestones: { id: string; name: string; due_date: string; status: "upcoming"; sort_order: number }[];
     taskLists: {
       id: string;
       milestone_id: string | null;
@@ -1258,6 +1273,7 @@ export async function applyProjectTemplateRows(
     due_date: m.due_date,
     status: m.status,
     client_approved: false,
+    sort_order: m.sort_order,
   }));
   const taskListRows = args.taskLists.map((l) => ({
     id: l.id,
@@ -1382,6 +1398,7 @@ export async function seedDemoWorkspace(
     due_date: m.due_date,
     status: m.status,
     client_approved: m.client_approved,
+    sort_order: m.sort_order,
   }));
 
   const projectAssets = seed.project_assets.map((a) => ({

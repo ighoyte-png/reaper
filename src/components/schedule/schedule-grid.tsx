@@ -5,7 +5,7 @@ import Link from "next/link";
 import { format, isWeekend, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
-import { inputClass, Modal } from "@/components/ui/form";
+import { inputClass, Modal, DateInput } from "@/components/ui/form";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
@@ -2691,8 +2691,7 @@ export function ScheduleGrid() {
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Start">
-                <input
-                  type="date"
+                <DateInput
                   className={inputClass}
                   value={leaveEditForm.start_date}
                   onChange={(e) =>
@@ -2704,8 +2703,7 @@ export function ScheduleGrid() {
                 />
               </Field>
               <Field label="End">
-                <input
-                  type="date"
+                <DateInput
                   className={inputClass}
                   value={leaveEditForm.end_date}
                   onChange={(e) =>
@@ -2876,8 +2874,7 @@ export function ScheduleGrid() {
             </label>
             {(editForm.recurrence ?? "none") === "weekly" && (
               <Field label="Series end date (optional)">
-                <input
-                  type="date"
+                <DateInput
                   className={inputClass}
                   value={editForm.recurrence_end_date ?? ""}
                   onChange={(e) =>
@@ -2890,8 +2887,7 @@ export function ScheduleGrid() {
             )}
             <div className="grid grid-cols-2 gap-2">
               <Field label="Start">
-                <input
-                  type="date"
+                <DateInput
                   className={inputClass}
                   value={editForm.start_date}
                   onChange={(e) =>
@@ -2900,8 +2896,7 @@ export function ScheduleGrid() {
                 />
               </Field>
               <Field label="End">
-                <input
-                  type="date"
+                <DateInput
                   className={inputClass}
                   value={editForm.end_date}
                   onChange={(e) => patchEditForm({ end_date: e.target.value })}

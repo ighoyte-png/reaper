@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -28,7 +28,7 @@ import {
   Plus,
   StickyNote,
 } from "lucide-react";
-import { Field, Modal, inputClass } from "@/components/ui/form";
+import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
@@ -102,6 +102,7 @@ type BoardCtx = {
   compact: boolean;
   selected: Set<string>;
   toggleSelect: (id: string) => void;
+  setParentsSelected: (ids: string[], on: boolean) => void;
   cycleStatus: (task: Task) => void;
   setEditing: (task: Task) => void;
   addSubtask: (listId: string, parentId: string) => void;
@@ -114,6 +115,15 @@ type BoardCtx = {
 
 type TaskDragData = { type: "task"; listId: string; parentId: string | null };
 type ListDragData = { type: "list" };
+type ListDropData = { type: "list-drop"; listId: string };
+
+const INDENT_DRAG_PX = 36;
+
+function sortByOrder(tasks: Task[]): Task[] {
+  return [...tasks].sort(
+    (a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title),
+  );
+}
 
 export function ProjectTaskBoard({
   projectId,
@@ -188,6 +198,17 @@ export function ProjectTaskBoard({
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }
+
+  function setParentsSelected(ids: string[], on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
       return next;
     });
   }
@@ -311,16 +332,22 @@ export function ProjectTaskBoard({
   }
 
   function handleListDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!manageLists || !over || active.id === over.id) return;
+    const { active, over, delta } = event;
+    if (!manageLists || !over) return;
+
     const activeData = active.data.current as
       | ListDragData
       | TaskDragData
       | undefined;
-    const overData = over.data.current as ListDragData | TaskDragData | undefined;
-    if (!activeData || !overData) return;
+    const overData = over.data.current as
+      | ListDragData
+      | TaskDragData
+      | ListDropData
+      | undefined;
+    if (!activeData) return;
 
-    if (activeData.type === "list" && overData.type === "list") {
+    if (activeData.type === "list" && overData?.type === "list") {
+      if (active.id === over.id) return;
       const oldIndex = allLists.findIndex((l) => l.id === active.id);
       const newIndex = allLists.findIndex((l) => l.id === over.id);
       if (oldIndex < 0 || newIndex < 0) return;
@@ -331,27 +358,181 @@ export function ProjectTaskBoard({
       return;
     }
 
-    if (activeData.type === "task" && overData.type === "task") {
-      if (
-        activeData.listId !== overData.listId ||
-        activeData.parentId !== overData.parentId
-      ) {
-        return;
+    if (activeData.type !== "task") return;
+
+    const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
+    const task = projectTasks.find((t) => t.id === active.id);
+    if (!task) return;
+
+    const childTasks = sortByOrder(
+      projectTasks.filter((t) => t.parent_id === task.id),
+    );
+
+    const primarilyHorizontal =
+      Math.abs(delta.x) >= INDENT_DRAG_PX &&
+      Math.abs(delta.x) >= Math.abs(delta.y) * 0.75;
+
+    if (primarilyHorizontal) {
+      if (delta.x > 0) {
+        // Indent: nest under the previous top-level sibling (max depth 1).
+        if (task.parent_id || childTasks.length > 0) return;
+        const parents = sortByOrder(
+          projectTasks.filter(
+            (t) => t.list_id === task.list_id && !t.parent_id,
+          ),
+        );
+        const idx = parents.findIndex((p) => p.id === task.id);
+        if (idx <= 0) return;
+        const newParent = parents[idx - 1]!;
+        const existingKids = sortByOrder(
+          projectTasks.filter((t) => t.parent_id === newParent.id),
+        );
+        upsertTask({
+          ...task,
+          parent_id: newParent.id,
+          sort_order: existingKids.length,
+        });
+        parents
+          .filter((p) => p.id !== task.id)
+          .forEach((p, i) => {
+            if (p.sort_order !== i) upsertTask({ ...p, sort_order: i });
+          });
+      } else {
+        // Outdent: promote subtask to a normal top-level task.
+        if (!task.parent_id) return;
+        const parent = projectTasks.find((t) => t.id === task.parent_id);
+        if (!parent) return;
+        const parents = sortByOrder(
+          projectTasks.filter(
+            (t) => t.list_id === task.list_id && !t.parent_id,
+          ),
+        );
+        const parentIdx = parents.findIndex((p) => p.id === parent.id);
+        const insertAt = parentIdx < 0 ? parents.length : parentIdx + 1;
+        const nextParents = [...parents];
+        nextParents.splice(insertAt, 0, task);
+        nextParents.forEach((p, i) => {
+          upsertTask({
+            ...p,
+            list_id: task.list_id,
+            parent_id: null,
+            sort_order: i,
+          });
+        });
+        sortByOrder(
+          projectTasks.filter(
+            (t) => t.parent_id === parent.id && t.id !== task.id,
+          ),
+        ).forEach((t, i) => {
+          if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
+        });
       }
-      const scope = visibleTasks
-        .filter(
+      return;
+    }
+
+    if (active.id === over.id || !overData) return;
+
+    let destListId: string;
+    let destParentId: string | null;
+    let insertIndex: number;
+
+    if (overData.type === "list-drop") {
+      destListId = overData.listId;
+      destParentId = null;
+      insertIndex = projectTasks.filter(
+        (t) =>
+          t.list_id === destListId && !t.parent_id && t.id !== task.id,
+      ).length;
+    } else if (overData.type === "task") {
+      const overTask = projectTasks.find((t) => t.id === over.id);
+      if (!overTask) return;
+      destListId = overTask.list_id;
+      destParentId = overTask.parent_id;
+      const destSiblings = sortByOrder(
+        projectTasks.filter(
           (t) =>
-            t.list_id === activeData.listId && t.parent_id === activeData.parentId,
-        )
-        .sort((a, b) => a.sort_order - b.sort_order);
-      const oldIndex = scope.findIndex((t) => t.id === active.id);
-      const newIndex = scope.findIndex((t) => t.id === over.id);
-      if (oldIndex < 0 || newIndex < 0) return;
-      const reordered = arrayMove(scope, oldIndex, newIndex);
-      reordered.forEach((t, i) => {
+            t.list_id === destListId &&
+            t.parent_id === destParentId &&
+            t.id !== task.id,
+        ),
+      );
+      const overIdx = destSiblings.findIndex((t) => t.id === overTask.id);
+      insertIndex = overIdx < 0 ? destSiblings.length : overIdx;
+    } else {
+      return;
+    }
+
+    if (destParentId === task.id) return;
+    if (destParentId && childTasks.length > 0) return;
+    if (
+      destParentId &&
+      projectTasks.some(
+        (t) => t.id === destParentId && t.parent_id === task.id,
+      )
+    ) {
+      return;
+    }
+
+    const oldListId = task.list_id;
+    const oldParentId = task.parent_id;
+
+    if (oldListId === destListId && oldParentId === destParentId) {
+      const scope = sortByOrder(
+        projectTasks.filter(
+          (t) => t.list_id === destListId && t.parent_id === destParentId,
+        ),
+      );
+      const oldIndex = scope.findIndex((t) => t.id === task.id);
+      if (oldIndex < 0) return;
+      // insertIndex was computed excluding active; map to full-scope index
+      const without = scope.filter((t) => t.id !== task.id);
+      const target = Math.max(0, Math.min(insertIndex, without.length));
+      const next = [...without];
+      next.splice(target, 0, task);
+      // If nothing changed, bail
+      if (next.every((t, i) => t.id === scope[i]?.id)) return;
+      next.forEach((t, i) => {
         if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
       });
+      return;
     }
+
+    const destSiblings = sortByOrder(
+      projectTasks.filter(
+        (t) =>
+          t.list_id === destListId &&
+          t.parent_id === destParentId &&
+          t.id !== task.id,
+      ),
+    );
+    const target = Math.max(0, Math.min(insertIndex, destSiblings.length));
+    const nextDest = [...destSiblings];
+    nextDest.splice(target, 0, task);
+    nextDest.forEach((t, i) => {
+      upsertTask({
+        ...t,
+        list_id: destListId,
+        parent_id: destParentId,
+        sort_order: i,
+      });
+    });
+
+    for (const child of childTasks) {
+      if (child.list_id !== destListId) {
+        upsertTask({ ...child, list_id: destListId });
+      }
+    }
+
+    sortByOrder(
+      projectTasks.filter(
+        (t) =>
+          t.list_id === oldListId &&
+          t.parent_id === oldParentId &&
+          t.id !== task.id,
+      ),
+    ).forEach((t, i) => {
+      if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
+    });
   }
 
   const ctx: BoardCtx = {
@@ -366,6 +547,7 @@ export function ProjectTaskBoard({
     compact,
     selected,
     toggleSelect,
+    setParentsSelected,
     cycleStatus,
     setEditing,
     addSubtask: (listId, parentId) => addTask(listId, parentId),
@@ -435,8 +617,7 @@ export function ProjectTaskBoard({
           {canManage ? (
             <label className="inline-flex items-center gap-1">
               Due
-              <input
-                type="date"
+              <DateInput
                 className={cn(inputClass, "h-7 py-0 text-xs")}
                 onChange={(e) => bulkDue(e.target.value)}
               />
@@ -585,6 +766,15 @@ function ListSection({
       disabled: !ctx.manageLists,
     });
 
+  const parentIds = parents.map((p) => p.id);
+  const selectedParentCount = parentIds.filter((id) =>
+    ctx.selected.has(id),
+  ).length;
+  const allParentsSelected =
+    parents.length > 0 && selectedParentCount === parents.length;
+  const someParentsSelected =
+    selectedParentCount > 0 && !allParentsSelected;
+
   return (
     <section
       ref={setNodeRef}
@@ -636,6 +826,23 @@ function ListSection({
             {milestoneName}
           </span>
         ) : null}
+        {ctx.allowSelect && parents.length > 0 ? (
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <input
+              type="checkbox"
+              className="cursor-pointer"
+              checked={allParentsSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = someParentsSelected;
+              }}
+              onChange={() =>
+                ctx.setParentsSelected(parentIds, !allParentsSelected)
+              }
+              aria-label={`Select all tasks in ${list.name}`}
+            />
+            Select all
+          </label>
+        ) : null}
         {ctx.manageLists ? (
           <button
             type="button"
@@ -649,7 +856,13 @@ function ListSection({
       {!collapsed ? (
         <>
           {parents.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Empty list</p>
+            <ListTaskDropZone listId={list.id} disabled={!ctx.manageLists}>
+              <p className="px-3 py-2 text-xs text-[var(--text-muted)]">
+                {ctx.manageLists
+                  ? "Empty list — drop a task here or add one below."
+                  : "Empty list"}
+              </p>
+            </ListTaskDropZone>
           ) : (
             <SortableContext
               items={parents.map((t) => t.id)}
@@ -662,19 +875,45 @@ function ListSection({
             </SortableContext>
           )}
           {ctx.manageLists ? (
-            <div className="px-2 py-1.5 text-left">
-              <button
-                type="button"
-                className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
-                onClick={onAddTask}
-              >
-                <Plus size={12} /> Add task
-              </button>
-            </div>
+            <ListTaskDropZone listId={list.id} disabled={false}>
+              <div className="px-2 py-1.5 text-left">
+                <button
+                  type="button"
+                  className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                  onClick={onAddTask}
+                >
+                  <Plus size={12} /> Add task
+                </button>
+              </div>
+            </ListTaskDropZone>
           ) : null}
         </>
       ) : null}
     </section>
+  );
+}
+
+function ListTaskDropZone({
+  listId,
+  disabled,
+  children,
+}: {
+  listId: string;
+  disabled: boolean;
+  children: ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `list-drop:${listId}`,
+    data: { type: "list-drop", listId } satisfies ListDropData,
+    disabled,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(isOver && "bg-[var(--accent)]/10")}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -729,7 +968,8 @@ function TaskRow({
           <button
             type="button"
             className="cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100"
-            aria-label="Drag to reorder"
+            aria-label="Drag to reorder, nest, or move to another list"
+            title="Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
             {...attributes}
             {...listeners}
           >
@@ -772,34 +1012,36 @@ function TaskRow({
             {task.title}
           </button>
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
-        </div>
-        {hasNotes ? (
-          <StickyNote size={12} className="shrink-0 text-[var(--text-muted)]" />
-        ) : null}
-        <button
-          type="button"
-          className={cn(
-            "inline-flex shrink-0 cursor-pointer items-center gap-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)]",
-            taskComments.length === 0 && "opacity-0 group-hover:opacity-100",
-          )}
-          title="Comments"
-          aria-label="Toggle comments"
-          onClick={() => ctx.toggleExpand(task.id)}
-        >
-          <MessageSquare size={16} />
-          {taskComments.length > 0 ? taskComments.length : null}
-          {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        </button>
-        {task.due_date ? (
-          <span
+          {hasNotes ? (
+            <StickyNote size={12} className="shrink-0 text-[var(--text-muted)]" />
+          ) : null}
+          <button
+            type="button"
             className={cn(
-              "shrink-0 text-xs",
-              overdue ? "font-medium text-[var(--status-over)]" : "text-[var(--text-muted)]",
+              "inline-flex shrink-0 cursor-pointer items-center gap-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)]",
+              taskComments.length === 0 && "opacity-0 group-hover:opacity-100",
             )}
+            title="Comments"
+            aria-label="Toggle comments"
+            onClick={() => ctx.toggleExpand(task.id)}
           >
-            {format(parseISO(task.due_date), "MMM d, yyyy")}
-          </span>
-        ) : null}
+            <MessageSquare size={16} />
+            {taskComments.length > 0 ? taskComments.length : null}
+            {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+          </button>
+          {task.due_date ? (
+            <span
+              className={cn(
+                "shrink-0 text-xs",
+                overdue
+                  ? "font-medium text-[var(--status-over)]"
+                  : "text-[var(--text-muted)]",
+              )}
+            >
+              {format(parseISO(task.due_date), "MMM d, yyyy")}
+            </span>
+          ) : null}
+        </div>
         {ctx.manageLists && depth === 0 ? (
           <button
             type="button"
@@ -1113,8 +1355,7 @@ function TaskEditModal({
             </select>
           </Field>
           <Field label="Start">
-            <input
-              type="date"
+            <DateInput
               className={inputClass}
               value={draft.start_date ?? ""}
               disabled={!canManage}
@@ -1127,8 +1368,7 @@ function TaskEditModal({
             />
           </Field>
           <Field label="Due">
-            <input
-              type="date"
+            <DateInput
               className={inputClass}
               value={draft.due_date ?? ""}
               disabled={!canManage}

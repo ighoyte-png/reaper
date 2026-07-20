@@ -1,6 +1,6 @@
 "use client";
 
-import { Field, inputClass } from "@/components/ui/form";
+import { Field, inputClass, DateInput } from "@/components/ui/form";
 import type { BudgetMode, Project, ProjectStatus } from "@/lib/types";
 
 const DEFAULT_PROJECT_COLOR = "#3498DB";
@@ -75,8 +75,7 @@ export function ProjectForm({
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start date">
-          <input
-            type="date"
+          <DateInput
             className={inputClass}
             value={project.start_date ?? ""}
             onChange={(e) =>
@@ -85,8 +84,7 @@ export function ProjectForm({
           />
         </Field>
         <Field label="Completion date">
-          <input
-            type="date"
+          <DateInput
             className={inputClass}
             value={project.end_date ?? ""}
             onChange={(e) =>

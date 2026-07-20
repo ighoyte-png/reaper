@@ -80,6 +80,7 @@ export interface Milestone {
   status: MilestoneStatus;
   /** Admin-checked after formal client sign-off. */
   client_approved: boolean;
+  sort_order: number;
 }
 
 export interface ProjectAsset {
