@@ -1613,7 +1613,7 @@ export function ScheduleGrid() {
                                     html={preview?.notes ?? block.notes}
                                   />
                                 }
-                                className="ml-0.5 shrink-0"
+                                className="ml-0.5 inline-flex shrink-0"
                               >
                                 <span
                                   className="inline-flex cursor-default opacity-90"
@@ -1946,7 +1946,7 @@ export function ScheduleGrid() {
                                         ))}
                                       </span>
                                     }
-                                    className="ml-0.5 shrink-0"
+                                    className="ml-0.5 inline-flex shrink-0"
                                   >
                                     <span
                                       className="inline-flex cursor-default opacity-90"
@@ -2340,7 +2340,7 @@ export function ScheduleGrid() {
                                           content={
                                             <RichNotesHtml html={occ.notes!} />
                                           }
-                                          className="ml-0.5 shrink-0"
+                                          className="ml-0.5 inline-flex shrink-0"
                                         >
                                           <span
                                             className="inline-flex cursor-default text-white/95"
@@ -2554,7 +2554,7 @@ export function ScheduleGrid() {
                                               ))}
                                             </span>
                                           }
-                                          className="ml-0.5 shrink-0"
+                                          className="ml-0.5 inline-flex shrink-0"
                                         >
                                           <span
                                             className="inline-flex cursor-default text-white/95"

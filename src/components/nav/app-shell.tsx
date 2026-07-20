@@ -60,18 +60,15 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
 function ViewAsBanner() {
   const { canManage, state } = useData();
-  const { viewAsPersonId, viewedPerson, setViewAsPersonId, clearViewAs } =
-    useViewAs();
+  const { viewAsPersonId, setViewAsPersonId, clearViewAs } = useViewAs();
 
   if (!canManage || !viewAsPersonId) return null;
 
   const people = sortPeopleByName(state.people);
 
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--status-near)]/40 bg-[var(--status-near)]/10 px-4 py-1.5 text-sm">
-      <span className="font-medium text-[var(--status-near)]">
-        Viewing as {viewedPerson?.name ?? "…"}
-      </span>
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-1.5 text-sm">
+      <span className="font-medium text-[var(--accent)]">Viewing as</span>
       <select
         className={cn(
           "h-7 max-w-[200px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-xs",

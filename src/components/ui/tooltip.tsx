@@ -24,8 +24,8 @@ export function Tooltip({
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(
     null,
   );
-  const triggerRef = useRef<HTMLSpanElement>(null);
-  const tipRef = useRef<HTMLSpanElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const id = useId();
 
@@ -81,11 +81,11 @@ export function Tooltip({
     coords &&
     typeof document !== "undefined" &&
     createPortal(
-      <span
+      <div
         ref={tipRef}
         id={id}
         role="tooltip"
-        className="pointer-events-auto fixed z-[200] w-max max-w-[240px] -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg"
+        className="pointer-events-auto fixed z-[200] w-max max-w-[260px] -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-2 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg"
         style={{ top: coords.top, left: coords.left }}
         onMouseEnter={() => {
           clearClose();
@@ -94,14 +94,15 @@ export function Tooltip({
         onMouseLeave={scheduleClose}
       >
         {content}
-      </span>,
+      </div>,
       document.body,
     );
 
   return (
-    <span
+    <div
       ref={triggerRef}
-      className={cn("relative inline-flex", className)}
+      className={cn("relative", className ?? "inline-flex")}
+      aria-describedby={open ? id : undefined}
       onMouseEnter={() => {
         clearClose();
         setOpen(true);
@@ -113,8 +114,8 @@ export function Tooltip({
       }}
       onBlur={scheduleClose}
     >
-      <span aria-describedby={open ? id : undefined}>{children}</span>
+      {children}
       {tooltip}
-    </span>
+    </div>
   );
 }

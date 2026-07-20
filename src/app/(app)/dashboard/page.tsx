@@ -27,7 +27,7 @@ import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
-import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { budgetBurn, budgetHealth, formatHours } from "@/lib/domain/budget";
 import {
   capacityLevel,
   personBookedHoursInRange,
@@ -35,7 +35,6 @@ import {
 } from "@/lib/domain/capacity";
 import {
   endOfMonth,
-  startOfMonth,
   toDateKey,
   weekEnd,
   weekStart,
@@ -86,15 +85,22 @@ export default function DashboardPage() {
   const todayKey = toDateKey(now);
   const start = toDateKey(weekStart(now));
   const end = toDateKey(weekEnd(now));
-  const monthStart = startOfMonth(now);
   const monthEndKey = toDateKey(endOfMonth(now));
-  const monthStartKey = toDateKey(monthStart);
 
   const showingAllTasks = showingAsManager;
   const viewedPersonId = effectivePersonId;
 
   /** Right-column identity: View As person, else linked person. */
   const identityPerson = viewAsPerson ?? myPerson;
+
+  const todaysAssignments = useMemo(() => {
+    const today = state.assignments.filter(
+      (a) => a.start_date <= todayKey && a.end_date >= todayKey,
+    );
+    if (showingAsManager) return today;
+    if (!viewedPersonId) return [];
+    return today.filter((a) => a.person_id === viewedPersonId);
+  }, [state.assignments, todayKey, showingAsManager, viewedPersonId]);
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
@@ -241,11 +247,9 @@ export default function DashboardPage() {
     .sort((a, b) => a.start_date.localeCompare(b.start_date))
     .slice(0, 12);
 
-  const monthLeave = state.leave_days.filter(
-    (l) =>
-      l.status === "approved" &&
-      l.date >= monthStartKey &&
-      l.date <= monthEndKey,
+  const approvedLeave = useMemo(
+    () => state.leave_days.filter((l) => l.status === "approved"),
+    [state.leave_days],
   );
 
   const sortedPeople = sortPeopleByName(state.people);
@@ -303,6 +307,15 @@ export default function DashboardPage() {
               push("Bulletin deleted");
             }}
             newId={newId}
+          />
+
+          <TodaySchedule
+            assignments={todaysAssignments}
+            projects={state.projects}
+            clients={state.clients}
+            people={state.people}
+            showPerson={showingAsManager}
+            appHref={appHref}
           />
 
           <TaskPulse
@@ -438,8 +451,7 @@ export default function DashboardPage() {
             <h2 className="mb-3 text-sm font-semibold">Upcoming leave</h2>
             <div className="space-y-4">
               <LeaveMonthCalendar
-                month={monthStart}
-                leaveDays={monthLeave}
+                leaveDays={approvedLeave}
                 people={state.people}
               />
               {upcomingLeaveBlocks.length === 0 ? (
@@ -518,6 +530,83 @@ function TaskRow({
         </span>
       ) : null}
     </Link>
+  );
+}
+
+function TodaySchedule({
+  assignments,
+  projects,
+  clients,
+  people,
+  showPerson,
+  appHref,
+}: {
+  assignments: {
+    id: string;
+    person_id: string;
+    project_id: string;
+    hours_per_day: number;
+  }[];
+  projects: Project[];
+  clients: { id: string; name: string; color: string }[];
+  people: Person[];
+  showPerson: boolean;
+  appHref: (path: string) => string;
+}) {
+  return (
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <h2 className="mb-3 text-sm font-semibold">Today&apos;s schedule</h2>
+      {assignments.length === 0 ? (
+        <p className="text-sm text-[var(--text-muted)]">
+          Nothing scheduled today.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {assignments.map((a) => {
+            const project = projects.find((p) => p.id === a.project_id);
+            const client = project?.client_id
+              ? clients.find((c) => c.id === project.client_id)
+              : undefined;
+            const person = showPerson
+              ? people.find((p) => p.id === a.person_id)
+              : undefined;
+            const color = project
+              ? projectDisplayColor(project, clients)
+              : "#64748B";
+            return (
+              <li key={a.id}>
+                <Link
+                  href={appHref(`/projects/${a.project_id}`)}
+                  className="flex items-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--row-hover)]"
+                >
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">
+                    {project?.name ?? "Project"}
+                    {person ? (
+                      <span className="text-[var(--text-muted)]">
+                        {" "}
+                        · {person.name}
+                      </span>
+                    ) : null}
+                  </span>
+                  {client ? (
+                    <span className="shrink-0 truncate text-xs text-[var(--text-muted)]">
+                      {client.name}
+                    </span>
+                  ) : null}
+                  <span className="shrink-0 text-xs text-[var(--text-muted)]">
+                    {formatHours(a.hours_per_day)}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
