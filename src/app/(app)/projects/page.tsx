@@ -147,7 +147,7 @@ export default function ProjectsPage() {
         </div>
       ) : (
         <div className="flex flex-col md:flex-row">
-          <aside className="sticky top-0 hidden max-h-dvh w-52 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
+          <aside className="sticky top-3 mt-3 hidden max-h-[calc(100dvh-5.5rem)] w-52 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] sm:top-5 sm:mt-5 md:flex">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search

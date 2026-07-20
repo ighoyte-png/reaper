@@ -85,7 +85,7 @@ export default function TemplatesPage() {
         </div>
       ) : (
         <div className="flex flex-col md:flex-row">
-          <aside className="sticky top-0 hidden max-h-dvh w-56 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
+          <aside className="sticky top-3 mt-3 hidden max-h-[calc(100dvh-5.5rem)] w-56 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] sm:top-5 sm:mt-5 md:flex">
             <nav className="space-y-0.5 p-2" aria-label="Templates">
               {templates.map((t) => (
                 <button
