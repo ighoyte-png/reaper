@@ -62,7 +62,7 @@ export default function TemplatesPage() {
   }
 
   return (
-    <PageContainer className="overflow-hidden">
+    <PageContainer>
       <PageHeader
         title="Templates"
         actions={
@@ -76,7 +76,7 @@ export default function TemplatesPage() {
         }
       />
       {templates.length === 0 ? (
-        <div className="overflow-y-auto p-5">
+        <div className="p-5">
           <EmptyState
             title="No project templates yet"
             cta="Create your first template"
@@ -84,12 +84,9 @@ export default function TemplatesPage() {
           />
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <aside className="hidden w-56 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
-            <nav
-              className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2"
-              aria-label="Templates"
-            >
+        <div className="flex flex-col md:flex-row">
+          <aside className="sticky top-0 hidden max-h-dvh w-56 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
+            <nav className="space-y-0.5 p-2" aria-label="Templates">
               {templates.map((t) => (
                 <button
                   key={t.id}
@@ -108,7 +105,7 @@ export default function TemplatesPage() {
             </nav>
           </aside>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-5">
+          <div className="min-w-0 flex-1 p-3 sm:p-5">
             <div className="mb-4 flex gap-1 overflow-x-auto md:hidden">
               {templates.map((t) => (
                 <button

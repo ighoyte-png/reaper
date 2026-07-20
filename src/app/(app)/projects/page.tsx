@@ -116,7 +116,7 @@ export default function ProjectsPage() {
   }, [projects]);
 
   return (
-    <PageContainer className="overflow-hidden">
+    <PageContainer>
       <PageHeader
         title="Projects"
         actions={
@@ -132,7 +132,7 @@ export default function ProjectsPage() {
         }
       />
       {state.projects.length === 0 ? (
-        <div className="overflow-y-auto p-5">
+        <div className="p-5">
           {canManage ? (
             <EmptyState
               title="No projects yet"
@@ -146,8 +146,8 @@ export default function ProjectsPage() {
           )}
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <aside className="hidden w-52 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
+        <div className="flex flex-col md:flex-row">
+          <aside className="sticky top-0 hidden max-h-dvh w-52 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search
@@ -165,10 +165,7 @@ export default function ProjectsPage() {
                 />
               </label>
             </div>
-            <nav
-              className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2"
-              aria-label="Clients"
-            >
+            <nav className="space-y-0.5 p-2" aria-label="Clients">
               <ClientNavButton
                 active={clientFilter === "all"}
                 onClick={() => setClientFilter("all")}
@@ -196,7 +193,7 @@ export default function ProjectsPage() {
             </nav>
           </aside>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-5">
+          <div className="min-w-0 flex-1 p-3 sm:p-5">
             <label className="relative mb-4 block md:hidden">
               <Search
                 size={16}

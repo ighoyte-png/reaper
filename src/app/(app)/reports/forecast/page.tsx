@@ -87,15 +87,15 @@ export default function ForecastReportPage() {
   }, [projects]);
 
   return (
-    <PageContainer className="overflow-hidden">
+    <PageContainer>
       <PageHeader title={<ReportBreadcrumb current="Financial forecast" />} />
       {state.projects.length === 0 ? (
-        <div className="overflow-y-auto p-5">
+        <div className="p-5">
           <p className="text-sm text-[var(--text-muted)]">No projects yet.</p>
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <aside className="hidden w-52 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
+        <div className="flex flex-col md:flex-row">
+          <aside className="sticky top-0 hidden max-h-dvh w-52 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] md:flex">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search
@@ -113,10 +113,7 @@ export default function ForecastReportPage() {
                 />
               </label>
             </div>
-            <nav
-              className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2"
-              aria-label="Clients"
-            >
+            <nav className="space-y-0.5 p-2" aria-label="Clients">
               <ClientNavButton
                 active={clientFilter === "all"}
                 onClick={() => setClientFilter("all")}
@@ -144,7 +141,7 @@ export default function ForecastReportPage() {
             </nav>
           </aside>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-3 sm:p-5">
+          <div className="min-w-0 flex-1 p-3 sm:p-5">
             <div className="mb-5 grid gap-3 sm:grid-cols-4">
               <Stat label="Planned hours" value={formatHours(org.plannedHours)} />
               <Stat label="Revenue" value={formatMoney(org.revenue)} />
