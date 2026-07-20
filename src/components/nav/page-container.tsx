@@ -1,21 +1,25 @@
 import { cn } from "@/lib/cn";
+import type { ReactNode } from "react";
 
-/** Constrains non-schedule app pages to a centered 1400px column. */
+/**
+ * Full-width page shell with a centered 1400px content column.
+ * Put overflow (e.g. overflow-y-auto) on this component so the scrollbar
+ * sits on the viewport edge, not the constrained column.
+ */
 export function PageContainer({
   children,
   className,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   return (
     <div
-      className={cn(
-        "mx-auto flex min-h-0 w-full max-w-[1400px] flex-1 flex-col",
-        className,
-      )}
+      className={cn("flex min-h-0 w-full flex-1 flex-col", className)}
     >
-      {children}
+      <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-1 flex-col">
+        {children}
+      </div>
     </div>
   );
 }
