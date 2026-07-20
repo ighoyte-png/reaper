@@ -483,15 +483,10 @@ export function ProjectTaskBoard({
         ),
       );
       const oldIndex = scope.findIndex((t) => t.id === task.id);
-      if (oldIndex < 0) return;
-      // insertIndex was computed excluding active; map to full-scope index
-      const without = scope.filter((t) => t.id !== task.id);
-      const target = Math.max(0, Math.min(insertIndex, without.length));
-      const next = [...without];
-      next.splice(target, 0, task);
-      // If nothing changed, bail
-      if (next.every((t, i) => t.id === scope[i]?.id)) return;
-      next.forEach((t, i) => {
+      const newIndex = scope.findIndex((t) => t.id === over.id);
+      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+      const reordered = arrayMove(scope, oldIndex, newIndex);
+      reordered.forEach((t, i) => {
         if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
       });
       return;
@@ -779,7 +774,6 @@ function ListSection({
 
   return (
     <section
-      ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -787,7 +781,9 @@ function ListSection({
       }}
       className="mb-3 overflow-hidden rounded-md border border-[var(--border)]"
     >
+      {/* Measure only the header so tall lists don't block drops at the top. */}
       <div
+        ref={setNodeRef}
         className={cn(
           "flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-2 py-1.5",
           !list.color && "bg-[var(--bg-elevated)]/50",
@@ -951,14 +947,15 @@ function TaskRow({
 
   return (
     <div
-      ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.6 : 1,
       }}
     >
+      {/* Measure only the row so parents with subtasks don't block top drops. */}
       <div
+        ref={setNodeRef}
         className={cn(
           "group flex items-center gap-1.5 border-b border-[var(--border)]/60 px-2 py-1.5 text-sm",
           task.status === "complete" && "text-[var(--text-muted)] opacity-80",
