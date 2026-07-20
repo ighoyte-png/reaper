@@ -73,6 +73,28 @@ export function ProjectForm({
           ))}
         </select>
       </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Start date">
+          <input
+            type="date"
+            className={inputClass}
+            value={project.start_date ?? ""}
+            onChange={(e) =>
+              onChange({ ...project, start_date: e.target.value || null })
+            }
+          />
+        </Field>
+        <Field label="Completion date">
+          <input
+            type="date"
+            className={inputClass}
+            value={project.end_date ?? ""}
+            onChange={(e) =>
+              onChange({ ...project, end_date: e.target.value || null })
+            }
+          />
+        </Field>
+      </div>
       <Field label="Budget type">
         <select
           className={inputClass}

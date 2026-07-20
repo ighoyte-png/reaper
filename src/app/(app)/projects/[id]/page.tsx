@@ -47,6 +47,9 @@ export default function ProjectDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [templateId, setTemplateId] = useState("");
   const [exportName, setExportName] = useState("");
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(
+    null,
+  );
 
   const project = state.projects.find((p) => p.id === params.id);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
@@ -111,10 +114,6 @@ export default function ProjectDetailPage() {
     } else {
       router.push(appHref("/projects"));
     }
-  }
-
-  function patchProjectDates(patch: Partial<Project>) {
-    void upsertProject({ ...project!, ...patch });
   }
 
   return (
@@ -232,38 +231,10 @@ export default function ProjectDetailPage() {
             </section>
           </div>
 
-          {/* Sidebar: Progress → Portal → Assets → Team → Budget */}
+          {/* Sidebar: Progress → Assets → Team → Budget → Client portal */}
           <div className="space-y-4">
             <section className="rounded-md border border-[var(--border)] p-4">
               <h2 className="mb-3 text-sm font-semibold">Progress</h2>
-              {canManage ? (
-                <div className="mb-3 grid grid-cols-2 gap-2">
-                  <Field label="Start">
-                    <input
-                      type="date"
-                      className={inputClass}
-                      value={project.start_date ?? ""}
-                      onChange={(e) =>
-                        patchProjectDates({
-                          start_date: e.target.value || null,
-                        })
-                      }
-                    />
-                  </Field>
-                  <Field label="Completion">
-                    <input
-                      type="date"
-                      className={inputClass}
-                      value={project.end_date ?? ""}
-                      onChange={(e) =>
-                        patchProjectDates({
-                          end_date: e.target.value || null,
-                        })
-                      }
-                    />
-                  </Field>
-                </div>
-              ) : null}
               <ProgressBar
                 pct={overallPct}
                 label="Overall progress"
@@ -304,75 +275,34 @@ export default function ProjectDetailPage() {
                       const pct =
                         milestoneDateProgress(m, project, today) ?? 0;
                       return (
-                        <div key={m.id} className="space-y-2">
+                        <div key={m.id} className="space-y-1.5">
                           <ProgressBar
                             pct={pct}
                             label={m.name}
                             approved={m.client_approved}
                           />
                           {canManage ? (
-                            <div className="grid gap-1.5">
-                              <input
-                                className={`${inputClass} mt-0 h-8 text-xs`}
-                                value={m.name}
-                                onChange={(e) =>
-                                  upsertMilestone({
-                                    ...m,
-                                    name: e.target.value,
-                                  })
-                                }
-                              />
-                              <div className="flex flex-wrap items-center gap-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="inline-flex cursor-pointer items-center gap-1 text-[10px] text-[var(--text-muted)]">
                                 <input
-                                  type="date"
-                                  className={`${inputClass} mt-0 h-8 flex-1 text-xs`}
-                                  value={m.due_date}
+                                  type="checkbox"
+                                  checked={m.client_approved}
                                   onChange={(e) =>
                                     upsertMilestone({
                                       ...m,
-                                      due_date: e.target.value,
+                                      client_approved: e.target.checked,
                                     })
                                   }
                                 />
-                                <select
-                                  className={`${inputClass} mt-0 h-8 w-auto text-xs`}
-                                  value={m.status}
-                                  onChange={(e) =>
-                                    upsertMilestone({
-                                      ...m,
-                                      status: e.target
-                                        .value as MilestoneStatus,
-                                    })
-                                  }
-                                >
-                                  <option value="upcoming">Upcoming</option>
-                                  <option value="done">Done</option>
-                                  <option value="missed">Missed</option>
-                                </select>
-                                <label className="flex cursor-pointer items-center gap-1 text-[10px]">
-                                  <input
-                                    type="checkbox"
-                                    checked={m.client_approved}
-                                    onChange={(e) =>
-                                      upsertMilestone({
-                                        ...m,
-                                        client_approved: e.target.checked,
-                                      })
-                                    }
-                                  />
-                                  Approved
-                                </label>
-                                <button
-                                  type="button"
-                                  className="cursor-pointer text-[10px] text-[var(--status-over)]"
-                                  onClick={() => {
-                                    deleteMilestone(m.id);
-                                    push("Milestone deleted");
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              </div>
+                                Approved
+                              </label>
+                              <button
+                                type="button"
+                                className="cursor-pointer text-[10px] text-[var(--accent)]"
+                                onClick={() => setEditingMilestone(m)}
+                              >
+                                Edit
+                              </button>
                             </div>
                           ) : null}
                         </div>
@@ -381,6 +311,46 @@ export default function ProjectDetailPage() {
                   )}
                 </div>
               ) : null}
+            </section>
+
+            <ProjectNotebook projectId={project.id} />
+
+            <section className="rounded-md border border-[var(--border)] p-4">
+              <h2 className="mb-3 text-sm font-semibold">Team</h2>
+              {team.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">
+                  No one assigned yet.
+                </p>
+              ) : (
+                <ul className="space-y-1.5 text-sm">
+                  {team.map((p) => (
+                    <li key={p.id} className="flex items-center gap-2">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[10px] font-semibold">
+                        {p.name
+                          .split(" ")
+                          .map((x) => x[0])
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase()}
+                      </span>
+                      <span className="min-w-0 truncate">{p.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-md border border-[var(--border)] p-4">
+              <h2 className="mb-2 text-sm font-semibold">Budget</h2>
+              <p className="mb-2 text-xs text-[var(--text-muted)]">
+                Financial tracking lives in Reports.
+              </p>
+              <Link
+                href={budgetHref}
+                className="text-sm text-[var(--accent)] hover:underline"
+              >
+                Open this project&apos;s budget →
+              </Link>
             </section>
 
             <section className="rounded-md border border-[var(--border)] p-4">
@@ -445,46 +415,6 @@ export default function ProjectDetailPage() {
                 </p>
               )}
             </section>
-
-            <ProjectNotebook projectId={project.id} />
-
-            <section className="rounded-md border border-[var(--border)] p-4">
-              <h2 className="mb-3 text-sm font-semibold">Team</h2>
-              {team.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">
-                  No one assigned yet.
-                </p>
-              ) : (
-                <ul className="space-y-1.5 text-sm">
-                  {team.map((p) => (
-                    <li key={p.id} className="flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[10px] font-semibold">
-                        {p.name
-                          .split(" ")
-                          .map((x) => x[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase()}
-                      </span>
-                      <span className="min-w-0 truncate">{p.name}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="rounded-md border border-[var(--border)] p-4">
-              <h2 className="mb-2 text-sm font-semibold">Budget</h2>
-              <p className="mb-2 text-xs text-[var(--text-muted)]">
-                Financial tracking lives in Reports.
-              </p>
-              <Link
-                href={budgetHref}
-                className="text-sm text-[var(--accent)] hover:underline"
-              >
-                Open this project&apos;s budget →
-              </Link>
-            </section>
           </div>
         </div>
       </div>
@@ -535,6 +465,103 @@ export default function ProjectDetailPage() {
             }}
             onDelete={() => setConfirmDelete(true)}
           />
+        </Modal>
+      )}
+
+      {canManage && editingMilestone && (
+        <Modal
+          title="Edit milestone"
+          onClose={() => setEditingMilestone(null)}
+        >
+          <div className="grid gap-3">
+            <Field label="Name">
+              <input
+                className={inputClass}
+                value={editingMilestone.name}
+                onChange={(e) =>
+                  setEditingMilestone({
+                    ...editingMilestone,
+                    name: e.target.value,
+                  })
+                }
+              />
+            </Field>
+            <Field label="Due date">
+              <input
+                type="date"
+                className={inputClass}
+                value={editingMilestone.due_date}
+                onChange={(e) =>
+                  setEditingMilestone({
+                    ...editingMilestone,
+                    due_date: e.target.value,
+                  })
+                }
+              />
+            </Field>
+            <Field label="Status">
+              <select
+                className={inputClass}
+                value={editingMilestone.status}
+                onChange={(e) =>
+                  setEditingMilestone({
+                    ...editingMilestone,
+                    status: e.target.value as MilestoneStatus,
+                  })
+                }
+              >
+                <option value="upcoming">Upcoming</option>
+                <option value="done">Done</option>
+                <option value="missed">Missed</option>
+              </select>
+            </Field>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={editingMilestone.client_approved}
+                onChange={(e) =>
+                  setEditingMilestone({
+                    ...editingMilestone,
+                    client_approved: e.target.checked,
+                  })
+                }
+              />
+              Client approved
+            </label>
+            <div className="flex justify-between pt-2">
+              <button
+                type="button"
+                className="cursor-pointer text-sm text-[var(--status-over)]"
+                onClick={() => {
+                  deleteMilestone(editingMilestone.id);
+                  setEditingMilestone(null);
+                  push("Milestone deleted");
+                }}
+              >
+                Delete
+              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
+                  onClick={() => setEditingMilestone(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                  onClick={() => {
+                    upsertMilestone(editingMilestone);
+                    setEditingMilestone(null);
+                    push("Milestone saved");
+                  }}
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
         </Modal>
       )}
 

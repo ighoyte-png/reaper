@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { AlertTriangle, Megaphone, Pin } from "lucide-react";
@@ -12,6 +12,7 @@ import { CapacityBar } from "@/components/ui/capacity-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth, formatHours } from "@/lib/domain/budget";
 import {
   capacityLevel,
@@ -42,7 +43,13 @@ const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
 export default function DashboardPage() {
   const { state, canManage, myPerson } = useData();
   const appHref = useAppHref();
-  const [viewAsPersonId, setViewAsPersonId] = useState<string | null>(null);
+  const {
+    viewAsPersonId,
+    setViewAsPersonId,
+    viewedPerson: viewAsPerson,
+    showingAsManager,
+    effectivePersonId,
+  } = useViewAs();
   const now = useMemo(() => new Date(), []);
   const todayKey = toDateKey(now);
   const start = toDateKey(weekStart(now));
@@ -51,11 +58,13 @@ export default function DashboardPage() {
   const monthEndKey = toDateKey(endOfMonth(now));
   const monthStartKey = toDateKey(monthStart);
 
-  const showingAllTasks = canManage && !viewAsPersonId;
-  const viewedPersonId = canManage ? viewAsPersonId : myPerson?.id ?? null;
-  const viewedPerson = viewedPersonId
-    ? state.people.find((p) => p.id === viewedPersonId) ?? null
-    : null;
+  const showingAllTasks = showingAsManager;
+  const viewedPersonId = effectivePersonId;
+  const viewedPerson =
+    viewAsPerson ??
+    (viewedPersonId
+      ? state.people.find((p) => p.id === viewedPersonId) ?? null
+      : null);
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),

@@ -16,6 +16,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { notesHasContent } from "@/lib/notes-html";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useViewAsOptional } from "@/lib/view-as";
 import {
   budgetBurn,
   budgetHealth,
@@ -104,6 +105,8 @@ export function ScheduleGrid() {
     myPerson,
     authError,
   } = useData();
+  const viewAs = useViewAsOptional();
+  const viewAsPersonId = viewAs?.viewAsPersonId ?? null;
   const { push } = useToast();
   const appHref = useAppHref();
   const isNarrow = useMediaQuery("(max-width: 1023px)");
@@ -348,7 +351,15 @@ export function ScheduleGrid() {
     });
   }
 
+  useEffect(() => {
+    if (viewAsPersonId) setPersonFilter(viewAsPersonId);
+  }, [viewAsPersonId]);
+
   const visiblePeople = useMemo(() => {
+    if (viewAsPersonId) {
+      const person = state.people.find((p) => p.id === viewAsPersonId);
+      return person ? [person] : [];
+    }
     const showAll = canManage || isPublicShare;
     const base = showAll ? state.people : myPerson ? [myPerson] : [];
     const filtered =
@@ -356,7 +367,14 @@ export function ScheduleGrid() {
         ? base.filter((p) => p.id === personFilter)
         : base;
     return sortPeopleByName(filtered);
-  }, [canManage, isPublicShare, state.people, myPerson, personFilter]);
+  }, [
+    viewAsPersonId,
+    canManage,
+    isPublicShare,
+    state.people,
+    myPerson,
+    personFilter,
+  ]);
 
   const peopleForFilter = useMemo(
     () => sortPeopleByName(state.people),
@@ -1172,9 +1190,10 @@ export function ScheduleGrid() {
                   ))}
                 </select>
                 <select
-                  value={personFilter}
+                  value={viewAsPersonId ?? personFilter}
                   onChange={(e) => setPersonFilter(e.target.value)}
-                  className="h-8 max-w-[200px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+                  disabled={Boolean(viewAsPersonId)}
+                  className="h-8 max-w-[200px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm disabled:opacity-60"
                   aria-label="Filter by person"
                 >
                   <option value="all">All people</option>

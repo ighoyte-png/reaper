@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { ExternalLink } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { ExternalLink, Mail } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { createDemoSeed, DEMO_STORAGE_KEY } from "@/lib/demo/seed";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -139,16 +140,14 @@ export default function ProjectSharePage() {
 
   const todayKey = toDateKey(new Date());
   const overallPct =
-    dateProgress(
-      portal.project.start_date,
-      portal.project.end_date,
-      todayKey,
-    ) ?? taskCompletionPct(portal.tasks);
+    dateProgress(portal.project.start_date, portal.project.end_date, todayKey) ??
+    0;
 
   const milestonesSorted = [...portal.milestones].sort((a, b) =>
     a.due_date.localeCompare(b.due_date),
   );
   const assetsSorted = [...portal.assets];
+  const teamSorted = [...portal.team];
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
@@ -164,8 +163,30 @@ export default function ProjectSharePage() {
         </p>
       </div>
 
+      {teamSorted.length > 0 ? (
+        <section className="rounded-md border border-[var(--border)] p-4">
+          <h2 className="mb-3 text-sm font-semibold">Team</h2>
+          <ul className="flex flex-wrap gap-3">
+            {teamSorted.map((member) => (
+              <li key={member.email || member.name} className="text-sm">
+                <span className="font-medium">{member.name}</span>
+                {member.email ? (
+                  <a
+                    href={`mailto:${member.email}`}
+                    className="ml-1.5 inline-flex items-center gap-1 text-[var(--accent)] hover:underline"
+                  >
+                    <Mail size={11} />
+                    {member.email}
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="rounded-md border border-[var(--border)] p-4">
-        <ProgressBar pct={overallPct} label="Overall progress" />
+        <ProgressBar pct={overallPct} label="Overall progress" size="lg" />
       </section>
 
       {milestonesSorted.length > 0 ? (
@@ -191,7 +212,7 @@ export default function ProjectSharePage() {
                 <div key={m.id}>
                   <ProgressBar
                     pct={pct}
-                    label={`${m.name} · ${m.due_date}`}
+                    label={`${m.name} · ${format(parseISO(m.due_date), "MMM d, yyyy")}`}
                     approved={m.client_approved}
                   />
                 </div>

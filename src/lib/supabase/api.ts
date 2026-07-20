@@ -107,6 +107,7 @@ function mapProjectAsset(row: Record<string, unknown>): ProjectAsset {
     kind: (row.kind as ProjectAsset["kind"]) ?? "custom",
     label: String(row.label ?? ""),
     url: String(row.url ?? ""),
+    body: String(row.body ?? ""),
     sort_order: num(row.sort_order),
   };
 }
@@ -1012,6 +1013,7 @@ export async function upsertProjectAssetRow(
     kind: asset.kind,
     label: asset.label,
     url: asset.url,
+    body: asset.body,
     sort_order: asset.sort_order,
   });
   if (error) throw error;
@@ -1389,6 +1391,7 @@ export async function seedDemoWorkspace(
     kind: a.kind,
     label: a.label,
     url: a.url,
+    body: a.body,
     sort_order: a.sort_order,
   }));
 

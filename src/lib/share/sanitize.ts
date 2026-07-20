@@ -30,6 +30,8 @@ export interface ProjectPortalPayload {
     notes: string;
   };
   clientName: string | null;
+  /** Team members with contact emails — shown to the client, unlike the org-wide share. */
+  team: { name: string; email: string }[];
   milestones: {
     id: string;
     name: string;
@@ -63,6 +65,19 @@ export function sanitizeProjectPortal(
     ? state.clients.find((c) => c.id === project.client_id)
     : undefined;
 
+  const teamIds = new Set<string>();
+  for (const a of state.assignments) {
+    if (a.project_id === projectId) teamIds.add(a.person_id);
+  }
+  for (const t of state.tasks) {
+    if (t.project_id === projectId && t.assignee_person_id)
+      teamIds.add(t.assignee_person_id);
+  }
+  const team = state.people
+    .filter((p) => teamIds.has(p.id))
+    .map((p) => ({ name: p.name, email: p.email }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
   return {
     organizationName: state.organization.name,
     project: {
@@ -74,6 +89,7 @@ export function sanitizeProjectPortal(
       notes: project.notes,
     },
     clientName: client?.name ?? null,
+    team,
     milestones: state.milestones
       .filter((m) => m.project_id === projectId)
       .map((m) => ({

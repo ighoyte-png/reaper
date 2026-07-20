@@ -1,0 +1,105 @@
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { useData } from "@/lib/data/store";
+import type { Person } from "@/lib/types";
+
+const STORAGE_KEY = "reaper-view-as-person-id";
+
+type ViewAsContextValue = {
+  viewAsPersonId: string | null;
+  setViewAsPersonId: (id: string | null) => void;
+  clearViewAs: () => void;
+  viewedPerson: Person | null;
+  /** Effective person id for assignee-scoped views (view-as or self for members). */
+  effectivePersonId: string | null;
+  /** When true, managers see all tasks (no view-as). */
+  showingAsManager: boolean;
+};
+
+const ViewAsContext = createContext<ViewAsContextValue | null>(null);
+
+function readStoredId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return sessionStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function ViewAsProvider({ children }: { children: ReactNode }) {
+  const { state, canManage, myPerson } = useData();
+  const [viewAsPersonId, setViewAsPersonIdState] = useState<string | null>(
+    () => readStoredId(),
+  );
+
+  const setViewAsPersonId = useCallback((id: string | null) => {
+    setViewAsPersonIdState(id);
+    try {
+      if (id) sessionStorage.setItem(STORAGE_KEY, id);
+      else sessionStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const clearViewAs = useCallback(() => {
+    setViewAsPersonId(null);
+  }, [setViewAsPersonId]);
+
+  const viewedPerson = useMemo(() => {
+    if (!viewAsPersonId) return null;
+    return state.people.find((p) => p.id === viewAsPersonId) ?? null;
+  }, [state.people, viewAsPersonId]);
+
+  // Invalid stored id (person deleted)
+  const resolvedViewAsId =
+    viewAsPersonId && viewedPerson ? viewAsPersonId : null;
+
+  const value = useMemo<ViewAsContextValue>(() => {
+    const showingAsManager = canManage && !resolvedViewAsId;
+    const effectivePersonId = canManage
+      ? resolvedViewAsId
+      : myPerson?.id ?? null;
+    return {
+      viewAsPersonId: resolvedViewAsId,
+      setViewAsPersonId,
+      clearViewAs,
+      viewedPerson: resolvedViewAsId ? viewedPerson : null,
+      effectivePersonId,
+      showingAsManager,
+    };
+  }, [
+    canManage,
+    resolvedViewAsId,
+    myPerson?.id,
+    setViewAsPersonId,
+    clearViewAs,
+    viewedPerson,
+  ]);
+
+  return (
+    <ViewAsContext.Provider value={value}>{children}</ViewAsContext.Provider>
+  );
+}
+
+export function useViewAs(): ViewAsContextValue {
+  const ctx = useContext(ViewAsContext);
+  if (!ctx) {
+    throw new Error("useViewAs must be used within ViewAsProvider");
+  }
+  return ctx;
+}
+
+/** Safe for share routes / components outside ViewAsProvider. */
+export function useViewAsOptional(): ViewAsContextValue | null {
+  return useContext(ViewAsContext);
+}

@@ -27,7 +27,6 @@ import {
   MessageSquare,
   Plus,
   StickyNote,
-  X,
 } from "lucide-react";
 import { Field, Modal, inputClass } from "@/components/ui/form";
 import {
@@ -35,6 +34,7 @@ import {
   SimpleRichTextEditor,
 } from "@/components/ui/simple-rich-text";
 import { useData } from "@/lib/data/store";
+import { useViewAsOptional } from "@/lib/view-as";
 import { notesHasContent } from "@/lib/notes-html";
 import { cn } from "@/lib/cn";
 import {
@@ -44,7 +44,7 @@ import {
   taskStatusLabel,
   tasksForList,
 } from "@/lib/domain/tasks";
-import { format, startOfDay } from "date-fns";
+import { format, parseISO, startOfDay } from "date-fns";
 import type {
   Person,
   Profile,
@@ -62,12 +62,6 @@ type Props = {
   compact?: boolean;
   /** Show list/card toggle (Phase 8). */
   allowCardView?: boolean;
-};
-
-const ROW_BG: Record<TaskStatus, string> = {
-  upcoming: "var(--task-upcoming-bg)",
-  active: "var(--task-active-bg)",
-  complete: "var(--task-complete-bg)",
 };
 
 function todayKey() {
@@ -88,7 +82,7 @@ function InitialsAvatar({ person }: { person: Person }) {
   return (
     <span
       title={person.name}
-      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[9px] font-semibold text-[var(--text-muted)] ring-1 ring-[var(--border)]"
+      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[11px] font-semibold text-[var(--text-muted)] ring-1 ring-[var(--border)]"
     >
       {initialsFor(person.name)}
     </span>
@@ -140,6 +134,7 @@ export function ProjectTaskBoard({
     deleteTaskList,
     newId,
   } = useData();
+  const viewAs = useViewAsOptional();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<Task | null>(null);
   const [view, setView] = useState<"list" | "card">("list");
@@ -159,14 +154,19 @@ export function ProjectTaskBoard({
     [state.task_lists, projectId],
   );
 
+  const viewerCanManage = viewAs?.viewAsPersonId ? false : canManage;
+  const viewerPersonId = viewAs?.viewAsPersonId
+    ? viewAs.viewAsPersonId
+    : myPerson?.id ?? null;
+
   const visibleTasks = useMemo(
     () =>
       filterTasksForViewer(
         state.tasks.filter((t) => t.project_id === projectId),
-        canManage,
-        myPerson?.id ?? null,
+        viewerCanManage,
+        viewerPersonId,
       ),
-    [state.tasks, projectId, canManage, myPerson?.id],
+    [state.tasks, projectId, viewerCanManage, viewerPersonId],
   );
 
   const childrenMap = useMemo(() => {
@@ -268,11 +268,6 @@ export function ProjectTaskBoard({
           ? "complete"
           : "upcoming";
     upsertTask({ ...task, status: next });
-  }
-
-  function setListColor(list: TaskList, color: string | null) {
-    if (!manageLists) return;
-    upsertTaskList({ ...list, color });
   }
 
   function addComment(taskId: string, html: string) {
@@ -498,7 +493,6 @@ export function ProjectTaskBoard({
                   }
                   milestoneName={milestone?.name ?? null}
                   onNameChange={(name) => upsertTaskList({ ...list, name })}
-                  onColorChange={(color) => setListColor(list, color)}
                   onAddTask={() => addTask(list.id)}
                   onDelete={() => {
                     if (confirm(`Delete list "${list.name}" and its tasks?`)) {
@@ -571,7 +565,6 @@ function ListSection({
   onToggleCollapse,
   milestoneName,
   onNameChange,
-  onColorChange,
   onAddTask,
   onDelete,
 }: {
@@ -582,7 +575,6 @@ function ListSection({
   onToggleCollapse: () => void;
   milestoneName: string | null;
   onNameChange: (name: string) => void;
-  onColorChange: (color: string | null) => void;
   onAddTask: () => void;
   onDelete: () => void;
 }) {
@@ -645,57 +637,42 @@ function ListSection({
           </span>
         ) : null}
         {ctx.manageLists ? (
-          <>
-            <input
-              type="color"
-              title="List color"
-              aria-label="List header color"
-              value={list.color ?? "#e5e7eb"}
-              className="h-6 w-6 cursor-pointer rounded border border-[var(--border)] bg-transparent p-0"
-              onChange={(e) => onColorChange(e.target.value)}
-            />
-            {list.color ? (
-              <button
-                type="button"
-                title="Clear color"
-                aria-label="Clear list color"
-                className="cursor-pointer text-[var(--text-muted)] hover:text-[var(--text)]"
-                onClick={() => onColorChange(null)}
-              >
-                <X size={12} />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="cursor-pointer text-xs text-[var(--accent)] hover:underline"
-              onClick={onAddTask}
-            >
-              Add task
-            </button>
-            <button
-              type="button"
-              className="cursor-pointer text-xs text-[var(--status-over)]"
-              onClick={onDelete}
-            >
-              Delete
-            </button>
-          </>
+          <button
+            type="button"
+            className="cursor-pointer text-xs text-[var(--status-over)]"
+            onClick={onDelete}
+          >
+            Delete
+          </button>
         ) : null}
       </div>
       {!collapsed ? (
-        parents.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Empty list</p>
-        ) : (
-          <SortableContext
-            items={parents.map((t) => t.id)}
-            strategy={verticalListSortingStrategy}
-            disabled={!ctx.manageLists}
-          >
-            {parents.map((t) => (
-              <TaskRow key={t.id} task={t} depth={0} ctx={ctx} />
-            ))}
-          </SortableContext>
-        )
+        <>
+          {parents.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-[var(--text-muted)]">Empty list</p>
+          ) : (
+            <SortableContext
+              items={parents.map((t) => t.id)}
+              strategy={verticalListSortingStrategy}
+              disabled={!ctx.manageLists}
+            >
+              {parents.map((t) => (
+                <TaskRow key={t.id} task={t} depth={0} ctx={ctx} />
+              ))}
+            </SortableContext>
+          )}
+          {ctx.manageLists ? (
+            <div className="px-2 py-1.5 text-left">
+              <button
+                type="button"
+                className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                onClick={onAddTask}
+              >
+                <Plus size={12} /> Add task
+              </button>
+            </div>
+          ) : null}
+        </>
       ) : null}
     </section>
   );
@@ -746,7 +723,7 @@ function TaskRow({
           task.status === "complete" && "text-[var(--text-muted)] opacity-80",
           isSelected && "ring-1 ring-inset ring-[var(--accent)]/50",
         )}
-        style={{ paddingLeft: 8 + depth * 16, backgroundColor: ROW_BG[task.status] }}
+        style={{ paddingLeft: 8 + depth * 16 }}
       >
         {ctx.manageLists ? (
           <button
@@ -775,10 +752,10 @@ function TaskRow({
           className={cn(
             "inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border",
             task.status === "complete"
-              ? "border-[var(--status-healthy)] bg-[var(--status-healthy)]/20 text-[var(--status-healthy)]"
+              ? "border-[var(--status-healthy)] bg-[var(--task-complete-bg)] text-[var(--status-healthy)]"
               : task.status === "active"
-                ? "border-[var(--accent)] text-[var(--accent)]"
-                : "border-[var(--border)]",
+                ? "border-[var(--task-active-fg)] bg-[var(--task-active-bg)] text-[var(--task-active-fg)]"
+                : "border-[var(--status-near)] bg-[var(--task-upcoming-bg)] text-[var(--status-near)]",
             !canEditStatus && "cursor-not-allowed opacity-60",
           )}
           title={taskStatusLabel(task.status)}
@@ -807,7 +784,7 @@ function TaskRow({
           aria-label="Toggle comments"
           onClick={() => ctx.toggleExpand(task.id)}
         >
-          <MessageSquare size={11} />
+          <MessageSquare size={16} />
           {taskComments.length > 0 ? taskComments.length : null}
           {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         </button>
@@ -818,7 +795,7 @@ function TaskRow({
               overdue ? "font-medium text-[var(--status-over)]" : "text-[var(--text-muted)]",
             )}
           >
-            {task.due_date}
+            {format(parseISO(task.due_date), "MMM d, yyyy")}
           </span>
         ) : null}
         {ctx.manageLists && depth === 0 ? (
@@ -1043,10 +1020,9 @@ function KanbanCard({
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.5 : 1,
-        backgroundColor: ROW_BG[task.status],
       }}
       className={cn(
-        "mb-1.5 touch-none rounded-md border border-[var(--border)] p-2 text-sm",
+        "mb-1.5 touch-none rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-sm",
         manageLists && "cursor-grab",
       )}
       {...attributes}
@@ -1063,7 +1039,9 @@ function KanbanCard({
         {task.title}
       </button>
       {task.due_date ? (
-        <div className="mt-1 text-[10px] text-[var(--text-muted)]">{task.due_date}</div>
+        <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+          {format(parseISO(task.due_date), "MMM d, yyyy")}
+        </div>
       ) : null}
     </div>
   );

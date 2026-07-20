@@ -89,6 +89,8 @@ export interface ProjectAsset {
   kind: ProjectAssetKind;
   label: string;
   url: string;
+  /** Plain text body for note-style assets (link assets leave this empty). */
+  body: string;
   sort_order: number;
 }
 

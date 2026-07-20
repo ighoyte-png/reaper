@@ -498,6 +498,7 @@ export function createDemoSeed(): DemoState {
         kind: "sow",
         label: "Statement of Work",
         url: "https://docs.example.com/harbor-sow",
+        body: "",
         sort_order: 0,
       },
       {
@@ -507,6 +508,7 @@ export function createDemoSeed(): DemoState {
         kind: "website",
         label: "Live site",
         url: "https://harbor-retail.example.com",
+        body: "",
         sort_order: 1,
       },
       {
@@ -516,6 +518,7 @@ export function createDemoSeed(): DemoState {
         kind: "figma",
         label: "Design file",
         url: "https://figma.com/file/harbor-storefront",
+        body: "",
         sort_order: 2,
       },
       {
@@ -525,6 +528,7 @@ export function createDemoSeed(): DemoState {
         kind: "staging",
         label: "Staging site",
         url: "https://staging.harbor.example.com",
+        body: "",
         sort_order: 3,
       },
       {
@@ -534,6 +538,7 @@ export function createDemoSeed(): DemoState {
         kind: "passwords",
         label: "Shared vault",
         url: "https://vault.example.com/harbor",
+        body: "",
         sort_order: 4,
       },
     ],

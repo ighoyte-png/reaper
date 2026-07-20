@@ -14,6 +14,7 @@ export function ProgressBar({
   size?: "md" | "lg";
 }) {
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  const isComplete = Boolean(approved) || clamped >= 100;
   return (
     <div className="space-y-1">
       {label ? (
@@ -36,7 +37,7 @@ export function ProgressBar({
         <div
           className={cn(
             "h-full rounded-full transition-[width]",
-            approved ? "bg-[var(--status-healthy)]" : "bg-[var(--accent)]",
+            isComplete ? "bg-[var(--status-healthy)]" : "bg-[var(--accent)]",
           )}
           style={{ width: `${clamped}%` }}
         />
