@@ -20,16 +20,16 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ExternalLink, GripVertical, Plus } from "lucide-react";
 import { Field, inputClass } from "@/components/ui/form";
+import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { useData } from "@/lib/data/store";
 import {
   ASSET_KIND_LABELS,
-  assetIconLabel,
   inferAssetKind,
 } from "@/lib/domain/assets";
 import { cn } from "@/lib/cn";
 import type { ProjectAsset, ProjectAssetKind } from "@/lib/types";
 
-type AddMode = "link" | "note" | null;
+type FormMode = "link" | "note" | null;
 
 export function ProjectNotebook({ projectId }: { projectId: string }) {
   const { state, canManage, upsertProjectAsset, deleteProjectAsset, newId } =
@@ -41,7 +41,8 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         .sort((a, b) => a.sort_order - b.sort_order),
     [state.project_assets, projectId],
   );
-  const [mode, setMode] = useState<AddMode>(null);
+  const [mode, setMode] = useState<FormMode>(null);
+  const [editing, setEditing] = useState<ProjectAsset | null>(null);
   const [kind, setKind] = useState<ProjectAssetKind>("custom");
   const [label, setLabel] = useState("");
   const [url, setUrl] = useState("");
@@ -54,42 +55,84 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
 
   function resetForm() {
     setMode(null);
+    setEditing(null);
     setLabel("");
     setUrl("");
     setNoteBody("");
     setKind("custom");
   }
 
-  function addLink() {
+  function startAdd(next: "link" | "note") {
+    if (mode === next && !editing) {
+      resetForm();
+      return;
+    }
+    setEditing(null);
+    setLabel("");
+    setUrl("");
+    setNoteBody("");
+    setKind("custom");
+    setMode(next);
+  }
+
+  function startEdit(asset: ProjectAsset) {
+    const isNote = Boolean(asset.body.trim());
+    setEditing(asset);
+    setMode(isNote ? "note" : "link");
+    setLabel(asset.label);
+    setUrl(asset.url);
+    setNoteBody(asset.body);
+    setKind(asset.kind);
+  }
+
+  function saveLink() {
     if (!url.trim()) return;
     const inferred = kind === "custom" ? inferAssetKind(url) : kind;
-    const asset: ProjectAsset = {
-      id: newId("asset"),
-      organization_id: state.organization.id,
-      project_id: projectId,
-      kind: inferred,
-      label: label.trim() || ASSET_KIND_LABELS[inferred],
-      url: url.trim(),
-      body: "",
-      sort_order: assets.length,
-    };
-    upsertProjectAsset(asset);
+    if (editing) {
+      upsertProjectAsset({
+        ...editing,
+        kind: inferred,
+        label: label.trim() || ASSET_KIND_LABELS[inferred],
+        url: url.trim(),
+        body: "",
+      });
+    } else {
+      upsertProjectAsset({
+        id: newId("asset"),
+        organization_id: state.organization.id,
+        project_id: projectId,
+        kind: inferred,
+        label: label.trim() || ASSET_KIND_LABELS[inferred],
+        url: url.trim(),
+        body: "",
+        sort_order: assets.length,
+      });
+    }
     resetForm();
   }
 
-  function addNote() {
+  function saveNote() {
     if (!label.trim() && !noteBody.trim()) return;
-    const asset: ProjectAsset = {
-      id: newId("asset"),
-      organization_id: state.organization.id,
-      project_id: projectId,
-      kind: "custom",
-      label: label.trim() || "Note",
-      url: "",
-      body: noteBody,
-      sort_order: assets.length,
-    };
-    upsertProjectAsset(asset);
+    if (editing) {
+      upsertProjectAsset({
+        ...editing,
+        kind: "custom",
+        label: label.trim() || "Note",
+        url: "",
+        body: noteBody,
+      });
+    } else {
+      upsertProjectAsset({
+        id: newId("asset"),
+        organization_id: state.organization.id,
+        project_id: projectId,
+        kind: "custom",
+        label: label.trim() || "Note",
+        url: "",
+        body: noteBody,
+        sort_order: assets.length,
+      });
+    }
     resetForm();
   }
 
@@ -115,14 +158,14 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
             <button
               type="button"
               className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
-              onClick={() => setMode(mode === "link" ? null : "link")}
+              onClick={() => startAdd("link")}
             >
               <Plus size={12} /> Add link
             </button>
             <button
               type="button"
               className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
-              onClick={() => setMode(mode === "note" ? null : "note")}
+              onClick={() => startAdd("note")}
             >
               <Plus size={12} /> Add note
             </button>
@@ -167,9 +210,9 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
             <button
               type="button"
               className="h-9 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={addLink}
+              onClick={saveLink}
             >
-              Save link
+              {editing ? "Save changes" : "Save link"}
             </button>
             <button
               type="button"
@@ -204,9 +247,9 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
             <button
               type="button"
               className="h-9 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={addNote}
+              onClick={saveNote}
             >
-              Save note
+              {editing ? "Save changes" : "Save note"}
             </button>
             <button
               type="button"
@@ -238,6 +281,8 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
                   key={a.id}
                   asset={a}
                   canManage={canManage}
+                  isEditing={editing?.id === a.id}
+                  onEdit={() => startEdit(a)}
                   onDelete={() => deleteProjectAsset(a.id)}
                 />
               ))}
@@ -252,15 +297,41 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
 function SortableAssetRow({
   asset,
   canManage,
+  isEditing,
+  onEdit,
   onDelete,
 }: {
   asset: ProjectAsset;
   canManage: boolean;
+  isEditing: boolean;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: asset.id, disabled: !canManage });
   const isNote = Boolean(asset.body.trim());
+
+  const actions = canManage ? (
+    <div className="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        className={cn(
+          "cursor-pointer text-xs text-[var(--accent)]",
+          isEditing && "font-medium",
+        )}
+        onClick={onEdit}
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        className="cursor-pointer text-xs text-[var(--status-over)]"
+        onClick={onDelete}
+      >
+        Remove
+      </button>
+    </div>
+  ) : null;
 
   return (
     <li
@@ -270,7 +341,10 @@ function SortableAssetRow({
         transition,
         opacity: isDragging ? 0.6 : 1,
       }}
-      className="rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+      className={cn(
+        "rounded-md border border-[var(--border)] px-3 py-2 text-sm",
+        isEditing && "ring-1 ring-[var(--accent)]/40",
+      )}
     >
       {isNote ? (
         <div className="space-y-1">
@@ -289,15 +363,7 @@ function SortableAssetRow({
             <span className="min-w-0 flex-1 truncate font-medium">
               {asset.label || "Note"}
             </span>
-            {canManage ? (
-              <button
-                type="button"
-                className="shrink-0 cursor-pointer text-xs text-[var(--status-over)]"
-                onClick={onDelete}
-              >
-                Remove
-              </button>
-            ) : null}
+            {actions}
           </div>
           <p className="whitespace-pre-wrap text-[var(--text-muted)]">
             {asset.body}
@@ -316,9 +382,7 @@ function SortableAssetRow({
               <GripVertical size={14} />
             </button>
           ) : null}
-          <span className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded bg-[var(--bg-elevated)] text-[10px] font-semibold text-[var(--text-muted)]">
-            {assetIconLabel(asset.kind)}
-          </span>
+          <AssetKindIcon kind={asset.kind} />
           <a
             href={asset.url}
             target="_blank"
@@ -331,15 +395,7 @@ function SortableAssetRow({
             size={12}
             className="shrink-0 text-[var(--text-muted)]"
           />
-          {canManage ? (
-            <button
-              type="button"
-              className="cursor-pointer text-xs text-[var(--status-over)]"
-              onClick={onDelete}
-            >
-              Remove
-            </button>
-          ) : null}
+          {actions}
         </div>
       )}
     </li>

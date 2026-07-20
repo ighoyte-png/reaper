@@ -22,24 +22,3 @@ export function inferAssetKind(url: string): ProjectAssetKind {
     return "staging";
   return "custom";
 }
-
-export function assetIconLabel(kind: ProjectAssetKind): string {
-  switch (kind) {
-    case "sow":
-      return "SOW";
-    case "website":
-      return "Web";
-    case "figma":
-      return "Fig";
-    case "content":
-      return "Doc";
-    case "staging":
-      return "Stg";
-    case "passwords":
-      return "Pwd";
-    case "drive":
-      return "Drv";
-    case "custom":
-      return "Link";
-  }
-}

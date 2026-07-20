@@ -11,7 +11,9 @@ import {
   sanitizeProjectPortal,
   type ProjectPortalPayload,
 } from "@/lib/share/sanitize";
-import { ASSET_KIND_LABELS, assetIconLabel } from "@/lib/domain/assets";
+import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
+import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
+import type { ProjectAssetKind } from "@/lib/types";
 import { toDateKey } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { DemoState } from "@/lib/types";
@@ -274,11 +276,9 @@ export default function ProjectSharePage() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded bg-[var(--bg-elevated)] text-[10px] font-semibold text-[var(--text-muted)]">
-                        {assetIconLabel(
-                          a.kind as keyof typeof ASSET_KIND_LABELS,
-                        )}
-                      </span>
+                      <AssetKindIcon
+                        kind={a.kind as ProjectAssetKind}
+                      />
                       <a
                         href={a.url}
                         target="_blank"
@@ -286,9 +286,7 @@ export default function ProjectSharePage() {
                         className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
                       >
                         {a.label ||
-                          ASSET_KIND_LABELS[
-                            a.kind as keyof typeof ASSET_KIND_LABELS
-                          ]}
+                          ASSET_KIND_LABELS[a.kind as ProjectAssetKind]}
                       </a>
                       <ExternalLink
                         size={12}
