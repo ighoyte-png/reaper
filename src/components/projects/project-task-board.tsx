@@ -140,6 +140,7 @@ export function ProjectTaskBoard({
     canManage,
     myPerson,
     profile,
+    isPublicShare,
     upsertTask,
     upsertTaskList,
     upsertTaskComment,
@@ -163,11 +164,11 @@ export function ProjectTaskBoard({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
 
-  const manageLists = canManage && !readOnly;
+  const manageLists = canManage && !readOnly && !isPublicShare;
   const allowSelect =
     allowSelectProp !== undefined
       ? allowSelectProp
-      : canManage || !readOnly;
+      : !isPublicShare && (canManage || !readOnly);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -185,15 +186,18 @@ export function ProjectTaskBoard({
     ? viewAs.viewAsPersonId
     : myPerson?.id ?? null;
 
-  const visibleTasks = useMemo(
-    () =>
-      filterTasksForViewer(
-        state.tasks.filter((t) => t.project_id === projectId),
-        viewerCanManage,
-        viewerPersonId,
-      ),
-    [state.tasks, projectId, viewerCanManage, viewerPersonId],
-  );
+  const visibleTasks = useMemo(() => {
+    const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
+    // Public share / client-facing project views have no person — show every task.
+    if (isPublicShare) return projectTasks;
+    return filterTasksForViewer(projectTasks, viewerCanManage, viewerPersonId);
+  }, [
+    state.tasks,
+    projectId,
+    isPublicShare,
+    viewerCanManage,
+    viewerPersonId,
+  ]);
 
   const childrenMap = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -577,7 +581,7 @@ export function ProjectTaskBoard({
     allowSelect,
     listsEditMode,
     compact,
-    readOnly,
+    readOnly: readOnly || isPublicShare,
     selected,
     toggleSelect,
     setParentsSelected,
@@ -607,10 +611,10 @@ export function ProjectTaskBoard({
         <KanbanBoard
           tasks={parentTasks(visibleTasks)}
           manageLists={manageLists}
-          onEdit={readOnly ? undefined : setEditing}
+          onEdit={readOnly || isPublicShare ? undefined : setEditing}
           onMove={moveTaskToColumn}
         />
-        {editing && !readOnly ? (
+        {editing && !readOnly && !isPublicShare ? (
           <TaskEditModal
             task={editing}
             readOnly={!(canManage || editing.assignee_person_id === myPerson?.id)}
@@ -823,7 +827,7 @@ export function ProjectTaskBoard({
         </DndContext>
       )}
 
-      {editing && !readOnly ? (
+      {editing && !readOnly && !isPublicShare ? (
         <TaskEditModal
           task={editing}
           readOnly={!(canManage || editing.assignee_person_id === myPerson?.id)}
@@ -1320,7 +1324,7 @@ function KanbanBoard({
 }: {
   tasks: Task[];
   manageLists: boolean;
-  onEdit: (task: Task) => void;
+  onEdit?: (task: Task) => void;
   onMove: (taskId: string, destStatus: TaskStatus, destIndex: number) => void;
 }) {
   const sensors = useSensors(
@@ -1404,7 +1408,7 @@ function KanbanColumn({
   status: TaskStatus;
   tasks: Task[];
   manageLists: boolean;
-  onEdit: (task: Task) => void;
+  onEdit?: (task: Task) => void;
   activeId: string | null;
 }) {
   const { setNodeRef } = useDroppable({
@@ -1516,7 +1520,7 @@ function KanbanCard({
 }: {
   task: Task;
   manageLists: boolean;
-  onEdit: (task: Task) => void;
+  onEdit?: (task: Task) => void;
   isOverlaySource: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =

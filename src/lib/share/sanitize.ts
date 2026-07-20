@@ -123,16 +123,27 @@ export function sanitizeProjectPortal(
       })),
     taskLists: state.task_lists
       .filter((l) => l.project_id === projectId)
+      .sort(
+        (a, b) =>
+          a.sort_order - b.sort_order || a.name.localeCompare(b.name),
+      )
       .map((l) => ({ id: l.id, name: l.name, milestone_id: l.milestone_id })),
-    tasks: state.tasks
-      .filter((t) => t.project_id === projectId)
-      .map((t) => ({
-        id: t.id,
-        list_id: t.list_id,
-        parent_id: t.parent_id,
-        title: t.title,
-        status: t.status,
-      })),
+    tasks: (() => {
+      const listIds = new Set(
+        state.task_lists
+          .filter((l) => l.project_id === projectId)
+          .map((l) => l.id),
+      );
+      return state.tasks
+        .filter((t) => t.project_id === projectId || listIds.has(t.list_id))
+        .map((t) => ({
+          id: t.id,
+          list_id: t.list_id,
+          parent_id: t.parent_id,
+          title: t.title,
+          status: t.status,
+        }));
+    })(),
     assets: state.project_assets
       .filter((a) => a.project_id === projectId)
       .map((a) => ({

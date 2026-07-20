@@ -25,7 +25,3 @@ export const primaryNavLinks: NavLinkDef[] = [
   { href: "/templates", label: "Templates", icon: LayoutTemplate, manageOnly: true },
   { href: "/reports", label: "Reports", icon: BarChart3, manageOnly: true },
 ];
-
-export const shareNavLinks = primaryNavLinks.filter(
-  (l) => l.href !== "/dashboard",
-);

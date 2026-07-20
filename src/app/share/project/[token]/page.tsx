@@ -25,7 +25,18 @@ function loadDemoPortal(token: string): ProjectPortalPayload | null {
     const raw = localStorage.getItem(DEMO_STORAGE_KEY);
     const seed = createDemoSeed();
     const parsed = raw ? (JSON.parse(raw) as Partial<DemoState>) : {};
-    const merged: DemoState = { ...seed, ...parsed };
+    const merged: DemoState = {
+      ...seed,
+      ...parsed,
+      task_lists: parsed.task_lists ?? seed.task_lists,
+      tasks: parsed.tasks ?? seed.tasks,
+      projects: parsed.projects ?? seed.projects,
+      people: parsed.people ?? seed.people,
+      milestones: parsed.milestones ?? seed.milestones,
+      project_assets: parsed.project_assets ?? seed.project_assets,
+      clients: parsed.clients ?? seed.clients,
+      assignments: parsed.assignments ?? seed.assignments,
+    };
     const project = merged.projects.find(
       (p) => p.share_enabled && p.share_token === token,
     );
@@ -61,6 +72,37 @@ function taskCompletionPct(
 
 function formatDisplayDate(dateKey: string): string {
   return format(parseISO(dateKey), "MMM d, yyyy");
+}
+
+function PortalTaskRow({
+  task,
+}: {
+  task: { title: string; status: string };
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm">
+      <span
+        className={cn(
+          task.status === "complete" &&
+            "text-[var(--task-complete-fg)] line-through",
+        )}
+      >
+        {task.title}
+      </span>
+      <span
+        className={cn(
+          "shrink-0 text-xs capitalize",
+          task.status === "complete"
+            ? "text-[var(--task-complete-fg)]"
+            : task.status === "active"
+              ? "text-[var(--task-active-fg)]"
+              : "text-[var(--task-upcoming-fg)]",
+        )}
+      >
+        {task.status}
+      </span>
+    </div>
+  );
 }
 
 export default function ProjectSharePage() {
@@ -317,44 +359,37 @@ export default function ProjectSharePage() {
         ) : (
           <div className="space-y-4">
             {portal.taskLists.map((list) => {
-              const listTasks = portal.tasks.filter(
-                (t) => t.list_id === list.id && !t.parent_id,
+              const listTasks = portal.tasks
+                .filter((t) => t.list_id === list.id)
+                .sort((a, b) => a.title.localeCompare(b.title));
+              const idSet = new Set(listTasks.map((t) => t.id));
+              const parents = listTasks.filter(
+                (t) => !t.parent_id || !idSet.has(t.parent_id),
               );
-              if (listTasks.length === 0) return null;
+              const childrenOf = (parentId: string) =>
+                listTasks.filter((t) => t.parent_id === parentId);
+
               return (
                 <div key={list.id}>
                   <h3 className="mb-1.5 text-xs font-medium text-[var(--text-muted)]">
                     {list.name}
                   </h3>
-                  <ul className="space-y-1">
-                    {listTasks.map((t) => (
-                      <li
-                        key={t.id}
-                        className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
-                      >
-                        <span
-                          className={cn(
-                            t.status === "complete" &&
-                              "text-[var(--task-complete-fg)] line-through",
-                          )}
-                        >
-                          {t.title}
-                        </span>
-                        <span
-                          className={cn(
-                            "shrink-0 text-xs capitalize",
-                            t.status === "complete"
-                              ? "text-[var(--task-complete-fg)]"
-                              : t.status === "active"
-                                ? "text-[var(--task-active-fg)]"
-                                : "text-[var(--task-upcoming-fg)]",
-                          )}
-                        >
-                          {t.status}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                  {parents.length === 0 ? (
+                    <p className="text-xs text-[var(--text-muted)]">No tasks</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {parents.map((t) => (
+                        <li key={t.id}>
+                          <PortalTaskRow task={t} />
+                          {childrenOf(t.id).map((child) => (
+                            <div key={child.id} className="ml-4 mt-1">
+                              <PortalTaskRow task={child} />
+                            </div>
+                          ))}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               );
             })}
