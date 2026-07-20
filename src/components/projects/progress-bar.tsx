@@ -30,7 +30,7 @@ export function ProgressBar({
       ) : null}
       <div
         className={cn(
-          "overflow-hidden rounded-full bg-[var(--bg-elevated)]",
+          "relative overflow-hidden rounded-full bg-[var(--bg-elevated)]",
           size === "lg" ? "h-4" : "h-2.5",
         )}
       >
@@ -41,6 +41,16 @@ export function ProgressBar({
           )}
           style={{ width: `${clamped}%` }}
         />
+        {approved ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 rounded-full"
+            style={{
+              backgroundImage:
+                "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

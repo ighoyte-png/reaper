@@ -26,6 +26,7 @@
   --task-active-bg: color-mix(in srgb, #3b82f6 22%, var(--bg));
   --task-complete-bg: color-mix(in srgb, var(--status-healthy) 20%, var(--bg));
   --task-active-fg: #2563eb;
+  --progress-approved-hatch: rgba(0, 0, 0, 0.22);
 }
 
 .dark {
@@ -54,6 +55,7 @@
   --task-active-bg: color-mix(in srgb, #3b82f6 30%, var(--bg));
   --task-complete-bg: color-mix(in srgb, var(--status-healthy) 26%, var(--bg));
   --task-active-fg: #60a5fa;
+  --progress-approved-hatch: rgba(255, 255, 255, 0.28);
 }
 
 @theme inline {

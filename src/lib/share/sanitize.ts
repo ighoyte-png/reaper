@@ -48,7 +48,13 @@ export interface ProjectPortalPayload {
     title: string;
     status: string;
   }[];
-  assets: { id: string; kind: string; label: string; url: string }[];
+  assets: {
+    id: string;
+    kind: string;
+    label: string;
+    url: string;
+    body: string;
+  }[];
 }
 
 /**
@@ -113,6 +119,12 @@ export function sanitizeProjectPortal(
       })),
     assets: state.project_assets
       .filter((a) => a.project_id === projectId)
-      .map((a) => ({ id: a.id, kind: a.kind, label: a.label, url: a.url })),
+      .map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        label: a.label,
+        url: a.url,
+        body: a.body,
+      })),
   };
 }

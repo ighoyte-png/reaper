@@ -249,29 +249,49 @@ export default function ProjectSharePage() {
         <section className="rounded-md border border-[var(--border)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Links & assets</h2>
           <ul className="space-y-1.5">
-            {assetsSorted.map((a) => (
-              <li
-                key={a.id}
-                className="flex items-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm"
-              >
-                <span className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded bg-[var(--bg-elevated)] text-[10px] font-semibold text-[var(--text-muted)]">
-                  {assetIconLabel(a.kind as keyof typeof ASSET_KIND_LABELS)}
-                </span>
-                <a
-                  href={a.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
+            {assetsSorted.map((a) => {
+              const isNote = Boolean(a.body.trim());
+              return (
+                <li
+                  key={a.id}
+                  className="rounded-md border border-[var(--border)] px-3 py-2 text-sm"
                 >
-                  {a.label ||
-                    ASSET_KIND_LABELS[a.kind as keyof typeof ASSET_KIND_LABELS]}
-                </a>
-                <ExternalLink
-                  size={12}
-                  className="shrink-0 text-[var(--text-muted)]"
-                />
-              </li>
-            ))}
+                  {isNote ? (
+                    <div className="space-y-1">
+                      <span className="block truncate font-medium">
+                        {a.label || "Note"}
+                      </span>
+                      <p className="whitespace-pre-wrap text-[var(--text-muted)]">
+                        {a.body}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex h-6 w-8 shrink-0 items-center justify-center rounded bg-[var(--bg-elevated)] text-[10px] font-semibold text-[var(--text-muted)]">
+                        {assetIconLabel(
+                          a.kind as keyof typeof ASSET_KIND_LABELS,
+                        )}
+                      </span>
+                      <a
+                        href={a.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
+                      >
+                        {a.label ||
+                          ASSET_KIND_LABELS[
+                            a.kind as keyof typeof ASSET_KIND_LABELS
+                          ]}
+                      </a>
+                      <ExternalLink
+                        size={12}
+                        className="shrink-0 text-[var(--text-muted)]"
+                      />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
