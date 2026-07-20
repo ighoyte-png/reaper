@@ -178,15 +178,15 @@ export default function ProjectSharePage() {
             {teamSorted.map((member) => (
               <li
                 key={member.email || member.name}
-                className="flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3"
+                className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-center"
               >
                 <PersonAvatar
                   avatarUrl={member.avatar_url}
                   name={member.name}
                   size="lg"
                 />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
+                <div className="min-w-0 w-full">
+                  <div className="truncate text-base font-semibold tracking-tight">
                     {member.name}
                   </div>
                   {member.title ? (
@@ -197,7 +197,7 @@ export default function ProjectSharePage() {
                   {member.email ? (
                     <a
                       href={`mailto:${member.email}`}
-                      className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                      className="mt-1 inline-flex items-center justify-center gap-1 text-xs text-[var(--accent)] hover:underline"
                     >
                       <Mail size={11} />
                       {member.email}

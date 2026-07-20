@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
+import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { formatHours } from "@/lib/domain/budget";
@@ -18,6 +18,7 @@ import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { LeaveKind, Person } from "@/lib/types";
 import {
+  LEAVE_KINDS,
   leaveKindLabel,
   normalizeLeaveKind,
 } from "@/lib/domain/leave";
@@ -26,6 +27,12 @@ import {
   readFileAsDataUrl,
   uploadPersonAvatar,
 } from "@/lib/supabase/avatar";
+
+const actionLinkClass =
+  "cursor-pointer text-xs text-[var(--accent)] hover:underline";
+
+const mutedActionLinkClass =
+  "cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline";
 
 const emptyPerson = (): Omit<Person, "organization_id"> => ({
   id: "",
@@ -67,6 +74,10 @@ export default function PeoplePage() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [resendTarget, setResendTarget] = useState<Person | null>(null);
+  const [leaveTarget, setLeaveTarget] = useState<Person | null>(null);
+  const [leaveDate, setLeaveDate] = useState("");
+  const [leaveKind, setLeaveKind] = useState<LeaveKind>("vacation");
   const [inviteTarget, setInviteTarget] = useState<Person | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -382,7 +393,7 @@ export default function PeoplePage() {
                         {!person.profile_id ? (
                           <button
                             type="button"
-                            className="text-xs text-[var(--accent)]"
+                            className={actionLinkClass}
                             onClick={() => {
                               if (person.email?.trim()) {
                                 void createInviteLink(person, {
@@ -400,21 +411,16 @@ export default function PeoplePage() {
                         ) : (
                           <button
                             type="button"
-                            className="text-xs text-[var(--accent)]"
+                            className={actionLinkClass}
                             disabled={inviteBusy}
-                            onClick={() =>
-                              void createInviteLink(person, {
-                                resend: true,
-                                sendEmail: true,
-                              })
-                            }
+                            onClick={() => setResendTarget(person)}
                           >
                             Resend invite
                           </button>
                         )}
                         <button
                           type="button"
-                          className="ml-3 text-xs text-[var(--accent)]"
+                          className={cn(actionLinkClass, "ml-3")}
                           onClick={() => {
                             openEdit(person, false);
                           }}
@@ -423,29 +429,11 @@ export default function PeoplePage() {
                         </button>
                         <button
                           type="button"
-                          className="ml-3 text-xs text-[var(--text-muted)]"
+                          className={cn(mutedActionLinkClass, "ml-3")}
                           onClick={() => {
-                            const date = window.prompt(
-                              "Leave date (YYYY-MM-DD)",
-                              start,
-                            );
-                            if (!date) return;
-                            const kindRaw =
-                              window.prompt(
-                                "Kind: pto, statutory, sick, training",
-                                "pto",
-                              ) || "pto";
-                            const kind = normalizeLeaveKind(kindRaw) as LeaveKind;
-                            upsertLeave({
-                              id: newId("leave"),
-                              person_id: person.id,
-                              date,
-                              kind,
-                              status: "approved",
-                              hours_per_day: null,
-                              notes: "",
-                            });
-                            push(`${leaveKindLabel(kind)} added`);
+                            setLeaveTarget(person);
+                            setLeaveDate(start);
+                            setLeaveKind("vacation");
                           }}
                         >
                           Leave
@@ -690,6 +678,88 @@ export default function PeoplePage() {
             push("Person deleted");
           }}
         />
+      )}
+
+      {canManage && resendTarget && (
+        <ConfirmDialog
+          title="Resend invite?"
+          message={`Send another invite email to ${resendTarget.name}${resendTarget.email ? ` (${resendTarget.email})` : ""}?`}
+          confirmLabel="Resend invite"
+          tone="accent"
+          onCancel={() => setResendTarget(null)}
+          onConfirm={() => {
+            const person = resendTarget;
+            setResendTarget(null);
+            void createInviteLink(person, {
+              resend: true,
+              sendEmail: true,
+            });
+          }}
+        />
+      )}
+
+      {canManage && leaveTarget && (
+        <Modal
+          title={`Add leave · ${leaveTarget.name}`}
+          onClose={() => setLeaveTarget(null)}
+        >
+          <div className="grid gap-3">
+            <Field label="Date">
+              <DateInput
+                className={inputClass}
+                value={leaveDate}
+                onChange={(e) => setLeaveDate(e.target.value)}
+              />
+            </Field>
+            <Field label="Type">
+              <select
+                className={inputClass}
+                value={leaveKind}
+                onChange={(e) =>
+                  setLeaveKind(normalizeLeaveKind(e.target.value))
+                }
+              >
+                {LEAVE_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {leaveKindLabel(kind)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                className="h-9 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                onClick={() => setLeaveTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-9 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] hover:opacity-90"
+                onClick={() => {
+                  if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
+                    push("Choose a valid leave date", "warning");
+                    return;
+                  }
+                  upsertLeave({
+                    id: newId("leave"),
+                    person_id: leaveTarget.id,
+                    date: leaveDate,
+                    kind: leaveKind,
+                    status: "approved",
+                    hours_per_day: null,
+                    notes: "",
+                  });
+                  push(`${leaveKindLabel(leaveKind)} added for ${leaveTarget.name}`);
+                  setLeaveTarget(null);
+                }}
+              >
+                Add leave
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {canManage && inviteTarget && (

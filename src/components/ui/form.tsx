@@ -98,12 +98,15 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = "Delete",
+  tone = "danger",
   onConfirm,
   onCancel,
 }: {
   title: string;
   message: string;
   confirmLabel?: string;
+  /** danger = red destructive; accent = primary action */
+  tone?: "danger" | "accent";
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -118,14 +121,19 @@ export function ConfirmDialog({
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
-            className="h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+            className="h-9 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
             type="button"
-            className="h-9 rounded-md bg-[var(--status-over)] px-3 text-sm font-medium text-white hover:opacity-90"
+            className={cn(
+              "h-9 cursor-pointer rounded-md px-3 text-sm font-medium hover:opacity-90",
+              tone === "accent"
+                ? "bg-[var(--accent)] text-[var(--accent-fg)]"
+                : "bg-[var(--status-over)] text-white",
+            )}
             onClick={onConfirm}
           >
             {confirmLabel}

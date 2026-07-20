@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -50,6 +50,7 @@ import {
   taskStatusLabel,
   tasksForList,
 } from "@/lib/domain/tasks";
+import { sortPeopleByName } from "@/lib/domain/sorting";
 import { format, parseISO, startOfDay } from "date-fns";
 import type {
   Person,
@@ -147,6 +148,13 @@ export function ProjectTaskBoard({
   } = useData();
   const viewAs = useViewAsOptional();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDraft, setBulkDraft] = useState<{
+    status?: TaskStatus;
+    /** undefined = unchanged; null = unassigned */
+    assigneeId?: string | null;
+    /** undefined = unchanged */
+    dueDate?: string;
+  }>({});
   const [editing, setEditing] = useState<Task | null>(null);
   const [view, setView] = useState<"list" | "card">("list");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
@@ -228,24 +236,44 @@ export function ProjectTaskBoard({
     });
   }
 
-  function bulkStatus(status: TaskStatus) {
-    for (const id of selected) {
-      const task = state.tasks.find((t) => t.id === id);
-      if (!task) continue;
-      if (!canManage && task.assignee_person_id !== myPerson?.id) continue;
-      upsertTask({ ...task, status });
-    }
+  function clearSelection() {
     setSelected(new Set());
+    setBulkDraft({});
   }
 
-  function bulkDue(due: string) {
-    if (!canManage) return;
+  useEffect(() => {
+    if (selected.size === 0) setBulkDraft({});
+  }, [selected.size]);
+
+  const bulkHasChanges =
+    bulkDraft.status !== undefined ||
+    bulkDraft.assigneeId !== undefined ||
+    bulkDraft.dueDate !== undefined;
+
+  function applyBulkEdits() {
+    if (!bulkHasChanges || selected.size === 0) return;
     for (const id of selected) {
       const task = state.tasks.find((t) => t.id === id);
       if (!task) continue;
-      upsertTask({ ...task, due_date: due || null });
+      let next = { ...task };
+      let changed = false;
+      if (bulkDraft.status !== undefined) {
+        if (canManage || task.assignee_person_id === myPerson?.id) {
+          next = { ...next, status: bulkDraft.status };
+          changed = true;
+        }
+      }
+      if (canManage && bulkDraft.assigneeId !== undefined) {
+        next = { ...next, assignee_person_id: bulkDraft.assigneeId };
+        changed = true;
+      }
+      if (canManage && bulkDraft.dueDate !== undefined) {
+        next = { ...next, due_date: bulkDraft.dueDate || null };
+        changed = true;
+      }
+      if (changed) upsertTask(next);
     }
-    setSelected(new Set());
+    clearSelection();
   }
 
   function addList() {
@@ -629,38 +657,114 @@ export function ProjectTaskBoard({
       </div>
 
       {selected.size > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-1.5 text-xs">
-          <span>{selected.size} selected</span>
-          <button
-            type="button"
-            className="cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 hover:bg-[var(--row-hover)]"
-            onClick={() => bulkStatus("active")}
-          >
-            Active
-          </button>
-          <button
-            type="button"
-            className="cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 hover:bg-[var(--row-hover)]"
-            onClick={() => bulkStatus("complete")}
-          >
-            Complete
-          </button>
+        <div className="flex flex-wrap items-end gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] py-2 pl-3 pr-1.5 text-xs sm:pl-4 sm:pr-1.5">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-medium text-[var(--text-muted)]">
+              Status
+            </span>
+            <select
+              className={cn(
+                inputClass,
+                "mt-0 h-7 w-auto min-w-[7.5rem] py-0 text-xs",
+              )}
+              value={bulkDraft.status ?? ""}
+              onChange={(e) => {
+                const value = e.target.value as TaskStatus | "";
+                setBulkDraft((prev) => ({
+                  ...prev,
+                  status: value || undefined,
+                }));
+              }}
+              aria-label="Set status for selected tasks"
+            >
+              <option value="">Choose…</option>
+              <option value="upcoming">{taskStatusLabel("upcoming")}</option>
+              <option value="active">{taskStatusLabel("active")}</option>
+              <option value="complete">{taskStatusLabel("complete")}</option>
+            </select>
+          </label>
           {canManage ? (
-            <label className="inline-flex items-center gap-1">
-              Due
-              <DateInput
-                className={cn(inputClass, "h-7 py-0 text-xs")}
-                onChange={(e) => bulkDue(e.target.value)}
-              />
-            </label>
+            <>
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                  Assign
+                </span>
+                <select
+                  className={cn(
+                    inputClass,
+                    "mt-0 h-7 w-auto max-w-[10rem] py-0 text-xs",
+                  )}
+                  value={
+                    bulkDraft.assigneeId === undefined
+                      ? ""
+                      : bulkDraft.assigneeId === null
+                        ? "__none__"
+                        : bulkDraft.assigneeId
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setBulkDraft((prev) => ({
+                      ...prev,
+                      assigneeId:
+                        value === ""
+                          ? undefined
+                          : value === "__none__"
+                            ? null
+                            : value,
+                    }));
+                  }}
+                  aria-label="Assign selected tasks"
+                >
+                  <option value="">Choose…</option>
+                  <option value="__none__">Unassigned</option>
+                  {sortPeopleByName(state.people).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                  Due
+                </span>
+                <DateInput
+                  className={cn(inputClass, "mt-0 h-7 py-0 text-xs")}
+                  value={bulkDraft.dueDate ?? ""}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setBulkDraft((prev) => ({
+                      ...prev,
+                      dueDate: value || undefined,
+                    }));
+                  }}
+                />
+              </label>
+            </>
           ) : null}
-          <button
-            type="button"
-            className="cursor-pointer text-[var(--text-muted)] hover:text-[var(--text)]"
-            onClick={() => setSelected(new Set())}
-          >
-            Clear
-          </button>
+          <div className="ml-auto flex shrink-0 flex-col items-end gap-0">
+            <span className="mb-1 text-[10px] text-[var(--text-muted)]">
+              {selected.size} selected
+            </span>
+            <div className="flex items-center gap-1.5">
+              {bulkHasChanges ? (
+                <button
+                  type="button"
+                  className="box-border h-9 cursor-pointer rounded-md bg-[var(--accent)] px-2.5 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
+                  onClick={applyBulkEdits}
+                >
+                  Apply
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="box-border h-9 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--bg)] px-2.5 text-xs font-medium text-[var(--text)] hover:bg-[var(--row-hover)]"
+                onClick={clearSelection}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

@@ -454,11 +454,7 @@ export default function DashboardPage() {
                 leaveDays={approvedLeave}
                 people={state.people}
               />
-              {upcomingLeaveBlocks.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">
-                  No approved leave ahead.
-                </p>
-              ) : (
+              {upcomingLeaveBlocks.length > 0 ? (
                 <div className="space-y-2">
                   {upcomingLeaveBlocks.map((block) => {
                     const person = state.people.find(
@@ -484,7 +480,7 @@ export default function DashboardPage() {
                     );
                   })}
                 </div>
-              )}
+              ) : null}
             </div>
           </section>
         </div>
