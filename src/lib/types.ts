@@ -1,5 +1,6 @@
 export type Role = "admin" | "manager" | "member";
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
+export type ClientStatus = "active" | "archived";
 export type BudgetMode = "none" | "hours" | "amount";
 export type AssignmentStatus = "tentative" | "confirmed";
 /**
@@ -11,6 +12,16 @@ export type LeaveKind = "vacation" | "holiday" | "sick" | "training";
 export type LeaveStatus = "pending" | "approved";
 export type MilestoneStatus = "upcoming" | "done" | "missed";
 export type Recurrence = "none" | "weekly";
+export type TaskStatus = "upcoming" | "active" | "complete";
+export type ProjectAssetKind =
+  | "sow"
+  | "website"
+  | "figma"
+  | "content"
+  | "staging"
+  | "passwords"
+  | "drive"
+  | "custom";
 
 export interface Organization {
   id: string;
@@ -35,6 +46,7 @@ export interface Client {
   name: string;
   notes: string;
   color: string;
+  status: ClientStatus;
 }
 
 export interface Project {
@@ -54,6 +66,9 @@ export interface Project {
   /** When true, hourly budget resets each calendar month (retainer). */
   budget_monthly_reset: boolean;
   notes: string;
+  /** Per-project client portal (separate from org schedule share). */
+  share_enabled?: boolean;
+  share_token?: string | null;
 }
 
 export interface Milestone {
@@ -63,6 +78,99 @@ export interface Milestone {
   name: string;
   due_date: string;
   status: MilestoneStatus;
+  /** Admin-checked after formal client sign-off. */
+  client_approved: boolean;
+}
+
+export interface ProjectAsset {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  kind: ProjectAssetKind;
+  label: string;
+  url: string;
+  sort_order: number;
+}
+
+export interface TaskList {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  milestone_id: string | null;
+  name: string;
+  sort_order: number;
+}
+
+export interface Task {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  list_id: string;
+  parent_id: string | null;
+  assignee_person_id: string | null;
+  title: string;
+  status: TaskStatus;
+  start_date: string | null;
+  due_date: string | null;
+  notes: string;
+  sort_order: number;
+}
+
+export interface TaskComment {
+  id: string;
+  organization_id: string;
+  task_id: string;
+  author_profile_id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface Bulletin {
+  id: string;
+  organization_id: string;
+  project_id: string | null;
+  title: string;
+  body: string;
+  pinned: boolean;
+  created_by_profile_id: string | null;
+  created_at: string;
+}
+
+export interface ProjectTemplate {
+  id: string;
+  organization_id: string;
+  name: string;
+  description: string;
+}
+
+export interface TemplateMilestone {
+  id: string;
+  organization_id: string;
+  template_id: string;
+  name: string;
+  offset_days: number;
+  sort_order: number;
+}
+
+export interface TemplateTaskList {
+  id: string;
+  organization_id: string;
+  template_id: string;
+  template_milestone_id: string | null;
+  name: string;
+  sort_order: number;
+}
+
+export interface TemplateTask {
+  id: string;
+  organization_id: string;
+  template_id: string;
+  list_id: string;
+  parent_id: string | null;
+  title: string;
+  notes: string;
+  offset_days: number | null;
+  sort_order: number;
 }
 
 export interface Person {
@@ -142,6 +250,15 @@ export interface DemoState {
   leave_days: LeaveDay[];
   holiday_calendars: HolidayCalendar[];
   holiday_calendar_days: HolidayCalendarDay[];
+  project_assets: ProjectAsset[];
+  task_lists: TaskList[];
+  tasks: Task[];
+  task_comments: TaskComment[];
+  bulletins: Bulletin[];
+  project_templates: ProjectTemplate[];
+  template_milestones: TemplateMilestone[];
+  template_task_lists: TemplateTaskList[];
+  template_tasks: TemplateTask[];
   sessionProfileId: string | null;
 }
 

@@ -17,3 +17,86 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     ),
   };
 }
+
+/** Public, read-only per-project client portal payload. */
+export interface ProjectPortalPayload {
+  organizationName: string;
+  project: {
+    id: string;
+    name: string;
+    status: string;
+    start_date: string | null;
+    end_date: string | null;
+    notes: string;
+  };
+  clientName: string | null;
+  milestones: {
+    id: string;
+    name: string;
+    due_date: string;
+    status: string;
+    client_approved: boolean;
+  }[];
+  taskLists: { id: string; name: string; milestone_id: string | null }[];
+  /** Titles/status only — no assignee, notes, or internal cost data. */
+  tasks: {
+    id: string;
+    list_id: string;
+    parent_id: string | null;
+    title: string;
+    status: string;
+  }[];
+  assets: { id: string; kind: string; label: string; url: string }[];
+}
+
+/**
+ * Build a heavily-sanitized public payload for a single project's client
+ * portal — no rates, emails, assignees, internal notes, or other projects.
+ */
+export function sanitizeProjectPortal(
+  state: DemoState,
+  projectId: string,
+): ProjectPortalPayload | null {
+  const project = state.projects.find((p) => p.id === projectId);
+  if (!project) return null;
+  const client = project.client_id
+    ? state.clients.find((c) => c.id === project.client_id)
+    : undefined;
+
+  return {
+    organizationName: state.organization.name,
+    project: {
+      id: project.id,
+      name: project.name,
+      status: project.status,
+      start_date: project.start_date,
+      end_date: project.end_date,
+      notes: project.notes,
+    },
+    clientName: client?.name ?? null,
+    milestones: state.milestones
+      .filter((m) => m.project_id === projectId)
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        due_date: m.due_date,
+        status: m.status,
+        client_approved: m.client_approved,
+      })),
+    taskLists: state.task_lists
+      .filter((l) => l.project_id === projectId)
+      .map((l) => ({ id: l.id, name: l.name, milestone_id: l.milestone_id })),
+    tasks: state.tasks
+      .filter((t) => t.project_id === projectId)
+      .map((t) => ({
+        id: t.id,
+        list_id: t.list_id,
+        parent_id: t.parent_id,
+        title: t.title,
+        status: t.status,
+      })),
+    assets: state.project_assets
+      .filter((a) => a.project_id === projectId)
+      .map((a) => ({ id: a.id, kind: a.kind, label: a.label, url: a.url })),
+  };
+}

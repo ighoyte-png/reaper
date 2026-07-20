@@ -3,23 +3,25 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { format, startOfDay } from "date-fns";
+import { Copy, Link2 } from "lucide-react";
 import { PageHeader } from "@/components/nav/page-header";
-import { BurnBar } from "@/components/ui/burn-bar";
-import { MonthlyRetainerChart } from "@/components/projects/monthly-retainer-chart";
+import { ProjectNotebook } from "@/components/projects/project-notebook";
+import { ProjectTaskBoard } from "@/components/projects/project-task-board";
+import { ProgressBar } from "@/components/projects/progress-bar";
 import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { ProjectForm } from "@/components/projects/project-form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import {
-  assignmentHours,
-  budgetBurn,
-  calendarYearHourBars,
-  formatHours,
-  formatMoney,
-} from "@/lib/domain/budget";
-import { projectForecast } from "@/lib/domain/forecast";
+  milestoneDateProgress,
+  milestoneTaskProgress,
+  projectDateProgress,
+  projectTaskProgress,
+} from "@/lib/domain/progress";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { publicProjectShareUrl } from "@/lib/share/token";
 import type { Milestone, Project } from "@/lib/types";
 
 export default function ProjectDetailPage() {
@@ -32,6 +34,8 @@ export default function ProjectDetailPage() {
     deleteProject,
     upsertMilestone,
     deleteMilestone,
+    applyProjectTemplate,
+    updateProjectShare,
     newId,
     canManage,
   } = useData();
@@ -45,20 +49,24 @@ export default function ProjectDetailPage() {
     Milestone,
     "organization_id"
   > | null>(null);
+  const [templateId, setTemplateId] = useState("");
 
   const project = state.projects.find((p) => p.id === params.id);
+  const today = format(startOfDay(new Date()), "yyyy-MM-dd");
+  const isRetainer = Boolean(project?.budget_monthly_reset);
 
-  const allocations = useMemo(() => {
+  const team = useMemo(() => {
     if (!project) return [];
-    return state.assignments
-      .filter((a) => a.project_id === project.id)
-      .map((a) => ({
-        assignment: a,
-        person: state.people.find((p) => p.id === a.person_id),
-        hours: assignmentHours(a),
-      }))
-      .sort((a, b) => b.hours - a.hours);
-  }, [project, state.assignments, state.people]);
+    const ids = new Set<string>();
+    for (const a of state.assignments) {
+      if (a.project_id === project.id) ids.add(a.person_id);
+    }
+    for (const t of state.tasks) {
+      if (t.project_id === project.id && t.assignee_person_id)
+        ids.add(t.assignee_person_id);
+    }
+    return state.people.filter((p) => ids.has(p.id));
+  }, [project, state.assignments, state.tasks, state.people]);
 
   if (!project) {
     return (
@@ -83,13 +91,20 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const burn = budgetBurn(project, state.assignments, state.people);
-  const forecast = projectForecast(project, state.assignments, state.people);
   const client = state.clients.find((c) => c.id === project.client_id);
-  const milestones = state.milestones.filter((m) => m.project_id === project.id);
-  const yearBars =
-    project.budget_mode === "hours" && project.budget_monthly_reset
-      ? calendarYearHourBars(project, state.assignments)
+  const milestones = state.milestones
+    .filter((m) => m.project_id === project.id)
+    .sort((a, b) => a.due_date.localeCompare(b.due_date));
+  const datePct = projectDateProgress(project, today);
+  const taskPct = projectTaskProgress(state.tasks, project.id);
+  const overallPct = datePct ?? taskPct;
+
+  const shareResult =
+    project.share_enabled && project.share_token
+      ? publicProjectShareUrl(
+          typeof window !== "undefined" ? window.location.origin : "",
+          project.share_token,
+        )
       : null;
 
   function goBack() {
@@ -108,15 +123,21 @@ export default function ProjectDetailPage() {
         actions={
           <>
             <Link
+              href={appHref("/reports/budgets")}
+              className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+            >
+              Budgets report
+            </Link>
+            <Link
               href={appHref("/schedule")}
-              className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm"
+              className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
             >
               Schedule
             </Link>
             {canManage ? (
               <button
                 type="button"
-                className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
                 onClick={() => {
                   const { organization_id: _org, ...rest } = project;
                   setDraft({
@@ -142,162 +163,262 @@ export default function ProjectDetailPage() {
               }}
             />
             <span className="text-xs text-[var(--text-muted)]">
-              {client?.name ?? "No client"} · {project.status.replace("_", " ")}
+              {client?.name ?? "No client"} ·{" "}
+              {isRetainer ? "Retainer" : "Project"} ·{" "}
+              {project.status.replace("_", " ")}
             </span>
+            {project.start_date || project.end_date ? (
+              <span className="text-xs text-[var(--text-muted)]">
+                {project.start_date ?? "?"} → {project.end_date ?? "?"}
+              </span>
+            ) : null}
           </div>
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-semibold">
-              {burn.mode === "none"
-                ? "Budget"
-                : burn.mode === "amount"
-                  ? "Dollar budget"
-                  : project.budget_monthly_reset
-                    ? "Monthly hours budget"
-                    : "Hours budget"}
-            </h2>
-            <span className="text-sm text-[var(--text-muted)]">
-              {burn.mode === "none"
-                ? "No budget tracking"
-                : burn.mode === "amount"
-                  ? `${formatMoney(burn.plannedAmount)} planned · ${formatMoney(Math.max(0, burn.remainingAmount ?? 0))} remaining of ${formatMoney(burn.totalAmount ?? 0)}`
-                  : `${formatHours(burn.plannedHours)} planned · ${formatHours(Math.max(0, burn.remainingHours))} remaining of ${formatHours(burn.totalHours)}`}
-            </span>
+
+          <div className="mb-4 space-y-2">
+            <ProgressBar pct={overallPct} label="Overall progress" />
+            {!isRetainer &&
+              milestones.map((m) => {
+                const listIds = state.task_lists
+                  .filter((l) => l.milestone_id === m.id)
+                  .map((l) => l.id);
+                const pct =
+                  listIds.length > 0
+                    ? milestoneTaskProgress(state.tasks, listIds)
+                    : (milestoneDateProgress(m, project, today) ?? 0);
+                return (
+                  <div key={m.id} className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <ProgressBar
+                        pct={pct}
+                        label={m.name}
+                        approved={m.client_approved}
+                      />
+                    </div>
+                    {canManage ? (
+                      <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={m.client_approved}
+                          onChange={(e) =>
+                            upsertMilestone({
+                              ...m,
+                              client_approved: e.target.checked,
+                            })
+                          }
+                        />
+                        Approved
+                      </label>
+                    ) : m.client_approved ? (
+                      <span className="text-xs text-[var(--status-healthy)]">
+                        Approved
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
           </div>
-          <BurnBar burn={burn} />
-          {yearBars ? (
-            <MonthlyRetainerChart
-              className="mt-4"
-              bars={yearBars}
-              budgetHours={project.budget_hours ?? 0}
-            />
+
+          {canManage ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+              <Link2 size={14} className="text-[var(--text-muted)]" />
+              <span className="text-xs font-medium">Client portal</span>
+              {shareResult ? (
+                <>
+                  <code className="max-w-[220px] truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
+                    {shareResult}
+                  </code>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(shareResult);
+                      push("Portal link copied");
+                    }}
+                  >
+                    <Copy size={12} /> Copy
+                  </button>
+                  <button
+                    type="button"
+                    className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                    onClick={() => {
+                      updateProjectShare(project.id, "rotate");
+                      push("Portal link rotated");
+                    }}
+                  >
+                    Rotate
+                  </button>
+                  <button
+                    type="button"
+                    className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                    onClick={() => {
+                      updateProjectShare(project.id, "disable");
+                      push("Portal disabled");
+                    }}
+                  >
+                    Disable
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                  onClick={() => {
+                    updateProjectShare(project.id, "enable");
+                    push("Client portal enabled");
+                  }}
+                >
+                  Enable public link
+                </button>
+              )}
+            </div>
           ) : null}
-          {project.notes && (
-            <p className="mt-3 text-sm text-[var(--text-muted)]">{project.notes}</p>
-          )}
+
+          {project.notes ? (
+            <p className="mt-3 text-sm text-[var(--text-muted)]">
+              {project.notes}
+            </p>
+          ) : null}
         </section>
 
         <div className="grid gap-4 lg:grid-cols-3">
-          <section className="rounded-md border border-[var(--border)] p-4 lg:col-span-2">
-            <h2 className="mb-3 text-sm font-semibold">Allocations</h2>
-            {allocations.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">
-                No assignments yet.{" "}
-                <Link href={appHref("/schedule")} className="text-[var(--accent)]">
-                  Book on the schedule
-                </Link>
-              </p>
-            ) : (
-              <table className="w-full text-left text-sm">
-                <thead className="text-xs text-[var(--text-muted)]">
-                  <tr>
-                    <th className="pb-2 font-medium">Person</th>
-                    <th className="pb-2 font-medium">Dates</th>
-                    <th className="pb-2 font-medium">Status</th>
-                    <th className="pb-2 font-medium text-right">Hours</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {allocations.map(({ assignment, person, hours }) => (
-                    <tr
-                      key={assignment.id}
-                      className="border-t border-[var(--border)]"
-                    >
-                      <td className="py-2">{person?.name ?? "—"}</td>
-                      <td className="py-2 text-[var(--text-muted)]">
-                        {assignment.start_date} → {assignment.end_date} ·{" "}
-                        {assignment.hours_per_day}h/d
-                      </td>
-                      <td className="py-2 capitalize">{assignment.status}</td>
-                      <td className="py-2 text-right">
-                        {formatHours(hours)}
-                        {assignment.status === "tentative" && (
-                          <span className="ml-1 text-xs text-[var(--text-muted)]">
-                            (not burned)
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
-
-          <section className="rounded-md border border-[var(--border)] p-4">
-            <h2 className="mb-3 text-sm font-semibold">Forecast $</h2>
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-[var(--text-muted)]">Revenue</dt>
-                <dd>{formatMoney(forecast.revenue)}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-[var(--text-muted)]">Cost</dt>
-                <dd>{formatMoney(forecast.cost)}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-[var(--text-muted)]">Margin</dt>
-                <dd>
-                  {formatMoney(forecast.margin)} (
-                  {forecast.marginPct.toFixed(0)}%)
-                </dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-
-        <section className="rounded-md border border-[var(--border)] p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Milestones</h2>
-            {canManage ? (
-              <button
-                type="button"
-                className="text-xs text-[var(--accent)]"
-                onClick={() =>
-                  setMilestoneForm({
-                    id: newId("ms"),
-                    project_id: project.id,
-                    name: "",
-                    due_date: new Date().toISOString().slice(0, 10),
-                    status: "upcoming",
-                  })
-                }
-              >
-                Add milestone
-              </button>
-            ) : null}
+          <div className="space-y-4 lg:col-span-2">
+            <section className="rounded-md border border-[var(--border)] p-4">
+              {canManage && state.project_templates.length > 0 ? (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <select
+                    className={inputClass + " mt-0 h-8 max-w-[220px]"}
+                    value={templateId}
+                    onChange={(e) => setTemplateId(e.target.value)}
+                  >
+                    <option value="">Load template…</option>
+                    {state.project_templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                    disabled={!templateId}
+                    onClick={async () => {
+                      if (!templateId) return;
+                      await applyProjectTemplate(project.id, templateId);
+                      setTemplateId("");
+                      push("Template applied");
+                    }}
+                  >
+                    Apply
+                  </button>
+                </div>
+              ) : null}
+              <ProjectTaskBoard
+                projectId={project.id}
+                allowCardView
+              />
+            </section>
+            <ProjectNotebook projectId={project.id} />
           </div>
-          {milestones.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No milestones yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {milestones.map((m) => (
-                <li
-                  key={m.id}
-                  className="flex items-center justify-between rounded-md border border-[var(--border)] px-3 py-2 text-sm"
-                >
-                  <div>
-                    <div className="font-medium">{m.name}</div>
-                    <div className="text-xs text-[var(--text-muted)]">
-                      {m.due_date} · {m.status}
-                    </div>
-                  </div>
+
+          <div className="space-y-4">
+            <section className="rounded-md border border-[var(--border)] p-4">
+              <h2 className="mb-3 text-sm font-semibold">Team</h2>
+              {team.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">
+                  No one assigned yet.
+                </p>
+              ) : (
+                <ul className="space-y-1.5 text-sm">
+                  {team.map((p) => (
+                    <li key={p.id} className="flex items-center gap-2">
+                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[10px] font-semibold">
+                        {p.name
+                          .split(" ")
+                          .map((x) => x[0])
+                          .join("")
+                          .slice(0, 2)}
+                      </span>
+                      <span className="min-w-0 truncate">{p.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {!isRetainer ? (
+              <section className="rounded-md border border-[var(--border)] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold">Milestones</h2>
                   {canManage ? (
                     <button
                       type="button"
-                      className="text-xs text-[var(--text-muted)]"
-                      onClick={() => {
-                        deleteMilestone(m.id);
-                        push("Milestone deleted");
-                      }}
+                      className="cursor-pointer text-xs text-[var(--accent)]"
+                      onClick={() =>
+                        setMilestoneForm({
+                          id: newId("ms"),
+                          project_id: project.id,
+                          name: "",
+                          due_date: new Date().toISOString().slice(0, 10),
+                          status: "upcoming",
+                          client_approved: false,
+                        })
+                      }
                     >
-                      Remove
+                      Add
                     </button>
                   ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+                </div>
+                {milestones.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    No milestones yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {milestones.map((m) => (
+                      <li
+                        key={m.id}
+                        className="flex items-center justify-between rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <div className="font-medium">{m.name}</div>
+                          <div className="text-xs text-[var(--text-muted)]">
+                            {m.due_date} · {m.status}
+                            {m.client_approved ? " · approved" : ""}
+                          </div>
+                        </div>
+                        {canManage ? (
+                          <button
+                            type="button"
+                            className="cursor-pointer text-xs text-[var(--text-muted)]"
+                            onClick={() => {
+                              deleteMilestone(m.id);
+                              push("Milestone deleted");
+                            }}
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ) : null}
+
+            <section className="rounded-md border border-[var(--border)] p-4">
+              <h2 className="mb-2 text-sm font-semibold">Budget</h2>
+              <p className="mb-2 text-xs text-[var(--text-muted)]">
+                Financial tracking lives in Reports.
+              </p>
+              <Link
+                href={appHref("/reports/budgets")}
+                className="text-sm text-[var(--accent)] hover:underline"
+              >
+                Open Budgets report →
+              </Link>
+            </section>
+          </div>
+        </div>
       </div>
 
       {canManage && editing && draft && (
@@ -405,14 +526,14 @@ export default function ProjectDetailPage() {
             <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
-                className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
+                className="h-9 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm"
                 onClick={() => setMilestoneForm(null)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                className="h-9 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
                 onClick={() => {
                   if (!milestoneForm.name.trim()) return;
                   upsertMilestone(milestoneForm);

@@ -18,26 +18,45 @@ import {
   ORG_ID,
 } from "@/lib/demo/seed";
 import {
+  applyProjectTemplateRows,
   bootstrapOrganization,
   deleteAssignmentRow,
+  deleteBulletinRow,
   deleteClientRow,
   deleteHolidayCalendarDayRow,
   deleteHolidayCalendarRow,
   deleteLeaveRow,
   deleteMilestoneRow,
   deletePersonRow,
+  deleteProjectAssetRow,
   deleteProjectRow,
+  deleteProjectTemplateRow,
+  deleteTaskCommentRow,
+  deleteTaskListRow,
+  deleteTaskRow,
+  deleteTemplateMilestoneRow,
+  deleteTemplateTaskListRow,
+  deleteTemplateTaskRow,
   ensureProfileForUser,
   fetchWorkspace,
   seedDemoWorkspace,
   upsertAssignmentRow,
+  upsertBulletinRow,
   upsertClientRow,
   upsertHolidayCalendarDayRow,
   upsertHolidayCalendarRow,
   upsertLeaveRow,
   upsertMilestoneRow,
   upsertPersonRow,
+  upsertProjectAssetRow,
   upsertProjectRow,
+  upsertProjectTemplateRow,
+  upsertTaskCommentRow,
+  upsertTaskListRow,
+  upsertTaskRow,
+  upsertTemplateMilestoneRow,
+  upsertTemplateTaskListRow,
+  upsertTemplateTaskRow,
 } from "@/lib/supabase/api";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -45,9 +64,14 @@ import { canManage, personForProfile } from "@/lib/auth/roles";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { workingDaysBetween } from "@/lib/domain/dates";
-import { generateShareToken, publicShareUrl } from "@/lib/share/token";
+import {
+  generateShareToken,
+  publicProjectShareUrl,
+  publicShareUrl,
+} from "@/lib/share/token";
 import type {
   Assignment,
+  Bulletin,
   Client,
   DemoState,
   HolidayCalendar,
@@ -58,6 +82,14 @@ import type {
   Person,
   Profile,
   Project,
+  ProjectAsset,
+  ProjectTemplate,
+  Task,
+  TaskComment,
+  TaskList,
+  TemplateMilestone,
+  TemplateTask,
+  TemplateTaskList,
 } from "@/lib/types";
 
 function uid(prefix: string): string {
@@ -105,10 +137,17 @@ function loadDemoState(): DemoState {
         budget_monthly_reset: Boolean(p.budget_monthly_reset),
         budget_hours: p.budget_hours ?? null,
         budget_amount: p.budget_amount ?? null,
+        share_enabled: Boolean(p.share_enabled),
+        share_token: p.share_token ?? null,
       })),
       clients: (parsed.clients ?? seed.clients).map((c) => ({
         ...c,
         color: c.color ?? "#64748B",
+        status: c.status ?? "active",
+      })),
+      milestones: (parsed.milestones ?? seed.milestones).map((m) => ({
+        ...m,
+        client_approved: Boolean(m.client_approved),
       })),
       organization: {
         ...seed.organization,
@@ -116,6 +155,17 @@ function loadDemoState(): DemoState {
         share_enabled: Boolean(parsed.organization?.share_enabled),
         share_token: parsed.organization?.share_token ?? null,
       },
+      project_assets: parsed.project_assets ?? seed.project_assets,
+      task_lists: parsed.task_lists ?? seed.task_lists,
+      tasks: parsed.tasks ?? seed.tasks,
+      task_comments: parsed.task_comments ?? seed.task_comments,
+      bulletins: parsed.bulletins ?? seed.bulletins,
+      project_templates: parsed.project_templates ?? seed.project_templates,
+      template_milestones:
+        parsed.template_milestones ?? seed.template_milestones,
+      template_task_lists:
+        parsed.template_task_lists ?? seed.template_task_lists,
+      template_tasks: parsed.template_tasks ?? seed.template_tasks,
       sessionProfileId: session,
     };
   } catch {
@@ -135,6 +185,15 @@ function emptySupabaseState(): DemoState {
     leave_days: [],
     holiday_calendars: [],
     holiday_calendar_days: [],
+    project_assets: [],
+    task_lists: [],
+    tasks: [],
+    task_comments: [],
+    bulletins: [],
+    project_templates: [],
+    template_milestones: [],
+    template_task_lists: [],
+    template_tasks: [],
     sessionProfileId: null,
   };
 }
@@ -239,6 +298,70 @@ interface DataContextValue {
   deleteHolidayCalendarDay: (id: string) => void;
   /** Create statutory leave_days for people assigned to this calendar. */
   applyHolidayCalendar: (calendarId: string) => Promise<number>;
+  upsertProjectAsset: (
+    asset: Omit<ProjectAsset, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteProjectAsset: (id: string) => void;
+  upsertTaskList: (
+    list: Omit<TaskList, "organization_id"> & { organization_id?: string },
+  ) => void;
+  deleteTaskList: (id: string) => void;
+  /**
+   * Members can update status/notes on tasks assigned to them; managers can
+   * edit any task. UI is expected to gate the editable fields per role.
+   */
+  upsertTask: (
+    task: Omit<Task, "organization_id"> & { organization_id?: string },
+  ) => void;
+  deleteTask: (id: string) => void;
+  upsertTaskComment: (
+    comment: Omit<TaskComment, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteTaskComment: (id: string) => void;
+  upsertBulletin: (
+    bulletin: Omit<Bulletin, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteBulletin: (id: string) => void;
+  upsertProjectTemplate: (
+    template: Omit<ProjectTemplate, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteProjectTemplate: (id: string) => void;
+  upsertTemplateMilestone: (
+    milestone: Omit<TemplateMilestone, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteTemplateMilestone: (id: string) => void;
+  upsertTemplateTaskList: (
+    list: Omit<TemplateTaskList, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteTemplateTaskList: (id: string) => void;
+  upsertTemplateTask: (
+    task: Omit<TemplateTask, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => void;
+  deleteTemplateTask: (id: string) => void;
+  /** Instantiate a template's milestones/task lists/tasks onto a project. */
+  applyProjectTemplate: (
+    projectId: string,
+    templateId: string,
+  ) => Promise<void>;
+  /** Enable/disable/rotate a project's public client-portal share link. */
+  updateProjectShare: (
+    projectId: string,
+    action: "enable" | "disable" | "rotate",
+  ) => { enabled: boolean; token: string | null; url: string | null };
   newId: (prefix: string) => string;
 }
 
@@ -1213,6 +1336,437 @@ export function DataProvider({ children }: { children: ReactNode }) {
           });
         }
         return created.length;
+      },
+      upsertProjectAsset: (asset) => {
+        const row = withOrg(asset) as ProjectAsset;
+        patch((prev) => {
+          const exists = prev.project_assets.some((a) => a.id === row.id);
+          return {
+            ...prev,
+            project_assets: exists
+              ? prev.project_assets.map((a) => (a.id === row.id ? row : a))
+              : [...prev.project_assets, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertProjectAssetRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteProjectAsset: (id) => {
+        patch((prev) => ({
+          ...prev,
+          project_assets: prev.project_assets.filter((a) => a.id !== id),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteProjectAssetRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      upsertTaskList: (list) => {
+        const row = withOrg(list) as TaskList;
+        patch((prev) => {
+          const exists = prev.task_lists.some((l) => l.id === row.id);
+          return {
+            ...prev,
+            task_lists: exists
+              ? prev.task_lists.map((l) => (l.id === row.id ? row : l))
+              : [...prev.task_lists, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() => upsertTaskListRow(supabaseRef.current!, row));
+        }
+      },
+      deleteTaskList: (id) => {
+        patch((prev) => ({
+          ...prev,
+          task_lists: prev.task_lists.filter((l) => l.id !== id),
+          tasks: prev.tasks.filter((t) => t.list_id !== id),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() => deleteTaskListRow(supabaseRef.current!, id));
+        }
+      },
+      upsertTask: (task) => {
+        // Members may only touch tasks assigned to them; managers can edit any.
+        // The UI is expected to gate non-status fields for members, but the
+        // store still allows the write here since role checks already ran.
+        if (
+          !manage &&
+          myPerson &&
+          task.assignee_person_id !== myPerson.id
+        ) {
+          return;
+        }
+        const row = withOrg(task) as Task;
+        patch((prev) => {
+          const exists = prev.tasks.some((t) => t.id === row.id);
+          return {
+            ...prev,
+            tasks: exists
+              ? prev.tasks.map((t) => (t.id === row.id ? row : t))
+              : [...prev.tasks, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() => upsertTaskRow(supabaseRef.current!, row));
+        }
+      },
+      deleteTask: (id) => {
+        patch((prev) => ({
+          ...prev,
+          tasks: prev.tasks.filter((t) => t.id !== id && t.parent_id !== id),
+          task_comments: prev.task_comments.filter((c) => c.task_id !== id),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() => deleteTaskRow(supabaseRef.current!, id));
+        }
+      },
+      upsertTaskComment: (comment) => {
+        const row = withOrg(comment) as TaskComment;
+        patch((prev) => {
+          const exists = prev.task_comments.some((c) => c.id === row.id);
+          return {
+            ...prev,
+            task_comments: exists
+              ? prev.task_comments.map((c) => (c.id === row.id ? row : c))
+              : [...prev.task_comments, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertTaskCommentRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteTaskComment: (id) => {
+        patch((prev) => ({
+          ...prev,
+          task_comments: prev.task_comments.filter((c) => c.id !== id),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteTaskCommentRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      upsertBulletin: (bulletin) => {
+        const row = withOrg(bulletin) as Bulletin;
+        patch((prev) => {
+          const exists = prev.bulletins.some((b) => b.id === row.id);
+          return {
+            ...prev,
+            bulletins: exists
+              ? prev.bulletins.map((b) => (b.id === row.id ? row : b))
+              : [...prev.bulletins, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() => upsertBulletinRow(supabaseRef.current!, row));
+        }
+      },
+      deleteBulletin: (id) => {
+        patch((prev) => ({
+          ...prev,
+          bulletins: prev.bulletins.filter((b) => b.id !== id),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() => deleteBulletinRow(supabaseRef.current!, id));
+        }
+      },
+      upsertProjectTemplate: (template) => {
+        const row = withOrg(template) as ProjectTemplate;
+        patch((prev) => {
+          const exists = prev.project_templates.some((t) => t.id === row.id);
+          return {
+            ...prev,
+            project_templates: exists
+              ? prev.project_templates.map((t) =>
+                  t.id === row.id ? row : t,
+                )
+              : [...prev.project_templates, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertProjectTemplateRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteProjectTemplate: (id) => {
+        patch((prev) => ({
+          ...prev,
+          project_templates: prev.project_templates.filter(
+            (t) => t.id !== id,
+          ),
+          template_milestones: prev.template_milestones.filter(
+            (m) => m.template_id !== id,
+          ),
+          template_task_lists: prev.template_task_lists.filter(
+            (l) => l.template_id !== id,
+          ),
+          template_tasks: prev.template_tasks.filter(
+            (t) => t.template_id !== id,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteProjectTemplateRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      upsertTemplateMilestone: (milestone) => {
+        const row = withOrg(milestone) as TemplateMilestone;
+        patch((prev) => {
+          const exists = prev.template_milestones.some(
+            (m) => m.id === row.id,
+          );
+          return {
+            ...prev,
+            template_milestones: exists
+              ? prev.template_milestones.map((m) =>
+                  m.id === row.id ? row : m,
+                )
+              : [...prev.template_milestones, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertTemplateMilestoneRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteTemplateMilestone: (id) => {
+        patch((prev) => ({
+          ...prev,
+          template_milestones: prev.template_milestones.filter(
+            (m) => m.id !== id,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteTemplateMilestoneRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      upsertTemplateTaskList: (list) => {
+        const row = withOrg(list) as TemplateTaskList;
+        patch((prev) => {
+          const exists = prev.template_task_lists.some(
+            (l) => l.id === row.id,
+          );
+          return {
+            ...prev,
+            template_task_lists: exists
+              ? prev.template_task_lists.map((l) =>
+                  l.id === row.id ? row : l,
+                )
+              : [...prev.template_task_lists, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertTemplateTaskListRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteTemplateTaskList: (id) => {
+        patch((prev) => ({
+          ...prev,
+          template_task_lists: prev.template_task_lists.filter(
+            (l) => l.id !== id,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteTemplateTaskListRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      upsertTemplateTask: (task) => {
+        const row = withOrg(task) as TemplateTask;
+        patch((prev) => {
+          const exists = prev.template_tasks.some((t) => t.id === row.id);
+          return {
+            ...prev,
+            template_tasks: exists
+              ? prev.template_tasks.map((t) => (t.id === row.id ? row : t))
+              : [...prev.template_tasks, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertTemplateTaskRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteTemplateTask: (id) => {
+        patch((prev) => ({
+          ...prev,
+          template_tasks: prev.template_tasks.filter((t) => t.id !== id),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            deleteTemplateTaskRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      applyProjectTemplate: async (projectId, templateId) => {
+        const tMilestones = state.template_milestones.filter(
+          (m) => m.template_id === templateId,
+        );
+        const tLists = state.template_task_lists.filter(
+          (l) => l.template_id === templateId,
+        );
+        const tTasks = state.template_tasks.filter(
+          (t) => t.template_id === templateId,
+        );
+
+        const anchor = new Date();
+        const offsetDate = (offset: number | null): string | null => {
+          if (offset == null) return null;
+          const next = new Date(anchor);
+          next.setDate(next.getDate() + offset);
+          return next.toISOString().slice(0, 10);
+        };
+        const anchorDate = anchor.toISOString().slice(0, 10);
+        const organizationId = state.organization.id || orgId;
+
+        const milestoneIdMap = new Map<string, string>();
+        const newMilestones: Milestone[] = tMilestones.map((m) => {
+          const id = uid("ms");
+          milestoneIdMap.set(m.id, id);
+          return {
+            id,
+            organization_id: organizationId,
+            project_id: projectId,
+            name: m.name,
+            due_date: offsetDate(m.offset_days) ?? anchorDate,
+            status: "upcoming",
+            client_approved: false,
+          };
+        });
+
+        const listIdMap = new Map<string, string>();
+        const newLists: TaskList[] = tLists.map((l) => {
+          const id = uid("list");
+          listIdMap.set(l.id, id);
+          return {
+            id,
+            organization_id: organizationId,
+            project_id: projectId,
+            milestone_id: l.template_milestone_id
+              ? milestoneIdMap.get(l.template_milestone_id) ?? null
+              : null,
+            name: l.name,
+            sort_order: l.sort_order,
+          };
+        });
+
+        const taskIdMap = new Map<string, string>();
+        for (const t of tTasks) taskIdMap.set(t.id, uid("task"));
+        const newTasks: Task[] = tTasks.map((t) => ({
+          id: taskIdMap.get(t.id)!,
+          organization_id: organizationId,
+          project_id: projectId,
+          list_id: listIdMap.get(t.list_id) ?? "",
+          parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
+          assignee_person_id: null,
+          title: t.title,
+          status: "upcoming",
+          start_date: null,
+          due_date: offsetDate(t.offset_days),
+          notes: t.notes,
+          sort_order: t.sort_order,
+        }));
+
+        patch((prev) => ({
+          ...prev,
+          milestones: [...prev.milestones, ...newMilestones],
+          task_lists: [...prev.task_lists, ...newLists],
+          tasks: [...prev.tasks, ...newTasks],
+        }));
+
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            applyProjectTemplateRows(supabaseRef.current!, {
+              organizationId,
+              projectId,
+              startDate: anchorDate,
+              milestones: newMilestones.map((m) => ({
+                id: m.id,
+                name: m.name,
+                due_date: m.due_date,
+                status: "upcoming" as const,
+              })),
+              taskLists: newLists.map((l) => ({
+                id: l.id,
+                milestone_id: l.milestone_id,
+                name: l.name,
+                sort_order: l.sort_order,
+              })),
+              tasks: newTasks.map((t) => ({
+                id: t.id,
+                list_id: t.list_id,
+                parent_id: t.parent_id,
+                title: t.title,
+                notes: t.notes,
+                due_date: t.due_date,
+                sort_order: t.sort_order,
+              })),
+            }),
+          );
+        }
+      },
+      updateProjectShare: (projectId, action) => {
+        let result = {
+          enabled: false,
+          token: null as string | null,
+          url: null as string | null,
+        };
+        let updatedProject: Project | null = null;
+        patch((prev) => {
+          const project = prev.projects.find((p) => p.id === projectId);
+          if (!project) return prev;
+          let share_enabled = Boolean(project.share_enabled);
+          let share_token = project.share_token ?? null;
+          if (action === "disable") {
+            share_enabled = false;
+          } else if (action === "enable") {
+            share_enabled = true;
+            if (!share_token) share_token = generateShareToken();
+          } else {
+            share_enabled = true;
+            share_token = generateShareToken();
+          }
+          const row: Project = { ...project, share_enabled, share_token };
+          updatedProject = row;
+          const origin =
+            typeof window !== "undefined" ? window.location.origin : "";
+          result = {
+            enabled: share_enabled,
+            token: share_enabled ? share_token : null,
+            url:
+              share_enabled && share_token
+                ? publicProjectShareUrl(origin, share_token)
+                : null,
+          };
+          return {
+            ...prev,
+            projects: prev.projects.map((p) =>
+              p.id === projectId ? row : p,
+            ),
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current && updatedProject) {
+          runRemoteSoft(() =>
+            upsertProjectRow(supabaseRef.current!, updatedProject!),
+          );
+        }
+        return result;
       },
     }),
     [

@@ -50,6 +50,12 @@ export default function ProjectsPage() {
 
   const projects = sortProjectsByClientThenName(state.projects, state.clients);
   const clients = sortClientsByName(state.clients);
+  // Archived clients keep their projects visible in the grouped list, but
+  // don't clutter the sidebar's quick-filter navigation by default.
+  const sidebarClients = useMemo(
+    () => clients.filter((c) => (c.status ?? "active") !== "archived"),
+    [clients],
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -165,7 +171,7 @@ export default function ProjectsPage() {
                 label="All clients"
                 count={projects.length}
               />
-              {clients.map((client) => (
+              {sidebarClients.map((client) => (
                 <ClientNavButton
                   key={client.id}
                   active={clientFilter === client.id}
@@ -209,7 +215,7 @@ export default function ProjectsPage() {
                 onClick={() => setClientFilter("all")}
                 label="All"
               />
-              {clients.map((c) => (
+              {sidebarClients.map((c) => (
                 <MobileClientChip
                   key={c.id}
                   active={clientFilter === c.id}

@@ -11,3 +11,8 @@ export function generateShareToken(): string {
 export function publicShareUrl(origin: string, token: string): string {
   return `${origin.replace(/\/$/, "")}/share/${token}`;
 }
+
+/** Per-project client portal link (separate token space from org share). */
+export function publicProjectShareUrl(origin: string, token: string): string {
+  return `${origin.replace(/\/$/, "")}/share/project/${token}`;
+}

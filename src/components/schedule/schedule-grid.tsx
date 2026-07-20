@@ -6,6 +6,8 @@ import { format, isWeekend, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass } from "@/components/ui/form";
+import { ProjectTaskBoard } from "@/components/projects/project-task-board";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
@@ -102,6 +104,7 @@ export function ScheduleGrid() {
     authError,
   } = useData();
   const { push } = useToast();
+  const appHref = useAppHref();
   const isNarrow = useMediaQuery("(max-width: 1023px)");
   const isCoarse = useMediaQuery("(pointer: coarse)");
   const DAY_W = isNarrow ? DAY_W_MOBILE : DAY_W_DESKTOP;
@@ -131,6 +134,9 @@ export function ScheduleGrid() {
   /** User's preferred minimized state (restored after temporary expand for editing). */
   const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(true);
   const [sidebarMinimized, setSidebarMinimized] = useState(true);
+  const [sidebarPanelTab, setSidebarPanelTab] = useState<"edit" | "tasks">(
+    "edit",
+  );
   const sidebarPreferMinimizedRef = useRef(true);
   sidebarPreferMinimizedRef.current = sidebarPreferMinimized;
   const [draft, setDraft] = useState<{
@@ -2629,6 +2635,50 @@ export function ScheduleGrid() {
             </button>
           </div>
         ) : canManage && editForm ? (
+          <div className="flex flex-col">
+            <div className="flex border-b border-[var(--border)] px-4">
+              <button
+                type="button"
+                className={cn(
+                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                  sidebarPanelTab === "edit"
+                    ? "border-[var(--accent)] text-[var(--text)]"
+                    : "border-transparent text-[var(--text-muted)]",
+                )}
+                onClick={() => setSidebarPanelTab("edit")}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                  sidebarPanelTab === "tasks"
+                    ? "border-[var(--accent)] text-[var(--text)]"
+                    : "border-transparent text-[var(--text-muted)]",
+                )}
+                onClick={() => setSidebarPanelTab("tasks")}
+              >
+                Tasks
+              </button>
+            </div>
+            <div className="border-b border-[var(--border)] px-4 py-2">
+              <Link
+                href={appHref(`/projects/${editForm.project_id}`)}
+                className="text-xs font-medium text-[var(--accent)] hover:underline"
+              >
+                Open full project →
+              </Link>
+            </div>
+            {sidebarPanelTab === "tasks" ? (
+              <div className="p-3">
+                <ProjectTaskBoard
+                  projectId={editForm.project_id}
+                  readOnly
+                  compact
+                />
+              </div>
+            ) : (
           <div className="space-y-3 p-4">
             <Field label="Project">
               <select
@@ -2841,7 +2891,53 @@ export function ScheduleGrid() {
               </button>
             </div>
           </div>
+            )}
+          </div>
         ) : selected ? (
+          <div className="flex flex-col">
+            <div className="flex border-b border-[var(--border)] px-4">
+              <button
+                type="button"
+                className={cn(
+                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                  sidebarPanelTab === "edit"
+                    ? "border-[var(--accent)] text-[var(--text)]"
+                    : "border-transparent text-[var(--text-muted)]",
+                )}
+                onClick={() => setSidebarPanelTab("edit")}
+              >
+                Details
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                  sidebarPanelTab === "tasks"
+                    ? "border-[var(--accent)] text-[var(--text)]"
+                    : "border-transparent text-[var(--text-muted)]",
+                )}
+                onClick={() => setSidebarPanelTab("tasks")}
+              >
+                Tasks
+              </button>
+            </div>
+            <div className="border-b border-[var(--border)] px-4 py-2">
+              <Link
+                href={appHref(`/projects/${selected.project_id}`)}
+                className="text-xs font-medium text-[var(--accent)] hover:underline"
+              >
+                Open full project →
+              </Link>
+            </div>
+            {sidebarPanelTab === "tasks" ? (
+              <div className="p-3">
+                <ProjectTaskBoard
+                  projectId={selected.project_id}
+                  readOnly
+                  compact
+                />
+              </div>
+            ) : (
           <ReadOnlyAssignmentDetails
             assignment={selected}
             project={projectsById.get(selected.project_id)}
@@ -2854,6 +2950,8 @@ export function ScheduleGrid() {
                 : "#64748B"
             }
           />
+            )}
+          </div>
         ) : (
           <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">
             {canManage ? (

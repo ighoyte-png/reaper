@@ -20,6 +20,11 @@ const reports = [
     title: "Financial forecast",
     description: "Revenue, cost, and margin implied by the schedule.",
   },
+  {
+    path: "/reports/tasks",
+    title: "Tasks",
+    description: "Overdue tasks, tasks missing a due date, and recent completions.",
+  },
 ];
 
 export default function ReportsPage() {
