@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { ExternalLink, Mail } from "lucide-react";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { createDemoSeed, DEMO_STORAGE_KEY } from "@/lib/demo/seed";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -173,25 +174,36 @@ export default function ProjectSharePage() {
       {teamSorted.length > 0 ? (
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Team</h2>
-          <ul className="flex flex-wrap gap-3">
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {teamSorted.map((member) => (
-              <li key={member.email || member.name} className="text-sm">
-                <span className="font-medium">{member.name}</span>
-                {member.title ? (
-                  <span className="text-[var(--text-muted)]">
-                    {" "}
-                    · {member.title}
-                  </span>
-                ) : null}
-                {member.email ? (
-                  <a
-                    href={`mailto:${member.email}`}
-                    className="ml-1.5 inline-flex items-center gap-1 text-[var(--accent)] hover:underline"
-                  >
-                    <Mail size={11} />
-                    {member.email}
-                  </a>
-                ) : null}
+              <li
+                key={member.email || member.name}
+                className="flex flex-col gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3"
+              >
+                <PersonAvatar
+                  avatarUrl={member.avatar_url}
+                  name={member.name}
+                  size="lg"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">
+                    {member.name}
+                  </div>
+                  {member.title ? (
+                    <div className="truncate text-xs text-[var(--text-muted)]">
+                      {member.title}
+                    </div>
+                  ) : null}
+                  {member.email ? (
+                    <a
+                      href={`mailto:${member.email}`}
+                      className="mt-1 inline-flex items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                    >
+                      <Mail size={11} />
+                      {member.email}
+                    </a>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>

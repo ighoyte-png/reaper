@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
@@ -20,6 +21,11 @@ import {
   leaveKindLabel,
   normalizeLeaveKind,
 } from "@/lib/domain/leave";
+import { createClient } from "@/lib/supabase/client";
+import {
+  readFileAsDataUrl,
+  uploadPersonAvatar,
+} from "@/lib/supabase/avatar";
 
 const emptyPerson = (): Omit<Person, "organization_id"> => ({
   id: "",
@@ -34,6 +40,7 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   bill_rate: 140,
   timezone: "America/Los_Angeles",
   holiday_calendar_id: null,
+  avatar_url: null,
 });
 
 export default function PeoplePage() {
@@ -56,6 +63,9 @@ export default function PeoplePage() {
   );
   const [isNewPerson, setIsNewPerson] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [inviteTarget, setInviteTarget] = useState<Person | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -191,9 +201,24 @@ export default function PeoplePage() {
 
     setSaveBusy(true);
     try {
-      const row = { ...editing, email };
+      let avatar_url = editing.avatar_url;
+      if (avatarFile) {
+        if (mode === "supabase") {
+          const supabase = createClient();
+          avatar_url = await uploadPersonAvatar(
+            supabase,
+            editing.id,
+            avatarFile,
+          );
+        } else {
+          avatar_url = await readFileAsDataUrl(avatarFile);
+        }
+      }
+      const row = { ...editing, email, avatar_url };
       await upsertPerson(row);
       setEditing(null);
+      setAvatarFile(null);
+      setAvatarPreview(null);
 
       if (isNewPerson && email && !row.profile_id) {
         setInviteEmail(email);
@@ -213,6 +238,13 @@ export default function PeoplePage() {
     }
   }
 
+  function openEdit(person: Omit<Person, "organization_id">, isNew: boolean) {
+    setIsNewPerson(isNew);
+    setEditing(person);
+    setAvatarFile(null);
+    setAvatarPreview(person.avatar_url);
+  }
+
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader
@@ -223,8 +255,7 @@ export default function PeoplePage() {
               type="button"
               className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
               onClick={() => {
-                setIsNewPerson(true);
-                setEditing({ ...emptyPerson(), id: newId("person") });
+                openEdit({ ...emptyPerson(), id: newId("person") }, true);
               }}
             >
               Add person
@@ -246,8 +277,7 @@ export default function PeoplePage() {
               title="No people yet"
               cta="Add your first person"
               onClick={() => {
-                setIsNewPerson(true);
-                setEditing({ ...emptyPerson(), id: newId("person") });
+                openEdit({ ...emptyPerson(), id: newId("person") }, true);
               }}
             />
           ) : (
@@ -299,9 +329,18 @@ export default function PeoplePage() {
                       className="border-t border-[var(--border)] hover:bg-[var(--row-hover)]"
                     >
                       <td className="px-3 py-2.5">
-                        <div className="font-medium">{person.name}</div>
-                        <div className="text-xs text-[var(--text-muted)]">
-                          {person.department || "—"} · {person.office || "—"}
+                        <div className="flex items-center gap-2.5">
+                          <PersonAvatar
+                            avatarUrl={person.avatar_url}
+                            name={person.name}
+                            size="sm"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-medium">{person.name}</div>
+                            <div className="text-xs text-[var(--text-muted)]">
+                              {person.department || "—"} · {person.office || "—"}
+                            </div>
+                          </div>
                         </div>
                       </td>
                       <td className="px-3 py-2.5">{person.role_title || "—"}</td>
@@ -377,8 +416,7 @@ export default function PeoplePage() {
                           type="button"
                           className="ml-3 text-xs text-[var(--accent)]"
                           onClick={() => {
-                            setIsNewPerson(false);
-                            setEditing(person);
+                            openEdit(person, false);
                           }}
                         >
                           Edit
@@ -429,9 +467,58 @@ export default function PeoplePage() {
           onClose={() => {
             setEditing(null);
             setIsNewPerson(false);
+            setAvatarFile(null);
+            setAvatarPreview(null);
           }}
         >
           <div className="grid gap-3">
+            <Field label="Photo">
+              <div className="flex items-center gap-3">
+                <PersonAvatar
+                  avatarUrl={avatarPreview}
+                  name={editing.name}
+                  size="lg"
+                />
+                <div className="flex flex-col gap-1.5">
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (!file) return;
+                      setAvatarFile(file);
+                      const url = URL.createObjectURL(file);
+                      setAvatarPreview(url);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="h-8 w-fit rounded-md border border-[var(--border)] px-2.5 text-xs"
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    {avatarPreview ? "Change photo" : "Upload photo"}
+                  </button>
+                  {avatarPreview ? (
+                    <button
+                      type="button"
+                      className="w-fit text-xs text-[var(--text-muted)]"
+                      onClick={() => {
+                        setAvatarFile(null);
+                        setAvatarPreview(null);
+                        setEditing({ ...editing, avatar_url: null });
+                        if (avatarInputRef.current) {
+                          avatarInputRef.current.value = "";
+                        }
+                      }}
+                    >
+                      Remove photo
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </Field>
             <Field label="Name">
               <input
                 className={inputClass}
@@ -565,6 +652,8 @@ export default function PeoplePage() {
                   onClick={() => {
                     setEditing(null);
                     setIsNewPerson(false);
+                    setAvatarFile(null);
+                    setAvatarPreview(null);
                   }}
                 >
                   Cancel

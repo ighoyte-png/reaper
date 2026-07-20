@@ -137,6 +137,9 @@ export interface Bulletin {
   title: string;
   body: string;
   pinned: boolean;
+  /** all = everyone; people = audience_person_ids only */
+  audience: "all" | "people";
+  audience_person_ids: string[];
   created_by_profile_id: string | null;
   created_at: string;
 }
@@ -194,6 +197,8 @@ export interface Person {
   timezone: string;
   /** Optional holiday calendar (statutory dates applied into leave_days). */
   holiday_calendar_id: string | null;
+  /** Public URL for profile photo (Storage or data URL in demo). */
+  avatar_url: string | null;
 }
 
 export interface HolidayCalendar {

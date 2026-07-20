@@ -156,6 +156,11 @@ function mapTaskComment(row: Record<string, unknown>): TaskComment {
 }
 
 function mapBulletin(row: Record<string, unknown>): Bulletin {
+  const audienceRaw = String(row.audience ?? "all");
+  const audience = audienceRaw === "people" ? "people" : "all";
+  const ids = Array.isArray(row.audience_person_ids)
+    ? (row.audience_person_ids as unknown[]).map(String)
+    : [];
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -163,6 +168,8 @@ function mapBulletin(row: Record<string, unknown>): Bulletin {
     title: String(row.title ?? ""),
     body: String(row.body ?? ""),
     pinned: Boolean(row.pinned),
+    audience,
+    audience_person_ids: ids,
     created_by_profile_id: row.created_by_profile_id
       ? String(row.created_by_profile_id)
       : null,
@@ -234,6 +241,7 @@ function mapPerson(row: Record<string, unknown>): Person {
     holiday_calendar_id: row.holiday_calendar_id
       ? String(row.holiday_calendar_id)
       : null,
+    avatar_url: row.avatar_url ? String(row.avatar_url) : null,
   };
 }
 
@@ -740,6 +748,7 @@ export async function upsertPersonRow(
     bill_rate: person.bill_rate,
     timezone: person.timezone,
     holiday_calendar_id: person.holiday_calendar_id,
+    avatar_url: person.avatar_url,
   };
   const { error } = await supabase.from("people").upsert(payload);
   if (!error) return;
@@ -750,13 +759,20 @@ export async function upsertPersonRow(
   const missingCalCol =
     /Could not find the 'holiday_calendar_id' column/i.test(error.message) ||
     (error.code === "PGRST204" && /holiday_calendar_id/i.test(error.message));
+  const missingAvatarCol =
+    /Could not find the 'avatar_url' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /avatar_url/i.test(error.message));
 
-  if (missingEmailCol || missingCalCol) {
-    const { email: _e, holiday_calendar_id: _c, ...rest } = payload;
+  if (missingEmailCol || missingCalCol || missingAvatarCol) {
+    const { email: _e, holiday_calendar_id: _c, avatar_url: _a, ...rest } =
+      payload;
     const retryPayload = {
       ...rest,
       ...(missingEmailCol ? {} : { email: payload.email }),
-      ...(missingCalCol ? {} : { holiday_calendar_id: payload.holiday_calendar_id }),
+      ...(missingCalCol
+        ? {}
+        : { holiday_calendar_id: payload.holiday_calendar_id }),
+      ...(missingAvatarCol ? {} : { avatar_url: payload.avatar_url }),
     };
     const retry = await supabase.from("people").upsert(retryPayload);
     if (retry.error) throw retry.error;
@@ -768,6 +784,11 @@ export async function upsertPersonRow(
     if (missingEmailCol) {
       console.warn(
         "people.email column missing — ran upsert without it. Apply supabase/migrations/004_people_email.sql",
+      );
+    }
+    if (missingAvatarCol) {
+      console.warn(
+        "people.avatar_url missing — apply supabase/migrations/019_people_avatar_url.sql",
       );
     }
     return;
@@ -1113,17 +1134,40 @@ export async function upsertBulletinRow(
   supabase: SupabaseClient,
   bulletin: Bulletin,
 ) {
-  const { error } = await supabase.from("bulletins").upsert({
+  const payload = {
     id: bulletin.id,
     organization_id: bulletin.organization_id,
     project_id: bulletin.project_id,
     title: bulletin.title,
     body: bulletin.body,
     pinned: bulletin.pinned,
+    audience: bulletin.audience,
+    audience_person_ids: bulletin.audience_person_ids,
     created_by_profile_id: bulletin.created_by_profile_id,
     created_at: bulletin.created_at,
-  });
-  if (error) throw error;
+  };
+  const { error } = await supabase.from("bulletins").upsert(payload);
+  if (!error) return;
+
+  const missingAudience =
+    /Could not find the 'audience'/i.test(error.message) ||
+    /audience_person_ids/i.test(error.message) ||
+    (error.code === "PGRST204" && /audience/i.test(error.message));
+  if (missingAudience) {
+    const {
+      audience: _a,
+      audience_person_ids: _ids,
+      ...rest
+    } = payload;
+    const retry = await supabase.from("bulletins").upsert(rest);
+    if (retry.error) throw retry.error;
+    console.warn(
+      "bulletins.audience missing — apply supabase/migrations/020_bulletin_audience.sql",
+    );
+    return;
+  }
+
+  throw error;
 }
 
 export async function deleteBulletinRow(supabase: SupabaseClient, id: string) {
@@ -1373,6 +1417,7 @@ export async function seedDemoWorkspace(
     holiday_calendar_id: p.holiday_calendar_id
       ? remapId(ids, p.holiday_calendar_id)
       : null,
+    avatar_url: p.avatar_url,
   }));
 
   const calendars = seed.holiday_calendars.map((c) => ({
@@ -1446,6 +1491,10 @@ export async function seedDemoWorkspace(
     title: b.title,
     body: b.body,
     pinned: b.pinned,
+    audience: b.audience ?? "all",
+    audience_person_ids: (b.audience_person_ids ?? []).map((pid) =>
+      remapId(ids, pid),
+    ),
     // Demo authors are not real profiles in a fresh org — omit attribution.
     created_by_profile_id: null as string | null,
     created_at: b.created_at,

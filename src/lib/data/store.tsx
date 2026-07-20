@@ -116,6 +116,7 @@ function loadDemoState(): DemoState {
       people: (parsed.people ?? []).map((p) => ({
         ...p,
         holiday_calendar_id: p.holiday_calendar_id ?? null,
+        avatar_url: p.avatar_url ?? null,
       })),
       leave_days: (parsed.leave_days ?? seed.leave_days).map((l) => ({
         ...l,
@@ -164,7 +165,13 @@ function loadDemoState(): DemoState {
       })),
       tasks: parsed.tasks ?? seed.tasks,
       task_comments: parsed.task_comments ?? seed.task_comments,
-      bulletins: parsed.bulletins ?? seed.bulletins,
+      bulletins: (parsed.bulletins ?? seed.bulletins).map((b) => ({
+        ...b,
+        audience: b.audience === "people" ? "people" : "all",
+        audience_person_ids: Array.isArray(b.audience_person_ids)
+          ? b.audience_person_ids
+          : [],
+      })),
       project_templates: parsed.project_templates ?? seed.project_templates,
       template_milestones:
         parsed.template_milestones ?? seed.template_milestones,

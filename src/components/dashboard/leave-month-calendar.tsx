@@ -7,25 +7,38 @@ import {
   endOfWeek,
   format,
   isSameMonth,
+  parseISO,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
+import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { toDateKey } from "@/lib/domain/dates";
-import type { LeaveDay } from "@/lib/types";
+import { leaveKindLabel } from "@/lib/domain/leave";
+import type { LeaveDay, Person } from "@/lib/types";
 
 export function LeaveMonthCalendar({
   month,
   leaveDays,
+  people,
 }: {
   month: Date;
   leaveDays: LeaveDay[];
+  people?: Person[];
 }) {
+  const peopleById = useMemo(() => {
+    const map = new Map<string, Person>();
+    for (const p of people ?? []) map.set(p.id, p);
+    return map;
+  }, [people]);
+
   const leaveByDay = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, LeaveDay[]>();
     for (const l of leaveDays) {
       if (l.status !== "approved") continue;
-      map.set(l.date, (map.get(l.date) ?? 0) + 1);
+      const list = map.get(l.date) ?? [];
+      list.push(l);
+      map.set(l.date, list);
     }
     return map;
   }, [leaveDays]);
@@ -54,11 +67,36 @@ export function LeaveMonthCalendar({
         {cells.map((day) => {
           const key = toDateKey(day);
           const inMonth = isSameMonth(day, month);
-          const count = leaveByDay.get(key) ?? 0;
+          const dayLeave = leaveByDay.get(key) ?? [];
+          const count = dayLeave.length;
           const isToday = key === todayKey;
-          return (
+
+          const tipContent =
+            count > 0 ? (
+              <div className="space-y-1.5">
+                <div className="font-medium">
+                  {format(parseISO(key), "MMM d")}
+                </div>
+                {dayLeave.map((l) => {
+                  const person = peopleById.get(l.person_id);
+                  return (
+                    <div key={l.id} className="space-y-0.5">
+                      <div>
+                        {person?.name ?? "Person"} · {leaveKindLabel(l.kind)}
+                      </div>
+                      {l.notes?.trim() ? (
+                        <div className="text-[var(--text-muted)]">
+                          {l.notes.trim()}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null;
+
+          const cell = (
             <div
-              key={key}
               className={cn(
                 "relative flex aspect-square flex-col items-center justify-center rounded-md text-xs",
                 !inMonth && "opacity-30",
@@ -67,11 +105,6 @@ export function LeaveMonthCalendar({
                   : "text-[var(--text-muted)]",
                 isToday && "ring-1 ring-[var(--accent)]",
               )}
-              title={
-                count > 0
-                  ? `${format(day, "MMM d")}: ${count} on leave`
-                  : format(day, "MMM d")
-              }
             >
               <span
                 className={cn(
@@ -92,6 +125,18 @@ export function LeaveMonthCalendar({
                 </span>
               ) : (
                 <span className="mt-0.5 h-1" />
+              )}
+            </div>
+          );
+
+          return (
+            <div key={key}>
+              {tipContent ? (
+                <Tooltip content={tipContent} className="w-full">
+                  {cell}
+                </Tooltip>
+              ) : (
+                cell
               )}
             </div>
           );

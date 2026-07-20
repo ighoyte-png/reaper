@@ -31,7 +31,12 @@ export interface ProjectPortalPayload {
   };
   clientName: string | null;
   /** Team members with contact emails — shown to the client, unlike the org-wide share. */
-  team: { name: string; email: string; title: string }[];
+  team: {
+    name: string;
+    email: string;
+    title: string;
+    avatar_url: string | null;
+  }[];
   milestones: {
     id: string;
     name: string;
@@ -86,6 +91,7 @@ export function sanitizeProjectPortal(
       name: p.name,
       email: p.email,
       title: p.role_title,
+      avatar_url: p.avatar_url ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 

@@ -67,7 +67,7 @@ export function SortableMilestoneList({
         strategy={verticalListSortingStrategy}
         disabled={!canManage}
       >
-        <div className="space-y-3">
+        <div className="space-y-6">
           {milestones.map((m) => (
             <SortableMilestoneRow
               key={m.id}

@@ -241,6 +241,7 @@ export function createDemoSeed(): DemoState {
         bill_rate: 150,
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
+        avatar_url: null,
       },
       {
         id: "person-2",
@@ -256,6 +257,7 @@ export function createDemoSeed(): DemoState {
         bill_rate: 175,
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
+        avatar_url: null,
       },
       {
         id: "person-3",
@@ -271,6 +273,7 @@ export function createDemoSeed(): DemoState {
         bill_rate: 140,
         timezone: "America/Denver",
         holiday_calendar_id: "cal-us",
+        avatar_url: null,
       },
       {
         id: "person-4",
@@ -286,6 +289,7 @@ export function createDemoSeed(): DemoState {
         bill_rate: 155,
         timezone: "America/Chicago",
         holiday_calendar_id: "cal-ca",
+        avatar_url: null,
       },
       {
         id: "person-5",
@@ -301,6 +305,7 @@ export function createDemoSeed(): DemoState {
         bill_rate: 160,
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
+        avatar_url: null,
       },
     ],
     assignments: [
@@ -723,6 +728,8 @@ export function createDemoSeed(): DemoState {
         title: "Kickoff recap posted",
         body: "Shared kickoff notes in the drive folder.",
         pinned: true,
+        audience: "all",
+        audience_person_ids: [],
         created_by_profile_id: "profile-admin",
         created_at: dt(-10, week),
       },
@@ -733,6 +740,8 @@ export function createDemoSeed(): DemoState {
         title: "Office closed Friday",
         body: "Team is off for the long weekend.",
         pinned: false,
+        audience: "all",
+        audience_person_ids: [],
         created_by_profile_id: "profile-manager",
         created_at: dt(-1, week),
       },
