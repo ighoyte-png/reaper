@@ -222,7 +222,7 @@ export default function ForecastReportPage() {
                           key={project.id}
                           project={project}
                           clientName={client?.name ?? "No client"}
-                          href={appHref(`/projects/${project.id}`)}
+                          href={appHref(`/reports/budgets/${project.id}`)}
                         />
                       ))}
                     </div>

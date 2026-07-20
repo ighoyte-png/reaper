@@ -47,7 +47,7 @@ export function BurnBar({
           </span>
         </div>
       )}
-      <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]">
+      <div className="h-3 overflow-hidden rounded-full bg-[var(--border)]">
         <div
           className={clsx(
             "h-full rounded-full transition-all",

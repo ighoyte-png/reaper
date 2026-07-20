@@ -101,6 +101,8 @@ type BoardCtx = {
   allowSelect: boolean;
   listsEditMode: boolean;
   compact: boolean;
+  /** Status changes only — no edit modal or comments (e.g. schedule sidebar). */
+  readOnly: boolean;
   selected: Set<string>;
   toggleSelect: (id: string) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
@@ -575,6 +577,7 @@ export function ProjectTaskBoard({
     allowSelect,
     listsEditMode,
     compact,
+    readOnly,
     selected,
     toggleSelect,
     setParentsSelected,
@@ -604,16 +607,13 @@ export function ProjectTaskBoard({
         <KanbanBoard
           tasks={parentTasks(visibleTasks)}
           manageLists={manageLists}
-          onEdit={setEditing}
+          onEdit={readOnly ? undefined : setEditing}
           onMove={moveTaskToColumn}
         />
-        {editing ? (
+        {editing && !readOnly ? (
           <TaskEditModal
             task={editing}
-            readOnly={
-              readOnly &&
-              !(canManage || editing.assignee_person_id === myPerson?.id)
-            }
+            readOnly={!(canManage || editing.assignee_person_id === myPerson?.id)}
             onClose={() => setEditing(null)}
           />
         ) : null}
@@ -657,7 +657,7 @@ export function ProjectTaskBoard({
       </div>
 
       {selected.size > 0 ? (
-        <div className="flex flex-wrap items-end gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] py-2 pl-3 pr-1.5 text-xs sm:pl-4 sm:pr-1.5">
+        <div className="sticky top-0 z-20 flex flex-wrap items-end gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] py-2 pl-3 pr-1.5 text-xs shadow-sm sm:pl-4 sm:pr-1.5">
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-medium text-[var(--text-muted)]">
               Status
@@ -823,13 +823,10 @@ export function ProjectTaskBoard({
         </DndContext>
       )}
 
-      {editing ? (
+      {editing && !readOnly ? (
         <TaskEditModal
           task={editing}
-          readOnly={
-            readOnly &&
-            !(canManage || editing.assignee_person_id === myPerson?.id)
-          }
+          readOnly={!(canManage || editing.assignee_person_id === myPerson?.id)}
           onClose={() => setEditing(null)}
         />
       ) : null}
@@ -1128,16 +1125,27 @@ function TaskRow({
           onClick={() => ctx.cycleStatus(task)}
         />
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <button
-            type="button"
-            className={cn(
-              "min-w-0 cursor-pointer truncate text-left hover:underline",
-              task.status === "complete" && "line-through",
-            )}
-            onClick={() => ctx.setEditing(task)}
-          >
-            {task.title}
-          </button>
+          {ctx.readOnly ? (
+            <span
+              className={cn(
+                "min-w-0 truncate",
+                task.status === "complete" && "line-through",
+              )}
+            >
+              {task.title}
+            </span>
+          ) : (
+            <button
+              type="button"
+              className={cn(
+                "min-w-0 cursor-pointer truncate text-left hover:underline",
+                task.status === "complete" && "line-through",
+              )}
+              onClick={() => ctx.setEditing(task)}
+            >
+              {task.title}
+            </button>
+          )}
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
           {hasNotes ? (
             <StickyNote size={12} className="shrink-0 text-[var(--text-muted)]" />
@@ -1154,20 +1162,22 @@ function TaskRow({
               {format(parseISO(task.due_date), "MMM d, yyyy")}
             </span>
           ) : null}
-          <button
-            type="button"
-            className={cn(
-              "inline-flex shrink-0 cursor-pointer items-center gap-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)]",
-              taskComments.length === 0 && "opacity-0 group-hover:opacity-100",
-            )}
-            title="Comments"
-            aria-label="Toggle comments"
-            onClick={() => ctx.toggleExpand(task.id)}
-          >
-            <MessageSquare size={16} />
-            {taskComments.length > 0 ? taskComments.length : null}
-            {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-          </button>
+          {!ctx.readOnly ? (
+            <button
+              type="button"
+              className={cn(
+                "inline-flex shrink-0 cursor-pointer items-center gap-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)]",
+                taskComments.length === 0 && "opacity-0 group-hover:opacity-100",
+              )}
+              title="Comments"
+              aria-label="Toggle comments"
+              onClick={() => ctx.toggleExpand(task.id)}
+            >
+              <MessageSquare size={16} />
+              {taskComments.length > 0 ? taskComments.length : null}
+              {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            </button>
+          ) : null}
         </div>
         {ctx.manageLists && depth === 0 ? (
           <button
@@ -1188,7 +1198,9 @@ function TaskRow({
           />
         ) : null}
       </div>
-      {isExpanded ? <CommentThread task={task} depth={depth} comments={taskComments} ctx={ctx} /> : null}
+      {!ctx.readOnly && isExpanded ? (
+        <CommentThread task={task} depth={depth} comments={taskComments} ctx={ctx} />
+      ) : null}
       {depth === 0 && kids.length > 0 ? (
         <SortableContext
           items={kids.map((k) => k.id)}

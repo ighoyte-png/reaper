@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Clock, Mail, Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -28,11 +29,11 @@ import {
   uploadPersonAvatar,
 } from "@/lib/supabase/avatar";
 
-const actionLinkClass =
-  "cursor-pointer text-xs text-[var(--accent)] hover:underline";
+const actionIconClass =
+  "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--accent)] hover:bg-[var(--row-hover)]";
 
-const mutedActionLinkClass =
-  "cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline";
+const mutedActionIconClass =
+  "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]";
 
 const emptyPerson = (): Omit<Person, "organization_id"> => ({
   id: "",
@@ -390,54 +391,64 @@ export default function PeoplePage() {
                       ) : null}
                       {canManage ? (
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                        {!person.profile_id ? (
+                        <div className="inline-flex items-center justify-end gap-0.5">
+                          {!person.profile_id ? (
+                            <button
+                              type="button"
+                              className={actionIconClass}
+                              title="Invite"
+                              aria-label="Invite"
+                              onClick={() => {
+                                if (person.email?.trim()) {
+                                  void createInviteLink(person, {
+                                    emailOverride: person.email,
+                                  });
+                                } else {
+                                  setInviteTarget(person);
+                                  setInviteEmail("");
+                                  setInviteUrl(null);
+                                }
+                              }}
+                            >
+                              <Mail size={14} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className={actionIconClass}
+                              title="Resend invite"
+                              aria-label="Resend invite"
+                              disabled={inviteBusy}
+                              onClick={() => setResendTarget(person)}
+                            >
+                              <Mail size={14} />
+                            </button>
+                          )}
                           <button
                             type="button"
-                            className={actionLinkClass}
+                            className={actionIconClass}
+                            title="Edit"
+                            aria-label="Edit"
                             onClick={() => {
-                              if (person.email?.trim()) {
-                                void createInviteLink(person, {
-                                  emailOverride: person.email,
-                                });
-                              } else {
-                                setInviteTarget(person);
-                                setInviteEmail("");
-                                setInviteUrl(null);
-                              }
+                              openEdit(person, false);
                             }}
                           >
-                            Invite
+                            <Pencil size={14} />
                           </button>
-                        ) : (
                           <button
                             type="button"
-                            className={actionLinkClass}
-                            disabled={inviteBusy}
-                            onClick={() => setResendTarget(person)}
+                            className={mutedActionIconClass}
+                            title="Time off"
+                            aria-label="Time off"
+                            onClick={() => {
+                              setLeaveTarget(person);
+                              setLeaveDate(start);
+                              setLeaveKind("vacation");
+                            }}
                           >
-                            Resend invite
+                            <Clock size={14} />
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          className={cn(actionLinkClass, "ml-3")}
-                          onClick={() => {
-                            openEdit(person, false);
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(mutedActionLinkClass, "ml-3")}
-                          onClick={() => {
-                            setLeaveTarget(person);
-                            setLeaveDate(start);
-                            setLeaveKind("vacation");
-                          }}
-                        >
-                          Leave
-                        </button>
+                        </div>
                       </td>
                       ) : null}
                     </tr>

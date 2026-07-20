@@ -63,7 +63,7 @@ export function ProjectYearBurnChart({
               <div className="flex h-24 w-full items-end justify-center">
                 <div
                   className={cn(
-                    "w-full max-w-[28px] rounded-t",
+                    "w-full max-w-[37px] rounded-t",
                     over
                       ? "bg-[var(--status-over)]"
                       : bar.value > 0

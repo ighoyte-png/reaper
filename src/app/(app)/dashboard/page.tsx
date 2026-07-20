@@ -15,6 +15,7 @@ import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar"
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import { UtilizationHeatmap } from "@/components/heatmap/utilization-heatmap";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CapacityBar } from "@/components/ui/capacity-bar";
 import {
@@ -27,6 +28,7 @@ import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
+import { isAdmin } from "@/lib/auth/roles";
 import { budgetBurn, budgetHealth, formatHours } from "@/lib/domain/budget";
 import {
   capacityLevel,
@@ -253,6 +255,7 @@ export default function DashboardPage() {
   );
 
   const sortedPeople = sortPeopleByName(state.people);
+  const admin = isAdmin(profile?.role);
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -296,7 +299,7 @@ export default function DashboardPage() {
             bulletins={bulletins}
             profiles={state.profiles}
             people={sortedPeople}
-            canManage={canManage}
+            canEdit={admin}
             profileId={profile?.id ?? null}
             onSave={(row) => {
               upsertBulletin(row);
@@ -324,8 +327,29 @@ export default function DashboardPage() {
             highPriority={highPriorityTasks}
             total={pinnedTotal}
             projectById={projectById}
+            peopleById={new Map(state.people.map((p) => [p.id, p]))}
+            showAssignee={admin && showingAsManager}
             appHref={appHref}
           />
+
+          {admin ? (
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">People utilization</h2>
+                <Link
+                  href={appHref("/reports/utilization")}
+                  className="text-xs text-[var(--accent)]"
+                >
+                  Full report
+                </Link>
+              </div>
+              <p className="mb-3 text-xs text-[var(--text-muted)]">
+                Green healthy · yellow near full · red overbooked · gray
+                unavailable
+              </p>
+              <UtilizationHeatmap weeks={6} />
+            </section>
+          ) : null}
 
           {canManage ? (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
@@ -493,11 +517,15 @@ function TaskRow({
   task,
   project,
   overdue,
+  assignee,
+  showAssignee,
   appHref,
 }: {
   task: Task;
   project: Project | undefined;
   overdue: boolean;
+  assignee?: Person | null;
+  showAssignee?: boolean;
   appHref: (path: string) => string;
 }) {
   return (
@@ -510,6 +538,17 @@ function TaskRow({
         style={{ background: project?.color ?? "#64748B" }}
       />
       <span className="min-w-0 flex-1 truncate">{task.title}</span>
+      {showAssignee ? (
+        <span className="flex max-w-[9rem] shrink-0 items-center gap-1.5 truncate text-xs text-[var(--text-muted)]">
+          <PersonAvatar
+            avatarUrl={assignee?.avatar_url}
+            name={assignee?.name}
+            size="xs"
+            fallback="initials"
+          />
+          <span className="truncate">{assignee?.name ?? "Unassigned"}</span>
+        </span>
+      ) : null}
       <span className="shrink-0 truncate text-xs text-[var(--text-muted)]">
         {project?.name ?? "Project"}
       </span>
@@ -612,6 +651,8 @@ function TaskPulse({
   highPriority,
   total,
   projectById,
+  peopleById,
+  showAssignee,
   appHref,
 }: {
   overdue: Task[];
@@ -619,8 +660,27 @@ function TaskPulse({
   highPriority: Task[];
   total: number;
   projectById: Map<string, Project>;
+  peopleById: Map<string, Person>;
+  showAssignee?: boolean;
   appHref: (path: string) => string;
 }) {
+  function row(task: Task, overdueRow: boolean) {
+    const assignee = task.assignee_person_id
+      ? peopleById.get(task.assignee_person_id) ?? null
+      : null;
+    return (
+      <TaskRow
+        key={task.id}
+        task={task}
+        project={projectById.get(task.project_id)}
+        overdue={overdueRow}
+        assignee={assignee}
+        showAssignee={showAssignee}
+        appHref={appHref}
+      />
+    );
+  }
+
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -645,15 +705,7 @@ function TaskPulse({
                 Overdue
               </div>
               <div className="space-y-1.5">
-                {overdue.map((t) => (
-                  <TaskRow
-                    key={t.id}
-                    task={t}
-                    project={projectById.get(t.project_id)}
-                    overdue
-                    appHref={appHref}
-                  />
-                ))}
+                {overdue.map((t) => row(t, true))}
               </div>
             </div>
           ) : null}
@@ -667,15 +719,7 @@ function TaskPulse({
                   {label}
                 </div>
                 <div className="space-y-1.5">
-                  {tasks.map((t) => (
-                    <TaskRow
-                      key={t.id}
-                      task={t}
-                      project={projectById.get(t.project_id)}
-                      overdue={false}
-                      appHref={appHref}
-                    />
-                  ))}
+                  {tasks.map((t) => row(t, false))}
                 </div>
               </div>
             );
@@ -687,15 +731,7 @@ function TaskPulse({
                 High priority
               </div>
               <div className="space-y-1.5">
-                {highPriority.map((t) => (
-                  <TaskRow
-                    key={t.id}
-                    task={t}
-                    project={projectById.get(t.project_id)}
-                    overdue={false}
-                    appHref={appHref}
-                  />
-                ))}
+                {highPriority.map((t) => row(t, false))}
               </div>
             </div>
           ) : null}
@@ -725,7 +761,7 @@ function BulletinBoard({
   bulletins,
   profiles,
   people,
-  canManage,
+  canEdit,
   profileId,
   onSave,
   onDelete,
@@ -734,7 +770,7 @@ function BulletinBoard({
   bulletins: Bulletin[];
   profiles: Profile[];
   people: Person[];
-  canManage: boolean;
+  canEdit: boolean;
   profileId: string | null;
   onSave: (row: BulletinDraft) => void;
   onDelete: (id: string) => void;
@@ -750,7 +786,7 @@ function BulletinBoard({
           <Megaphone size={14} className="text-[var(--text-muted)]" />
           <h2 className="text-sm font-semibold">Bulletin board</h2>
         </div>
-        {canManage ? (
+        {canEdit ? (
           <button
             type="button"
             className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-[var(--accent)] hover:bg-[var(--row-hover)]"
@@ -802,7 +838,7 @@ function BulletinBoard({
                         : " · Everyone"}
                     </div>
                   </div>
-                  {canManage ? (
+                  {canEdit ? (
                     <div className="flex shrink-0 gap-1">
                       <button
                         type="button"
