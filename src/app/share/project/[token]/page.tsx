@@ -169,7 +169,7 @@ export default function ProjectSharePage() {
     <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
       <div>
         <p className="text-xs text-[var(--text-muted)]">
-          {portal.clientName ?? "Client portal"} · {portal.organizationName}
+          Client Dashboard - {portal.clientName ?? "Client"}
         </p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">
           {portal.project.name}

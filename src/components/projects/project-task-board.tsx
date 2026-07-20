@@ -82,7 +82,7 @@ function InitialsAvatar({ person }: { person: Person }) {
   return (
     <span
       title={person.name}
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[11px] font-semibold text-[var(--text-muted)] ring-1 ring-[var(--border)]"
+      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[9px] font-semibold text-[var(--text-muted)] ring-1 ring-[var(--border)]"
     >
       {initialsFor(person.name)}
     </span>
@@ -763,14 +763,16 @@ function TaskRow({
         >
           {task.status === "complete" ? <Check size={12} /> : null}
         </button>
-        <button
-          type="button"
-          className="min-w-0 flex-1 cursor-pointer truncate text-left hover:underline"
-          onClick={() => ctx.setEditing(task)}
-        >
-          {task.title}
-        </button>
-        {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <button
+            type="button"
+            className="min-w-0 cursor-pointer truncate text-left hover:underline"
+            onClick={() => ctx.setEditing(task)}
+          >
+            {task.title}
+          </button>
+          {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
+        </div>
         {hasNotes ? (
           <StickyNote size={12} className="shrink-0 text-[var(--text-muted)]" />
         ) : null}
