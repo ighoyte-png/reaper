@@ -201,12 +201,12 @@ export default function ProjectDetailPage() {
         <div className="grid gap-4 lg:grid-cols-3">
           {/* Main: tasks + templates */}
           <div className="min-w-0 space-y-4 lg:col-span-2">
-            <section className="rounded-md border border-[var(--border)] p-4">
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <ProjectTaskBoard projectId={project.id} allowCardView />
             </section>
 
             {canManage ? (
-              <section className="rounded-md border border-[var(--border)] p-4">
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <button
                   type="button"
                   className="flex w-full cursor-pointer items-center gap-1.5 text-left"
@@ -280,7 +280,7 @@ export default function ProjectDetailPage() {
 
           {/* Sidebar: Progress → Assets → Team → Budget → Client portal */}
           <div className="space-y-4">
-            <section className="rounded-md border border-[var(--border)] p-4">
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">Progress</h2>
                 {canManage ? (
@@ -376,7 +376,7 @@ export default function ProjectDetailPage() {
 
             <ProjectNotebook projectId={project.id} />
 
-            <section className="rounded-md border border-[var(--border)] p-4">
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <h2 className="mb-3 text-sm font-semibold">Team</h2>
               {team.length === 0 ? (
                 <p className="text-sm text-[var(--text-muted)]">
@@ -409,7 +409,7 @@ export default function ProjectDetailPage() {
               )}
             </section>
 
-            <section className="rounded-md border border-[var(--border)] p-4">
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <h2 className="mb-2 text-sm font-semibold">Budget</h2>
               <BudgetCard
                 project={project}
@@ -424,7 +424,7 @@ export default function ProjectDetailPage() {
               </Link>
             </section>
 
-            <section className="rounded-md border border-[var(--border)] p-4">
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-2 flex items-center gap-2">
                 <Link2 size={14} className="text-[var(--text-muted)]" />
                 <h2 className="text-sm font-semibold">Client Portal</h2>

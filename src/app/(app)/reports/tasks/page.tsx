@@ -33,7 +33,7 @@ function TaskTable({
     );
   }
   return (
-    <div className="overflow-x-auto rounded-md border border-[var(--border)]">
+    <div className="overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--bg)]">
       <table className="w-full text-left text-sm">
         <thead className="bg-[var(--bg-elevated)] text-xs text-[var(--text-muted)]">
           <tr>

@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 :root {
+  /* Canvas behind cards / chrome */
+  --page-bg: #f0f1f3;
+  /* Content surfaces (cards, panels, inputs, header) */
   --bg: #ffffff;
-  --bg-elevated: #f7f7f7;
-  --sidebar: #f7f7f7;
+  --bg-elevated: #f4f5f7;
+  --sidebar: #e8e9ec;
   --text: #1f2933;
   --text-muted: #6b7280;
   --border: #e5e7eb;
@@ -13,6 +16,7 @@
   --status-near: #d97706;
   --status-over: #dc2626;
   --status-unavailable: #6b7280;
+  --row-hover: rgba(0, 0, 0, 0.04);
   /* Muted wash — intentionally not project-colored / not accent blue */
   --leave-block: #6b7280;
   --leave-block-fg: #374151;
@@ -32,9 +36,11 @@
 }
 
 .dark {
+  /* Slightly darker canvas; content surfaces keep prior values */
+  --page-bg: #08090c;
   --bg: #0f1115;
   --bg-elevated: #1c212b;
-  --sidebar: #161a22;
+  --sidebar: #12151c;
   --text: #e8eaed;
   --text-muted: #9aa3b2;
   --border: #2a3140;
@@ -79,7 +85,7 @@ body {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--page-bg);
   color: var(--text);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }

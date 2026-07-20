@@ -171,7 +171,7 @@ export default function ProjectSharePage() {
       </div>
 
       {teamSorted.length > 0 ? (
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Team</h2>
           <ul className="flex flex-wrap gap-3">
             {teamSorted.map((member) => (
@@ -198,7 +198,7 @@ export default function ProjectSharePage() {
         </section>
       ) : null}
 
-      <section className="rounded-md border border-[var(--border)] p-4">
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <ProgressBar
           pct={overallPct}
           label="Overall Project Progress"
@@ -217,7 +217,7 @@ export default function ProjectSharePage() {
       </section>
 
       {milestonesSorted.length > 0 ? (
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Milestones</h2>
           <div className="space-y-6">
             {milestonesSorted.map((m) => {
@@ -250,7 +250,7 @@ export default function ProjectSharePage() {
       ) : null}
 
       {assetsSorted.length > 0 ? (
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Links & Assets</h2>
           <ul className="space-y-1.5">
             {assetsSorted.map((a) => {
@@ -296,7 +296,7 @@ export default function ProjectSharePage() {
         </section>
       ) : null}
 
-      <section className="rounded-md border border-[var(--border)] p-4">
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <h2 className="mb-3 text-sm font-semibold">Tasks</h2>
         {portal.taskLists.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">

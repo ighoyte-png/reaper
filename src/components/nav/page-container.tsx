@@ -1,9 +1,14 @@
+import { Children, isValidElement, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import type { ReactNode } from "react";
+import { PageHeader } from "@/components/nav/page-header";
+
+function isFullBleedChrome(child: ReactNode): boolean {
+  return isValidElement(child) && child.type === PageHeader;
+}
 
 /**
- * Full-width scrollport with a centered 1400px content column.
- * The scrollbar always sits on the viewport edge.
+ * Full-width scrollport. PageHeader children span the viewport;
+ * everything else stays in a centered 1400px column.
  */
 export function PageContainer({
   children,
@@ -19,6 +24,14 @@ export function PageContainer({
     .filter((c) => c && !c.startsWith("overflow-"))
     .join(" ");
 
+  const childList = Children.toArray(children);
+  const chrome: ReactNode[] = [];
+  const body: ReactNode[] = [];
+  for (const child of childList) {
+    if (isFullBleedChrome(child)) chrome.push(child);
+    else body.push(child);
+  }
+
   return (
     <div
       className={cn(
@@ -26,7 +39,10 @@ export function PageContainer({
         withoutOverflow,
       )}
     >
-      <div className="mx-auto w-full max-w-[1400px]">{children}</div>
+      {chrome}
+      {body.length > 0 ? (
+        <div className="mx-auto w-full max-w-[1400px]">{body}</div>
+      ) : null}
     </div>
   );
 }

@@ -159,7 +159,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
   }
 
   return (
-    <section className="rounded-md border border-[var(--border)] p-4">
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Assets</h2>
         {canManage ? (

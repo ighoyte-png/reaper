@@ -38,7 +38,7 @@ export default function ReportsPage() {
           <Link
             key={report.path}
             href={appHref(report.path)}
-            className="rounded-md border border-[var(--border)] p-4 hover:bg-[var(--row-hover)]"
+            className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 hover:bg-[var(--row-hover)]"
           >
             <h2 className="text-sm font-semibold">{report.title}</h2>
             <p className="mt-2 text-sm text-[var(--text-muted)]">

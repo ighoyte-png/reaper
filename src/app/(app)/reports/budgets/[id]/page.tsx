@@ -237,7 +237,7 @@ export default function ProjectBudgetDetailPage() {
           </span>
         </div>
 
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Budget Burn</h2>
           <p
             className={cn(
@@ -288,7 +288,7 @@ export default function ProjectBudgetDetailPage() {
           </dl>
         </section>
 
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="mb-3 text-sm font-semibold">{year} Calendar</h2>
           <ProjectYearBurnChart
             bars={yearBars}
@@ -299,7 +299,7 @@ export default function ProjectBudgetDetailPage() {
         </section>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Forecast</h2>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
               Confirmed schedule only — full project lifetime.
@@ -333,7 +333,7 @@ export default function ProjectBudgetDetailPage() {
             </dl>
           </section>
 
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">
               Team · {year}
             </h2>

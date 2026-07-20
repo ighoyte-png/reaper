@@ -198,7 +198,7 @@ export default function DashboardPage() {
           />
 
           {capacity ? (
-            <section className="rounded-md border border-[var(--border)] p-4">
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-sm font-semibold">This week&apos;s load</h2>
                 <Link
@@ -224,7 +224,7 @@ export default function DashboardPage() {
             appHref={appHref}
           />
 
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">This week for you</h2>
             {memberAssignments.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">
@@ -359,7 +359,7 @@ export default function DashboardPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Dashboard" />
       <div className="space-y-4 p-3 sm:p-5">
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold">Admin: View as user</h2>
             {viewAsPersonId ? (
@@ -414,7 +414,7 @@ export default function DashboardPage() {
         ) : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <section className="rounded-md border border-[var(--border)] p-4 md:col-span-2">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 md:col-span-2">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold">Budget at risk</h2>
               <Link
@@ -474,7 +474,7 @@ export default function DashboardPage() {
             )}
           </section>
 
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold">This week&apos;s load</h2>
               <Link
@@ -499,7 +499,7 @@ export default function DashboardPage() {
 
           <BulletinBoard bulletins={bulletins} profiles={state.profiles} />
 
-          <section className="rounded-md border border-[var(--border)] p-4 md:col-span-2 xl:col-span-3">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 md:col-span-2 xl:col-span-3">
             <h2 className="mb-3 text-sm font-semibold">Upcoming leave</h2>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,16rem)_1fr]">
               <LeaveMonthCalendar month={monthStart} leaveDays={monthLeave} />
@@ -600,7 +600,7 @@ function TaskPulse({
   appHref: (path: string) => string;
 }) {
   return (
-    <section className="rounded-md border border-[var(--border)] p-4">
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <div className="mb-3 flex items-center gap-2">
         <Pin size={14} className="text-[var(--text-muted)]" />
         <h2 className="text-sm font-semibold">Task pulse</h2>
@@ -691,7 +691,7 @@ function BulletinBoard({
   profiles: Profile[];
 }) {
   return (
-    <section className="rounded-md border border-[var(--border)] p-4">
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <div className="mb-3 flex items-center gap-2">
         <Megaphone size={14} className="text-[var(--text-muted)]" />
         <h2 className="text-sm font-semibold">Bulletin board</h2>
@@ -754,7 +754,7 @@ function TodaySchedule({
   appHref: (path: string) => string;
 }) {
   return (
-    <section className="rounded-md border border-[var(--border)] p-4">
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <h2 className="mb-3 text-sm font-semibold">Today&apos;s schedule</h2>
       {assignments.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">

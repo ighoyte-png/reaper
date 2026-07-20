@@ -29,7 +29,7 @@ export function AppNavbar() {
 
   return (
     <>
-      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--sidebar)] px-2 sm:px-3">
+      <header className="flex h-11 w-full shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--sidebar)] px-2 sm:px-3">
         <button
           type="button"
           className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text)] hover:bg-[var(--row-hover)] md:hidden"
@@ -67,21 +67,23 @@ export function AppNavbar() {
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <Link
             href="/settings"
-            className={cn(navLinkClass(settingsActive), "hidden sm:flex")}
+            className={cn(navLinkClass(settingsActive), "hidden sm:inline-flex")}
+            aria-label="Settings"
+            title="Settings"
           >
             <Settings size={15} strokeWidth={1.75} />
-            Settings
           </Link>
           <button
             type="button"
-            className={cn(navLinkClass(false), "hidden sm:flex")}
+            className={cn(navLinkClass(false), "hidden sm:inline-flex")}
+            aria-label="Sign out"
+            title="Sign out"
             onClick={async () => {
               await logout();
               router.push("/login");
             }}
           >
             <LogOut size={15} strokeWidth={1.75} />
-            Sign out
           </button>
         </div>
       </header>

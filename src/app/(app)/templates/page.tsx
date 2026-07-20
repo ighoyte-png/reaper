@@ -241,7 +241,7 @@ function TemplateEditor({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-md border border-[var(--border)] p-4">
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Template name">
             <input
@@ -276,7 +276,7 @@ function TemplateEditor({
         </div>
       </section>
 
-      <section className="rounded-md border border-[var(--border)] p-4">
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Milestones</h2>
           <button
@@ -369,7 +369,7 @@ function TemplateEditor({
         )}
       </section>
 
-      <section className="rounded-md border border-[var(--border)] p-4">
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Backlog (no milestone)</h2>
           <button

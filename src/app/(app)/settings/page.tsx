@@ -240,7 +240,7 @@ export default function SettingsPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Settings" />
       <div className="mx-auto max-w-2xl space-y-4 p-5">
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="text-sm font-semibold">Organization</h2>
           <p className="mt-2 text-sm">{state.organization.name || "—"}</p>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -251,7 +251,7 @@ export default function SettingsPage() {
         </section>
 
         {canManage && (
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="text-sm font-semibold">Public link</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Share a read-only board with schedule, people, projects, clients,
@@ -314,7 +314,7 @@ export default function SettingsPage() {
         )}
 
         {mode === "supabase" && (
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="text-sm font-semibold">Password</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Change the password for {profile?.email || "your account"}.
@@ -369,7 +369,7 @@ export default function SettingsPage() {
           </section>
         )}
 
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold">Theme</h2>
@@ -382,7 +382,7 @@ export default function SettingsPage() {
         </section>
 
         {canManage && (
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="text-sm font-semibold">Holiday calendars</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Global calendars (e.g. US vs Canada). Assign on People, then apply
@@ -582,7 +582,7 @@ export default function SettingsPage() {
         )}
 
         {mode === "demo" && state.profiles.length > 1 && (
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="text-sm font-semibold">Switch account (demo)</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
               After inviting a person, switch here to see My schedule as that
@@ -608,7 +608,7 @@ export default function SettingsPage() {
         )}
 
         {canManage && (
-          <section className="rounded-md border border-[var(--border)] p-4">
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="text-sm font-semibold">Demo data</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
               {mode === "supabase"
@@ -639,7 +639,7 @@ export default function SettingsPage() {
           </section>
         )}
 
-        <section className="rounded-md border border-[var(--border)] p-4">
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="text-sm font-semibold">Backend</h2>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
             {mode === "supabase"
