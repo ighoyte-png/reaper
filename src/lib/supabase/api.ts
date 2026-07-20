@@ -558,6 +558,18 @@ export async function updateOrganizationNameRow(
   if (error) throw error;
 }
 
+export async function updateProfileRoleRow(
+  supabase: SupabaseClient,
+  profileId: string,
+  role: Profile["role"],
+) {
+  const { error } = await supabase
+    .from("profiles")
+    .update({ role })
+    .eq("id", profileId);
+  if (error) throw error;
+}
+
 export async function upsertClientRow(
   supabase: SupabaseClient,
   client: Client,

@@ -152,6 +152,7 @@ export function PublicShareProvider({
       upsertClient: () => {},
       deleteClient: () => {},
       updateOrganizationName: async () => {},
+      updateProfileRole: async () => {},
       upsertProject: async () => {},
       deleteProject: () => {},
       upsertPerson: async () => {},

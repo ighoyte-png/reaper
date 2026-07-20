@@ -17,7 +17,7 @@ import {
   uploadPersonAvatar,
 } from "@/lib/supabase/avatar";
 import { isAdmin } from "@/lib/auth/roles";
-import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
+import type { HolidayCalendar, HolidayCalendarDay, Role } from "@/lib/types";
 
 export default function SettingsPage() {
   const {
@@ -39,6 +39,7 @@ export default function SettingsPage() {
     upsertPerson,
     updatePersonAvatar,
     updateOrganizationName,
+    updateProfileRole,
     newId,
     updateDemoShare,
   } = useData();
@@ -49,6 +50,7 @@ export default function SettingsPage() {
   const [orgModalOpen, setOrgModalOpen] = useState(false);
   const [orgName, setOrgName] = useState(state.organization.name);
   const [orgBusy, setOrgBusy] = useState(false);
+  const [roleBusyId, setRoleBusyId] = useState<string | null>(null);
   const [pwBusy, setPwBusy] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -325,6 +327,91 @@ export default function SettingsPage() {
             {mode === "supabase" ? "Supabase" : "Local demo"}
           </p>
         </section>
+
+        {admin ? (
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <h2 className="text-sm font-semibold">Team access</h2>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Promote members to admin (or manager) so they can manage the
+              workspace. Keep at least one admin.
+            </p>
+            <ul className="mt-3 divide-y divide-[var(--divider)]">
+              {[...state.profiles]
+                .sort((a, b) =>
+                  (a.full_name || a.email).localeCompare(
+                    b.full_name || b.email,
+                    undefined,
+                    { sensitivity: "base" },
+                  ),
+                )
+                .map((p) => {
+                  const linked = state.people.find(
+                    (person) => person.profile_id === p.id,
+                  );
+                  const isSelf = p.id === profile?.id;
+                  const adminCount = state.profiles.filter(
+                    (x) => x.role === "admin",
+                  ).length;
+                  const lastAdmin = p.role === "admin" && adminCount <= 1;
+                  return (
+                    <li
+                      key={p.id}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2.5 first:pt-0 last:pb-0"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {p.full_name || p.email || "Untitled"}
+                          {isSelf ? (
+                            <span className="ml-1.5 text-xs font-normal text-[var(--text-muted)]">
+                              (you)
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="truncate text-xs text-[var(--text-muted)]">
+                          {p.email || "No email"}
+                          {linked ? ` · ${linked.name}` : ""}
+                        </div>
+                      </div>
+                      <select
+                        className={`${inputClass} mt-0 h-8 w-auto min-w-[7.5rem] py-0 text-xs`}
+                        value={p.role}
+                        disabled={roleBusyId === p.id || lastAdmin}
+                        aria-label={`Role for ${p.full_name || p.email}`}
+                        onChange={(e) => {
+                          const next = e.target.value as Role;
+                          if (next === p.role) return;
+                          void (async () => {
+                            setRoleBusyId(p.id);
+                            try {
+                              await updateProfileRole(p.id, next);
+                              push(
+                                next === "admin"
+                                  ? `${p.full_name || "User"} is now an admin`
+                                  : `Updated role to ${next}`,
+                              );
+                            } catch (err) {
+                              push(
+                                err instanceof Error
+                                  ? err.message
+                                  : "Could not update role",
+                                "warning",
+                              );
+                            } finally {
+                              setRoleBusyId(null);
+                            }
+                          })();
+                        }}
+                      >
+                        <option value="member">Member</option>
+                        <option value="manager">Manager</option>
+                        <option value="admin">Admin</option>
+                      </select>
+                    </li>
+                  );
+                })}
+            </ul>
+          </section>
+        ) : null}
 
         {myPerson ? (
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">

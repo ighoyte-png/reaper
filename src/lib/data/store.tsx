@@ -50,6 +50,7 @@ import {
   upsertPersonRow,
   updatePersonAvatarRow,
   updateOrganizationNameRow,
+  updateProfileRoleRow,
   upsertProjectAssetRow,
   upsertProjectRow,
   upsertProjectTemplateRow,
@@ -86,6 +87,7 @@ import type {
   Project,
   ProjectAsset,
   ProjectTemplate,
+  Role,
   Task,
   TaskComment,
   TaskList,
@@ -262,6 +264,8 @@ interface DataContextValue {
   deleteClient: (id: string) => void;
   /** Admin-only: rename the current organization. */
   updateOrganizationName: (name: string) => Promise<void>;
+  /** Admin-only: change a profile's role (member / manager / admin). */
+  updateProfileRole: (profileId: string, role: Role) => Promise<void>;
   upsertProject: (
     project: Omit<Project, "organization_id"> & { organization_id?: string },
   ) => Promise<void>;
@@ -854,6 +858,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
               state.organization.id,
               trimmed,
             ),
+          );
+        }
+      },
+      updateProfileRole: async (profileId, role) => {
+        if (!admin) return;
+        const target = state.profiles.find((p) => p.id === profileId);
+        if (!target) return;
+        if (target.role === "admin" && role !== "admin") {
+          const adminCount = state.profiles.filter((p) => p.role === "admin").length;
+          if (adminCount <= 1) {
+            throw new Error("Keep at least one admin on the organization");
+          }
+        }
+        patch((prev) => ({
+          ...prev,
+          profiles: prev.profiles.map((p) =>
+            p.id === profileId ? { ...p, role } : p,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            updateProfileRoleRow(supabaseRef.current!, profileId, role),
           );
         }
       },
@@ -1511,6 +1537,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertBulletin: (bulletin) => {
+        if (!admin) return;
         const row = withOrg(bulletin) as Bulletin;
         patch((prev) => {
           const exists = prev.bulletins.some((b) => b.id === row.id);
@@ -1526,6 +1553,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteBulletin: (id) => {
+        if (!admin) return;
         patch((prev) => ({
           ...prev,
           bulletins: prev.bulletins.filter((b) => b.id !== id),
