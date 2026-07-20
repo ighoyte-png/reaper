@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Pencil } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { milestoneDateProgress } from "@/lib/domain/progress";
 import type { Milestone, Project } from "@/lib/types";
@@ -151,10 +151,12 @@ function SortableMilestoneRow({
           </label>
           <button
             type="button"
-            className="cursor-pointer text-[10px] text-[var(--accent)]"
+            className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
             onClick={() => onEdit(milestone)}
+            aria-label="Edit milestone"
+            title="Edit"
           >
-            Edit
+            <Pencil size={14} />
           </button>
         </div>
       ) : null}

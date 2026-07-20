@@ -18,7 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ExternalLink, GripVertical, Plus } from "lucide-react";
+import { GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
 import { Field, inputClass } from "@/components/ui/form";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { useData } from "@/lib/data/store";
@@ -154,20 +154,30 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Assets</h2>
         {canManage ? (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
             <button
               type="button"
-              className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+              className={cn(
+                "inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                mode === "link" && !editing && "bg-[var(--row-hover)] text-[var(--accent)]",
+              )}
               onClick={() => startAdd("link")}
+              aria-label="Add link"
+              title="Add link"
             >
-              <Plus size={12} /> Add link
+              <Plus size={16} />
             </button>
             <button
               type="button"
-              className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+              className={cn(
+                "inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                mode === "note" && !editing && "bg-[var(--row-hover)] text-[var(--accent)]",
+              )}
               onClick={() => startAdd("note")}
+              aria-label="Add note"
+              title="Add note"
             >
-              <Plus size={12} /> Add note
+              <StickyNote size={16} />
             </button>
           </div>
         ) : null}
@@ -312,23 +322,27 @@ function SortableAssetRow({
   const isNote = Boolean(asset.body.trim());
 
   const actions = canManage ? (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex shrink-0 items-center gap-1">
       <button
         type="button"
         className={cn(
-          "cursor-pointer text-xs text-[var(--accent)]",
-          isEditing && "font-medium",
+          "inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+          isEditing && "text-[var(--accent)]",
         )}
         onClick={onEdit}
+        aria-label="Edit"
+        title="Edit"
       >
-        Edit
+        <Pencil size={14} />
       </button>
       <button
         type="button"
-        className="cursor-pointer text-xs text-[var(--status-over)]"
+        className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
         onClick={onDelete}
+        aria-label="Remove"
+        title="Remove"
       >
-        Remove
+        <Trash2 size={14} />
       </button>
     </div>
   ) : null;
@@ -391,10 +405,6 @@ function SortableAssetRow({
           >
             {asset.label || ASSET_KIND_LABELS[asset.kind]}
           </a>
-          <ExternalLink
-            size={12}
-            className="shrink-0 text-[var(--text-muted)]"
-          />
           {actions}
         </div>
       )}

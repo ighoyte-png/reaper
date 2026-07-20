@@ -219,6 +219,12 @@ export interface MonthBurnBar {
   year: number;
   monthIndex: number;
   plannedHours: number;
+  /** Planned billable $ for the month (hours × bill rates). */
+  plannedAmount: number;
+  /** Primary bar value (hours or $ depending on chart context). */
+  value: number;
+  /** Soft monthly cap for over-coloring; 0 means scale against the year’s max. */
+  cap: number;
   budgetHours: number;
   pct: number;
 }
@@ -246,6 +252,9 @@ export function monthlyHourBars(
       year,
       monthIndex,
       plannedHours,
+      plannedAmount: 0,
+      value: plannedHours,
+      cap: budgetHours,
       budgetHours,
       pct:
         budgetHours <= 0
@@ -256,14 +265,23 @@ export function monthlyHourBars(
   return out;
 }
 
-/** Jan–Dec of the given calendar year (defaults to current year). */
-export function calendarYearHourBars(
+/** Jan–Dec bars for the given calendar year (hours or $ by budget mode). */
+export function calendarYearBars(
   project: Project,
   assignments: Assignment[],
+  people: Person[],
   asOf: Date = new Date(),
 ): MonthBurnBar[] {
   const year = asOf.getFullYear();
-  const budgetHours = project.budget_hours ?? 0;
+  const mode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  const monthlyHourCap =
+    mode === "hours" && project.budget_monthly_reset
+      ? project.budget_hours ?? 0
+      : 0;
   const out: MonthBurnBar[] = [];
   for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
     const d = new Date(year, monthIndex, 1);
@@ -271,18 +289,37 @@ export function calendarYearHourBars(
       year,
       monthIndex,
     });
+    const plannedAmount = projectPlannedAmount(
+      project.id,
+      assignments,
+      people,
+      false,
+      { year, monthIndex },
+    );
+    const value = mode === "amount" ? plannedAmount : plannedHours;
+    const cap = mode === "amount" ? 0 : monthlyHourCap;
     out.push({
       key: format(d, "yyyy-MM"),
       label: format(d, "MMM yyyy"),
       year,
       monthIndex,
       plannedHours,
-      budgetHours,
+      plannedAmount,
+      value,
+      cap,
+      budgetHours: monthlyHourCap,
       pct:
-        budgetHours <= 0
-          ? 0
-          : Math.min(999, (plannedHours / budgetHours) * 100),
+        cap <= 0 ? 0 : Math.min(999, (value / cap) * 100),
     });
   }
   return out;
+}
+
+/** @deprecated Prefer calendarYearBars — kept for callers expecting hours-only. */
+export function calendarYearHourBars(
+  project: Project,
+  assignments: Assignment[],
+  asOf: Date = new Date(),
+): MonthBurnBar[] {
+  return calendarYearBars(project, assignments, [], asOf);
 }

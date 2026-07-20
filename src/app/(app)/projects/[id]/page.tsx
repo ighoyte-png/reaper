@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
-import { Copy, Link2 } from "lucide-react";
+import { Copy, Link2, Plus } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
@@ -71,7 +71,7 @@ export default function ProjectDetailPage() {
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const isRetainer = Boolean(project?.budget_monthly_reset);
   const budgetHref = project
-    ? appHref(`/reports/budgets?project=${project.id}`)
+    ? appHref(`/reports/budgets/${project.id}`)
     : appHref("/reports/budgets");
 
   const team = useMemo(() => {
@@ -271,7 +271,7 @@ export default function ProjectDetailPage() {
                     {canManage ? (
                       <button
                         type="button"
-                        className="cursor-pointer text-xs text-[var(--accent)]"
+                        className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
                         onClick={() => {
                           const m: Omit<Milestone, "organization_id"> = {
                             id: newId("ms"),
@@ -284,8 +284,10 @@ export default function ProjectDetailPage() {
                           };
                           upsertMilestone(m);
                         }}
+                        aria-label="Add milestone"
+                        title="Add milestone"
                       >
-                        Add
+                        <Plus size={16} />
                       </button>
                     ) : null}
                   </div>

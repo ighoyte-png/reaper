@@ -1005,6 +1005,18 @@ function TaskRow({
           {hasNotes ? (
             <StickyNote size={12} className="shrink-0 text-[var(--text-muted)]" />
           ) : null}
+          {task.due_date ? (
+            <span
+              className={cn(
+                "shrink-0 text-xs",
+                overdue
+                  ? "font-medium text-[var(--status-over)]"
+                  : "text-[var(--text-muted)]",
+              )}
+            >
+              {format(parseISO(task.due_date), "MMM d, yyyy")}
+            </span>
+          ) : null}
           <button
             type="button"
             className={cn(
@@ -1019,26 +1031,16 @@ function TaskRow({
             {taskComments.length > 0 ? taskComments.length : null}
             {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
           </button>
-          {task.due_date ? (
-            <span
-              className={cn(
-                "shrink-0 text-xs",
-                overdue
-                  ? "font-medium text-[var(--status-over)]"
-                  : "text-[var(--text-muted)]",
-              )}
-            >
-              {format(parseISO(task.due_date), "MMM d, yyyy")}
-            </span>
-          ) : null}
         </div>
         {ctx.manageLists && depth === 0 ? (
           <button
             type="button"
-            className="cursor-pointer text-xs text-[var(--text-muted)] opacity-0 hover:text-[var(--text)] group-hover:opacity-100"
+            className="inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
             onClick={() => ctx.addSubtask(task.list_id, task.id)}
+            aria-label="Add subtask"
+            title="Add subtask"
           >
-            + sub
+            <Plus size={14} />
           </button>
         ) : null}
         {ctx.allowSelect ? (

@@ -14,7 +14,7 @@ export function ProgressBar({
   size?: "md" | "lg";
 }) {
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
-  const isComplete = Boolean(approved) || clamped >= 100;
+  const isComplete = clamped >= 100;
   return (
     <div className="space-y-1">
       {label ? (
