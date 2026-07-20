@@ -9,7 +9,8 @@
   --sidebar: #e8e9ec;
   --text: #1f2933;
   --text-muted: #6b7280;
-  --border: #e5e7eb;
+  --border: #f0f1f3;
+  --divider: #f3f4f6;
   --accent: #2563eb;
   --accent-fg: #ffffff;
   --status-healthy: #16a34a;
@@ -43,7 +44,8 @@
   --sidebar: #12151c;
   --text: #e8eaed;
   --text-muted: #9aa3b2;
-  --border: #2a3140;
+  --border: #151921;
+  --divider: #1a1f28;
   --accent: #3b82f6;
   --accent-fg: #ffffff;
   --status-healthy: #22c55e;

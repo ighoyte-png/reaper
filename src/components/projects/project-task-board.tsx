@@ -822,13 +822,13 @@ function ListSection({
         transition,
         opacity: isDragging ? 0.6 : 1,
       }}
-      className="mb-3 overflow-hidden rounded-md border border-[var(--border)]"
+      className="mb-3 overflow-hidden rounded-md border border-[var(--divider)]"
     >
       {/* Measure only the header so tall lists don't block drops at the top. */}
       <div
         ref={setNodeRef}
         className={cn(
-          "flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-2 py-1.5",
+          "flex flex-wrap items-center gap-2 border-b border-[var(--divider)] px-2 py-1.5",
           !list.color && "bg-[var(--bg-elevated)]/50",
         )}
         style={list.color ? { backgroundColor: list.color } : undefined}
@@ -996,7 +996,7 @@ function TaskRow({
       <div
         ref={setNodeRef}
         className={cn(
-          "group flex items-center gap-1.5 border-b border-[var(--border)]/60 px-2 py-1.5 text-sm",
+          "group flex items-center gap-1.5 border-b border-[var(--divider)] px-2 py-1.5 text-sm",
           task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "ring-1 ring-inset ring-[var(--accent)]/50",
         )}
@@ -1126,7 +1126,7 @@ function CommentThread({
 
   return (
     <div
-      className="space-y-2 border-b border-[var(--border)]/60 bg-[var(--bg-elevated)]/30 px-2 py-2"
+      className="space-y-2 border-b border-[var(--divider)] bg-[var(--bg-elevated)]/30 px-2 py-2"
       style={{ paddingLeft: 28 + depth * 16 }}
     >
       {sorted.length === 0 ? (
@@ -1310,7 +1310,7 @@ function KanbanColumn({
   return (
     <div
       ref={setNodeRef}
-      className="min-h-24 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)]/40 p-2"
+      className="min-h-24 rounded-md border border-[var(--divider)] bg-[var(--bg-elevated)]/40 p-2"
     >
       <h4
         className={cn(

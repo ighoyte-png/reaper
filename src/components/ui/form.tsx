@@ -1,5 +1,14 @@
+"use client";
+
+import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
 export function Field({
   label,
@@ -44,6 +53,13 @@ export function DateInput({
     />
   );
 }
+
+function useMounted() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted;
+}
+
 export function Modal({
   title,
   children,
@@ -53,22 +69,28 @@ export function Modal({
   children: ReactNode;
   onClose: () => void;
 }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+  const mounted = useMounted();
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-md">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">{title}</h2>
           <button
             type="button"
-            className="text-sm text-[var(--text-muted)]"
+            className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
             onClick={onClose}
+            aria-label="Close"
+            title="Close"
           >
-            Close
+            <X size={16} strokeWidth={1.75} />
           </button>
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -85,8 +107,11 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+  const mounted = useMounted();
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl">
         <h2 className="text-sm font-semibold">{title}</h2>
         <p className="mt-2 text-sm text-[var(--text-muted)]">{message}</p>
@@ -107,7 +132,8 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
