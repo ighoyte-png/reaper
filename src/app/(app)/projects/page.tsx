@@ -443,7 +443,7 @@ function ProjectCard({
       </div>
       <div className="mt-auto space-y-3">
         {overallPct != null ? (
-          <ProgressBar pct={overallPct} label="Overall progress" />
+          <ProgressBar pct={overallPct} label="Overall Progress" />
         ) : null}
         <div className="space-y-2">
           <div

@@ -47,6 +47,8 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
   const [label, setLabel] = useState("");
   const [url, setUrl] = useState("");
   const [noteBody, setNoteBody] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const editable = canManage && editMode;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -137,7 +139,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    if (!canManage) return;
+    if (!editable) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = assets.findIndex((a) => a.id === active.id);
@@ -149,41 +151,71 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
     });
   }
 
+  function toggleEditMode() {
+    setEditMode((v) => {
+      if (v) resetForm();
+      return !v;
+    });
+  }
+
   return (
     <section className="rounded-md border border-[var(--border)] p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Assets</h2>
         {canManage ? (
           <div className="flex items-center gap-1">
+            {editMode ? (
+              <>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                    mode === "link" &&
+                      !editing &&
+                      "bg-[var(--row-hover)] text-[var(--accent)]",
+                  )}
+                  onClick={() => startAdd("link")}
+                  aria-label="Add link"
+                  title="Add link"
+                >
+                  <Plus size={16} />
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                    mode === "note" &&
+                      !editing &&
+                      "bg-[var(--row-hover)] text-[var(--accent)]",
+                  )}
+                  onClick={() => startAdd("note")}
+                  aria-label="Add note"
+                  title="Add note"
+                >
+                  <StickyNote size={16} />
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               className={cn(
-                "inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-                mode === "link" && !editing && "bg-[var(--row-hover)] text-[var(--accent)]",
+                "inline-flex cursor-pointer rounded p-1.5 hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                editMode
+                  ? "bg-[var(--row-hover)] text-[var(--accent)]"
+                  : "text-[var(--text-muted)]",
               )}
-              onClick={() => startAdd("link")}
-              aria-label="Add link"
-              title="Add link"
+              onClick={toggleEditMode}
+              aria-label={editMode ? "Done editing assets" : "Edit assets"}
+              aria-pressed={editMode}
+              title={editMode ? "Done editing assets" : "Edit assets"}
             >
-              <Plus size={16} />
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-                mode === "note" && !editing && "bg-[var(--row-hover)] text-[var(--accent)]",
-              )}
-              onClick={() => startAdd("note")}
-              aria-label="Add note"
-              title="Add note"
-            >
-              <StickyNote size={16} />
+              <Pencil size={16} />
             </button>
           </div>
         ) : null}
       </div>
 
-      {mode === "link" ? (
+      {editable && mode === "link" ? (
         <div className="mb-3 grid gap-2 rounded-md border border-[var(--border)] p-3 sm:grid-cols-3">
           <Field label="Type">
             <select
@@ -235,7 +267,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         </div>
       ) : null}
 
-      {mode === "note" ? (
+      {editable && mode === "note" ? (
         <div className="mb-3 space-y-2 rounded-md border border-[var(--border)] p-3">
           <Field label="Title">
             <input
@@ -283,14 +315,14 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
           <SortableContext
             items={assets.map((a) => a.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!canManage}
+            disabled={!editable}
           >
             <ul className="space-y-1.5">
               {assets.map((a) => (
                 <SortableAssetRow
                   key={a.id}
                   asset={a}
-                  canManage={canManage}
+                  canManage={editable}
                   isEditing={editing?.id === a.id}
                   onEdit={() => startEdit(a)}
                   onDelete={() => deleteProjectAsset(a.id)}

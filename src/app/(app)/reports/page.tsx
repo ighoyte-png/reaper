@@ -18,7 +18,7 @@ const reports = [
   },
   {
     path: "/reports/forecast",
-    title: "Financial forecast",
+    title: "Financial Forecast",
     description: "Revenue, cost, and margin implied by the schedule.",
   },
   {

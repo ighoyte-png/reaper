@@ -1,23 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
-import { BurnBar } from "@/components/ui/burn-bar";
+import { BudgetCard } from "@/components/budgets/budget-card";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
-import {
-  budgetBurn,
-  budgetHealth,
-  formatHours,
-  formatMoney,
-} from "@/lib/domain/budget";
-import { projectForecast } from "@/lib/domain/forecast";
 import {
   sortClientsByName,
   sortProjectsByClientThenName,
@@ -142,7 +134,7 @@ function BudgetsReportContent() {
               <ClientNavButton
                 active={clientFilter === "all"}
                 onClick={() => setClientFilter("all")}
-                label="All clients"
+                label="All Clients"
                 count={projects.length}
               />
               {clients.map((client) => (
@@ -159,7 +151,7 @@ function BudgetsReportContent() {
                 <ClientNavButton
                   active={clientFilter === "none"}
                   onClick={() => setClientFilter("none")}
-                  label="No client"
+                  label="No Client"
                   count={clientCounts.get("none") ?? 0}
                 />
               ) : null}
@@ -202,7 +194,7 @@ function BudgetsReportContent() {
                 <MobileClientChip
                   active={clientFilter === "none"}
                   onClick={() => setClientFilter("none")}
-                  label="No client"
+                  label="No Client"
                 />
               ) : null}
             </div>
@@ -224,7 +216,7 @@ function BudgetsReportContent() {
                         />
                       ) : null}
                       <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
-                        {client?.name ?? "No client"}
+                        {client?.name ?? "No Client"}
                       </h2>
                       <span className="text-xs text-[var(--text-muted)]">
                         {groupProjects.length} project
@@ -321,96 +313,5 @@ function MobileClientChip({
       ) : null}
       {label}
     </button>
-  );
-}
-
-function BudgetCard({
-  project,
-  href,
-}: {
-  project: Project;
-  href: string;
-}) {
-  const { state } = useData();
-  const burn = budgetBurn(project, state.assignments, state.people);
-  const health = budgetHealth(burn);
-  const forecast = projectForecast(
-    project,
-    state.assignments,
-    state.people,
-  );
-
-  const summary =
-    burn.mode === "none"
-      ? formatHours(burn.plannedHours)
-      : burn.mode === "amount"
-        ? `${formatMoney(burn.plannedAmount)} / ${formatMoney(burn.totalAmount ?? 0)}`
-        : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}${
-            burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
-          }`;
-
-  return (
-    <Link
-      id={`project-card-${project.id}`}
-      href={href}
-      className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]"
-    >
-      <div className="mb-3 flex min-w-0 items-center gap-2">
-        <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
-          {project.name}
-        </div>
-        <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
-          {burn.mode === "none"
-            ? "No budget"
-            : burn.mode === "amount"
-              ? "Dollar"
-              : project.budget_monthly_reset
-                ? "Monthly hours"
-                : "Hours"}
-        </span>
-      </div>
-      <div className="mt-auto space-y-3">
-        <div>
-          <div
-            className={cn(
-              "mb-1.5 text-xs tabular-nums",
-              health === "over" && "text-[var(--status-over)]",
-              health === "near" && "text-[var(--status-near)]",
-              (health === "healthy" || health === "none") &&
-                "text-[var(--text-muted)]",
-            )}
-          >
-            {summary}
-          </div>
-          <BurnBar burn={burn} compact />
-        </div>
-        <div className="border-t border-[var(--border)] pt-3">
-          <div className="mb-2 text-xs font-semibold text-[var(--text)]">
-            Forecast $
-          </div>
-          <dl className="space-y-1.5 text-xs">
-            <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Revenue</dt>
-              <dd className="tabular-nums font-medium">
-                {formatMoney(forecast.revenue)}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Cost</dt>
-              <dd className="tabular-nums font-medium">
-                {formatMoney(forecast.cost)}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Margin</dt>
-              <dd className="tabular-nums font-medium">
-                {formatMoney(forecast.margin)} ({forecast.marginPct.toFixed(0)}
-                %)
-              </dd>
-            </div>
-          </dl>
-        </div>
-      </div>
-    </Link>
   );
 }

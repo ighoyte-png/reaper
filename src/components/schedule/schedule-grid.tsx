@@ -443,16 +443,16 @@ export function ScheduleGrid() {
   );
 
   const sidebarExpandLabel = leaveEditForm
-    ? "Time off"
+    ? "Time Off"
     : selected
       ? formDirty
-        ? "Assignment · unsaved"
+        ? "Assignment · Unsaved"
         : "Assignment"
       : canManage
         ? "Budget"
         : isPublicShare
           ? "Plan"
-          : "My plan";
+          : "My Plan";
 
   const occurrences = useMemo(() => {
     const filtered = state.assignments.filter(
@@ -1709,7 +1709,7 @@ export function ScheduleGrid() {
                       style={{ width: LABEL_PX, height: ROW_H }}
                     >
                       <span className="truncate text-[11px] font-medium leading-none text-[var(--text-muted)]">
-                        Time off
+                        Time Off
                       </span>
                       <span className="h-5 w-1 shrink-0 rounded-full bg-[var(--leave-block)] opacity-70" />
                     </div>
@@ -2643,12 +2643,12 @@ export function ScheduleGrid() {
         <div className="flex h-[57px] shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-4">
           <h2 className="text-sm font-semibold">
             {leaveEditForm
-              ? "Time off"
+              ? "Time Off"
               : selected
                 ? "Assignment"
                 : canManage
                   ? "Budget"
-                  : "Your plan"}
+                  : "Your Plan"}
           </h2>
           <button
             type="button"
@@ -2817,6 +2817,7 @@ export function ScheduleGrid() {
                   projectId={editForm.project_id}
                   readOnly
                   compact
+                  allowSelect={false}
                 />
               </div>
             ) : (
@@ -3073,6 +3074,7 @@ export function ScheduleGrid() {
                   projectId={selected.project_id}
                   readOnly
                   compact
+                  allowSelect={false}
                 />
               </div>
             ) : (
@@ -3147,7 +3149,7 @@ export function ScheduleGrid() {
       {addProjectForPerson && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
           <div className="w-full max-w-md rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-md">
-            <h3 className="text-sm font-semibold">Add project row</h3>
+            <h3 className="text-sm font-semibold">Add Project Row</h3>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Choose a client, then a project to show under this person.
             </p>

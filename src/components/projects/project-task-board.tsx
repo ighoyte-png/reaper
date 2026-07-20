@@ -3,13 +3,16 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCenter,
+  closestCorners,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -20,13 +23,14 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   GripVertical,
   MessageSquare,
+  Pencil,
   Plus,
   StickyNote,
+  Trash2,
 } from "lucide-react";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
 import {
@@ -62,6 +66,8 @@ type Props = {
   compact?: boolean;
   /** Show list/card toggle (Phase 8). */
   allowCardView?: boolean;
+  /** When false, hide row/list selection checkboxes and bulk bar. */
+  allowSelect?: boolean;
 };
 
 function todayKey() {
@@ -99,6 +105,7 @@ type BoardCtx = {
   myPersonId: string | null;
   manageLists: boolean;
   allowSelect: boolean;
+  listsEditMode: boolean;
   compact: boolean;
   selected: Set<string>;
   toggleSelect: (id: string) => void;
@@ -130,6 +137,7 @@ export function ProjectTaskBoard({
   readOnly = false,
   compact = false,
   allowCardView = false,
+  allowSelect: allowSelectProp,
 }: Props) {
   const {
     state,
@@ -150,8 +158,13 @@ export function ProjectTaskBoard({
   const [view, setView] = useState<"list" | "card">("list");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [listsEditMode, setListsEditMode] = useState(false);
 
   const manageLists = canManage && !readOnly;
+  const allowSelect =
+    allowSelectProp !== undefined
+      ? allowSelectProp
+      : canManage || !readOnly;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -538,7 +551,8 @@ export function ProjectTaskBoard({
     canManage,
     myPersonId: myPerson?.id ?? null,
     manageLists,
-    allowSelect: canManage || !readOnly,
+    allowSelect,
+    listsEditMode,
     compact,
     selected,
     toggleSelect,
@@ -556,7 +570,16 @@ export function ProjectTaskBoard({
   if (view === "card" && allowCardView) {
     return (
       <div className="space-y-3">
-        <ViewToggle view={view} setView={setView} allowCardView={allowCardView} />
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
+            Tasks
+          </h3>
+          <ViewToggle
+            view={view}
+            setView={setView}
+            allowCardView={allowCardView}
+          />
+        </div>
         <KanbanBoard
           tasks={parentTasks(visibleTasks)}
           manageLists={manageLists}
@@ -566,7 +589,10 @@ export function ProjectTaskBoard({
         {editing ? (
           <TaskEditModal
             task={editing}
-            readOnly={readOnly && !(canManage || editing.assignee_person_id === myPerson?.id)}
+            readOnly={
+              readOnly &&
+              !(canManage || editing.assignee_person_id === myPerson?.id)
+            }
             onClose={() => setEditing(null)}
           />
         ) : null}
@@ -582,13 +608,30 @@ export function ProjectTaskBoard({
         </h3>
         <ViewToggle view={view} setView={setView} allowCardView={allowCardView} />
         {manageLists ? (
-          <button
-            type="button"
-            className="ml-auto inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-            onClick={addList}
-          >
-            <Plus size={12} /> List
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+              onClick={addList}
+            >
+              <Plus size={12} /> List
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                listsEditMode
+                  ? "border-[var(--accent)] bg-[var(--row-hover)] text-[var(--accent)]"
+                  : "border-[var(--border)] text-[var(--text-muted)]",
+              )}
+              onClick={() => setListsEditMode((v) => !v)}
+              aria-label={listsEditMode ? "Done editing lists" : "Edit lists"}
+              aria-pressed={listsEditMode}
+              title={listsEditMode ? "Done editing lists" : "Edit lists"}
+            >
+              <Pencil size={14} />
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -825,29 +868,29 @@ function ListSection({
           </span>
         ) : null}
         {ctx.allowSelect && selectableIds.length > 0 ? (
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-muted)]">
-            <input
-              type="checkbox"
-              className="cursor-pointer"
-              checked={allSelected}
-              ref={(el) => {
-                if (el) el.indeterminate = someSelected;
-              }}
-              onChange={() =>
-                ctx.setParentsSelected(selectableIds, !allSelected)
-              }
-              aria-label={`Select all tasks in ${list.name}`}
-            />
-            Select all
-          </label>
+          <input
+            type="checkbox"
+            className="cursor-pointer"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = someSelected;
+            }}
+            onChange={() =>
+              ctx.setParentsSelected(selectableIds, !allSelected)
+            }
+            aria-label={`Select all tasks in ${list.name}`}
+            title="Select all"
+          />
         ) : null}
-        {ctx.manageLists ? (
+        {ctx.manageLists && ctx.listsEditMode ? (
           <button
             type="button"
-            className="cursor-pointer text-xs text-[var(--status-over)]"
+            className="inline-flex cursor-pointer rounded p-1 text-[var(--status-over)] hover:bg-[var(--row-hover)]"
             onClick={onDelete}
+            aria-label={`Delete list ${list.name}`}
+            title="Delete list"
           >
-            Delete
+            <Trash2 size={14} />
           </button>
         ) : null}
       </div>
@@ -855,11 +898,7 @@ function ListSection({
         <>
           {parents.length === 0 ? (
             <ListTaskDropZone listId={list.id} disabled={!ctx.manageLists}>
-              <p className="px-3 py-2 text-xs text-[var(--text-muted)]">
-                {ctx.manageLists
-                  ? "Empty list — drop a task here or add one below."
-                  : "Empty list"}
-              </p>
+              <div className="h-2" aria-hidden />
             </ListTaskDropZone>
           ) : (
             <SortableContext
@@ -958,7 +997,7 @@ function TaskRow({
         ref={setNodeRef}
         className={cn(
           "group flex items-center gap-1.5 border-b border-[var(--border)]/60 px-2 py-1.5 text-sm",
-          task.status === "complete" && "text-[var(--text-muted)] opacity-80",
+          task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "ring-1 ring-inset ring-[var(--accent)]/50",
         )}
         style={{ paddingLeft: 8 + depth * 16 }}
@@ -980,23 +1019,25 @@ function TaskRow({
         <button
           type="button"
           className={cn(
-            "inline-flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border",
+            "h-2.5 w-2.5 shrink-0 cursor-pointer rounded-sm",
             task.status === "complete"
-              ? "border-[var(--status-healthy)] bg-[var(--task-complete-bg)] text-[var(--status-healthy)]"
+              ? "bg-[var(--task-complete-fg)]"
               : task.status === "active"
-                ? "border-[var(--task-active-fg)] bg-[var(--task-active-bg)] text-[var(--task-active-fg)]"
-                : "border-[var(--status-near)] bg-[var(--task-upcoming-bg)] text-[var(--status-near)]",
+                ? "bg-[var(--task-active-fg)]"
+                : "bg-[var(--task-upcoming-fg)]",
             !canEditStatus && "cursor-not-allowed opacity-60",
           )}
           title={taskStatusLabel(task.status)}
+          aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
           onClick={() => ctx.cycleStatus(task)}
-        >
-          {task.status === "complete" ? <Check size={12} /> : null}
-        </button>
+        />
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <button
             type="button"
-            className="min-w-0 cursor-pointer truncate text-left hover:underline"
+            className={cn(
+              "min-w-0 cursor-pointer truncate text-left hover:underline",
+              task.status === "complete" && "line-through",
+            )}
             onClick={() => ctx.setEditing(task)}
           >
             {task.title}
@@ -1143,6 +1184,28 @@ function CommentThread({
 type CardDragData = { type: "card"; status: TaskStatus };
 type ColumnDragData = { type: "column"; status: TaskStatus };
 
+function statusCardTone(status: TaskStatus) {
+  switch (status) {
+    case "complete":
+      return {
+        bar: "bg-[var(--task-complete-fg)]",
+        shell:
+          "border-[var(--task-complete-fg)]/35 bg-[var(--task-complete-bg)]",
+      };
+    case "active":
+      return {
+        bar: "bg-[var(--task-active-fg)]",
+        shell: "border-[var(--task-active-fg)]/35 bg-[var(--task-active-bg)]",
+      };
+    default:
+      return {
+        bar: "bg-[var(--task-upcoming-fg)]",
+        shell:
+          "border-[var(--task-upcoming-fg)]/35 bg-[var(--task-upcoming-bg)]",
+      };
+  }
+}
+
 function KanbanBoard({
   tasks,
   manageLists,
@@ -1159,13 +1222,25 @@ function KanbanBoard({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const columns: TaskStatus[] = ["upcoming", "active", "complete"];
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeTask = activeId
+    ? (tasks.find((t) => t.id === activeId) ?? null)
+    : null;
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(String(event.active.id));
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    setActiveId(null);
     if (!manageLists || !over) return;
     const activeData = active.data.current as CardDragData | undefined;
     if (!activeData) return;
-    const overData = over.data.current as CardDragData | ColumnDragData | undefined;
+    const overData = over.data.current as
+      | CardDragData
+      | ColumnDragData
+      | undefined;
     const destStatus = overData?.status ?? activeData.status;
     const destSiblings = tasks
       .filter((t) => t.status === destStatus && t.id !== active.id)
@@ -1178,11 +1253,17 @@ function KanbanBoard({
     onMove(String(active.id), destStatus, index);
   }
 
+  function handleDragCancel() {
+    setActiveId(null);
+  }
+
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={closestCorners}
+      onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
     >
       <div className="grid gap-3 md:grid-cols-3">
         {columns.map((status) => (
@@ -1194,9 +1275,15 @@ function KanbanBoard({
               .sort((a, b) => a.sort_order - b.sort_order)}
             manageLists={manageLists}
             onEdit={onEdit}
+            activeId={activeId}
           />
         ))}
       </div>
+      <DragOverlay dropAnimation={null}>
+        {activeTask ? (
+          <KanbanCardFace task={activeTask} dragging />
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }
@@ -1206,23 +1293,36 @@ function KanbanColumn({
   tasks,
   manageLists,
   onEdit,
+  activeId,
 }: {
   status: TaskStatus;
   tasks: Task[];
   manageLists: boolean;
   onEdit: (task: Task) => void;
+  activeId: string | null;
 }) {
   const { setNodeRef } = useDroppable({
     id: `col-${status}`,
     data: { type: "column", status } satisfies ColumnDragData,
   });
+  const tone = statusCardTone(status);
 
   return (
     <div
       ref={setNodeRef}
       className="min-h-24 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)]/40 p-2"
     >
-      <h4 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+      <h4
+        className={cn(
+          "mb-2 flex items-center gap-1.5 px-1 text-xs font-semibold",
+          status === "complete"
+            ? "text-[var(--task-complete-fg)]"
+            : status === "active"
+              ? "text-[var(--task-active-fg)]"
+              : "text-[var(--task-upcoming-fg)]",
+        )}
+      >
+        <span className={cn("h-2 w-2 rounded-sm", tone.bar)} aria-hidden />
         {taskStatusLabel(status)}
       </h4>
       <SortableContext
@@ -1231,13 +1331,73 @@ function KanbanColumn({
         disabled={!manageLists}
       >
         {tasks.length === 0 ? (
-          <p className="px-1 py-2 text-xs text-[var(--text-muted)]">No tasks</p>
+          <div className="min-h-8" aria-hidden />
         ) : (
           tasks.map((t) => (
-            <KanbanCard key={t.id} task={t} manageLists={manageLists} onEdit={onEdit} />
+            <KanbanCard
+              key={t.id}
+              task={t}
+              manageLists={manageLists}
+              onEdit={onEdit}
+              isOverlaySource={activeId === t.id}
+            />
           ))
         )}
       </SortableContext>
+    </div>
+  );
+}
+
+function KanbanCardFace({
+  task,
+  dragging = false,
+  onEdit,
+}: {
+  task: Task;
+  dragging?: boolean;
+  onEdit?: (task: Task) => void;
+}) {
+  const tone = statusCardTone(task.status);
+  const title = (
+    <span
+      className={cn(
+        "block w-full text-left",
+        task.status === "complete" &&
+          "text-[var(--task-complete-fg)] line-through",
+      )}
+    >
+      {task.title}
+    </span>
+  );
+
+  return (
+    <div
+      className={cn(
+        "relative mb-1.5 overflow-hidden rounded-md border p-2 pl-3 text-sm shadow-sm",
+        tone.shell,
+        dragging && "mb-0 cursor-grabbing shadow-lg ring-1 ring-[var(--border)]",
+      )}
+    >
+      <span
+        className={cn("absolute inset-y-0 left-0 w-1", tone.bar)}
+        aria-hidden
+      />
+      {onEdit ? (
+        <button
+          type="button"
+          className="block w-full cursor-pointer text-left"
+          onClick={() => onEdit(task)}
+        >
+          {title}
+        </button>
+      ) : (
+        title
+      )}
+      {task.due_date ? (
+        <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+          {format(parseISO(task.due_date), "MMM d, yyyy")}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1246,10 +1406,12 @@ function KanbanCard({
   task,
   manageLists,
   onEdit,
+  isOverlaySource,
 }: {
   task: Task;
   manageLists: boolean;
   onEdit: (task: Task) => void;
+  isOverlaySource: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
@@ -1264,30 +1426,13 @@ function KanbanCard({
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        opacity: isDragging ? 0.5 : 1,
+        opacity: isDragging || isOverlaySource ? 0.35 : 1,
       }}
-      className={cn(
-        "mb-1.5 touch-none rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-sm",
-        manageLists && "cursor-grab",
-      )}
+      className={cn(manageLists && "cursor-grab touch-none")}
       {...attributes}
       {...listeners}
     >
-      <button
-        type="button"
-        className={cn(
-          "block w-full cursor-pointer text-left",
-          task.status === "complete" && "text-[var(--text-muted)]",
-        )}
-        onClick={() => onEdit(task)}
-      >
-        {task.title}
-      </button>
-      {task.due_date ? (
-        <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-          {format(parseISO(task.due_date), "MMM d, yyyy")}
-        </div>
-      ) : null}
+      <KanbanCardFace task={task} onEdit={onEdit} />
     </div>
   );
 }

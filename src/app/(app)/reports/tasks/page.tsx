@@ -83,10 +83,10 @@ function TaskTable({
                     className={cn(
                       "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
                       task.status === "complete"
-                        ? "bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]"
+                        ? "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)] line-through"
                         : task.status === "active"
-                          ? "bg-[var(--accent)]/15 text-[var(--accent)]"
-                          : "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+                          ? "bg-[var(--task-active-bg)] text-[var(--task-active-fg)]"
+                          : "bg-[var(--task-upcoming-bg)] text-[var(--task-upcoming-fg)]",
                     )}
                   >
                     {task.status}
@@ -151,7 +151,7 @@ export default function TasksReportPage() {
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle size={14} className="text-[var(--status-over)]" />
             <h2 className="text-sm font-semibold">
-              Overdue tasks
+              Overdue Tasks
               {overdueTasks.length > 0 ? ` (${overdueTasks.length})` : ""}
             </h2>
           </div>
@@ -169,7 +169,7 @@ export default function TasksReportPage() {
           <div className="mb-3 flex items-center gap-2">
             <CalendarOff size={14} className="text-[var(--text-muted)]" />
             <h2 className="text-sm font-semibold">
-              No due date
+              No Due Date
               {noDueDateTasks.length > 0 ? ` (${noDueDateTasks.length})` : ""}
             </h2>
           </div>
@@ -189,7 +189,7 @@ export default function TasksReportPage() {
               size={14}
               className="text-[var(--status-healthy)]"
             />
-            <h2 className="text-sm font-semibold">Recently completed</h2>
+            <h2 className="text-sm font-semibold">Recently Completed</h2>
           </div>
           <TaskTable
             tasks={recentlyCompleted}

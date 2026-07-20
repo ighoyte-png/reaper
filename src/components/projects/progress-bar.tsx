@@ -7,14 +7,19 @@ export function ProgressBar({
   label,
   approved,
   size = "md",
+  footerStart,
+  footerEnd,
 }: {
   pct: number;
   label?: string;
   approved?: boolean;
   size?: "md" | "lg";
+  footerStart?: string | null;
+  footerEnd?: string | null;
 }) {
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
   const isComplete = clamped >= 100;
+  const showFooter = Boolean(footerStart || footerEnd);
   return (
     <div className="space-y-1">
       {label ? (
@@ -52,6 +57,12 @@ export function ProgressBar({
           />
         ) : null}
       </div>
+      {showFooter ? (
+        <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
+          <span className="truncate">{footerStart ?? ""}</span>
+          <span className="shrink-0 truncate text-right">{footerEnd ?? ""}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

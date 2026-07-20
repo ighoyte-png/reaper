@@ -14,7 +14,7 @@ export default function ProjectShareLayout({
         <BrandLockup compact />
         <div className="flex items-center gap-3">
           <span className="text-xs text-[var(--text-muted)]">
-            Client portal
+            Client Portal
           </span>
           <ThemeToggle />
         </div>

@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
-import { Copy, Link2, Plus } from "lucide-react";
+import { Copy, Link2, Pencil, Plus } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { BudgetCard } from "@/components/budgets/budget-card";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { ProgressBar } from "@/components/projects/progress-bar";
@@ -21,6 +22,7 @@ import {
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
+import { cn } from "@/lib/cn";
 import type { Milestone, MilestoneStatus, Project } from "@/lib/types";
 
 function formatDisplayDate(dateKey: string): string {
@@ -32,11 +34,11 @@ function overallProgressLabel(
   endDate: string | null,
 ): string {
   if (startDate && endDate) {
-    return `Overall progress · ${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`;
+    return `Overall Progress · ${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`;
   }
-  if (startDate) return `Overall progress · from ${formatDisplayDate(startDate)}`;
-  if (endDate) return `Overall progress · through ${formatDisplayDate(endDate)}`;
-  return "Overall progress";
+  if (startDate) return `Overall Progress · from ${formatDisplayDate(startDate)}`;
+  if (endDate) return `Overall Progress · through ${formatDisplayDate(endDate)}`;
+  return "Overall Progress";
 }
 
 export default function ProjectDetailPage() {
@@ -66,6 +68,7 @@ export default function ProjectDetailPage() {
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(
     null,
   );
+  const [progressEditMode, setProgressEditMode] = useState(false);
 
   const project = state.projects.find((p) => p.id === params.id);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
@@ -253,7 +256,34 @@ export default function ProjectDetailPage() {
           {/* Sidebar: Progress → Assets → Team → Budget → Client portal */}
           <div className="space-y-4">
             <section className="rounded-md border border-[var(--border)] p-4">
-              <h2 className="mb-3 text-sm font-semibold">Progress</h2>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">Progress</h2>
+                {canManage ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex cursor-pointer rounded p-1.5 hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                      progressEditMode
+                        ? "bg-[var(--row-hover)] text-[var(--accent)]"
+                        : "text-[var(--text-muted)]",
+                    )}
+                    onClick={() => setProgressEditMode((v) => !v)}
+                    aria-label={
+                      progressEditMode
+                        ? "Done editing progress"
+                        : "Edit progress"
+                    }
+                    aria-pressed={progressEditMode}
+                    title={
+                      progressEditMode
+                        ? "Done editing progress"
+                        : "Edit progress"
+                    }
+                  >
+                    <Pencil size={16} />
+                  </button>
+                ) : null}
+              </div>
               <ProgressBar
                 pct={overallPct}
                 label={overallProgressLabel(
@@ -265,10 +295,10 @@ export default function ProjectDetailPage() {
               {!isRetainer ? (
                 <div className="mt-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    <h3 className="text-xs font-semibold text-[var(--text-muted)]">
                       Milestones
                     </h3>
-                    {canManage ? (
+                    {canManage && progressEditMode ? (
                       <button
                         type="button"
                         className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
@@ -300,7 +330,7 @@ export default function ProjectDetailPage() {
                       milestones={milestones}
                       project={project}
                       today={today}
-                      canManage={canManage}
+                      canManage={canManage && progressEditMode}
                       formatDisplayDate={formatDisplayDate}
                       onReorder={(reordered) => {
                         reordered.forEach((m, i) => {
@@ -356,12 +386,14 @@ export default function ProjectDetailPage() {
 
             <section className="rounded-md border border-[var(--border)] p-4">
               <h2 className="mb-2 text-sm font-semibold">Budget</h2>
-              <p className="mb-2 text-xs text-[var(--text-muted)]">
-                Financial tracking lives in Reports.
-              </p>
+              <BudgetCard
+                project={project}
+                href={budgetHref}
+                showName={false}
+              />
               <Link
                 href={budgetHref}
-                className="text-sm text-[var(--accent)] hover:underline"
+                className="mt-2 inline-block text-sm text-[var(--accent)] hover:underline"
               >
                 Open this project&apos;s budget →
               </Link>
@@ -370,7 +402,7 @@ export default function ProjectDetailPage() {
             <section className="rounded-md border border-[var(--border)] p-4">
               <div className="mb-2 flex items-center gap-2">
                 <Link2 size={14} className="text-[var(--text-muted)]" />
-                <h2 className="text-sm font-semibold">Client portal</h2>
+                <h2 className="text-sm font-semibold">Client Portal</h2>
               </div>
               {canManage ? (
                 shareResult ? (

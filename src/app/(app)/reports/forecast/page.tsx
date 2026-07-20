@@ -88,7 +88,7 @@ export default function ForecastReportPage() {
 
   return (
     <PageContainer>
-      <PageHeader title={<ReportBreadcrumb current="Financial forecast" />} />
+      <PageHeader title={<ReportBreadcrumb current="Financial Forecast" />} />
       {state.projects.length === 0 ? (
         <div className="p-5">
           <p className="text-sm text-[var(--text-muted)]">No projects yet.</p>
@@ -143,7 +143,7 @@ export default function ForecastReportPage() {
 
           <div className="min-w-0 flex-1 p-3 sm:p-5">
             <div className="mb-5 grid gap-3 sm:grid-cols-4">
-              <Stat label="Planned hours" value={formatHours(org.plannedHours)} />
+              <Stat label="Planned Hours" value={formatHours(org.plannedHours)} />
               <Stat label="Revenue" value={formatMoney(org.revenue)} />
               <Stat label="Cost" value={formatMoney(org.cost)} />
               <Stat

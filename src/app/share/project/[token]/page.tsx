@@ -62,18 +62,6 @@ function formatDisplayDate(dateKey: string): string {
   return format(parseISO(dateKey), "MMM d, yyyy");
 }
 
-function overallProgressLabel(
-  startDate: string | null,
-  endDate: string | null,
-): string {
-  if (startDate && endDate) {
-    return `Overall progress · ${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`;
-  }
-  if (startDate) return `Overall progress · from ${formatDisplayDate(startDate)}`;
-  if (endDate) return `Overall progress · through ${formatDisplayDate(endDate)}`;
-  return "Overall progress";
-}
-
 export default function ProjectSharePage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
@@ -213,18 +201,25 @@ export default function ProjectSharePage() {
       <section className="rounded-md border border-[var(--border)] p-4">
         <ProgressBar
           pct={overallPct}
-          label={overallProgressLabel(
-            portal.project.start_date,
-            portal.project.end_date,
-          )}
+          label="Overall Project Progress"
           size="lg"
+          footerStart={
+            portal.project.start_date
+              ? formatDisplayDate(portal.project.start_date)
+              : null
+          }
+          footerEnd={
+            portal.project.end_date
+              ? formatDisplayDate(portal.project.end_date)
+              : null
+          }
         />
       </section>
 
       {milestonesSorted.length > 0 ? (
         <section className="rounded-md border border-[var(--border)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Milestones</h2>
-          <div className="space-y-3">
+          <div className="space-y-6">
             {milestonesSorted.map((m) => {
               const listIds = portal.taskLists
                 .filter((l) => l.milestone_id === m.id)
@@ -256,7 +251,7 @@ export default function ProjectSharePage() {
 
       {assetsSorted.length > 0 ? (
         <section className="rounded-md border border-[var(--border)] p-4">
-          <h2 className="mb-3 text-sm font-semibold">Links & assets</h2>
+          <h2 className="mb-3 text-sm font-semibold">Links & Assets</h2>
           <ul className="space-y-1.5">
             {assetsSorted.map((a) => {
               const isNote = Boolean(a.body.trim());
@@ -328,7 +323,7 @@ export default function ProjectSharePage() {
                         <span
                           className={cn(
                             t.status === "complete" &&
-                              "text-[var(--text-muted)] line-through",
+                              "text-[var(--task-complete-fg)] line-through",
                           )}
                         >
                           {t.title}
@@ -337,10 +332,10 @@ export default function ProjectSharePage() {
                           className={cn(
                             "shrink-0 text-xs capitalize",
                             t.status === "complete"
-                              ? "text-[var(--status-healthy)]"
+                              ? "text-[var(--task-complete-fg)]"
                               : t.status === "active"
-                                ? "text-[var(--accent)]"
-                                : "text-[var(--text-muted)]",
+                                ? "text-[var(--task-active-fg)]"
+                                : "text-[var(--task-upcoming-fg)]",
                           )}
                         >
                           {t.status}

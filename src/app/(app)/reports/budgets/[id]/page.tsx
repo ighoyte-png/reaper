@@ -238,7 +238,7 @@ export default function ProjectBudgetDetailPage() {
         </div>
 
         <section className="rounded-md border border-[var(--border)] p-4">
-          <h2 className="mb-3 text-sm font-semibold">Budget burn</h2>
+          <h2 className="mb-3 text-sm font-semibold">Budget Burn</h2>
           <p
             className={cn(
               "mb-2 text-sm tabular-nums",
@@ -277,7 +277,7 @@ export default function ProjectBudgetDetailPage() {
             </div>
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
-                {year} planned
+                {year} Planned
               </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
                 {mode === "amount"
@@ -289,7 +289,7 @@ export default function ProjectBudgetDetailPage() {
         </section>
 
         <section className="rounded-md border border-[var(--border)] p-4">
-          <h2 className="mb-3 text-sm font-semibold">{year} calendar</h2>
+          <h2 className="mb-3 text-sm font-semibold">{year} Calendar</h2>
           <ProjectYearBurnChart
             bars={yearBars}
             unit={chartUnit}
