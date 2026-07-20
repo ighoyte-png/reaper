@@ -766,14 +766,16 @@ function ListSection({
       disabled: !ctx.manageLists,
     });
 
-  const parentIds = parents.map((p) => p.id);
-  const selectedParentCount = parentIds.filter((id) =>
+  const selectableIds = parents.flatMap((p) => [
+    p.id,
+    ...(ctx.childrenMap.get(p.id) ?? []).map((c) => c.id),
+  ]);
+  const selectedCount = selectableIds.filter((id) =>
     ctx.selected.has(id),
   ).length;
-  const allParentsSelected =
-    parents.length > 0 && selectedParentCount === parents.length;
-  const someParentsSelected =
-    selectedParentCount > 0 && !allParentsSelected;
+  const allSelected =
+    selectableIds.length > 0 && selectedCount === selectableIds.length;
+  const someSelected = selectedCount > 0 && !allSelected;
 
   return (
     <section
@@ -826,17 +828,17 @@ function ListSection({
             {milestoneName}
           </span>
         ) : null}
-        {ctx.allowSelect && parents.length > 0 ? (
+        {ctx.allowSelect && selectableIds.length > 0 ? (
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-muted)]">
             <input
               type="checkbox"
               className="cursor-pointer"
-              checked={allParentsSelected}
+              checked={allSelected}
               ref={(el) => {
-                if (el) el.indeterminate = someParentsSelected;
+                if (el) el.indeterminate = someSelected;
               }}
               onChange={() =>
-                ctx.setParentsSelected(parentIds, !allParentsSelected)
+                ctx.setParentsSelected(selectableIds, !allSelected)
               }
               aria-label={`Select all tasks in ${list.name}`}
             />
@@ -978,15 +980,6 @@ function TaskRow({
         ) : (
           <span className="w-4" />
         )}
-        {ctx.allowSelect ? (
-          <input
-            type="checkbox"
-            className="cursor-pointer"
-            checked={isSelected}
-            onChange={() => ctx.toggleSelect(task.id)}
-            aria-label={`Select ${task.title}`}
-          />
-        ) : null}
         <button
           type="button"
           className={cn(
@@ -1050,6 +1043,15 @@ function TaskRow({
           >
             + sub
           </button>
+        ) : null}
+        {ctx.allowSelect ? (
+          <input
+            type="checkbox"
+            className="cursor-pointer"
+            checked={isSelected}
+            onChange={() => ctx.toggleSelect(task.id)}
+            aria-label={`Select ${task.title}`}
+          />
         ) : null}
       </div>
       {isExpanded ? <CommentThread task={task} depth={depth} comments={taskComments} ctx={ctx} /> : null}
