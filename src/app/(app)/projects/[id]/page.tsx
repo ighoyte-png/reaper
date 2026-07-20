@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { format, startOfDay } from "date-fns";
+import { format, parseISO, startOfDay } from "date-fns";
 import { Copy, Link2 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
@@ -22,6 +22,22 @@ import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
 import type { Milestone, MilestoneStatus, Project } from "@/lib/types";
+
+function formatDisplayDate(dateKey: string): string {
+  return format(parseISO(dateKey), "MMM d, yyyy");
+}
+
+function overallProgressLabel(
+  startDate: string | null,
+  endDate: string | null,
+): string {
+  if (startDate && endDate) {
+    return `Overall progress · ${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`;
+  }
+  if (startDate) return `Overall progress · from ${formatDisplayDate(startDate)}`;
+  if (endDate) return `Overall progress · through ${formatDisplayDate(endDate)}`;
+  return "Overall progress";
+}
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -237,7 +253,10 @@ export default function ProjectDetailPage() {
               <h2 className="mb-3 text-sm font-semibold">Progress</h2>
               <ProgressBar
                 pct={overallPct}
-                label="Overall progress"
+                label={overallProgressLabel(
+                  project.start_date,
+                  project.end_date,
+                )}
                 size="lg"
               />
               {!isRetainer ? (
@@ -278,7 +297,7 @@ export default function ProjectDetailPage() {
                         <div key={m.id} className="space-y-1.5">
                           <ProgressBar
                             pct={pct}
-                            label={m.name}
+                            label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
                             approved={m.client_approved}
                           />
                           {canManage ? (

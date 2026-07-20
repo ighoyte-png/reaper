@@ -23,9 +23,9 @@
   --zebra: rgba(0, 0, 0, 0.035);
   --today-col: color-mix(in srgb, var(--accent) 12%, var(--bg));
   --task-upcoming-bg: color-mix(in srgb, #eab308 30%, var(--bg));
-  --task-active-bg: color-mix(in srgb, #f97316 22%, var(--bg));
+  --task-active-bg: color-mix(in srgb, #3b82f6 22%, var(--bg));
   --task-complete-bg: color-mix(in srgb, var(--status-healthy) 20%, var(--bg));
-  --task-active-fg: #ea580c;
+  --task-active-fg: #2563eb;
 }
 
 .dark {
@@ -51,9 +51,9 @@
   --zebra: rgba(255, 255, 255, 0.035);
   --today-col: color-mix(in srgb, var(--accent) 18%, var(--bg));
   --task-upcoming-bg: color-mix(in srgb, #eab308 38%, var(--bg));
-  --task-active-bg: color-mix(in srgb, #f97316 30%, var(--bg));
+  --task-active-bg: color-mix(in srgb, #3b82f6 30%, var(--bg));
   --task-complete-bg: color-mix(in srgb, var(--status-healthy) 26%, var(--bg));
-  --task-active-fg: #fb923c;
+  --task-active-fg: #60a5fa;
 }
 
 @theme inline {

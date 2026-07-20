@@ -56,6 +56,22 @@ function taskCompletionPct(
   return Math.round((done / parents.length) * 100);
 }
 
+function formatDisplayDate(dateKey: string): string {
+  return format(parseISO(dateKey), "MMM d, yyyy");
+}
+
+function overallProgressLabel(
+  startDate: string | null,
+  endDate: string | null,
+): string {
+  if (startDate && endDate) {
+    return `Overall progress · ${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`;
+  }
+  if (startDate) return `Overall progress · from ${formatDisplayDate(startDate)}`;
+  if (endDate) return `Overall progress · through ${formatDisplayDate(endDate)}`;
+  return "Overall progress";
+}
+
 export default function ProjectSharePage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
@@ -186,7 +202,14 @@ export default function ProjectSharePage() {
       ) : null}
 
       <section className="rounded-md border border-[var(--border)] p-4">
-        <ProgressBar pct={overallPct} label="Overall progress" size="lg" />
+        <ProgressBar
+          pct={overallPct}
+          label={overallProgressLabel(
+            portal.project.start_date,
+            portal.project.end_date,
+          )}
+          size="lg"
+        />
       </section>
 
       {milestonesSorted.length > 0 ? (
@@ -212,7 +235,7 @@ export default function ProjectSharePage() {
                 <div key={m.id}>
                   <ProgressBar
                     pct={pct}
-                    label={`${m.name} · ${format(parseISO(m.due_date), "MMM d, yyyy")}`}
+                    label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
                     approved={m.client_approved}
                   />
                 </div>
