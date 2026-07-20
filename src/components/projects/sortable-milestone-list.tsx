@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Pencil } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
+import { Checkbox } from "@/components/ui/checkbox";
 import { milestoneDateProgress } from "@/lib/domain/progress";
 import type { Milestone, Project } from "@/lib/types";
 
@@ -139,9 +140,9 @@ function SortableMilestoneRow({
       </div>
       {canManage ? (
         <div className="flex items-center justify-between gap-2 pl-5">
-          <label className="inline-flex cursor-pointer items-center gap-1 text-[10px] text-[var(--text-muted)]">
-            <input
-              type="checkbox"
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+            <Checkbox
+              size="sm"
               checked={milestone.client_approved}
               onChange={(e) =>
                 onToggleApproved(milestone, e.target.checked)

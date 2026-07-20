@@ -33,6 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   RichNotesHtml,
@@ -860,11 +861,10 @@ function ListSection({
           </span>
         ) : null}
         {ctx.allowSelect && selectableIds.length > 0 ? (
-          <input
-            type="checkbox"
-            className="cursor-pointer"
+          <Checkbox
             checked={allSelected}
-            ref={(el) => {
+            indeterminate={someSelected}
+            inputRef={(el) => {
               if (el) el.indeterminate = someSelected;
             }}
             onChange={() =>
@@ -1077,9 +1077,7 @@ function TaskRow({
           </button>
         ) : null}
         {ctx.allowSelect ? (
-          <input
-            type="checkbox"
-            className="cursor-pointer"
+          <Checkbox
             checked={isSelected}
             onChange={() => ctx.toggleSelect(task.id)}
             aria-label={`Select ${task.title}`}
