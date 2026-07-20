@@ -6,6 +6,7 @@ import { format, isWeekend, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass, Modal, DateInput } from "@/components/ui/form";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
@@ -1372,12 +1373,6 @@ export function ScheduleGrid() {
 
             {visiblePeople.map((person) => {
               const personProjects = projectsForPerson(person.id);
-              const initials = person.name
-                .split(" ")
-                .map((p) => p[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase();
               const blocksReady = revealedPeople.has(person.id);
               const collapsed = collapsedPeople.has(person.id);
 
@@ -1412,9 +1407,12 @@ export function ScheduleGrid() {
                           <ChevronDown size={14} strokeWidth={2} />
                         )}
                       </button>
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[10px] font-semibold">
-                        {initials}
-                      </div>
+                      <PersonAvatar
+                        avatarUrl={person.avatar_url}
+                        name={person.name}
+                        size="row"
+                        fallback="initials"
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium leading-tight">
                           {person.name}

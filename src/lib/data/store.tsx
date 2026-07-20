@@ -48,6 +48,7 @@ import {
   upsertLeaveRow,
   upsertMilestoneRow,
   upsertPersonRow,
+  updatePersonAvatarRow,
   upsertProjectAssetRow,
   upsertProjectRow,
   upsertProjectTemplateRow,
@@ -264,6 +265,11 @@ interface DataContextValue {
   deleteProject: (id: string) => void;
   upsertPerson: (
     person: Omit<Person, "organization_id"> & { organization_id?: string },
+  ) => Promise<void>;
+  /** Avatar-only update (works for members via people_update_self RLS). */
+  updatePersonAvatar: (
+    personId: string,
+    avatarUrl: string | null,
   ) => Promise<void>;
   deletePerson: (id: string) => void;
   upsertAssignment: (
@@ -922,6 +928,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         if (mode === "supabase" && supabaseRef.current) {
           await runRemote(() => upsertPersonRow(supabaseRef.current!, row));
+        }
+      },
+      updatePersonAvatar: async (personId, avatarUrl) => {
+        patch((prev) => ({
+          ...prev,
+          people: prev.people.map((p) =>
+            p.id === personId ? { ...p, avatar_url: avatarUrl } : p,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            updatePersonAvatarRow(supabaseRef.current!, personId, avatarUrl),
+          );
         }
       },
       deletePerson: (id) => {

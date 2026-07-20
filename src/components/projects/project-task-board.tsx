@@ -33,6 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
@@ -74,24 +75,15 @@ function todayKey() {
   return format(startOfDay(new Date()), "yyyy-MM-dd");
 }
 
-function initialsFor(name: string): string {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .map((p) => p[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
 function InitialsAvatar({ person }: { person: Person }) {
   return (
-    <span
-      title={person.name}
-      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[9px] font-semibold text-[var(--text-muted)] ring-1 ring-[var(--border)]"
-    >
-      {initialsFor(person.name)}
-    </span>
+    <PersonAvatar
+      avatarUrl={person.avatar_url}
+      name={person.name}
+      size="xs"
+      fallback="initials"
+      className="ring-1 ring-[var(--border)]"
+    />
   );
 }
 

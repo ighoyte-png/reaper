@@ -802,6 +802,19 @@ export async function deletePersonRow(supabase: SupabaseClient, id: string) {
   if (error) throw error;
 }
 
+/** Avatar-only update — members can use this via people_update_self RLS. */
+export async function updatePersonAvatarRow(
+  supabase: SupabaseClient,
+  personId: string,
+  avatarUrl: string | null,
+) {
+  const { error } = await supabase
+    .from("people")
+    .update({ avatar_url: avatarUrl })
+    .eq("id", personId);
+  if (error) throw error;
+}
+
 export async function upsertAssignmentRow(
   supabase: SupabaseClient,
   assignment: Assignment,

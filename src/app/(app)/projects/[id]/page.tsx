@@ -7,6 +7,7 @@ import { format, parseISO, startOfDay } from "date-fns";
 import { ChevronDown, ChevronRight, Copy, Link2, Pencil, Plus } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import { BudgetCard } from "@/components/budgets/budget-card";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
@@ -386,14 +387,12 @@ export default function ProjectDetailPage() {
                 <ul className="space-y-1.5 text-sm">
                   {team.map((p) => (
                     <li key={p.id} className="flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--bg-elevated)] text-[10px] font-semibold">
-                        {p.name
-                          .split(" ")
-                          .map((x) => x[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase()}
-                      </span>
+                      <PersonAvatar
+                        avatarUrl={p.avatar_url}
+                        name={p.name}
+                        size="team"
+                        fallback="initials"
+                      />
                       <span className="min-w-0 truncate">
                         {p.name}
                         {p.role_title ? (

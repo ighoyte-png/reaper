@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { Field, inputClass, DateInput } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { publicShareUrl } from "@/lib/share/token";
+import { createClient } from "@/lib/supabase/client";
+import {
+  readFileAsDataUrl,
+  uploadPersonAvatar,
+} from "@/lib/supabase/avatar";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 
 export default function SettingsPage() {
@@ -29,6 +35,7 @@ export default function SettingsPage() {
     deleteHolidayCalendarDay,
     applyHolidayCalendar,
     upsertPerson,
+    updatePersonAvatar,
     newId,
     updateDemoShare,
   } = useData();
@@ -49,6 +56,8 @@ export default function SettingsPage() {
   const [shareBusy, setShareBusy] = useState(false);
   const [shareEnabled, setShareEnabled] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!canManage) return;
@@ -174,6 +183,46 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveAvatarFile(file: File) {
+    if (!myPerson) return;
+    setAvatarBusy(true);
+    try {
+      let avatarUrl: string;
+      if (mode === "supabase") {
+        const supabase = createClient();
+        avatarUrl = await uploadPersonAvatar(supabase, myPerson.id, file);
+      } else {
+        avatarUrl = await readFileAsDataUrl(file);
+      }
+      await updatePersonAvatar(myPerson.id, avatarUrl);
+      push("Photo updated", "success");
+    } catch (err) {
+      push(
+        err instanceof Error ? err.message : "Could not update photo",
+        "warning",
+      );
+    } finally {
+      setAvatarBusy(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  }
+
+  async function clearAvatar() {
+    if (!myPerson) return;
+    setAvatarBusy(true);
+    try {
+      await updatePersonAvatar(myPerson.id, null);
+      push("Photo removed");
+    } catch (err) {
+      push(
+        err instanceof Error ? err.message : "Could not remove photo",
+        "warning",
+      );
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
   function addCalendar() {
     const name = newCalName.trim();
     if (!name) {
@@ -249,6 +298,58 @@ export default function SettingsPage() {
             {mode === "supabase" ? "Supabase" : "Local demo"}
           </p>
         </section>
+
+        {myPerson ? (
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <h2 className="text-sm font-semibold">Profile photo</h2>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Shown on your dashboard and client portals when you&apos;re on a
+              project team.
+            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <PersonAvatar
+                avatarUrl={myPerson.avatar_url}
+                name={myPerson.name}
+                size="lg"
+              />
+              <div className="flex flex-col gap-1.5">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={avatarBusy}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void saveAvatarFile(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={avatarBusy}
+                  className="h-8 w-fit rounded-md border border-[var(--border)] px-2.5 text-xs disabled:opacity-60"
+                  onClick={() => avatarInputRef.current?.click()}
+                >
+                  {avatarBusy
+                    ? "Saving…"
+                    : myPerson.avatar_url
+                      ? "Change photo"
+                      : "Upload photo"}
+                </button>
+                {myPerson.avatar_url ? (
+                  <button
+                    type="button"
+                    disabled={avatarBusy}
+                    className="w-fit text-xs text-[var(--text-muted)] disabled:opacity-60"
+                    onClick={() => void clearAvatar()}
+                  >
+                    Remove photo
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {canManage && (
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">

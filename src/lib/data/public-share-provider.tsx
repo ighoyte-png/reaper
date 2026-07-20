@@ -154,6 +154,7 @@ export function PublicShareProvider({
       upsertProject: async () => {},
       deleteProject: () => {},
       upsertPerson: async () => {},
+      updatePersonAvatar: async () => {},
       deletePerson: () => {},
       upsertAssignment: () => {},
       deleteAssignment: () => {},
