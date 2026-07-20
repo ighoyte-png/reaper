@@ -57,6 +57,7 @@ export default function ProjectDetailPage() {
     updateProjectShare,
     newId,
     canManage,
+    isPublicShare,
   } = useData();
   const { push } = useToast();
   const [editing, setEditing] = useState(false);
@@ -97,19 +98,28 @@ export default function ProjectDetailPage() {
       <PageContainer className="overflow-y-auto">
         <PageHeader
           title="Project"
-          onBack={() => {
-            if (typeof window !== "undefined" && window.history.length > 1) {
-              router.back();
-            } else {
-              router.push(appHref("/projects"));
-            }
-          }}
+          onBack={
+            isPublicShare
+              ? undefined
+              : () => {
+                  if (typeof window !== "undefined" && window.history.length > 1) {
+                    router.back();
+                  } else {
+                    router.push(appHref("/projects"));
+                  }
+                }
+          }
         />
         <div className="p-5 text-sm text-[var(--text-muted)]">
-          Project not found.{" "}
-          <Link href={appHref("/projects")} className="text-[var(--accent)]">
-            Back to projects
-          </Link>
+          Project not found.
+          {!isPublicShare ? (
+            <>
+              {" "}
+              <Link href={appHref("/projects")} className="text-[var(--accent)]">
+                Back to projects
+              </Link>
+            </>
+          ) : null}
         </div>
       </PageContainer>
     );
@@ -144,38 +154,40 @@ export default function ProjectDetailPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader
         title={project.name}
-        onBack={goBack}
+        onBack={isPublicShare ? undefined : goBack}
         actions={
-          <>
-            <Link
-              href={budgetHref}
-              className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-            >
-              Budget
-            </Link>
-            <Link
-              href={appHref("/schedule")}
-              className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-            >
-              Schedule
-            </Link>
-            {canManage ? (
-              <button
-                type="button"
-                className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-                onClick={() => {
-                  const { organization_id: _org, ...rest } = project;
-                  setDraft({
-                    ...rest,
-                    budget_monthly_reset: Boolean(rest.budget_monthly_reset),
-                  });
-                  setEditing(true);
-                }}
+          isPublicShare ? undefined : (
+            <>
+              <Link
+                href={budgetHref}
+                className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
               >
-                Edit
-              </button>
-            ) : null}
-          </>
+                Budget
+              </Link>
+              <Link
+                href={appHref("/schedule")}
+                className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+              >
+                Schedule
+              </Link>
+              {canManage ? (
+                <button
+                  type="button"
+                  className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                  onClick={() => {
+                    const { organization_id: _org, ...rest } = project;
+                    setDraft({
+                      ...rest,
+                      budget_monthly_reset: Boolean(rest.budget_monthly_reset),
+                    });
+                    setEditing(true);
+                  }}
+                >
+                  Edit
+                </button>
+              ) : null}
+            </>
+          )
         }
       />
 
@@ -408,21 +420,24 @@ export default function ProjectDetailPage() {
               )}
             </section>
 
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <h2 className="mb-2 text-sm font-semibold">Budget</h2>
-              <BudgetCard
-                project={project}
-                href={budgetHref}
-                showName={false}
-              />
-              <Link
-                href={budgetHref}
-                className="mt-2 inline-block text-sm text-[var(--accent)] hover:underline"
-              >
-                Open this project&apos;s budget →
-              </Link>
-            </section>
+            {!isPublicShare ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <h2 className="mb-2 text-sm font-semibold">Budget</h2>
+                <BudgetCard
+                  project={project}
+                  href={budgetHref}
+                  showName={false}
+                />
+                <Link
+                  href={budgetHref}
+                  className="mt-2 inline-block text-sm text-[var(--accent)] hover:underline"
+                >
+                  Open this project&apos;s budget →
+                </Link>
+              </section>
+            ) : null}
 
+            {!isPublicShare ? (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-2 flex items-center gap-2">
                 <Link2 size={14} className="text-[var(--text-muted)]" />
@@ -485,6 +500,7 @@ export default function ProjectDetailPage() {
                 </p>
               )}
             </section>
+            ) : null}
           </div>
         </div>
       </div>

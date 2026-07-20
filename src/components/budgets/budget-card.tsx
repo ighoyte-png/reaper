@@ -19,7 +19,7 @@ export function BudgetCard({
   showName = true,
 }: {
   project: Project;
-  href: string;
+  href?: string;
   showName?: boolean;
 }) {
   const { state } = useData();
@@ -40,12 +40,8 @@ export function BudgetCard({
             burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
           }`;
 
-  return (
-    <Link
-      id={`project-card-${project.id}`}
-      href={href}
-      className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]"
-    >
+  const body = (
+    <>
       <div
         className={cn(
           "mb-3 flex min-w-0 items-center gap-2",
@@ -109,6 +105,27 @@ export function BudgetCard({
           </dl>
         </div>
       </div>
-    </Link>
+    </>
+  );
+
+  const className =
+    "flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors";
+
+  if (href) {
+    return (
+      <Link
+        id={`project-card-${project.id}`}
+        href={href}
+        className={cn(className, "hover:bg-[var(--row-hover)]")}
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return (
+    <div id={`project-card-${project.id}`} className={className}>
+      {body}
+    </div>
   );
 }
