@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
-import { Field, inputClass, DateInput } from "@/components/ui/form";
+import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { publicShareUrl } from "@/lib/share/token";
 import { createClient } from "@/lib/supabase/client";
@@ -15,6 +16,7 @@ import {
   readFileAsDataUrl,
   uploadPersonAvatar,
 } from "@/lib/supabase/avatar";
+import { isAdmin } from "@/lib/auth/roles";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 
 export default function SettingsPage() {
@@ -36,12 +38,17 @@ export default function SettingsPage() {
     applyHolidayCalendar,
     upsertPerson,
     updatePersonAvatar,
+    updateOrganizationName,
     newId,
     updateDemoShare,
   } = useData();
   const { push } = useToast();
   const router = useRouter();
+  const admin = isAdmin(profile?.role);
   const [busy, setBusy] = useState(false);
+  const [orgModalOpen, setOrgModalOpen] = useState(false);
+  const [orgName, setOrgName] = useState(state.organization.name);
+  const [orgBusy, setOrgBusy] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -58,6 +65,10 @@ export default function SettingsPage() {
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!orgModalOpen) setOrgName(state.organization.name);
+  }, [state.organization.name, orgModalOpen]);
 
   useEffect(() => {
     if (!canManage) return;
@@ -291,8 +302,24 @@ export default function SettingsPage() {
       <div className="mx-auto max-w-2xl space-y-4 p-5">
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="text-sm font-semibold">Organization</h2>
-          <p className="mt-2 text-sm">{state.organization.name || "—"}</p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
+          <div className="mt-2 flex items-center gap-1.5">
+            <p className="text-sm">{state.organization.name || "—"}</p>
+            {admin ? (
+              <button
+                type="button"
+                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                title="Edit organization name"
+                aria-label="Edit organization name"
+                onClick={() => {
+                  setOrgName(state.organization.name);
+                  setOrgModalOpen(true);
+                }}
+              >
+                <Pencil size={14} />
+              </button>
+            ) : null}
+          </div>
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
             Signed in as {profile?.full_name} ({profile?.role})
             {myPerson ? ` · linked to ${myPerson.name}` : ""} ·{" "}
             {mode === "supabase" ? "Supabase" : "Local demo"}
@@ -763,6 +790,72 @@ export default function SettingsPage() {
           Sign out
         </button>
       </div>
+
+      {orgModalOpen ? (
+        <Modal
+          title="Edit organization name"
+          onClose={() => {
+            if (orgBusy) return;
+            setOrgModalOpen(false);
+            setOrgName(state.organization.name);
+          }}
+        >
+          <div className="space-y-3">
+            <Field label="Name">
+              <input
+                className={inputClass}
+                value={orgName}
+                onChange={(e) => setOrgName(e.target.value)}
+                maxLength={120}
+                autoFocus
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                disabled={orgBusy}
+                onClick={() => {
+                  setOrgModalOpen(false);
+                  setOrgName(state.organization.name);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={
+                  orgBusy ||
+                  !orgName.trim() ||
+                  orgName.trim() === state.organization.name
+                }
+                onClick={() => {
+                  void (async () => {
+                    setOrgBusy(true);
+                    try {
+                      await updateOrganizationName(orgName);
+                      push("Organization name saved");
+                      setOrgModalOpen(false);
+                    } catch (err) {
+                      push(
+                        err instanceof Error
+                          ? err.message
+                          : "Could not save organization name",
+                        "warning",
+                      );
+                    } finally {
+                      setOrgBusy(false);
+                    }
+                  })();
+                }}
+              >
+                {orgBusy ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </PageContainer>
   );
 }

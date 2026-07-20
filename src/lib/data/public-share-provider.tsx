@@ -151,6 +151,7 @@ export function PublicShareProvider({
       updateDemoShare: () => ({ enabled: false, token: null, url: null }),
       upsertClient: () => {},
       deleteClient: () => {},
+      updateOrganizationName: async () => {},
       upsertProject: async () => {},
       deleteProject: () => {},
       upsertPerson: async () => {},

@@ -546,6 +546,18 @@ export async function bootstrapOrganization(
   if (error) throw error;
 }
 
+export async function updateOrganizationNameRow(
+  supabase: SupabaseClient,
+  orgId: string,
+  name: string,
+) {
+  const { error } = await supabase
+    .from("organizations")
+    .update({ name })
+    .eq("id", orgId);
+  if (error) throw error;
+}
+
 export async function upsertClientRow(
   supabase: SupabaseClient,
   client: Client,

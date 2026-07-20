@@ -49,6 +49,7 @@ import {
   upsertMilestoneRow,
   upsertPersonRow,
   updatePersonAvatarRow,
+  updateOrganizationNameRow,
   upsertProjectAssetRow,
   upsertProjectRow,
   upsertProjectTemplateRow,
@@ -61,7 +62,7 @@ import {
 } from "@/lib/supabase/api";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { canManage, personForProfile } from "@/lib/auth/roles";
+import { canManage, isAdmin, personForProfile } from "@/lib/auth/roles";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { workingDaysBetween } from "@/lib/domain/dates";
@@ -259,6 +260,8 @@ interface DataContextValue {
     client: Omit<Client, "organization_id"> & { organization_id?: string },
   ) => void;
   deleteClient: (id: string) => void;
+  /** Admin-only: rename the current organization. */
+  updateOrganizationName: (name: string) => Promise<void>;
   upsertProject: (
     project: Omit<Project, "organization_id"> & { organization_id?: string },
   ) => Promise<void>;
@@ -605,6 +608,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     state.profiles.find((p) => p.id === state.sessionProfileId) ?? null;
   const myPerson = personForProfile(state.people, profile);
   const manage = canManage(profile?.role);
+  const admin = isAdmin(profile?.role);
 
   const value = useMemo<DataContextValue>(
     () => ({
@@ -836,6 +840,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await refreshSupabase(client);
       },
       newId: uid,
+      updateOrganizationName: async (name) => {
+        const trimmed = name.trim();
+        if (!admin || !trimmed) return;
+        patch((prev) => ({
+          ...prev,
+          organization: { ...prev.organization, name: trimmed },
+        }));
+        if (mode === "supabase" && supabaseRef.current && state.organization.id) {
+          await runRemote(() =>
+            updateOrganizationNameRow(
+              supabaseRef.current!,
+              state.organization.id,
+              trimmed,
+            ),
+          );
+        }
+      },
       upsertClient: (client) => {
         const row = withOrg(client) as Client;
         let projectsToSync: Project[] = [];
@@ -1934,10 +1955,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       profile,
       myPerson,
       manage,
+      admin,
       authError,
       patch,
       withOrg,
       runRemote,
+      runRemoteSoft,
       refreshSupabase,
     ],
   );
