@@ -990,7 +990,7 @@ function TaskRow({
         className={cn(
           "group flex items-center gap-1.5 border-b border-[var(--divider)] px-2 py-1.5 text-sm",
           task.status === "complete" && "text-[var(--task-complete-fg)]",
-          isSelected && "ring-1 ring-inset ring-[var(--accent)]/50",
+          isSelected && "bg-[var(--accent)]/10",
         )}
         style={{ paddingLeft: 8 + depth * 16 }}
       >
