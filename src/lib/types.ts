@@ -98,6 +98,8 @@ export interface TaskList {
   project_id: string;
   milestone_id: string | null;
   name: string;
+  /** Optional header background color (hex). */
+  color: string | null;
   sort_order: number;
 }
 

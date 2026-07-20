@@ -2,15 +2,19 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { format, startOfDay } from "date-fns";
 import { Search } from "lucide-react";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
+import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { projectDateProgress } from "@/lib/domain/progress";
 import {
   sortClientsByName,
   sortProjectsByClientThenName,
@@ -112,7 +116,7 @@ export default function ProjectsPage() {
   }, [projects]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <PageContainer className="overflow-hidden">
       <PageHeader
         title="Projects"
         actions={
@@ -330,7 +334,7 @@ export default function ProjectsPage() {
           />
         </Modal>
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -417,6 +421,8 @@ function ProjectCard({
   const { state } = useData();
   const burn = budgetBurn(project, state.assignments, state.people);
   const health = budgetHealth(burn);
+  const today = format(startOfDay(new Date()), "yyyy-MM-dd");
+  const overallPct = projectDateProgress(project, today);
 
   return (
     <Link
@@ -438,19 +444,24 @@ function ProjectCard({
           ) : null}
         </div>
       </div>
-      <div className="mt-auto space-y-2">
-        <div
-          className={cn(
-            "text-xs",
-            health === "over" && "text-[var(--status-over)]",
-            health === "near" && "text-[var(--status-near)]",
-            (health === "healthy" || health === "none") &&
-              "text-[var(--text-muted)]",
-          )}
-        >
-          Total {burn.totalHours}h
+      <div className="mt-auto space-y-3">
+        {overallPct != null ? (
+          <ProgressBar pct={overallPct} label="Overall progress" />
+        ) : null}
+        <div className="space-y-2">
+          <div
+            className={cn(
+              "text-xs",
+              health === "over" && "text-[var(--status-over)]",
+              health === "near" && "text-[var(--status-near)]",
+              (health === "healthy" || health === "none") &&
+                "text-[var(--text-muted)]",
+            )}
+          >
+            Total {burn.totalHours}h
+          </div>
+          <BurnBar burn={burn} compact />
         </div>
-        <BurnBar burn={burn} compact />
       </div>
     </Link>
   );

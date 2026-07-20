@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
@@ -213,7 +214,7 @@ export default function PeoplePage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <PageContainer className="overflow-y-auto">
       <PageHeader
         title="People"
         actions={
@@ -718,6 +719,6 @@ export default function PeoplePage() {
           </div>
         </Modal>
       )}
-    </div>
+    </PageContainer>
   );
 }

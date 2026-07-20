@@ -156,7 +156,10 @@ function loadDemoState(): DemoState {
         share_token: parsed.organization?.share_token ?? null,
       },
       project_assets: parsed.project_assets ?? seed.project_assets,
-      task_lists: parsed.task_lists ?? seed.task_lists,
+      task_lists: (parsed.task_lists ?? seed.task_lists).map((l) => ({
+        ...l,
+        color: l.color ?? null,
+      })),
       tasks: parsed.tasks ?? seed.tasks,
       task_comments: parsed.task_comments ?? seed.task_comments,
       bulletins: parsed.bulletins ?? seed.bulletins,
@@ -356,6 +359,11 @@ interface DataContextValue {
   applyProjectTemplate: (
     projectId: string,
     templateId: string,
+  ) => Promise<void>;
+  /** Clone a project's milestones/task lists/tasks into a new reusable template (no assignees). */
+  exportProjectAsTemplate: (
+    projectId: string,
+    name: string,
   ) => Promise<void>;
   /** Enable/disable/rotate a project's public client-portal share link. */
   updateProjectShare: (
@@ -1662,6 +1670,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ? milestoneIdMap.get(l.template_milestone_id) ?? null
               : null,
             name: l.name,
+            color: null,
             sort_order: l.sort_order,
           };
         });
@@ -1706,6 +1715,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 id: l.id,
                 milestone_id: l.milestone_id,
                 name: l.name,
+                color: l.color,
                 sort_order: l.sort_order,
               })),
               tasks: newTasks.map((t) => ({
@@ -1719,6 +1729,121 @@ export function DataProvider({ children }: { children: ReactNode }) {
               })),
             }),
           );
+        }
+      },
+      exportProjectAsTemplate: async (projectId, name) => {
+        const organizationId = state.organization.id || orgId;
+        const project = state.projects.find((p) => p.id === projectId);
+        const projectMilestones = state.milestones.filter(
+          (m) => m.project_id === projectId,
+        );
+        const projectLists = state.task_lists.filter(
+          (l) => l.project_id === projectId,
+        );
+        const projectTasks = state.tasks.filter(
+          (t) => t.project_id === projectId,
+        );
+
+        // Offsets are relative to the project start date so re-applying the
+        // template preserves the original milestone/task spacing.
+        const candidateDates = [
+          ...projectMilestones.map((m) => m.due_date),
+          ...projectTasks
+            .map((t) => t.due_date)
+            .filter((d): d is string => Boolean(d)),
+        ].sort();
+        const anchorDate =
+          project?.start_date ??
+          candidateDates[0] ??
+          new Date().toISOString().slice(0, 10);
+        const diffDays = (dateKey: string): number => {
+          const d = new Date(`${dateKey}T12:00:00`).getTime();
+          const a = new Date(`${anchorDate}T12:00:00`).getTime();
+          return Math.round((d - a) / (1000 * 60 * 60 * 24));
+        };
+
+        const templateId = uid("tmpl");
+        const newTemplate: ProjectTemplate = {
+          id: templateId,
+          organization_id: organizationId,
+          name,
+          description: "",
+        };
+
+        const milestoneIdMap = new Map<string, string>();
+        const newTemplateMilestones: TemplateMilestone[] = projectMilestones.map(
+          (m, idx) => {
+            const id = uid("tms");
+            milestoneIdMap.set(m.id, id);
+            return {
+              id,
+              organization_id: organizationId,
+              template_id: templateId,
+              name: m.name,
+              offset_days: diffDays(m.due_date),
+              sort_order: idx,
+            };
+          },
+        );
+
+        const listIdMap = new Map<string, string>();
+        const newTemplateLists: TemplateTaskList[] = projectLists.map((l) => {
+          const id = uid("tlist");
+          listIdMap.set(l.id, id);
+          return {
+            id,
+            organization_id: organizationId,
+            template_id: templateId,
+            template_milestone_id: l.milestone_id
+              ? milestoneIdMap.get(l.milestone_id) ?? null
+              : null,
+            name: l.name,
+            sort_order: l.sort_order,
+          };
+        });
+
+        const taskIdMap = new Map<string, string>();
+        for (const t of projectTasks) taskIdMap.set(t.id, uid("ttask"));
+        const newTemplateTasks: TemplateTask[] = projectTasks.map((t) => ({
+          id: taskIdMap.get(t.id)!,
+          organization_id: organizationId,
+          template_id: templateId,
+          list_id: listIdMap.get(t.list_id) ?? "",
+          parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
+          title: t.title,
+          notes: t.notes,
+          offset_days: t.due_date ? diffDays(t.due_date) : null,
+          sort_order: t.sort_order,
+        }));
+
+        patch((prev) => ({
+          ...prev,
+          project_templates: [...prev.project_templates, newTemplate],
+          template_milestones: [
+            ...prev.template_milestones,
+            ...newTemplateMilestones,
+          ],
+          template_task_lists: [
+            ...prev.template_task_lists,
+            ...newTemplateLists,
+          ],
+          template_tasks: [...prev.template_tasks, ...newTemplateTasks],
+        }));
+
+        if (mode === "supabase" && supabaseRef.current) {
+          const client = supabaseRef.current;
+          await runRemote(async () => {
+            await upsertProjectTemplateRow(client, newTemplate);
+            for (const m of newTemplateMilestones) {
+              await upsertTemplateMilestoneRow(client, m);
+            }
+            for (const l of newTemplateLists) {
+              await upsertTemplateTaskListRow(client, l);
+            }
+            for (const t of newTemplateTasks) {
+              await upsertTemplateTaskRow(client, t);
+            }
+          });
         }
       },
       updateProjectShare: (projectId, action) => {

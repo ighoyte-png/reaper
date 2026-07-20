@@ -544,6 +544,7 @@ export function createDemoSeed(): DemoState {
         project_id: "proj-1",
         milestone_id: "ms-1",
         name: "Design freeze",
+        color: "#FEF3C7",
         sort_order: 0,
       },
       {
@@ -552,6 +553,7 @@ export function createDemoSeed(): DemoState {
         project_id: "proj-1",
         milestone_id: "ms-2",
         name: "Launch",
+        color: "#DBEAFE",
         sort_order: 1,
       },
       {
@@ -560,6 +562,7 @@ export function createDemoSeed(): DemoState {
         project_id: "proj-1",
         milestone_id: null,
         name: "Backlog",
+        color: null,
         sort_order: 2,
       },
       {
@@ -568,6 +571,7 @@ export function createDemoSeed(): DemoState {
         project_id: "proj-5",
         milestone_id: null,
         name: "Retainer tasks",
+        color: "#D1FAE5",
         sort_order: 0,
       },
     ],

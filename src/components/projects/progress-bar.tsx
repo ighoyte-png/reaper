@@ -6,12 +6,14 @@ export function ProgressBar({
   pct,
   label,
   approved,
+  size = "md",
 }: {
   pct: number;
   label?: string;
   approved?: boolean;
+  size?: "md" | "lg";
 }) {
-  const clamped = Math.max(0, Math.min(100, pct));
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
   return (
     <div className="space-y-1">
       {label ? (
@@ -25,13 +27,16 @@ export function ProgressBar({
           </span>
         </div>
       ) : null}
-      <div className="h-2 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
+      <div
+        className={cn(
+          "overflow-hidden rounded-full bg-[var(--bg-elevated)]",
+          size === "lg" ? "h-4" : "h-2.5",
+        )}
+      >
         <div
           className={cn(
             "h-full rounded-full transition-[width]",
-            approved
-              ? "bg-[var(--status-healthy)]"
-              : "bg-[var(--accent)]",
+            approved ? "bg-[var(--status-healthy)]" : "bg-[var(--accent)]",
           )}
           style={{ width: `${clamped}%` }}
         />

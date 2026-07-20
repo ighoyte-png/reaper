@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
 import { Copy, Link2 } from "lucide-react";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
@@ -15,14 +16,12 @@ import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import {
   milestoneDateProgress,
-  milestoneTaskProgress,
   projectDateProgress,
-  projectTaskProgress,
 } from "@/lib/domain/progress";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
-import type { Milestone, Project } from "@/lib/types";
+import type { Milestone, MilestoneStatus, Project } from "@/lib/types";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -35,6 +34,7 @@ export default function ProjectDetailPage() {
     upsertMilestone,
     deleteMilestone,
     applyProjectTemplate,
+    exportProjectAsTemplate,
     updateProjectShare,
     newId,
     canManage,
@@ -45,15 +45,15 @@ export default function ProjectDetailPage() {
     null,
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [milestoneForm, setMilestoneForm] = useState<Omit<
-    Milestone,
-    "organization_id"
-  > | null>(null);
   const [templateId, setTemplateId] = useState("");
+  const [exportName, setExportName] = useState("");
 
   const project = state.projects.find((p) => p.id === params.id);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const isRetainer = Boolean(project?.budget_monthly_reset);
+  const budgetHref = project
+    ? appHref(`/reports/budgets?project=${project.id}`)
+    : appHref("/reports/budgets");
 
   const team = useMemo(() => {
     if (!project) return [];
@@ -70,7 +70,7 @@ export default function ProjectDetailPage() {
 
   if (!project) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <PageContainer className="overflow-y-auto">
         <PageHeader
           title="Project"
           onBack={() => {
@@ -87,7 +87,7 @@ export default function ProjectDetailPage() {
             Back to projects
           </Link>
         </div>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -95,9 +95,7 @@ export default function ProjectDetailPage() {
   const milestones = state.milestones
     .filter((m) => m.project_id === project.id)
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
-  const datePct = projectDateProgress(project, today);
-  const taskPct = projectTaskProgress(state.tasks, project.id);
-  const overallPct = datePct ?? taskPct;
+  const overallPct = projectDateProgress(project, today) ?? 0;
 
   const shareResult =
     project.share_enabled && project.share_token
@@ -115,18 +113,22 @@ export default function ProjectDetailPage() {
     }
   }
 
+  function patchProjectDates(patch: Partial<Project>) {
+    void upsertProject({ ...project!, ...patch });
+  }
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <PageContainer className="overflow-y-auto">
       <PageHeader
         title={project.name}
         onBack={goBack}
         actions={
           <>
             <Link
-              href={appHref("/reports/budgets")}
+              href={budgetHref}
               className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
             >
-              Budgets report
+              Budget
             </Link>
             <Link
               href={appHref("/schedule")}
@@ -153,140 +155,35 @@ export default function ProjectDetailPage() {
           </>
         }
       />
-      <div className="space-y-4 p-5">
-        <section className="rounded-md border border-[var(--border)] p-4">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span
-              className="h-3 w-3 rounded-full"
-              style={{
-                background: projectDisplayColor(project, state.clients),
-              }}
-            />
-            <span className="text-xs text-[var(--text-muted)]">
-              {client?.name ?? "No client"} ·{" "}
-              {isRetainer ? "Retainer" : "Project"} ·{" "}
-              {project.status.replace("_", " ")}
-            </span>
-            {project.start_date || project.end_date ? (
-              <span className="text-xs text-[var(--text-muted)]">
-                {project.start_date ?? "?"} → {project.end_date ?? "?"}
-              </span>
-            ) : null}
-          </div>
 
-          <div className="mb-4 space-y-2">
-            <ProgressBar pct={overallPct} label="Overall progress" />
-            {!isRetainer &&
-              milestones.map((m) => {
-                const listIds = state.task_lists
-                  .filter((l) => l.milestone_id === m.id)
-                  .map((l) => l.id);
-                const pct =
-                  listIds.length > 0
-                    ? milestoneTaskProgress(state.tasks, listIds)
-                    : (milestoneDateProgress(m, project, today) ?? 0);
-                return (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <div className="min-w-0 flex-1">
-                      <ProgressBar
-                        pct={pct}
-                        label={m.name}
-                        approved={m.client_approved}
-                      />
-                    </div>
-                    {canManage ? (
-                      <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs">
-                        <input
-                          type="checkbox"
-                          checked={m.client_approved}
-                          onChange={(e) =>
-                            upsertMilestone({
-                              ...m,
-                              client_approved: e.target.checked,
-                            })
-                          }
-                        />
-                        Approved
-                      </label>
-                    ) : m.client_approved ? (
-                      <span className="text-xs text-[var(--status-healthy)]">
-                        Approved
-                      </span>
-                    ) : null}
-                  </div>
-                );
-              })}
-          </div>
-
-          {canManage ? (
-            <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
-              <Link2 size={14} className="text-[var(--text-muted)]" />
-              <span className="text-xs font-medium">Client portal</span>
-              {shareResult ? (
-                <>
-                  <code className="max-w-[220px] truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
-                    {shareResult}
-                  </code>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(shareResult);
-                      push("Portal link copied");
-                    }}
-                  >
-                    <Copy size={12} /> Copy
-                  </button>
-                  <button
-                    type="button"
-                    className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-                    onClick={() => {
-                      updateProjectShare(project.id, "rotate");
-                      push("Portal link rotated");
-                    }}
-                  >
-                    Rotate
-                  </button>
-                  <button
-                    type="button"
-                    className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-                    onClick={() => {
-                      updateProjectShare(project.id, "disable");
-                      push("Portal disabled");
-                    }}
-                  >
-                    Disable
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-                  onClick={() => {
-                    updateProjectShare(project.id, "enable");
-                    push("Client portal enabled");
-                  }}
-                >
-                  Enable public link
-                </button>
-              )}
-            </div>
-          ) : null}
-
+      <div className="p-5">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span
+            className="h-3 w-3 rounded-full"
+            style={{
+              background: projectDisplayColor(project, state.clients),
+            }}
+          />
+          <span className="text-xs text-[var(--text-muted)]">
+            {client?.name ?? "No client"} ·{" "}
+            {isRetainer ? "Retainer" : "Project"} ·{" "}
+            {project.status.replace("_", " ")}
+          </span>
           {project.notes ? (
-            <p className="mt-3 text-sm text-[var(--text-muted)]">
+            <span className="w-full text-sm text-[var(--text-muted)]">
               {project.notes}
-            </p>
+            </span>
           ) : null}
-        </section>
+        </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-2">
+          {/* Main: tasks only */}
+          <div className="min-w-0 lg:col-span-2">
             <section className="rounded-md border border-[var(--border)] p-4">
-              {canManage && state.project_templates.length > 0 ? (
+              {canManage ? (
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <select
-                    className={inputClass + " mt-0 h-8 max-w-[220px]"}
+                    className={`${inputClass} mt-0 h-8 max-w-[200px]`}
                     value={templateId}
                     onChange={(e) => setTemplateId(e.target.value)}
                   >
@@ -299,7 +196,7 @@ export default function ProjectDetailPage() {
                   </select>
                   <button
                     type="button"
-                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
                     disabled={!templateId}
                     onClick={async () => {
                       if (!templateId) return;
@@ -310,17 +207,247 @@ export default function ProjectDetailPage() {
                   >
                     Apply
                   </button>
+                  <input
+                    className={`${inputClass} mt-0 h-8 max-w-[160px]`}
+                    placeholder="Template name"
+                    value={exportName}
+                    onChange={(e) => setExportName(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                    onClick={async () => {
+                      const name =
+                        exportName.trim() || `${project.name} template`;
+                      await exportProjectAsTemplate(project.id, name);
+                      setExportName("");
+                      push("Exported as template");
+                    }}
+                  >
+                    Export as template
+                  </button>
                 </div>
               ) : null}
-              <ProjectTaskBoard
-                projectId={project.id}
-                allowCardView
-              />
+              <ProjectTaskBoard projectId={project.id} allowCardView />
             </section>
-            <ProjectNotebook projectId={project.id} />
           </div>
 
+          {/* Sidebar: Progress → Portal → Assets → Team → Budget */}
           <div className="space-y-4">
+            <section className="rounded-md border border-[var(--border)] p-4">
+              <h2 className="mb-3 text-sm font-semibold">Progress</h2>
+              {canManage ? (
+                <div className="mb-3 grid grid-cols-2 gap-2">
+                  <Field label="Start">
+                    <input
+                      type="date"
+                      className={inputClass}
+                      value={project.start_date ?? ""}
+                      onChange={(e) =>
+                        patchProjectDates({
+                          start_date: e.target.value || null,
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Completion">
+                    <input
+                      type="date"
+                      className={inputClass}
+                      value={project.end_date ?? ""}
+                      onChange={(e) =>
+                        patchProjectDates({
+                          end_date: e.target.value || null,
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+              ) : null}
+              <ProgressBar
+                pct={overallPct}
+                label="Overall progress"
+                size="lg"
+              />
+              {!isRetainer ? (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Milestones
+                    </h3>
+                    {canManage ? (
+                      <button
+                        type="button"
+                        className="cursor-pointer text-xs text-[var(--accent)]"
+                        onClick={() => {
+                          const m: Omit<Milestone, "organization_id"> = {
+                            id: newId("ms"),
+                            project_id: project.id,
+                            name: "New milestone",
+                            due_date: today,
+                            status: "upcoming",
+                            client_approved: false,
+                          };
+                          upsertMilestone(m);
+                        }}
+                      >
+                        Add
+                      </button>
+                    ) : null}
+                  </div>
+                  {milestones.length === 0 ? (
+                    <p className="text-sm text-[var(--text-muted)]">
+                      No milestones yet.
+                    </p>
+                  ) : (
+                    milestones.map((m) => {
+                      const pct =
+                        milestoneDateProgress(m, project, today) ?? 0;
+                      return (
+                        <div key={m.id} className="space-y-2">
+                          <ProgressBar
+                            pct={pct}
+                            label={m.name}
+                            approved={m.client_approved}
+                          />
+                          {canManage ? (
+                            <div className="grid gap-1.5">
+                              <input
+                                className={`${inputClass} mt-0 h-8 text-xs`}
+                                value={m.name}
+                                onChange={(e) =>
+                                  upsertMilestone({
+                                    ...m,
+                                    name: e.target.value,
+                                  })
+                                }
+                              />
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <input
+                                  type="date"
+                                  className={`${inputClass} mt-0 h-8 flex-1 text-xs`}
+                                  value={m.due_date}
+                                  onChange={(e) =>
+                                    upsertMilestone({
+                                      ...m,
+                                      due_date: e.target.value,
+                                    })
+                                  }
+                                />
+                                <select
+                                  className={`${inputClass} mt-0 h-8 w-auto text-xs`}
+                                  value={m.status}
+                                  onChange={(e) =>
+                                    upsertMilestone({
+                                      ...m,
+                                      status: e.target
+                                        .value as MilestoneStatus,
+                                    })
+                                  }
+                                >
+                                  <option value="upcoming">Upcoming</option>
+                                  <option value="done">Done</option>
+                                  <option value="missed">Missed</option>
+                                </select>
+                                <label className="flex cursor-pointer items-center gap-1 text-[10px]">
+                                  <input
+                                    type="checkbox"
+                                    checked={m.client_approved}
+                                    onChange={(e) =>
+                                      upsertMilestone({
+                                        ...m,
+                                        client_approved: e.target.checked,
+                                      })
+                                    }
+                                  />
+                                  Approved
+                                </label>
+                                <button
+                                  type="button"
+                                  className="cursor-pointer text-[10px] text-[var(--status-over)]"
+                                  onClick={() => {
+                                    deleteMilestone(m.id);
+                                    push("Milestone deleted");
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-md border border-[var(--border)] p-4">
+              <div className="mb-2 flex items-center gap-2">
+                <Link2 size={14} className="text-[var(--text-muted)]" />
+                <h2 className="text-sm font-semibold">Client portal</h2>
+              </div>
+              {canManage ? (
+                shareResult ? (
+                  <div className="space-y-2">
+                    <code className="block truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
+                      {shareResult}
+                    </code>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(shareResult);
+                          push("Portal link copied");
+                        }}
+                      >
+                        <Copy size={12} /> Copy
+                      </button>
+                      <button
+                        type="button"
+                        className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                        onClick={() => {
+                          updateProjectShare(project.id, "rotate");
+                          push("Portal link rotated");
+                        }}
+                      >
+                        Rotate
+                      </button>
+                      <button
+                        type="button"
+                        className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                        onClick={() => {
+                          updateProjectShare(project.id, "disable");
+                          push("Portal disabled");
+                        }}
+                      >
+                        Disable
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                    onClick={() => {
+                      updateProjectShare(project.id, "enable");
+                      push("Client portal enabled");
+                    }}
+                  >
+                    Enable public link
+                  </button>
+                )
+              ) : (
+                <p className="text-xs text-[var(--text-muted)]">
+                  Portal managed by admins.
+                </p>
+              )}
+            </section>
+
+            <ProjectNotebook projectId={project.id} />
+
             <section className="rounded-md border border-[var(--border)] p-4">
               <h2 className="mb-3 text-sm font-semibold">Team</h2>
               {team.length === 0 ? (
@@ -336,7 +463,8 @@ export default function ProjectDetailPage() {
                           .split(" ")
                           .map((x) => x[0])
                           .join("")
-                          .slice(0, 2)}
+                          .slice(0, 2)
+                          .toUpperCase()}
                       </span>
                       <span className="min-w-0 truncate">{p.name}</span>
                     </li>
@@ -345,76 +473,16 @@ export default function ProjectDetailPage() {
               )}
             </section>
 
-            {!isRetainer ? (
-              <section className="rounded-md border border-[var(--border)] p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Milestones</h2>
-                  {canManage ? (
-                    <button
-                      type="button"
-                      className="cursor-pointer text-xs text-[var(--accent)]"
-                      onClick={() =>
-                        setMilestoneForm({
-                          id: newId("ms"),
-                          project_id: project.id,
-                          name: "",
-                          due_date: new Date().toISOString().slice(0, 10),
-                          status: "upcoming",
-                          client_approved: false,
-                        })
-                      }
-                    >
-                      Add
-                    </button>
-                  ) : null}
-                </div>
-                {milestones.length === 0 ? (
-                  <p className="text-sm text-[var(--text-muted)]">
-                    No milestones yet.
-                  </p>
-                ) : (
-                  <ul className="space-y-2">
-                    {milestones.map((m) => (
-                      <li
-                        key={m.id}
-                        className="flex items-center justify-between rounded-md border border-[var(--border)] px-3 py-2 text-sm"
-                      >
-                        <div>
-                          <div className="font-medium">{m.name}</div>
-                          <div className="text-xs text-[var(--text-muted)]">
-                            {m.due_date} · {m.status}
-                            {m.client_approved ? " · approved" : ""}
-                          </div>
-                        </div>
-                        {canManage ? (
-                          <button
-                            type="button"
-                            className="cursor-pointer text-xs text-[var(--text-muted)]"
-                            onClick={() => {
-                              deleteMilestone(m.id);
-                              push("Milestone deleted");
-                            }}
-                          >
-                            Remove
-                          </button>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            ) : null}
-
             <section className="rounded-md border border-[var(--border)] p-4">
               <h2 className="mb-2 text-sm font-semibold">Budget</h2>
               <p className="mb-2 text-xs text-[var(--text-muted)]">
                 Financial tracking lives in Reports.
               </p>
               <Link
-                href={appHref("/reports/budgets")}
+                href={budgetHref}
                 className="text-sm text-[var(--accent)] hover:underline"
               >
-                Open Budgets report →
+                Open this project&apos;s budget →
               </Link>
             </section>
           </div>
@@ -437,18 +505,6 @@ export default function ProjectDetailPage() {
               if (!draft.name.trim()) return;
               if (!draft.client_id) {
                 push("Choose a client for this project", "warning");
-                return;
-              }
-              if (
-                draft.budget_mode === "hours" &&
-                !(draft.budget_hours && draft.budget_hours > 0)
-              ) {
-                return;
-              }
-              if (
-                draft.budget_mode === "amount" &&
-                (draft.budget_amount == null || draft.budget_amount < 0)
-              ) {
                 return;
               }
               try {
@@ -482,7 +538,7 @@ export default function ProjectDetailPage() {
         </Modal>
       )}
 
-      {confirmDelete && project && (
+      {confirmDelete && (
         <ConfirmDialog
           title="Delete project?"
           message={`Delete ${project.name}? All assignments and milestones on this project will be removed. This can’t be undone.`}
@@ -497,56 +553,6 @@ export default function ProjectDetailPage() {
           }}
         />
       )}
-
-      {canManage && milestoneForm && (
-        <Modal title="Add milestone" onClose={() => setMilestoneForm(null)}>
-          <div className="grid gap-3">
-            <Field label="Name">
-              <input
-                className={inputClass}
-                value={milestoneForm.name}
-                onChange={(e) =>
-                  setMilestoneForm({ ...milestoneForm, name: e.target.value })
-                }
-              />
-            </Field>
-            <Field label="Due date">
-              <input
-                type="date"
-                className={inputClass}
-                value={milestoneForm.due_date}
-                onChange={(e) =>
-                  setMilestoneForm({
-                    ...milestoneForm,
-                    due_date: e.target.value,
-                  })
-                }
-              />
-            </Field>
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                className="h-9 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm"
-                onClick={() => setMilestoneForm(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="h-9 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-                onClick={() => {
-                  if (!milestoneForm.name.trim()) return;
-                  upsertMilestone(milestoneForm);
-                  setMilestoneForm(null);
-                  push("Milestone saved");
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
-    </div>
+    </PageContainer>
   );
 }

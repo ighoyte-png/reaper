@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { BurnBar } from "@/components/ui/burn-bar";
@@ -26,16 +28,47 @@ import type { Client, Project } from "@/lib/types";
 type ClientFilter = "all" | "none" | string;
 
 export default function BudgetsReportPage() {
+  return (
+    <Suspense fallback={null}>
+      <BudgetsReportContent />
+    </Suspense>
+  );
+}
+
+function BudgetsReportContent() {
   const { state } = useData();
   const appHref = useAppHref();
+  const searchParams = useSearchParams();
+  const projectParam = searchParams.get("project");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [query, setQuery] = useState("");
+  const [highlightProjectId, setHighlightProjectId] = useState<string | null>(
+    null,
+  );
 
   const projects = sortProjectsByClientThenName(
     state.projects,
     state.clients,
   );
   const clients = sortClientsByName(state.clients);
+
+  // Deep link from a project's "Budget" link: jump the sidebar filter to
+  // that project's client and highlight/scroll to its card.
+  useEffect(() => {
+    if (!projectParam) return;
+    const project = state.projects.find((p) => p.id === projectParam);
+    if (!project) return;
+    setClientFilter(project.client_id ?? "none");
+    setHighlightProjectId(project.id);
+  }, [projectParam, state.projects]);
+
+  useEffect(() => {
+    if (!highlightProjectId) return;
+    const el = document.getElementById(`project-card-${highlightProjectId}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timer = setTimeout(() => setHighlightProjectId(null), 2500);
+    return () => clearTimeout(timer);
+  }, [highlightProjectId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -91,7 +124,7 @@ export default function BudgetsReportPage() {
   }, [projects]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <PageContainer className="overflow-hidden">
       <PageHeader title={<ReportBreadcrumb current="Budgets" />} />
       {state.projects.length === 0 ? (
         <div className="overflow-y-auto p-5">
@@ -219,6 +252,7 @@ export default function BudgetsReportPage() {
                           key={project.id}
                           project={project}
                           href={appHref(`/projects/${project.id}`)}
+                          highlighted={highlightProjectId === project.id}
                         />
                       ))}
                     </div>
@@ -229,7 +263,7 @@ export default function BudgetsReportPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -309,9 +343,11 @@ function MobileClientChip({
 function BudgetCard({
   project,
   href,
+  highlighted,
 }: {
   project: Project;
   href: string;
+  highlighted?: boolean;
 }) {
   const { state } = useData();
   const burn = budgetBurn(project, state.assignments, state.people);
@@ -333,8 +369,13 @@ function BudgetCard({
 
   return (
     <Link
+      id={`project-card-${project.id}`}
       href={href}
-      className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]"
+      className={cn(
+        "flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]",
+        highlighted &&
+          "ring-2 ring-[var(--accent)] ring-offset-1 ring-offset-[var(--bg)]",
+      )}
     >
       <div className="mb-3 flex min-w-0 items-center gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">

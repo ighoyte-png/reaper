@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
@@ -236,7 +237,7 @@ export default function SettingsPage() {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <PageContainer className="overflow-y-auto">
       <PageHeader title="Settings" />
       <div className="mx-auto max-w-2xl space-y-4 p-5">
         <section className="rounded-md border border-[var(--border)] p-4">
@@ -662,6 +663,6 @@ export default function SettingsPage() {
           Sign out
         </button>
       </div>
-    </div>
+    </PageContainer>
   );
 }

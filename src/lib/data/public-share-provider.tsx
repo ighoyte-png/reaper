@@ -186,6 +186,7 @@ export function PublicShareProvider({
       upsertTemplateTask: () => {},
       deleteTemplateTask: () => {},
       applyProjectTemplate: async () => {},
+      exportProjectAsTemplate: async () => {},
       updateProjectShare: () => ({ enabled: false, token: null, url: null }),
       newId: (prefix) => `${prefix}-ro`,
     };

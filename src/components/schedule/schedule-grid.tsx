@@ -5,7 +5,7 @@ import Link from "next/link";
 import { format, isWeekend, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
-import { inputClass } from "@/components/ui/form";
+import { inputClass, Modal } from "@/components/ui/form";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
@@ -42,6 +42,7 @@ import {
   workingDaysBetween,
 } from "@/lib/domain/dates";
 import { expandAssignmentsInRange, occurrenceCoversDay } from "@/lib/domain/recurrence";
+import { splitWeeklySeriesForInstance } from "@/lib/domain/recurrence-split";
 import {
   buildScheduleColumns,
   columnOffsetPx,
@@ -161,6 +162,9 @@ export function ScheduleGrid() {
     dirty: boolean;
     /** Day under the pointer when the move grab began (occurrence day for weekly). */
     grabDateKey: string;
+    /** Occurrence span when dragging a weekly expanded block. */
+    occurrenceStart: string;
+    occurrenceEnd: string;
   } | null>(null);
   const leaveDragSnapshot = useRef<{
     mode: "resize-end" | "resize-start";
@@ -184,6 +188,16 @@ export function ScheduleGrid() {
   );
   const [addProjectClientId, setAddProjectClientId] = useState<string>("");
   const [addProjectId, setAddProjectId] = useState<string>("");
+  const [selectedOccurrence, setSelectedOccurrence] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
+  const [recurrencePrompt, setRecurrencePrompt] = useState<{
+    before: Assignment;
+    after: Assignment;
+    occurrenceStart: string;
+    occurrenceEnd: string;
+  } | null>(null);
   const undoStackRef = useRef<UndoEntry[]>([]);
   const applyingUndoRef = useRef(false);
   const performUndoRef = useRef(() => {});
@@ -545,8 +559,12 @@ export function ScheduleGrid() {
   }
   deleteSelectedAssignmentRef.current = deleteSelectedAssignment;
 
-  function selectAssignment(id: string | null) {
+  function selectAssignment(
+    id: string | null,
+    occurrence?: { start: string; end: string } | null,
+  ) {
     setSelectedId(id);
+    setSelectedOccurrence(occurrence ?? null);
     if (id) {
       setSelectedLeaveBlockId(null);
       setLeaveEditForm(null);
@@ -557,6 +575,68 @@ export function ScheduleGrid() {
     } else if (!isNarrow) {
       setSidebarMinimized(sidebarPreferMinimizedRef.current);
     }
+  }
+
+  function applyRecurrenceChoice(scope: "instance" | "series") {
+    const pending = recurrencePrompt;
+    if (!pending) return;
+    setRecurrencePrompt(null);
+    if (scope === "series") {
+      commitAssignment(pending.after, "Assignment saved");
+      return;
+    }
+    // Revert series then split around occurrence
+    upsertAssignment(pending.before);
+    assignmentsRef.current = assignmentsRef.current.map((a) =>
+      a.id === pending.before.id ? pending.before : a,
+    );
+
+    // Map template shift onto the occurrence span for the one-off instance.
+    const deltaStart = workingDayDelta(
+      pending.before.start_date,
+      pending.after.start_date,
+    );
+    const deltaEnd = workingDayDelta(
+      pending.before.end_date,
+      pending.after.end_date,
+    );
+    const instanceStart = shiftWorkingDays(
+      pending.occurrenceStart,
+      deltaStart,
+    );
+    const instanceEnd = shiftWorkingDays(pending.occurrenceEnd, deltaEnd);
+
+    const split = splitWeeklySeriesForInstance({
+      series: pending.before,
+      occurrenceStart: pending.occurrenceStart,
+      occurrenceEnd: pending.occurrenceEnd,
+      instance: {
+        ...pending.after,
+        start_date: instanceStart,
+        end_date: instanceEnd,
+        hours_per_day: pending.after.hours_per_day,
+        status: pending.after.status,
+        notes: pending.after.notes,
+        person_id: pending.after.person_id,
+        project_id: pending.after.project_id,
+        allocation_pct: pending.after.allocation_pct,
+      },
+      newId,
+      organizationId: state.organization.id,
+    });
+    if (split.keepSeries) {
+      commitAssignment(split.keepSeries);
+    } else {
+      trackedDelete(pending.before.id);
+    }
+    if (split.continuation) {
+      commitAssignment(split.continuation);
+    }
+    commitAssignment(split.instance, "Updated this instance only");
+    selectAssignment(split.instance.id, {
+      start: split.instance.start_date,
+      end: split.instance.end_date,
+    });
   }
 
   /** Clear assignment/leave selection (keeps project filter & toolbar state). */
@@ -694,16 +774,28 @@ export function ScheduleGrid() {
 
   function saveEditForm() {
     if (!canManage || !editForm) return;
-    commitAssignment(
-      {
-        ...editForm,
-        hours_per_day: Math.max(
-          0.01,
-          roundAssignmentHours(editForm.hours_per_day),
-        ),
-      },
-      "Assignment saved",
-    );
+    const next: Assignment = {
+      ...editForm,
+      hours_per_day: Math.max(
+        0.01,
+        roundAssignmentHours(editForm.hours_per_day),
+      ),
+    };
+    const before = state.assignments.find((a) => a.id === editForm.id);
+    if (
+      before &&
+      (before.recurrence ?? "none") === "weekly" &&
+      selectedOccurrence
+    ) {
+      setRecurrencePrompt({
+        before,
+        after: next,
+        occurrenceStart: selectedOccurrence.start,
+        occurrenceEnd: selectedOccurrence.end,
+      });
+      return;
+    }
+    commitAssignment(next, "Assignment saved");
   }
 
   function createLeaveRange(
@@ -872,9 +964,27 @@ export function ScheduleGrid() {
     if (dragSnapshot.current) {
       const snap = dragSnapshot.current;
       if (snap.dirty) {
-        pushUndo({ kind: "restore", assignment: { ...snap.before } });
-        push("Assignment saved");
-        warnBudget(snap.before.project_id, assignmentsRef.current);
+        const after = state.assignments.find((a) => a.id === snap.id);
+        if (
+          after &&
+          (snap.before.recurrence ?? "none") === "weekly"
+        ) {
+          // Revert live drag mutation until the user chooses scope.
+          upsertAssignment(snap.before);
+          assignmentsRef.current = assignmentsRef.current.map((a) =>
+            a.id === snap.before.id ? snap.before : a,
+          );
+          setRecurrencePrompt({
+            before: snap.before,
+            after,
+            occurrenceStart: snap.occurrenceStart,
+            occurrenceEnd: snap.occurrenceEnd,
+          });
+        } else {
+          pushUndo({ kind: "restore", assignment: { ...snap.before } });
+          push("Assignment saved");
+          warnBudget(snap.before.project_id, assignmentsRef.current);
+        }
       }
       dragSnapshot.current = null;
     }
@@ -2147,7 +2257,10 @@ export function ScheduleGrid() {
                                       onPointerDown={(e) => {
                                         e.stopPropagation();
                                         e.preventDefault();
-                                        selectAssignment(occ.assignmentId);
+                                        selectAssignment(occ.assignmentId, {
+                                          start: occ.start_date,
+                                          end: occ.end_date,
+                                        });
                                         if (!canManage) return;
                                         if (
                                           isCoarse ||
@@ -2190,6 +2303,8 @@ export function ScheduleGrid() {
                                           before: { ...base },
                                           dirty: false,
                                           grabDateKey,
+                                          occurrenceStart: occ.start_date,
+                                          occurrenceEnd: occ.end_date,
                                         };
                                         setGridDragging(true);
                                       }}
@@ -2253,6 +2368,8 @@ export function ScheduleGrid() {
                                                 before: { ...base },
                                                 dirty: false,
                                                 grabDateKey: base.start_date,
+                                                occurrenceStart: occ.start_date,
+                                                occurrenceEnd: occ.end_date,
                                               };
                                               setGridDragging(true);
                                             }}
@@ -2284,6 +2401,8 @@ export function ScheduleGrid() {
                                                 before: { ...base },
                                                 dirty: false,
                                                 grabDateKey: base.start_date,
+                                                occurrenceStart: occ.start_date,
+                                                occurrenceEnd: occ.end_date,
                                               };
                                               setGridDragging(true);
                                             }}
@@ -2373,7 +2492,10 @@ export function ScheduleGrid() {
                                       onPointerDown={(e) => {
                                         e.stopPropagation();
                                         e.preventDefault();
-                                        selectAssignment(primary.assignmentId);
+                                        selectAssignment(primary.assignmentId, {
+                                          start: primary.start_date,
+                                          end: primary.end_date,
+                                        });
                                         if (!canManage) return;
                                         // Drag/resize in week/month still edits the primary assignment.
                                         if (
@@ -2392,6 +2514,8 @@ export function ScheduleGrid() {
                                           before: { ...base },
                                           dirty: false,
                                           grabDateKey: base.start_date,
+                                          occurrenceStart: primary.start_date,
+                                          occurrenceEnd: primary.end_date,
                                         };
                                         setGridDragging(true);
                                       }}
@@ -3082,6 +3206,42 @@ export function ScheduleGrid() {
           </div>
         </div>
       )}
+      {recurrencePrompt ? (
+        <Modal
+          title="Update recurring assignment"
+          onClose={() => {
+            setRecurrencePrompt(null);
+          }}
+        >
+          <p className="mb-4 text-sm text-[var(--text-muted)]">
+            This is part of a weekly series. Apply your change to this instance
+            only, or to the entire series?
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              className="h-9 cursor-pointer rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)]"
+              onClick={() => applyRecurrenceChoice("instance")}
+            >
+              Update this instance only
+            </button>
+            <button
+              type="button"
+              className="h-9 cursor-pointer rounded-md border border-[var(--border)] text-sm hover:bg-[var(--row-hover)]"
+              onClick={() => applyRecurrenceChoice("series")}
+            >
+              Update entire series
+            </button>
+            <button
+              type="button"
+              className="h-9 cursor-pointer text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+              onClick={() => setRecurrencePrompt(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }

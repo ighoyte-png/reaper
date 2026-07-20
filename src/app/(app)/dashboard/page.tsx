@@ -5,6 +5,7 @@ import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import { AlertTriangle, Megaphone, Pin } from "lucide-react";
 import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CapacityBar } from "@/components/ui/capacity-bar";
@@ -175,7 +176,7 @@ export default function DashboardPage() {
       : null;
 
     return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <PageContainer className="overflow-y-auto">
         <PageHeader title="Dashboard" />
         <div className="space-y-4 p-5">
           <TaskPulse
@@ -281,7 +282,7 @@ export default function DashboardPage() {
 
           <BulletinBoard bulletins={bulletins} profiles={state.profiles} />
         </div>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -346,7 +347,7 @@ export default function DashboardPage() {
   const sortedPeople = sortPeopleByName(state.people);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <PageContainer className="overflow-y-auto">
       <PageHeader title="Dashboard" />
       <div className="space-y-4 p-3 sm:p-5">
         <section className="rounded-md border border-[var(--border)] p-4">
@@ -530,7 +531,7 @@ export default function DashboardPage() {
           </section>
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { AlertTriangle, CalendarOff, CheckCircle2 } from "lucide-react";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { useData } from "@/lib/data/store";
@@ -143,7 +144,7 @@ export default function TasksReportPage() {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <PageContainer className="overflow-y-auto">
       <PageHeader title={<ReportBreadcrumb current="Tasks" />} />
       <div className="space-y-6 p-3 sm:p-5">
         <section>
@@ -200,6 +201,6 @@ export default function TasksReportPage() {
           />
         </section>
       </div>
-    </div>
+    </PageContainer>
   );
 }

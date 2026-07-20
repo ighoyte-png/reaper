@@ -118,6 +118,7 @@ function mapTaskList(row: Record<string, unknown>): TaskList {
     project_id: String(row.project_id),
     milestone_id: row.milestone_id ? String(row.milestone_id) : null,
     name: String(row.name ?? ""),
+    color: row.color ? String(row.color) : null,
     sort_order: num(row.sort_order),
   };
 }
@@ -1034,6 +1035,7 @@ export async function upsertTaskListRow(
     project_id: list.project_id,
     milestone_id: list.milestone_id,
     name: list.name,
+    color: list.color,
     sort_order: list.sort_order,
   });
   if (error) throw error;
@@ -1228,7 +1230,13 @@ export async function applyProjectTemplateRows(
     projectId: string;
     startDate: string;
     milestones: { id: string; name: string; due_date: string; status: "upcoming" }[];
-    taskLists: { id: string; milestone_id: string | null; name: string; sort_order: number }[];
+    taskLists: {
+      id: string;
+      milestone_id: string | null;
+      name: string;
+      color: string | null;
+      sort_order: number;
+    }[];
     tasks: {
       id: string;
       list_id: string;
@@ -1255,6 +1263,7 @@ export async function applyProjectTemplateRows(
     project_id: args.projectId,
     milestone_id: l.milestone_id,
     name: l.name,
+    color: l.color ?? null,
     sort_order: l.sort_order,
   }));
   const taskRows = args.tasks.map((t) => ({
@@ -1389,6 +1398,7 @@ export async function seedDemoWorkspace(
     project_id: remapId(ids, l.project_id),
     milestone_id: l.milestone_id ? remapId(ids, l.milestone_id) : null,
     name: l.name,
+    color: l.color,
     sort_order: l.sort_order,
   }));
 

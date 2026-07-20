@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
@@ -61,7 +62,7 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <PageContainer className="overflow-hidden">
       <PageHeader
         title="Templates"
         actions={
@@ -139,7 +140,7 @@ export default function TemplatesPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

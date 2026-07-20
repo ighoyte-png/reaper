@@ -1,6 +1,6 @@
 {
   "name": "reaper",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,6 +9,9 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@fontsource-variable/google-sans": "^5.2.1",
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.5",

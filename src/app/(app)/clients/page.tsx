@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -46,7 +47,7 @@ export default function ClientsPage() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <PageContainer className="overflow-y-auto">
       <PageHeader
         title="Clients"
         actions={
@@ -268,6 +269,6 @@ export default function ClientsPage() {
           }}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
