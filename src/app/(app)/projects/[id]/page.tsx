@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
-import { Copy, Link2, Pencil, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Link2, Pencil, Plus } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { BudgetCard } from "@/components/budgets/budget-card";
@@ -69,6 +69,7 @@ export default function ProjectDetailPage() {
     null,
   );
   const [progressEditMode, setProgressEditMode] = useState(false);
+  const [templatesExpanded, setTemplatesExpanded] = useState(false);
 
   const project = state.projects.find((p) => p.id === params.id);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
@@ -198,59 +199,83 @@ export default function ProjectDetailPage() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-3">
-          {/* Main: tasks only */}
-          <div className="min-w-0 lg:col-span-2">
+          {/* Main: tasks + templates */}
+          <div className="min-w-0 space-y-4 lg:col-span-2">
             <section className="rounded-md border border-[var(--border)] p-4">
-              {canManage ? (
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <select
-                    className={`${inputClass} mt-0 h-8 max-w-[200px]`}
-                    value={templateId}
-                    onChange={(e) => setTemplateId(e.target.value)}
-                  >
-                    <option value="">Load template…</option>
-                    {state.project_templates.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
-                    disabled={!templateId}
-                    onClick={async () => {
-                      if (!templateId) return;
-                      await applyProjectTemplate(project.id, templateId);
-                      setTemplateId("");
-                      push("Template applied");
-                    }}
-                  >
-                    Apply
-                  </button>
-                  <input
-                    className={`${inputClass} mt-0 h-8 max-w-[160px]`}
-                    placeholder="Template name"
-                    value={exportName}
-                    onChange={(e) => setExportName(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
-                    onClick={async () => {
-                      const name =
-                        exportName.trim() || `${project.name} template`;
-                      await exportProjectAsTemplate(project.id, name);
-                      setExportName("");
-                      push("Exported as template");
-                    }}
-                  >
-                    Export as template
-                  </button>
-                </div>
-              ) : null}
               <ProjectTaskBoard projectId={project.id} allowCardView />
             </section>
+
+            {canManage ? (
+              <section className="rounded-md border border-[var(--border)] p-4">
+                <button
+                  type="button"
+                  className="flex w-full cursor-pointer items-center gap-1.5 text-left"
+                  onClick={() => setTemplatesExpanded((v) => !v)}
+                  aria-expanded={templatesExpanded}
+                >
+                  {templatesExpanded ? (
+                    <ChevronDown
+                      size={14}
+                      className="shrink-0 text-[var(--text-muted)]"
+                    />
+                  ) : (
+                    <ChevronRight
+                      size={14}
+                      className="shrink-0 text-[var(--text-muted)]"
+                    />
+                  )}
+                  <h2 className="text-sm font-semibold">Templates</h2>
+                </button>
+                {templatesExpanded ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <select
+                      className={`${inputClass} mt-0 h-8 max-w-[200px]`}
+                      value={templateId}
+                      onChange={(e) => setTemplateId(e.target.value)}
+                    >
+                      <option value="">Load template…</option>
+                      {state.project_templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
+                      disabled={!templateId}
+                      onClick={async () => {
+                        if (!templateId) return;
+                        await applyProjectTemplate(project.id, templateId);
+                        setTemplateId("");
+                        push("Template applied");
+                      }}
+                    >
+                      Apply
+                    </button>
+                    <input
+                      className={`${inputClass} mt-0 h-8 max-w-[160px]`}
+                      placeholder="Template name"
+                      value={exportName}
+                      onChange={(e) => setExportName(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                      onClick={async () => {
+                        const name =
+                          exportName.trim() || `${project.name} template`;
+                        await exportProjectAsTemplate(project.id, name);
+                        setExportName("");
+                        push("Exported as template");
+                      }}
+                    >
+                      Export as template
+                    </button>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
           </div>
 
           {/* Sidebar: Progress → Assets → Team → Budget → Client portal */}
