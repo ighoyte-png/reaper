@@ -50,6 +50,10 @@ import {
 } from "@/lib/domain/dates";
 import { leaveBlockLabel } from "@/lib/domain/leave";
 import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
+import {
+  expandAssignmentsInRange,
+  occurrenceCoversDay,
+} from "@/lib/domain/recurrence";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { taskUrgency, type TaskUrgency } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
@@ -123,9 +127,21 @@ export default function DashboardPage() {
   const identityPerson = viewAsPerson ?? myPerson;
 
   const todaysAssignments = useMemo(() => {
-    const today = state.assignments.filter(
-      (a) => a.start_date <= todayKey && a.end_date >= todayKey,
-    );
+    const today = expandAssignmentsInRange(
+      state.assignments,
+      todayKey,
+      todayKey,
+    )
+      .filter((o) => occurrenceCoversDay(o, todayKey))
+      .map((o) => ({
+        id:
+          o.weekOffset > 0
+            ? `${o.assignmentId}:${o.weekOffset}`
+            : o.assignmentId,
+        person_id: o.person_id,
+        project_id: o.project_id,
+        hours_per_day: o.hours_per_day,
+      }));
     if (showingAsManager) return today;
     if (!viewedPersonId) return [];
     return today.filter((a) => a.person_id === viewedPersonId);
