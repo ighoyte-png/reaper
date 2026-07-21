@@ -10,6 +10,7 @@ import {
   Pin,
   Plus,
   Trash2,
+  X,
 } from "lucide-react";
 import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar";
 import { PageContainer } from "@/components/nav/page-container";
@@ -28,6 +29,7 @@ import {
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
 import { useViewAs } from "@/lib/view-as";
 import { isAdmin } from "@/lib/auth/roles";
 import {
@@ -125,6 +127,10 @@ export default function DashboardPage() {
 
   /** Right-column identity: View As person, else linked person. */
   const identityPerson = viewAsPerson ?? myPerson;
+
+  /** Members / View As: capacity + leave widgets scoped to one person. */
+  const scopePersonalCapacity = !showingAsManager;
+  const focusPerson = identityPerson;
 
   const todaysAssignments = useMemo(() => {
     const today = expandAssignmentsInRange(
@@ -241,11 +247,11 @@ export default function DashboardPage() {
     : [];
 
   const peopleLoad = useMemo(() => {
-    const source = canManage
-      ? state.people
-      : myPerson
-        ? [myPerson]
-        : [];
+    const source = scopePersonalCapacity
+      ? focusPerson
+        ? [focusPerson]
+        : []
+      : state.people;
     return source
       .map((person) => {
         const booked = personBookedHoursInRange(
@@ -274,8 +280,8 @@ export default function DashboardPage() {
           a.booked / Math.max(a.available, 1),
       );
   }, [
-    canManage,
-    myPerson,
+    scopePersonalCapacity,
+    focusPerson,
     state.people,
     state.assignments,
     state.leave_days,
@@ -284,17 +290,48 @@ export default function DashboardPage() {
   ]);
 
   const leaveHorizonEnd = monthEndKey > end ? monthEndKey : end;
-  const upcomingLeaveBlocks = state.people
-    .flatMap((person) =>
-      leaveBlocksInRange(state.leave_days, person.id, start, leaveHorizonEnd),
-    )
-    .filter((b) => b.end_date >= start)
-    .sort((a, b) => a.start_date.localeCompare(b.start_date))
-    .slice(0, 12);
+  const upcomingLeaveBlocks = useMemo(() => {
+    const people = scopePersonalCapacity
+      ? focusPerson
+        ? [focusPerson]
+        : []
+      : state.people;
+    return people
+      .flatMap((person) =>
+        leaveBlocksInRange(
+          state.leave_days,
+          person.id,
+          start,
+          leaveHorizonEnd,
+        ),
+      )
+      .filter((b) => b.end_date >= start)
+      .sort((a, b) => a.start_date.localeCompare(b.start_date))
+      .slice(0, 12);
+  }, [
+    scopePersonalCapacity,
+    focusPerson,
+    state.people,
+    state.leave_days,
+    start,
+    leaveHorizonEnd,
+  ]);
 
-  const approvedLeave = useMemo(
-    () => state.leave_days.filter((l) => l.status === "approved"),
-    [state.leave_days],
+  const approvedLeave = useMemo(() => {
+    const approved = state.leave_days.filter((l) => l.status === "approved");
+    if (!scopePersonalCapacity) return approved;
+    if (!focusPerson) return [];
+    return approved.filter((l) => l.person_id === focusPerson.id);
+  }, [state.leave_days, scopePersonalCapacity, focusPerson]);
+
+  const leaveCalendarPeople = useMemo(
+    () =>
+      scopePersonalCapacity
+        ? focusPerson
+          ? [focusPerson]
+          : []
+        : state.people,
+    [scopePersonalCapacity, focusPerson, state.people],
   );
 
   const sortedPeople = sortPeopleByName(state.people);
@@ -433,12 +470,16 @@ export default function DashboardPage() {
     [state.clients],
   );
 
+  const { dismiss: dismissMention, dismissed: dismissedMentions } =
+    useDismissedMentions(effectivePersonId);
+
   const taggedComments = useMemo(() => {
     const personId = effectivePersonId;
     if (!personId) return [];
     const taskById = new Map(state.tasks.map((t) => [t.id, t]));
     return state.task_comments
       .filter((c) => (c.mentioned_person_ids ?? []).includes(personId))
+      .filter((c) => !dismissedMentions.has(c.id))
       .map((c) => {
         const task = taskById.get(c.task_id);
         const project = task ? projectById.get(task.project_id) : undefined;
@@ -458,6 +499,7 @@ export default function DashboardPage() {
     state.tasks,
     state.profiles,
     projectById,
+    dismissedMentions,
   ]);
 
   const viewAsControl =
@@ -651,6 +693,7 @@ export default function DashboardPage() {
               <TaggedCommentsPanel
                 taggedComments={taggedComments}
                 appHref={appHref}
+                onDismiss={dismissMention}
               />
             </div>
 
@@ -683,7 +726,7 @@ export default function DashboardPage() {
             peopleLoad={peopleLoad}
             approvedLeave={approvedLeave}
             upcomingLeaveBlocks={upcomingLeaveBlocks}
-            people={state.people}
+            people={leaveCalendarPeople}
             appHref={appHref}
             projectHealth={
               <ProjectHealthBudget
@@ -729,6 +772,7 @@ export default function DashboardPage() {
             <TaggedCommentsPanel
               taggedComments={taggedComments}
               appHref={appHref}
+              onDismiss={dismissMention}
             />
 
             <TaskPulse
@@ -772,7 +816,7 @@ export default function DashboardPage() {
             peopleLoad={peopleLoad}
             approvedLeave={approvedLeave}
             upcomingLeaveBlocks={upcomingLeaveBlocks}
-            people={state.people}
+            people={leaveCalendarPeople}
             appHref={appHref}
             projectHealth={
               <ProjectHealthBudget
@@ -878,6 +922,7 @@ function Sparkline({ values }: { values: number[] }) {
 function TaggedCommentsPanel({
   taggedComments,
   appHref,
+  onDismiss,
 }: {
   taggedComments: {
     comment: TaskComment;
@@ -886,6 +931,7 @@ function TaggedCommentsPanel({
     author: Profile | undefined;
   }[];
   appHref: (path: string) => string;
+  onDismiss: (commentId: string) => void;
 }) {
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
@@ -897,12 +943,12 @@ function TaggedCommentsPanel({
       ) : (
         <ul className="space-y-2">
           {taggedComments.map(({ comment, task, project, author }) => (
-            <li key={comment.id}>
+            <li key={comment.id} className="relative">
               <Link
                 href={appHref(
                   `/projects/${project!.id}?task=${task!.id}&comments=1`,
                 )}
-                className="block rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
+                className="block rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
               >
                 <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
                   <span className="truncate">
@@ -917,6 +963,19 @@ function TaggedCommentsPanel({
                   <RichNotesHtml html={comment.body} />
                 </div>
               </Link>
+              <button
+                type="button"
+                className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                aria-label="Dismiss tagged comment"
+                title="Dismiss"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDismiss(comment.id);
+                }}
+              >
+                <X size={14} strokeWidth={2} />
+              </button>
             </li>
           ))}
         </ul>

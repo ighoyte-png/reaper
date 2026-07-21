@@ -9,6 +9,7 @@ import {
   endOfWeek,
   format,
   isSameMonth,
+  isWeekend,
   parseISO,
   startOfMonth,
   startOfWeek,
@@ -61,7 +62,7 @@ export function LeaveMonthCalendar({
   const cells = useMemo(() => {
     const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
     const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
-    return eachDayOfInterval({ start, end });
+    return eachDayOfInterval({ start, end }).filter((d) => !isWeekend(d));
   }, [month]);
 
   const todayKey = toDateKey(new Date());
@@ -122,14 +123,14 @@ export function LeaveMonthCalendar({
           </button>
         </div>
       ) : null}
-      <div className="grid grid-cols-7 gap-px text-center text-[10px] text-[var(--text-muted)]">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+      <div className="grid grid-cols-5 gap-px text-center text-[10px] text-[var(--text-muted)]">
+        {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => (
           <div key={d} className="py-1 font-medium">
             {d}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div className="grid grid-cols-5 gap-1">
         {cells.map((day) => {
           const key = toDateKey(day);
           const inMonth = isSameMonth(day, month);

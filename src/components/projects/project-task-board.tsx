@@ -1322,7 +1322,7 @@ function CommentThread({
           />
           <button
             type="button"
-            className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+            className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
             onClick={() => {
               if (!notesHasContent(draft)) return;
               ctx.addComment(

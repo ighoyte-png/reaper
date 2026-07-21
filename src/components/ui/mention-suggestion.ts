@@ -120,7 +120,7 @@ export function createMentionSuggestion(people: MentionPerson[]) {
             paint();
             return true;
           }
-          if (event.key === "Enter") {
+          if (event.key === "Enter" || event.key === "Tab") {
             const item = latest.items[selectedIndex];
             if (item) {
               event.preventDefault();
