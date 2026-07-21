@@ -6,6 +6,7 @@ import { addWeeks, format, parseISO } from "date-fns";
 import {
   AlertTriangle,
   Megaphone,
+  MessageSquare,
   Pencil,
   Pin,
   Plus,
@@ -36,10 +37,10 @@ import {
   budgetBurn,
   budgetHealth,
   formatHours,
-  formatMoney,
 } from "@/lib/domain/budget";
 import {
   capacityLevel,
+  dailyCapacityHours,
   personBookedHoursInRange,
   availableHoursInRange,
   utilizationPct,
@@ -87,13 +88,6 @@ function bulletinVisibleToPerson(
   if (bulletin.audience === "all") return true;
   if (!personId) return false;
   return bulletin.audience_person_ids.includes(personId);
-}
-
-function formatCompactMoney(amount: number): string {
-  const abs = Math.abs(amount);
-  if (abs >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `$${(amount / 1_000).toFixed(1)}k`;
-  return formatMoney(amount);
 }
 
 export default function DashboardPage() {
@@ -408,48 +402,6 @@ export default function DashboardPage() {
     now,
   ]);
 
-  const orgBudgetBurn = useMemo(() => {
-    let plannedAmount = 0;
-    let totalAmount = 0;
-    let plannedHours = 0;
-    let totalHours = 0;
-    let amountProjects = 0;
-    let hoursProjects = 0;
-    for (const p of activeProjects) {
-      const burn = budgetBurn(p, state.assignments, state.people);
-      if (burn.mode === "amount") {
-        plannedAmount += burn.plannedAmount;
-        totalAmount += burn.totalAmount ?? 0;
-        amountProjects += 1;
-      } else if (burn.mode === "hours") {
-        plannedHours += burn.plannedHours;
-        totalHours += burn.totalHours;
-        hoursProjects += 1;
-      }
-    }
-    if (amountProjects > 0) {
-      const pct =
-        totalAmount <= 0
-          ? 0
-          : Math.min(100, (plannedAmount / totalAmount) * 100);
-      return {
-        label: `${formatCompactMoney(plannedAmount)} / ${formatCompactMoney(totalAmount)} Spent`,
-        pct,
-        over: plannedAmount > totalAmount && totalAmount > 0,
-      };
-    }
-    if (hoursProjects > 0) {
-      const pct =
-        totalHours <= 0 ? 0 : Math.min(100, (plannedHours / totalHours) * 100);
-      return {
-        label: `${formatHours(plannedHours)} / ${formatHours(totalHours)}`,
-        pct,
-        over: plannedHours > totalHours && totalHours > 0,
-      };
-    }
-    return { label: "No budgets set", pct: 0, over: false };
-  }, [activeProjects, state.assignments, state.people]);
-
   const upcomingDueTasks = useMemo(() => {
     const groups = ["today", "tomorrow", "three_days"] as const;
     const list: Task[] = [];
@@ -566,21 +518,10 @@ export default function DashboardPage() {
         <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
           <div className="min-w-0 space-y-4 lg:col-span-2">
             <div className="grid gap-4 sm:grid-cols-2">
-              <BulletinBoard
-                bulletins={bulletins}
-                profiles={state.profiles}
-                people={sortedPeople}
-                canEdit={admin}
-                profileId={profile?.id ?? null}
-                onSave={(row) => {
-                  upsertBulletin(row);
-                  push("Bulletin saved");
-                }}
-                onDelete={(id) => {
-                  deleteBulletin(id);
-                  push("Bulletin deleted");
-                }}
-                newId={newId}
+              <TaggedCommentsPanel
+                taggedComments={taggedComments}
+                appHref={appHref}
+                onDismiss={dismissMention}
                 compact
               />
               <TaskPulse
@@ -639,25 +580,21 @@ export default function DashboardPage() {
                 </div>
               </KpiCard>
 
-              <KpiCard title="Budget Burn Rate">
+              <KpiCard
+                title="Tagged Comments"
+                className={
+                  taggedComments.length > 0
+                    ? "!border-0 bg-orange-500/15"
+                    : undefined
+                }
+              >
                 <div
                   className={cn(
                     "text-sm font-semibold tabular-nums",
-                    orgBudgetBurn.over && "text-[var(--status-over)]",
+                    taggedComments.length > 0 && "text-orange-600 dark:text-orange-400",
                   )}
                 >
-                  {orgBudgetBurn.label}
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]">
-                  <div
-                    className={cn(
-                      "h-full rounded-full",
-                      orgBudgetBurn.over
-                        ? "bg-[var(--status-over)]"
-                        : "bg-[var(--accent)]",
-                    )}
-                    style={{ width: `${Math.min(100, orgBudgetBurn.pct)}%` }}
-                  />
+                  {taggedComments.length} to review
                 </div>
               </KpiCard>
 
@@ -680,22 +617,15 @@ export default function DashboardPage() {
               </KpiCard>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TodaySchedule
-                assignments={todaysAssignments}
-                projects={state.projects}
-                clients={state.clients}
-                people={state.people}
-                showPerson={showingAsManager}
-                appHref={appHref}
-              />
-
-              <TaggedCommentsPanel
-                taggedComments={taggedComments}
-                appHref={appHref}
-                onDismiss={dismissMention}
-              />
-            </div>
+            <TodaySchedule
+              assignments={todaysAssignments}
+              projects={state.projects}
+              clients={state.clients}
+              people={state.people}
+              showPerson={showingAsManager}
+              fallbackPerson={focusPerson}
+              appHref={appHref}
+            />
 
             {canManage ? (
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
@@ -728,6 +658,25 @@ export default function DashboardPage() {
             upcomingLeaveBlocks={upcomingLeaveBlocks}
             people={leaveCalendarPeople}
             appHref={appHref}
+            bulletin={
+              <BulletinBoard
+                bulletins={bulletins}
+                profiles={state.profiles}
+                people={sortedPeople}
+                canEdit={admin}
+                profileId={profile?.id ?? null}
+                onSave={(row) => {
+                  upsertBulletin(row);
+                  push("Bulletin saved");
+                }}
+                onDelete={(id) => {
+                  deleteBulletin(id);
+                  push("Bulletin deleted");
+                }}
+                newId={newId}
+                compact
+              />
+            }
             projectHealth={
               <ProjectHealthBudget
                 canManage={canManage}
@@ -743,22 +692,26 @@ export default function DashboardPage() {
       ) : (
         <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
-            <BulletinBoard
-              bulletins={bulletins}
-              profiles={state.profiles}
-              people={sortedPeople}
-              canEdit={admin}
-              profileId={profile?.id ?? null}
-              onSave={(row) => {
-                upsertBulletin(row);
-                push("Bulletin saved");
-              }}
-              onDelete={(id) => {
-                deleteBulletin(id);
-                push("Bulletin deleted");
-              }}
-              newId={newId}
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TaggedCommentsPanel
+                taggedComments={taggedComments}
+                appHref={appHref}
+                onDismiss={dismissMention}
+                compact
+              />
+              <TaskPulse
+                overdue={overdueTasks}
+                urgentByGroup={urgentByGroup}
+                highPriority={highPriorityTasks}
+                total={pinnedTotal}
+                projectById={projectById}
+                clientById={clientById}
+                peopleById={peopleById}
+                showAssignee={admin && showingAsManager}
+                appHref={appHref}
+                compact
+              />
+            </div>
 
             <TodaySchedule
               assignments={todaysAssignments}
@@ -766,24 +719,7 @@ export default function DashboardPage() {
               clients={state.clients}
               people={state.people}
               showPerson={showingAsManager}
-              appHref={appHref}
-            />
-
-            <TaggedCommentsPanel
-              taggedComments={taggedComments}
-              appHref={appHref}
-              onDismiss={dismissMention}
-            />
-
-            <TaskPulse
-              overdue={overdueTasks}
-              urgentByGroup={urgentByGroup}
-              highPriority={highPriorityTasks}
-              total={pinnedTotal}
-              projectById={projectById}
-              clientById={clientById}
-              peopleById={peopleById}
-              showAssignee={admin && showingAsManager}
+              fallbackPerson={focusPerson}
               appHref={appHref}
             />
 
@@ -818,6 +754,25 @@ export default function DashboardPage() {
             upcomingLeaveBlocks={upcomingLeaveBlocks}
             people={leaveCalendarPeople}
             appHref={appHref}
+            bulletin={
+              <BulletinBoard
+                bulletins={bulletins}
+                profiles={state.profiles}
+                people={sortedPeople}
+                canEdit={admin}
+                profileId={profile?.id ?? null}
+                onSave={(row) => {
+                  upsertBulletin(row);
+                  push("Bulletin saved");
+                }}
+                onDelete={(id) => {
+                  deleteBulletin(id);
+                  push("Bulletin deleted");
+                }}
+                newId={newId}
+                compact
+              />
+            }
             projectHealth={
               <ProjectHealthBudget
                 canManage={canManage}
@@ -923,6 +878,7 @@ function TaggedCommentsPanel({
   taggedComments,
   appHref,
   onDismiss,
+  compact = false,
 }: {
   taggedComments: {
     comment: TaskComment;
@@ -932,16 +888,32 @@ function TaggedCommentsPanel({
   }[];
   appHref: (path: string) => string;
   onDismiss: (commentId: string) => void;
+  compact?: boolean;
 }) {
+  const total = taggedComments.length;
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-      <h2 className="mb-2 text-sm font-semibold">Tagged comments</h2>
-      {taggedComments.length === 0 ? (
+      <div className="mb-3 flex items-center gap-2">
+        <MessageSquare size={14} className="text-[var(--text-muted)]" />
+        <h2 className="text-sm font-semibold">Tagged Comments</h2>
+        {total > 0 ? (
+          <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
+            {total}
+          </span>
+        ) : null}
+      </div>
+      {total === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           No comments tagging you yet.
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul
+          className={cn(
+            "space-y-2",
+            "max-h-72 overflow-y-auto",
+            !compact && "max-h-96",
+          )}
+        >
           {taggedComments.map(({ comment, task, project, author }) => (
             <li key={comment.id} className="relative">
               <Link
@@ -1095,6 +1067,7 @@ function DashboardSidebar({
   upcomingLeaveBlocks,
   people,
   appHref,
+  bulletin,
   projectHealth,
 }: {
   identityPerson: Person | null | undefined;
@@ -1119,6 +1092,7 @@ function DashboardSidebar({
   }[];
   people: Person[];
   appHref: (path: string) => string;
+  bulletin?: ReactNode;
   projectHealth: ReactNode;
 }) {
   const displayName =
@@ -1171,6 +1145,8 @@ function DashboardSidebar({
           </div>
         </section>
       ) : null}
+
+      {bulletin}
 
       {projectHealth}
 
@@ -1306,6 +1282,7 @@ function TodaySchedule({
   clients,
   people,
   showPerson,
+  fallbackPerson,
   appHref,
 }: {
   assignments: {
@@ -1318,6 +1295,7 @@ function TodaySchedule({
   clients: { id: string; name: string; color: string }[];
   people: Person[];
   showPerson: boolean;
+  fallbackPerson?: Person | null;
   appHref: (path: string) => string;
 }) {
   const groups = useMemo(() => {
@@ -1338,6 +1316,30 @@ function TodaySchedule({
       items: byPerson.get(person.id) ?? [],
     }));
   }, [assignments, people, showPerson]);
+
+  const dayBooked = useMemo(
+    () => assignments.reduce((sum, a) => sum + a.hours_per_day, 0),
+    [assignments],
+  );
+
+  const dayAvailable = useMemo(() => {
+    const ids = new Set(assignments.map((a) => a.person_id));
+    let available = 0;
+    for (const id of ids) {
+      const person = people.find((p) => p.id === id);
+      if (person) available += dailyCapacityHours(person);
+    }
+    if (available <= 0 && fallbackPerson) {
+      available = dailyCapacityHours(fallbackPerson);
+    }
+    return available;
+  }, [assignments, people, fallbackPerson]);
+
+  const dayLevel = capacityLevel(
+    dayBooked,
+    dayAvailable,
+    dayAvailable <= 0 && dayBooked <= 0,
+  );
 
   function scheduleRow(a: (typeof assignments)[number]) {
     const project = projects.find((p) => p.id === a.project_id);
@@ -1395,6 +1397,16 @@ function TodaySchedule({
       <p className="mb-3 mt-0.5 text-xs text-[var(--text-muted)]">
         Today&apos;s schedule
       </p>
+      {(assignments.length > 0 || dayAvailable > 0) && (
+        <div className="mb-3 border-b border-[var(--border)] pb-3">
+          <CapacityBar
+            label="Today"
+            booked={dayBooked}
+            available={dayAvailable > 0 ? dayAvailable : 8}
+            level={dayLevel}
+          />
+        </div>
+      )}
       {assignments.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           Nothing scheduled today.
@@ -1490,7 +1502,7 @@ function TaskPulse({
           Nothing overdue or urgent right now.
         </p>
       ) : (
-        <div className={cn("space-y-3", compact && "max-h-72 overflow-y-auto")}>
+        <div className="max-h-72 space-y-3 overflow-y-auto">
           {overdue.length > 0 ? (
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--status-over)]">

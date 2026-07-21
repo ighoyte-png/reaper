@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { LogOut, Menu, Settings } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
+import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
+import { useViewAs } from "@/lib/view-as";
 
 function navLinkClass(active: boolean) {
   return cn(
@@ -21,11 +24,23 @@ function navLinkClass(active: boolean) {
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { canManage, logout } = useData();
+  const { canManage, logout, state, myPerson } = useData();
+  const { effectivePersonId } = useViewAs();
+  const { dismissed } = useDismissedMentions(effectivePersonId);
   const { open, setOpen, toggle } = useMobileNav();
   const links = primaryNavLinks.filter((l) => canManage || !l.manageOnly);
   const settingsActive =
     pathname === "/settings" || pathname.startsWith("/settings/");
+
+  const hasTaggedCommentDot = useMemo(() => {
+    const personId = effectivePersonId ?? myPerson?.id ?? null;
+    if (!personId) return false;
+    return state.task_comments.some(
+      (c) =>
+        (c.mentioned_person_ids ?? []).includes(personId) &&
+        !dismissed.has(c.id),
+    );
+  }, [effectivePersonId, myPerson?.id, state.task_comments, dismissed]);
 
   return (
     <>
@@ -52,6 +67,7 @@ export function AppNavbar() {
           {links.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href || pathname.startsWith(`${href}/`);
+            const showDot = href === "/dashboard" && hasTaggedCommentDot;
             return (
               <Link
                 key={href}
@@ -60,6 +76,12 @@ export function AppNavbar() {
               >
                 <Icon size={15} strokeWidth={1.75} />
                 {label}
+                {showDot ? (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"
+                    aria-label="New tagged comments"
+                  />
+                ) : null}
               </Link>
             );
           })}
@@ -121,13 +143,14 @@ export function AppNavbar() {
             {links.map(({ href, label, icon: Icon }) => {
               const active =
                 pathname === href || pathname.startsWith(`${href}/`);
+              const showDot = href === "/dashboard" && hasTaggedCommentDot;
               return (
                 <Link
                   key={href}
                   href={href}
                   onClick={() => setOpen(false)}
                   className={cn(
-                    "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
+                    "relative flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
                     active
                       ? "bg-[var(--bg-elevated)] text-[var(--text)]"
                       : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
@@ -135,6 +158,12 @@ export function AppNavbar() {
                 >
                   <Icon size={16} strokeWidth={1.75} />
                   {label}
+                  {showDot ? (
+                    <span
+                      className="ml-auto h-2 w-2 rounded-full bg-orange-500"
+                      aria-label="New tagged comments"
+                    />
+                  ) : null}
                 </Link>
               );
             })}
