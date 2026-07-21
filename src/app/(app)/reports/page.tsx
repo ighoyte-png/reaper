@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { BurnBar } from "@/components/ui/burn-bar";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
@@ -20,6 +21,7 @@ import {
   formatHours,
   formatMoney,
 } from "@/lib/domain/budget";
+import type { BudgetBurn } from "@/lib/types";
 import {
   availableHoursInRange,
   capacityLevel,
@@ -157,16 +159,13 @@ export default function ReportsPage() {
   }, [state.people, state.assignments, state.leave_days, now]);
 
   const budgets = useMemo(() => {
-    const tracked = state.projects.filter((p) => {
-      const burn = budgetBurn(p, state.assignments, state.people);
-      return burn.mode !== "none";
-    });
     let healthy = 0;
     let near = 0;
     let over = 0;
-    const top = tracked
+    const rows = state.projects
       .map((p) => {
         const burn = budgetBurn(p, state.assignments, state.people);
+        if (burn.mode === "none") return null;
         const health = budgetHealth(burn);
         if (health === "healthy") healthy += 1;
         else if (health === "near") near += 1;
@@ -177,16 +176,17 @@ export default function ReportsPage() {
           name: client?.name ? `${client.name} · ${p.name}` : p.name,
           pct: burn.pct,
           health,
+          burn,
         };
       })
-      .sort((a, b) => b.pct - a.pct)
-      .slice(0, 5);
+      .filter((row): row is NonNullable<typeof row> => row != null)
+      .sort((a, b) => b.pct - a.pct);
     return {
-      tracked: tracked.length,
+      tracked: rows.length,
       healthy,
       near,
       over,
-      top,
+      rows,
     };
   }, [state.projects, state.assignments, state.people, state.clients]);
 
@@ -470,7 +470,13 @@ function BudgetsOverview({
     healthy: number;
     near: number;
     over: number;
-    top: { id: string; name: string; pct: number; health: string }[];
+    rows: {
+      id: string;
+      name: string;
+      pct: number;
+      health: string;
+      burn: BudgetBurn;
+    }[];
   };
 }) {
   return (
@@ -481,10 +487,10 @@ function BudgetsOverview({
         value={String(data.over)}
         tone={data.over > 0 ? "over" : "muted"}
       />
-      {data.top.length > 0 ? (
-        <div className="space-y-1.5">
-          {data.top.map((row) => (
-            <div key={row.id} className="space-y-0.5">
+      {data.rows.length > 0 ? (
+        <div className="max-h-56 space-y-2.5 overflow-y-auto pr-0.5">
+          {data.rows.map((row) => (
+            <div key={row.id} className="space-y-1">
               <div className="flex justify-between gap-2 text-[11px]">
                 <span className="truncate text-[var(--text-muted)]">
                   {row.name}
@@ -493,18 +499,7 @@ function BudgetsOverview({
                   {Math.round(row.pct)}%
                 </span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]">
-                <div
-                  className={cn(
-                    "h-full rounded-full",
-                    row.health === "over" && "bg-[var(--status-over)]",
-                    row.health === "near" && "bg-[var(--status-near)]",
-                    (row.health === "healthy" || row.health === "none") &&
-                      "bg-[var(--accent)]",
-                  )}
-                  style={{ width: `${Math.min(100, row.pct)}%` }}
-                />
-              </div>
+              <BurnBar burn={row.burn} compact />
             </div>
           ))}
         </div>
