@@ -1,4 +1,4 @@
-import { addDays, addWeeks, parseISO } from "date-fns";
+import { addDays, addWeeks, differenceInCalendarWeeks, parseISO } from "date-fns";
 import type { Assignment } from "@/lib/types";
 import { toDateKey, weekStart } from "@/lib/domain/dates";
 
@@ -6,6 +6,9 @@ import { toDateKey, weekStart } from "@/lib/domain/dates";
  * Split a weekly series around one occurrence so that occurrence can become
  * a standalone (non-recurring) assignment. Returns rows to upsert (and which
  * original id to keep vs replace).
+ *
+ * The one-off instance always gets a new id so it never overwrites the
+ * truncated past series (keepSeries), which retains the original series id.
  */
 export function splitWeeklySeriesForInstance(args: {
   series: Assignment;
@@ -31,7 +34,8 @@ export function splitWeeklySeriesForInstance(args: {
     args;
   const instance: Assignment = {
     ...args.instance,
-    id: args.instance.id ?? newId("asg"),
+    // Never reuse the series id — that would overwrite keepSeries on upsert.
+    id: newId("asg"),
     organization_id: args.instance.organization_id ?? organizationId,
     recurrence: "none",
     recurrence_end_date: null,
@@ -39,9 +43,9 @@ export function splitWeeklySeriesForInstance(args: {
 
   const templateWeek = weekStart(parseISO(series.start_date));
   const occWeek = weekStart(parseISO(occurrenceStart));
-  const weekOffset = Math.round(
-    (occWeek.getTime() - templateWeek.getTime()) / (7 * 86400000),
-  );
+  const weekOffset = differenceInCalendarWeeks(occWeek, templateWeek, {
+    weekStartsOn: 1,
+  });
 
   const dayBeforeOccWeek = toDateKey(addDays(occWeek, -1));
   const nextWeekTemplateStart = toDateKey(

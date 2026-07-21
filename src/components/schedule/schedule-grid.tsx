@@ -157,6 +157,9 @@ export function ScheduleGrid() {
     "edit",
   );
   const sidebarPreferMinimizedRef = useRef(true);
+  const hoursInputRef = useRef<HTMLInputElement>(null);
+  /** When set to an assignment id, focus/select Hours after that form mounts. */
+  const focusHoursAfterCreateRef = useRef<string | null>(null);
   sidebarPreferMinimizedRef.current = sidebarPreferMinimized;
   const [draft, setDraft] = useState<{
     personId: string;
@@ -438,6 +441,18 @@ export function ScheduleGrid() {
       return prev;
     });
   }, [selectedId, state.assignments]);
+
+  useEffect(() => {
+    if (!editForm || focusHoursAfterCreateRef.current !== editForm.id) return;
+    focusHoursAfterCreateRef.current = null;
+    const id = window.setTimeout(() => {
+      const el = hoursInputRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [editForm?.id]);
 
   const formDirty = Boolean(
     editForm &&
@@ -735,12 +750,17 @@ export function ScheduleGrid() {
     );
     const instanceEnd = shiftWorkingDays(pending.occurrenceEnd, deltaEnd);
 
+    const {
+      id: _seriesId,
+      organization_id: _orgId,
+      ...afterFields
+    } = pending.after;
     const split = splitWeeklySeriesForInstance({
       series: pending.before,
       occurrenceStart: pending.occurrenceStart,
       occurrenceEnd: pending.occurrenceEnd,
       instance: {
-        ...pending.after,
+        ...afterFields,
         start_date: instanceStart,
         end_date: instanceEnd,
         hours_per_day: pending.after.hours_per_day,
@@ -889,6 +909,8 @@ export function ScheduleGrid() {
         ? "Weekly recurring assignment created"
         : "Assignment created",
     );
+    focusHoursAfterCreateRef.current = row.id;
+    setSidebarPanelTab("edit");
     selectAssignment(row.id);
   }
 
@@ -1490,6 +1512,10 @@ export function ScheduleGrid() {
                 leaveDraft?.personId === person.id ? leaveDraft : null;
               const selectedAssignmentId =
                 selected?.person_id === person.id ? selectedId : null;
+              const personSelectedOccurrence =
+                selectedAssignmentId && selectedOccurrence
+                  ? selectedOccurrence
+                  : null;
 
               return (
                 <PersonScheduleSection
@@ -1510,6 +1536,7 @@ export function ScheduleGrid() {
                   personDraft={personDraft}
                   personLeaveDraft={personLeaveDraft}
                   selectedAssignmentId={selectedAssignmentId}
+                  selectedOccurrence={personSelectedOccurrence}
                   selectedLeaveBlockId={
                     leaveEditForm?.person_id === person.id
                       ? selectedLeaveBlockId
@@ -2246,7 +2273,12 @@ export function ScheduleGrid() {
                                   );
                                   if (!geo) return null;
                                   const isSelected =
-                                    selectedId === occ.assignmentId;
+                                    selectedId === occ.assignmentId &&
+                                    (!selectedOccurrence ||
+                                      (selectedOccurrence.start ===
+                                        occ.start_date &&
+                                        selectedOccurrence.end ===
+                                          occ.end_date));
                                   const spanDays = workingDaysBetween(
                                     occ.start_date,
                                     occ.end_date,
@@ -2380,6 +2412,10 @@ export function ScheduleGrid() {
                                               ) {
                                                 selectAssignment(
                                                   occ.assignmentId,
+                                                  {
+                                                    start: occ.start_date,
+                                                    end: occ.end_date,
+                                                  },
                                                 );
                                                 return;
                                               }
@@ -2389,7 +2425,10 @@ export function ScheduleGrid() {
                                                     a.id === occ.assignmentId,
                                                 );
                                               if (!base) return;
-                                              selectAssignment(base.id);
+                                              selectAssignment(base.id, {
+                                                start: occ.start_date,
+                                                end: occ.end_date,
+                                              });
                                               dragSnapshot.current = {
                                                 id: base.id,
                                                 mode: "resize-start",
@@ -2414,6 +2453,10 @@ export function ScheduleGrid() {
                                               ) {
                                                 selectAssignment(
                                                   occ.assignmentId,
+                                                  {
+                                                    start: occ.start_date,
+                                                    end: occ.end_date,
+                                                  },
                                                 );
                                                 return;
                                               }
@@ -2423,7 +2466,10 @@ export function ScheduleGrid() {
                                                     a.id === occ.assignmentId,
                                                 );
                                               if (!base) return;
-                                              selectAssignment(base.id);
+                                              selectAssignment(base.id, {
+                                                start: occ.start_date,
+                                                end: occ.end_date,
+                                              });
                                               dragSnapshot.current = {
                                                 id: base.id,
                                                 mode: "resize-end",
@@ -2479,7 +2525,13 @@ export function ScheduleGrid() {
                                       ).length,
                                   )[0];
                                   const isSelected = overlapping.some(
-                                    (o) => o.assignmentId === selectedId,
+                                    (o) =>
+                                      o.assignmentId === selectedId &&
+                                      (!selectedOccurrence ||
+                                        (selectedOccurrence.start ===
+                                          o.start_date &&
+                                          selectedOccurrence.end ===
+                                            o.end_date)),
                                   );
                                   const hoursLabel = formatHours(blockHours);
                                   const left =
@@ -2919,6 +2971,7 @@ export function ScheduleGrid() {
             </div>
             <Field label="Hours / day">
               <input
+                ref={hoursInputRef}
                 type="number"
                 min={0.01}
                 step={0.01}
@@ -3288,6 +3341,7 @@ function personSectionPropsEqual(
     prev.personDraft === next.personDraft &&
     prev.personLeaveDraft === next.personLeaveDraft &&
     prev.selectedAssignmentId === next.selectedAssignmentId &&
+    prev.selectedOccurrence === next.selectedOccurrence &&
     prev.selectedLeaveBlockId === next.selectedLeaveBlockId &&
     prev.gridDragging === next.gridDragging &&
     prev.sliceMode === next.sliceMode
@@ -3329,6 +3383,7 @@ type PersonScheduleSectionProps = {
   personDraft: PersonDraft | null;
   personLeaveDraft: PersonLeaveDraft | null;
   selectedAssignmentId: string | null;
+  selectedOccurrence: { start: string; end: string } | null;
   selectedLeaveBlockId: string | null;
   gridDragging: boolean;
   sliceMode: boolean;
