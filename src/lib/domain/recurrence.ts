@@ -68,9 +68,19 @@ export function expandAssignmentInRange(
     0,
     differenceInCalendarWeeks(viewWeekStart, templateWeek, { weekStartsOn: 1 }),
   );
-  const lastOffset = differenceInCalendarWeeks(viewWeekEnd, templateWeek, {
+  let lastOffset = differenceInCalendarWeeks(viewWeekEnd, templateWeek, {
     weekStartsOn: 1,
   });
+  // Indefinite weekly series are budgeted for at most 52 weeks — never walk
+  // multi-decade ranges like budgetBurn's 1970–2099 window.
+  const maxSeriesOffset = seriesEndKey
+    ? differenceInCalendarWeeks(
+        weekStart(parseISO(seriesEndKey)),
+        templateWeek,
+        { weekStartsOn: 1 },
+      )
+    : RECURRENCE_BUDGET_WEEKS - 1;
+  lastOffset = Math.min(lastOffset, Math.max(0, maxSeriesOffset));
 
   const out: AssignmentOccurrence[] = [];
   for (let offset = firstOffset; offset <= lastOffset; offset++) {
@@ -79,7 +89,7 @@ export function expandAssignmentInRange(
     const end = addWeeks(templateEnd, offset);
     const startKey = toDateKey(start);
     const endKey = toDateKey(end);
-    if (seriesEndKey && startKey > seriesEndKey) continue;
+    if (seriesEndKey && startKey > seriesEndKey) break;
     if (endKey < rangeStartKey || startKey > rangeEndKey) continue;
     out.push({
       assignmentId: assignment.id,

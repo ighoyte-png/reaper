@@ -215,3 +215,58 @@ export function columnOffsetPx(
   for (let i = 0; i < index; i++) left += columns[i].width;
   return left;
 }
+
+/** Resolve which column contains a pixel offset within the row canvas. */
+export function columnAtOffsetPx(
+  columns: ScheduleColumn[],
+  offsetX: number,
+): ScheduleColumn | null {
+  if (columns.length === 0) return null;
+  if (offsetX < 0) return columns[0];
+  let x = 0;
+  for (const col of columns) {
+    const next = x + col.width;
+    if (offsetX < next) return col;
+    x = next;
+  }
+  return columns[columns.length - 1];
+}
+
+/** CSS guides for day/week separators without mounting a DOM node per column. */
+export function columnGuideBackground(
+  columns: ScheduleColumn[],
+): { backgroundImage?: string } {
+  if (columns.length === 0) return {};
+  const w0 = columns[0].width;
+  const uniform = columns.every((c) => c.width === w0);
+  if (uniform) {
+    // Day zoom: thin day lines + thicker week lines every 5 columns.
+    const weekW = w0 * 5;
+    return {
+      backgroundImage: [
+        `repeating-linear-gradient(to right, transparent 0, transparent ${w0 - 1}px, var(--schedule-day-border) ${w0 - 1}px, var(--schedule-day-border) ${w0}px)`,
+        `repeating-linear-gradient(to right, transparent 0, transparent ${weekW - 2}px, var(--schedule-week-border) ${weekW - 2}px, var(--schedule-week-border) ${weekW}px)`,
+      ].join(", "),
+    };
+  }
+  const stops: string[] = [];
+  let x = 0;
+  for (let i = 0; i < columns.length; i++) {
+    const col = columns[i];
+    const edge = x + col.width;
+    const thick = col.isWeekBoundaryEnd ? 2 : 1;
+    const color = col.isWeekBoundaryEnd
+      ? "var(--schedule-week-border)"
+      : "var(--schedule-day-border)";
+    stops.push(
+      `transparent ${edge - thick}px`,
+      `${color} ${edge - thick}px`,
+      `${color} ${edge}px`,
+      `transparent ${edge}px`,
+    );
+    x = edge;
+  }
+  return {
+    backgroundImage: `linear-gradient(to right, ${stops.join(", ")})`,
+  };
+}

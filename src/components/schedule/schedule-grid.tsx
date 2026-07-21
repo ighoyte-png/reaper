@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, memo, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { format, isWeekend, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
@@ -27,13 +27,14 @@ import {
 } from "@/lib/domain/budget";
 import {
   availableHoursInRange,
+  buildBookedHoursByPersonDay,
   capacityLevel,
   dailyCapacityHours,
   isOnFullDayLeave,
   isOnLeave,
-  personBookedHoursInRange,
   personBookedHoursOnDay,
   personLeaveHoursInRange,
+  sumBookedHoursFromDayMap,
   utilizationPct,
 } from "@/lib/domain/capacity";
 import {
@@ -43,7 +44,7 @@ import {
   weekStart,
   workingDaysBetween,
 } from "@/lib/domain/dates";
-import { expandAssignmentsInRange, occurrenceCoversDay } from "@/lib/domain/recurrence";
+import { expandAssignmentsInRange, occurrenceCoversDay, type AssignmentOccurrence } from "@/lib/domain/recurrence";
 import { splitWeeklySeriesForInstance } from "@/lib/domain/recurrence-split";
 import {
   buildScheduleColumns,
@@ -53,6 +54,7 @@ import {
   spanColumnsPx,
   type ScheduleZoom,
 } from "@/lib/domain/schedule-zoom";
+import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
 import { cn } from "@/lib/cn";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
 import {
@@ -88,6 +90,19 @@ const DAY_PAD_Y = 3;
 const ROW_H = DAY_H + DAY_PAD_Y * 2;
 const LABEL_DESKTOP = 196;
 const LABEL_MOBILE = 112;
+
+const EMPTY_PROJECTS: Project[] = [];
+const EMPTY_OCCS: AssignmentOccurrence[] = [];
+const EMPTY_UTIL: PersonUtilBand[] = [];
+
+type PersonUtilBand = {
+  id: string;
+  width: number;
+  booked: number;
+  available: number;
+  pct: number;
+  level: ReturnType<typeof capacityLevel>;
+};
 
 type UndoEntry =
   | { kind: "restore"; assignment: Assignment }
@@ -133,7 +148,6 @@ export function ScheduleGrid() {
     dayIds: string[];
   } | null>(null);
   const [editForm, setEditForm] = useState<Assignment | null>(null);
-  const [hoverColId, setHoverColId] = useState<string | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   /** User's preferred minimized state (restored after temporary expand for editing). */
@@ -328,29 +342,21 @@ export function ScheduleGrid() {
     if (scrollRef.current) scrollRef.current.scrollLeft = 0;
   }
 
+  /** Collapsed person rows (util strip only). Empty = all expanded. */
   const [collapsedPeople, setCollapsedPeople] = useState<Set<string>>(
     () => new Set(),
   );
-  const [revealedPeople, setRevealedPeople] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const revealPerson = useCallback((id: string) => {
-    setRevealedPeople((prev) => {
-      if (prev.has(id)) return prev;
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-  }, []);
+  /** Defer heavy body mount so the chevron can paint immediately. */
+  const deferredCollapsedPeople = useDeferredValue(collapsedPeople);
 
-  function togglePersonCollapsed(personId: string) {
+  const togglePersonCollapsed = useCallback((personId: string) => {
     setCollapsedPeople((prev) => {
       const next = new Set(prev);
       if (next.has(personId)) next.delete(personId);
       else next.add(personId);
       return next;
     });
-  }
+  }, []);
 
   useEffect(() => {
     if (viewAsPersonId) setPersonFilter(viewAsPersonId);
@@ -396,9 +402,13 @@ export function ScheduleGrid() {
       ? null
       : (projectsById.get(projectFilter) ?? null);
 
-  const selectedBurn = selectedProject
-    ? budgetBurn(selectedProject, state.assignments, state.people)
-    : null;
+  const selectedBurn = useMemo(
+    () =>
+      selectedProject
+        ? budgetBurn(selectedProject, state.assignments, state.people)
+        : null,
+    [selectedProject, state.assignments, state.people],
+  );
 
   const selected = state.assignments.find((a) => a.id === selectedId) ?? null;
 
@@ -461,6 +471,106 @@ export function ScheduleGrid() {
     );
     return expandAssignmentsInRange(filtered, startKey, endKey);
   }, [state.assignments, projectFilter, startKey, endKey]);
+
+  const bookedHoursByPersonDay = useMemo(
+    () => buildBookedHoursByPersonDay(occurrences, state.leave_days),
+    [occurrences, state.leave_days],
+  );
+
+  const utilByPersonId = useMemo(() => {
+    const map = new Map<string, PersonUtilBand[]>();
+    for (const person of visiblePeople) {
+      const dayHours = bookedHoursByPersonDay.get(person.id);
+      map.set(
+        person.id,
+        capacityBands.map((band) => {
+          const booked = sumBookedHoursFromDayMap(
+            dayHours,
+            band.startKey,
+            band.endKey,
+            person.id,
+            state.leave_days,
+          );
+          const available = availableHoursInRange(
+            person,
+            band.startKey,
+            band.endKey,
+            state.leave_days,
+          );
+          const pct = utilizationPct(booked, available);
+          return {
+            id: band.id,
+            width: band.width,
+            booked,
+            available,
+            pct,
+            level: capacityLevel(booked, available, available <= 0),
+          };
+        }),
+      );
+    }
+    return map;
+  }, [
+    visiblePeople,
+    bookedHoursByPersonDay,
+    capacityBands,
+    state.leave_days,
+  ]);
+
+  const projectsByPersonId = useMemo(() => {
+    const active = sortProjectsByClientThenName(
+      state.projects.filter((p) => p.status === "active"),
+      state.clients,
+    );
+    const map = new Map<string, Project[]>();
+
+    if (projectFilter !== "all") {
+      const filtered = projectsById.get(projectFilter);
+      const list = filtered ? [filtered] : EMPTY_PROJECTS;
+      for (const person of visiblePeople) {
+        map.set(person.id, list);
+      }
+      return map;
+    }
+
+    const assigned = new Map<string, Set<string>>();
+    for (const a of state.assignments) {
+      let set = assigned.get(a.person_id);
+      if (!set) {
+        set = new Set();
+        assigned.set(a.person_id, set);
+      }
+      set.add(a.project_id);
+    }
+
+    for (const person of visiblePeople) {
+      const fromAssignments = assigned.get(person.id) ?? new Set<string>();
+      const extras = new Set(extraProjectsByPerson[person.id] ?? []);
+      map.set(
+        person.id,
+        active.filter((p) => fromAssignments.has(p.id) || extras.has(p.id)),
+      );
+    }
+    return map;
+  }, [
+    state.projects,
+    state.clients,
+    state.assignments,
+    projectFilter,
+    projectsById,
+    visiblePeople,
+    extraProjectsByPerson,
+  ]);
+
+  const occurrencesByPersonId = useMemo(() => {
+    const map = new Map<string, AssignmentOccurrence[]>();
+    for (const occ of occurrences) {
+      const list = map.get(occ.person_id);
+      if (list) list.push(occ);
+      else map.set(occ.person_id, [occ]);
+    }
+    return map;
+  }, [occurrences]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -733,7 +843,6 @@ export function ScheduleGrid() {
     setLeaveEditForm(null);
     setDraft(null);
     setLeaveDraft(null);
-    setHoverColId(null);
     setProjectFilter("all");
     setPersonFilter("all");
     setMobilePanelOpen(false);
@@ -935,7 +1044,6 @@ export function ScheduleGrid() {
         leaveDraft.end,
       );
       setLeaveDraft(null);
-      setHoverColId(null);
     }
     if (draft) {
       createAssignment(
@@ -945,7 +1053,6 @@ export function ScheduleGrid() {
         draft.end,
       );
       setDraft(null);
-      setHoverColId(null);
     }
     if (leaveDragSnapshot.current) {
       const snap = leaveDragSnapshot.current;
@@ -1010,29 +1117,7 @@ export function ScheduleGrid() {
     setGridDragging(false);
   }
 
-  function projectsForPerson(personId: string): Project[] {
-    const fromAssignments = new Set(
-      state.assignments
-        .filter((a) => a.person_id === personId)
-        .map((a) => a.project_id),
-    );
-    const extras = new Set(extraProjectsByPerson[personId] ?? []);
-    const active = sortProjectsByClientThenName(
-      state.projects.filter((p) => p.status === "active"),
-      state.clients,
-    );
-
-    // Global project filter: focus that one row under everyone for scheduling.
-    if (projectFilter !== "all") {
-      const filtered = projectsById.get(projectFilter);
-      return filtered ? [filtered] : [];
-    }
-
-    // Only projects this person already has, or that were explicitly added.
-    return active.filter(
-      (p) => fromAssignments.has(p.id) || extras.has(p.id),
-    );
-  }
+  // projectsByPersonId replaces per-render projectsForPerson scans.
 
   function sliceAssignmentAt(assignmentId: string, cutDate: string) {
     const base = state.assignments.find((a) => a.id === assignmentId);
@@ -1081,6 +1166,26 @@ export function ScheduleGrid() {
     () => sortClientsByName(state.clients),
     [state.clients],
   );
+
+  /** Sidebar budget list — must not recompute on expand/collapse/scroll. */
+  const sidebarProjectBurns = useMemo(() => {
+    if (!canManage) return [];
+    return sortedProjects
+      .filter((p) => p.status === "active")
+      .map((project) => ({
+        project,
+        client: project.client_id
+          ? clientsById.get(project.client_id)
+          : undefined,
+        burn: budgetBurn(project, state.assignments, state.people),
+      }));
+  }, [
+    canManage,
+    sortedProjects,
+    clientsById,
+    state.assignments,
+    state.people,
+  ]);
 
   const addableProjectsForPerson = useMemo(() => {
     if (!addProjectForPerson) return [];
@@ -1372,130 +1477,58 @@ export function ScheduleGrid() {
             </div>
 
             {visiblePeople.map((person) => {
-              const personProjects = projectsForPerson(person.id);
-              const blocksReady = revealedPeople.has(person.id);
+              const personProjects =
+                projectsByPersonId.get(person.id) ?? EMPTY_PROJECTS;
               const collapsed = collapsedPeople.has(person.id);
+              const bodyCollapsed = deferredCollapsedPeople.has(person.id);
+              const utilBands = utilByPersonId.get(person.id) ?? EMPTY_UTIL;
+              const personOccs =
+                occurrencesByPersonId.get(person.id) ?? EMPTY_OCCS;
+              const personDraft =
+                draft?.personId === person.id ? draft : null;
+              const personLeaveDraft =
+                leaveDraft?.personId === person.id ? leaveDraft : null;
+              const selectedAssignmentId =
+                selected?.person_id === person.id ? selectedId : null;
 
               return (
-                <PersonReveal
+                <PersonScheduleSection
                   key={person.id}
-                  personId={person.id}
-                  rootRef={scrollRef}
-                  onReveal={revealPerson}
-                  className="border-b-2 border-[var(--border)]"
+                  person={person}
+                  collapsed={collapsed}
+                  bodyCollapsed={bodyCollapsed}
+                  personProjects={personProjects}
+                  utilBands={utilBands}
+                  personOccs={personOccs}
+                  labelPx={LABEL_PX}
+                  zoom={zoom}
+                  canManage={canManage}
+                  tw={tw}
+                  startKey={startKey}
+                  endKey={endKey}
+                  columns={columns}
+                  personDraft={personDraft}
+                  personLeaveDraft={personLeaveDraft}
+                  selectedAssignmentId={selectedAssignmentId}
+                  selectedLeaveBlockId={
+                    leaveEditForm?.person_id === person.id
+                      ? selectedLeaveBlockId
+                      : null
+                  }
+                  gridDragging={gridDragging}
+                  sliceMode={sliceMode}
+                  scrollRef={scrollRef}
+                  onToggleCollapsed={togglePersonCollapsed}
+                  onAddProject={() => {
+                    setAddProjectClientId("");
+                    setAddProjectId("");
+                    setAddProjectForPerson(person.id);
+                  }}
                 >
-                  {/* Util strip */}
-                  <div className="flex items-stretch">
-                    <div
-                      className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 sm:px-3"
-                      style={{ width: LABEL_PX }}
-                    >
-                      <button
-                        type="button"
-                        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:opacity-30"
-                        aria-label={
-                          collapsed
-                            ? `Expand assignments for ${person.name}`
-                            : `Collapse assignments for ${person.name}`
-                        }
-                        aria-expanded={!collapsed}
-                        onClick={() => togglePersonCollapsed(person.id)}
-                      >
-                        {collapsed ? (
-                          <ChevronRight size={14} strokeWidth={2} />
-                        ) : (
-                          <ChevronDown size={14} strokeWidth={2} />
-                        )}
-                      </button>
-                      <PersonAvatar
-                        avatarUrl={person.avatar_url}
-                        name={person.name}
-                        size="row"
-                        fallback="initials"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium leading-tight">
-                          {person.name}
-                        </div>
-                        <div className="truncate text-[10px] text-[var(--text-muted)]">
-                          {person.role_title || "—"}
-                          {collapsed && personProjects.length > 0
-                            ? ` · ${personProjects.length} project${personProjects.length === 1 ? "" : "s"}`
-                            : ""}
-                        </div>
-                      </div>
-                      {canManage && (
-                        <button
-                          type="button"
-                          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                          aria-label={`Add Project row for ${person.name}`}
-                          title="Add Project row"
-                          onClick={() => {
-                            setAddProjectClientId("");
-                            setAddProjectId("");
-                            setAddProjectForPerson(person.id);
-                          }}
-                        >
-                          <Plus size={14} strokeWidth={2.5} />
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex min-h-0 flex-1 items-center self-stretch">
-                      {capacityBands.map((band) => {
-                        const booked = personBookedHoursInRange(
-                          person.id,
-                          band.startKey,
-                          band.endKey,
-                          state.assignments,
-                          state.leave_days,
-                        );
-                        const available = availableHoursInRange(
-                          person,
-                          band.startKey,
-                          band.endKey,
-                          state.leave_days,
-                        );
-                        const pct = utilizationPct(booked, available);
-                        const level = capacityLevel(
-                          booked,
-                          available,
-                          available <= 0,
-                        );
-                        return (
-                          <div
-                            key={band.id}
-                            className={cn(
-                              "flex items-center px-1 text-[10px] font-medium",
-                              zoom === "month"
-                                ? "border-r border-[var(--schedule-day-border)]"
-                                : "border-r-2 border-[var(--schedule-week-border)]",
-                              level === "over" &&
-                                "bg-[var(--status-over)]/30 text-[var(--status-over)]",
-                              level === "near" &&
-                                "bg-[var(--status-near)]/25 text-[var(--status-near)]",
-                              level === "healthy" &&
-                                "bg-[var(--status-healthy)]/25 text-[var(--status-healthy)]",
-                              level === "unavailable" &&
-                                "bg-[var(--status-unavailable)]/20 text-[var(--text-muted)]",
-                            )}
-                            style={{
-                              width: band.width,
-                              height: "calc(100% - 8px)",
-                            }}
-                          >
-                            <span className="truncate">
-                              {available <= 0
-                                ? "—"
-                                : `${Math.round(pct)}% | ${formatHours(booked)}`}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
+                  {(blocksReady) => (
+                  <>
                   {/* Assignments body: Time off + projects, with full-height leave overlay */}
-                  {!collapsed && (() => {
+                  {(() => {
                     const leaveBlocks = leaveBlocksInRange(
                       state.leave_days,
                       person.id,
@@ -1518,6 +1551,24 @@ export function ScheduleGrid() {
                             leaveDraft.end,
                           )
                         : null;
+
+                    const projectLeaveFills =
+                      zoom === "day"
+                        ? []
+                        : columns
+                            .filter(
+                              (col) =>
+                                availableHoursInRange(
+                                  person,
+                                  col.startKey,
+                                  col.endKey,
+                                  state.leave_days,
+                                ) <= 0,
+                            )
+                            .map((col) => ({
+                              start: col.startKey,
+                              end: col.endKey,
+                            }));
 
                     function leaveBlockEditors(
                       block: LeaveBlock,
@@ -1718,139 +1769,117 @@ export function ScheduleGrid() {
                       className="relative min-h-0 shrink-0"
                       style={{ width: tw, height: ROW_H }}
                     >
-                      <div className="absolute inset-0 flex">
-                        {columns.map((col) => {
-                          const leave =
+                      <ScheduleRowHitLayer
+                        columns={columns}
+                        width={tw}
+                        height={ROW_H}
+                        rangeStart={
+                          leaveDraft?.personId === person.id
+                            ? leaveDraft.start
+                            : null
+                        }
+                        rangeEnd={
+                          leaveDraft?.personId === person.id
+                            ? leaveDraft.end
+                            : null
+                        }
+                        rangeClassName="bg-[var(--leave-block-draft)]"
+                        hoverClassName="bg-[var(--leave-block-draft)]"
+                        interactive={canManage}
+                        cursorClassName="cursor-pointer"
+                        title={canManage ? "Paint Partial Day" : undefined}
+                        onColumnPointerEnter={(col) => {
+                          if (
+                            leaveDragSnapshot.current &&
+                            leaveDragSnapshot.current.personId === person.id
+                          ) {
+                            applyLeaveResizeToColumn(
+                              col.startKey,
+                              col.endKey,
+                            );
+                            return;
+                          }
+                          if (
+                            leaveDraft &&
+                            leaveDraft.personId === person.id
+                          ) {
+                            setLeaveDraft({
+                              ...leaveDraft,
+                              start:
+                                col.startKey < leaveDraft.originStart
+                                  ? col.startKey
+                                  : leaveDraft.originStart,
+                              end:
+                                col.endKey > leaveDraft.originEnd
+                                  ? col.endKey
+                                  : leaveDraft.originEnd,
+                            });
+                          }
+                        }}
+                        onColumnPointerDown={(col, e) => {
+                          if (e.button !== 0) return;
+                          if (!canManage) return;
+                          const leaveInBand =
                             zoom === "day"
                               ? isOnLeave(
                                   person.id,
                                   col.startKey,
                                   state.leave_days,
                                 )
-                              : undefined;
-                          const leaveInBand =
-                            leave ??
-                            state.leave_days.find(
-                              (l) =>
-                                l.person_id === person.id &&
-                                l.status === "approved" &&
-                                l.date >= col.startKey &&
-                                l.date <= col.endKey,
-                            );
-                          const inLeaveDraft =
-                            !!leaveDraft &&
-                            leaveDraft.personId === person.id &&
-                            columnsOverlapRange(
-                              col,
-                              leaveDraft.start,
-                              leaveDraft.end,
-                            );
-                          const isHover =
-                            hoverColId === col.id &&
-                            leaveDraft?.personId === person.id;
-                          return (
-                            <div
-                              key={col.id}
-                              className={cn(
-                                "box-border shrink-0 transition-colors",
-                                col.isWeekBoundaryEnd
-                                  ? "border-r-2 border-[var(--schedule-week-border)]"
-                                  : "border-r border-[var(--schedule-day-border)]",
-                                (inLeaveDraft || isHover) &&
-                                  "bg-[var(--leave-block-draft)]",
-                                canManage &&
-                                  !leaveInBand &&
-                                  "cursor-pointer hover:bg-[var(--leave-block-draft)]",
-                              )}
-                              style={{
-                                width: col.width,
-                                height: ROW_H,
-                                paddingTop: DAY_PAD_Y,
-                                paddingBottom: DAY_PAD_Y,
-                                boxSizing: "border-box",
-                                ...(col.isToday &&
-                                !leaveInBand &&
-                                !inLeaveDraft &&
-                                !isHover
-                                  ? { backgroundColor: "var(--today-col)" }
-                                  : null),
-                              }}
-                              title={
-                                canManage && !leaveInBand
-                                  ? "Paint Partial Day"
-                                  : undefined
-                              }
-                              onPointerEnter={() => {
-                                setHoverColId(col.id);
-                                if (
-                                  leaveDragSnapshot.current &&
-                                  leaveDragSnapshot.current.personId ===
-                                    person.id
-                                ) {
-                                  applyLeaveResizeToColumn(
-                                    col.startKey,
-                                    col.endKey,
-                                  );
-                                  return;
-                                }
-                                if (
-                                  leaveDraft &&
-                                  leaveDraft.personId === person.id
-                                ) {
-                                  setLeaveDraft({
-                                    ...leaveDraft,
-                                    start:
-                                      col.startKey < leaveDraft.originStart
-                                        ? col.startKey
-                                        : leaveDraft.originStart,
-                                    end:
-                                      col.endKey > leaveDraft.originEnd
-                                        ? col.endKey
-                                        : leaveDraft.originEnd,
-                                  });
-                                }
-                              }}
-                              onPointerDown={(e) => {
-                                if (e.button !== 0) return;
-                                if (!canManage) return;
-                                if (leaveInBand) return;
-                                if (isCoarse || e.pointerType === "touch") {
-                                  return;
-                                }
-                                e.preventDefault();
-                                (e.currentTarget as HTMLElement).setPointerCapture?.(
-                                  e.pointerId,
+                              : state.leave_days.find(
+                                  (l) =>
+                                    l.person_id === person.id &&
+                                    l.status === "approved" &&
+                                    l.date >= col.startKey &&
+                                    l.date <= col.endKey,
                                 );
-                                setDraft(null);
-                                setLeaveDraft({
-                                  personId: person.id,
-                                  start: col.startKey,
-                                  end: col.endKey,
-                                  originStart: col.startKey,
-                                  originEnd: col.endKey,
-                                });
-                              }}
-                              onClick={() => {
-                                if (!canManage) return;
-                                if (leaveInBand) return;
-                                if (
-                                  !(
-                                    isCoarse ||
-                                    matchMedia("(pointer: coarse)").matches
-                                  )
-                                ) {
-                                  return;
-                                }
-                                createLeaveRange(
+                          if (leaveInBand) return;
+                          if (isCoarse || e.pointerType === "touch") return;
+                          e.preventDefault();
+                          (e.currentTarget as HTMLElement).setPointerCapture?.(
+                            e.pointerId,
+                          );
+                          setDraft(null);
+                          setLeaveDraft({
+                            personId: person.id,
+                            start: col.startKey,
+                            end: col.endKey,
+                            originStart: col.startKey,
+                            originEnd: col.endKey,
+                          });
+                        }}
+                        onColumnClick={(col) => {
+                          if (!canManage) return;
+                          const leaveInBand =
+                            zoom === "day"
+                              ? isOnLeave(
                                   person.id,
                                   col.startKey,
-                                  col.endKey,
+                                  state.leave_days,
+                                )
+                              : state.leave_days.find(
+                                  (l) =>
+                                    l.person_id === person.id &&
+                                    l.status === "approved" &&
+                                    l.date >= col.startKey &&
+                                    l.date <= col.endKey,
                                 );
-                              }}
-                            />
+                          if (leaveInBand) return;
+                          if (
+                            !(
+                              isCoarse ||
+                              matchMedia("(pointer: coarse)").matches
+                            )
+                          ) {
+                            return;
+                          }
+                          createLeaveRange(
+                            person.id,
+                            col.startKey,
+                            col.endKey,
                           );
-                        })}
-                      </div>
+                        }}
+                      />
                       {leaveDraftGeo ? (
                         <div
                           className="pointer-events-none absolute z-[11] rounded-sm border border-[var(--leave-block)]/40"
@@ -1974,10 +2003,8 @@ export function ScheduleGrid() {
                   {/* Project rows — blocks live here (no empty gap) */}
                   {!collapsed &&
                     personProjects.map((project) => {
-                    const rowOccs = occurrences.filter(
-                      (o) =>
-                        o.person_id === person.id &&
-                        o.project_id === project.id,
+                    const rowOccs = personOccs.filter(
+                      (o) => o.project_id === project.id,
                     );
                     const clientName = project.client_id
                       ? clientsById.get(project.client_id)?.name
@@ -2032,205 +2059,181 @@ export function ScheduleGrid() {
                             height: ROW_H,
                           }}
                         >
-                          {/* Column hit targets */}
-                          <div className="absolute inset-0 flex">
-                            {columns.map((col) => {
-                              const fullDayLeave =
-                                zoom === "day" &&
-                                !!isOnFullDayLeave(
-                                  person.id,
+                          <ScheduleRowHitLayer
+                            columns={columns}
+                            width={tw}
+                            height={ROW_H}
+                            rangeStart={
+                              draft?.personId === person.id &&
+                              draft?.projectId === project.id
+                                ? draft.start
+                                : null
+                            }
+                            rangeEnd={
+                              draft?.personId === person.id &&
+                              draft?.projectId === project.id
+                                ? draft.end
+                                : null
+                            }
+                            fillRanges={projectLeaveFills}
+                            interactive={canManage}
+                            cursorClassName="cursor-pointer"
+                            onColumnPointerEnter={(col) => {
+                              if (
+                                leaveDragSnapshot.current &&
+                                leaveDragSnapshot.current.personId ===
+                                  person.id
+                              ) {
+                                applyLeaveResizeToColumn(
                                   col.startKey,
-                                  state.leave_days,
+                                  col.endKey,
                                 );
-                              const leave =
+                                return;
+                              }
+                              if (
+                                draft &&
+                                draft.personId === person.id &&
+                                draft.projectId === project.id
+                              ) {
+                                setDraft({
+                                  ...draft,
+                                  start:
+                                    col.startKey < draft.originStart
+                                      ? col.startKey
+                                      : draft.originStart,
+                                  end:
+                                    col.endKey > draft.originEnd
+                                      ? col.endKey
+                                      : draft.originEnd,
+                                });
+                              }
+                              const snap = dragSnapshot.current;
+                              if (!snap || !canManage) return;
+                              const current = state.assignments.find(
+                                (a) => a.id === snap.id,
+                              );
+                              if (
+                                !current ||
+                                current.person_id !== person.id
+                              ) {
+                                return;
+                              }
+                              if (snap.mode === "resize-end") {
+                                const minEnd = snap.before.start_date;
+                                const end =
+                                  col.endKey >= minEnd
+                                    ? col.endKey
+                                    : minEnd;
+                                if (end !== current.end_date) {
+                                  snap.dirty = true;
+                                  upsertAssignment({
+                                    ...current,
+                                    end_date: end,
+                                  });
+                                }
+                              } else if (snap.mode === "resize-start") {
+                                const maxStart = snap.before.end_date;
+                                const start =
+                                  col.startKey <= maxStart
+                                    ? col.startKey
+                                    : maxStart;
+                                if (start !== current.start_date) {
+                                  snap.dirty = true;
+                                  upsertAssignment({
+                                    ...current,
+                                    start_date: start,
+                                  });
+                                }
+                              } else {
+                                const hoverKey = col.startKey;
+                                const delta = workingDayDelta(
+                                  snap.grabDateKey,
+                                  hoverKey,
+                                );
+                                const start = shiftWorkingDays(
+                                  snap.before.start_date,
+                                  delta,
+                                );
+                                const end = shiftWorkingDays(
+                                  snap.before.end_date,
+                                  delta,
+                                );
+                                if (
+                                  start !== current.start_date ||
+                                  end !== current.end_date
+                                ) {
+                                  snap.dirty = true;
+                                  upsertAssignment({
+                                    ...current,
+                                    start_date: start,
+                                    end_date: end,
+                                  });
+                                }
+                              }
+                            }}
+                            onColumnPointerDown={(col, e) => {
+                              if (e.button !== 0) return;
+                              const leaveBlocked =
                                 zoom === "day"
-                                  ? fullDayLeave
+                                  ? !!isOnFullDayLeave(
+                                      person.id,
+                                      col.startKey,
+                                      state.leave_days,
+                                    )
                                   : availableHoursInRange(
                                       person,
                                       col.startKey,
                                       col.endKey,
                                       state.leave_days,
                                     ) <= 0;
-                              const inDraft =
-                                !!draft &&
-                                draft.personId === person.id &&
-                                draft.projectId === project.id &&
-                                columnsOverlapRange(
-                                  col,
-                                  draft.start,
-                                  draft.end,
-                                );
-                              const isHover =
-                                hoverColId === col.id &&
-                                draft?.personId === person.id &&
-                                draft?.projectId === project.id;
-                              return (
-                                <div
-                                  key={col.id}
-                                  className={cn(
-                                    "box-border shrink-0 transition-colors",
-                                    col.isWeekBoundaryEnd
-                                      ? "border-r-2 border-[var(--schedule-week-border)]"
-                                      : "border-r border-[var(--schedule-day-border)]",
-                                    leave &&
-                                      !fullDayLeave &&
-                                      "bg-[var(--leave-block-fill)]",
-                                    (inDraft || isHover) &&
-                                      "bg-[var(--accent)]/35",
-                                    !leave &&
-                                      canManage &&
-                                      "cursor-pointer hover:bg-[var(--accent)]/20",
-                                  )}
-                                  style={{
-                                    width: col.width,
-                                    height: ROW_H,
-                                    paddingTop: DAY_PAD_Y,
-                                    paddingBottom: DAY_PAD_Y,
-                                    boxSizing: "border-box",
-                                    ...(col.isToday &&
-                                    !leave &&
-                                    !inDraft &&
-                                    !isHover
-                                      ? { backgroundColor: "var(--today-col)" }
-                                      : null),
-                                  }}
-                                  onPointerEnter={() => {
-                                    setHoverColId(col.id);
-                                    if (
-                                      leaveDragSnapshot.current &&
-                                      leaveDragSnapshot.current.personId ===
-                                        person.id
-                                    ) {
-                                      applyLeaveResizeToColumn(
-                                        col.startKey,
-                                        col.endKey,
-                                      );
-                                      return;
-                                    }
-                                    if (
-                                      draft &&
-                                      draft.personId === person.id &&
-                                      draft.projectId === project.id
-                                    ) {
-                                      setDraft({
-                                        ...draft,
-                                        start:
-                                          col.startKey < draft.originStart
-                                            ? col.startKey
-                                            : draft.originStart,
-                                        end:
-                                          col.endKey > draft.originEnd
-                                            ? col.endKey
-                                            : draft.originEnd,
-                                      });
-                                    }
-                                    const snap = dragSnapshot.current;
-                                    if (!snap || !canManage) return;
-                                    const current = state.assignments.find(
-                                      (a) => a.id === snap.id,
-                                    );
-                                    if (
-                                      !current ||
-                                      current.person_id !== person.id
-                                    ) {
-                                      return;
-                                    }
-                                    if (snap.mode === "resize-end") {
-                                      const minEnd = snap.before.start_date;
-                                      const end =
-                                        col.endKey >= minEnd
-                                          ? col.endKey
-                                          : minEnd;
-                                      if (end !== current.end_date) {
-                                        snap.dirty = true;
-                                        upsertAssignment({
-                                          ...current,
-                                          end_date: end,
-                                        });
-                                      }
-                                    } else if (snap.mode === "resize-start") {
-                                      const maxStart = snap.before.end_date;
-                                      const start =
-                                        col.startKey <= maxStart
-                                          ? col.startKey
-                                          : maxStart;
-                                      if (start !== current.start_date) {
-                                        snap.dirty = true;
-                                        upsertAssignment({
-                                          ...current,
-                                          start_date: start,
-                                        });
-                                      }
-                                    } else {
-                                      // Shift the template by how far the grab day moved.
-                                      // Works for weekly series (any weekOffset) without
-                                      // snapping the hovered day to the series start.
-                                      const hoverKey = col.startKey;
-                                      const delta = workingDayDelta(
-                                        snap.grabDateKey,
-                                        hoverKey,
-                                      );
-                                      const start = shiftWorkingDays(
-                                        snap.before.start_date,
-                                        delta,
-                                      );
-                                      const end = shiftWorkingDays(
-                                        snap.before.end_date,
-                                        delta,
-                                      );
-                                      if (
-                                        start !== current.start_date ||
-                                        end !== current.end_date
-                                      ) {
-                                        snap.dirty = true;
-                                        upsertAssignment({
-                                          ...current,
-                                          start_date: start,
-                                          end_date: end,
-                                        });
-                                      }
-                                    }
-                                  }}
-                                  onPointerDown={(e) => {
-                                    if (e.button !== 0) return;
-                                    if (!canManage || leave) return;
-                                    if (isCoarse || e.pointerType === "touch") {
-                                      return;
-                                    }
-                                    e.preventDefault();
-                                    (e.currentTarget as HTMLElement).setPointerCapture?.(
-                                      e.pointerId,
-                                    );
-                                    setDraft({
-                                      personId: person.id,
-                                      projectId: project.id,
-                                      start: col.startKey,
-                                      end: col.endKey,
-                                      originStart: col.startKey,
-                                      originEnd: col.endKey,
-                                    });
-                                  }}
-                                  onClick={() => {
-                                    if (!canManage || leave) return;
-                                    if (
-                                      !(
-                                        isCoarse ||
-                                        matchMedia("(pointer: coarse)").matches
-                                      )
-                                    ) {
-                                      return;
-                                    }
-                                    createAssignment(
+                              if (!canManage || leaveBlocked) return;
+                              if (isCoarse || e.pointerType === "touch") {
+                                return;
+                              }
+                              e.preventDefault();
+                              (e.currentTarget as HTMLElement).setPointerCapture?.(
+                                e.pointerId,
+                              );
+                              setDraft({
+                                personId: person.id,
+                                projectId: project.id,
+                                start: col.startKey,
+                                end: col.endKey,
+                                originStart: col.startKey,
+                                originEnd: col.endKey,
+                              });
+                            }}
+                            onColumnClick={(col) => {
+                              const leaveBlocked =
+                                zoom === "day"
+                                  ? !!isOnFullDayLeave(
                                       person.id,
-                                      project.id,
+                                      col.startKey,
+                                      state.leave_days,
+                                    )
+                                  : availableHoursInRange(
+                                      person,
                                       col.startKey,
                                       col.endKey,
-                                    );
-                                  }}
-                                />
+                                      state.leave_days,
+                                    ) <= 0;
+                              if (!canManage || leaveBlocked) return;
+                              if (
+                                !(
+                                  isCoarse ||
+                                  matchMedia("(pointer: coarse)").matches
+                                )
+                              ) {
+                                return;
+                              }
+                              createAssignment(
+                                person.id,
+                                project.id,
+                                col.startKey,
+                                col.endKey,
                               );
-                            })}
-                          </div>
+                            }}
+                          />
 
                           {/* Blocks — painted once this person row has been revealed */}
                           {blocksReady &&
@@ -2588,7 +2591,7 @@ export function ScheduleGrid() {
                     );
                   })}
 
-                  {!collapsed && personProjects.length === 0 && (
+                  {personProjects.length === 0 && (
                     <div className="flex">
                       <div
                         className="sticky left-0 z-20 px-3 py-2 text-xs text-[var(--text-muted)]"
@@ -2615,7 +2618,9 @@ export function ScheduleGrid() {
                   </div>
                     );
                   })()}
-                </PersonReveal>
+                  </>
+                  )}
+                </PersonScheduleSection>
               );
             })}
           </div>
@@ -3103,17 +3108,7 @@ export function ScheduleGrid() {
         ) : (
           <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">
             {canManage ? (
-              sortedProjects
-                .filter((p) => p.status === "active")
-                .map((project) => {
-                  const client = project.client_id
-                    ? clientsById.get(project.client_id)
-                    : undefined;
-                  const burn = budgetBurn(
-                    project,
-                    state.assignments,
-                    state.people,
-                  );
+              sidebarProjectBurns.map(({ project, client, burn }) => {
                   return (
                     <button
                       key={project.id}
@@ -3270,27 +3265,215 @@ export function ScheduleGrid() {
   );
 }
 
+function personSectionPropsEqual(
+  prev: PersonScheduleSectionProps,
+  next: PersonScheduleSectionProps,
+): boolean {
+  // Ignore `children` — parent always passes a new function. Body updates are
+  // driven by the person-scoped props below so siblings don't re-render on expand.
+  return (
+    prev.person === next.person &&
+    prev.collapsed === next.collapsed &&
+    prev.bodyCollapsed === next.bodyCollapsed &&
+    prev.personProjects === next.personProjects &&
+    prev.utilBands === next.utilBands &&
+    prev.personOccs === next.personOccs &&
+    prev.labelPx === next.labelPx &&
+    prev.zoom === next.zoom &&
+    prev.canManage === next.canManage &&
+    prev.tw === next.tw &&
+    prev.startKey === next.startKey &&
+    prev.endKey === next.endKey &&
+    prev.columns === next.columns &&
+    prev.personDraft === next.personDraft &&
+    prev.personLeaveDraft === next.personLeaveDraft &&
+    prev.selectedAssignmentId === next.selectedAssignmentId &&
+    prev.selectedLeaveBlockId === next.selectedLeaveBlockId &&
+    prev.gridDragging === next.gridDragging &&
+    prev.sliceMode === next.sliceMode
+  );
+}
+
+type PersonDraft = {
+  personId: string;
+  projectId: string;
+  start: string;
+  end: string;
+  originStart: string;
+  originEnd: string;
+};
+
+type PersonLeaveDraft = {
+  personId: string;
+  start: string;
+  end: string;
+  originStart: string;
+  originEnd: string;
+};
+
+type PersonScheduleSectionProps = {
+  person: Person;
+  collapsed: boolean;
+  /** When true, skip mounting Time Off / project rows (may lag chevron via useDeferredValue). */
+  bodyCollapsed: boolean;
+  personProjects: Project[];
+  utilBands: PersonUtilBand[];
+  personOccs: AssignmentOccurrence[];
+  labelPx: number;
+  zoom: ScheduleZoom;
+  canManage: boolean;
+  tw: number;
+  startKey: string;
+  endKey: string;
+  columns: import("@/lib/domain/schedule-zoom").ScheduleColumn[];
+  personDraft: PersonDraft | null;
+  personLeaveDraft: PersonLeaveDraft | null;
+  selectedAssignmentId: string | null;
+  selectedLeaveBlockId: string | null;
+  gridDragging: boolean;
+  sliceMode: boolean;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  onToggleCollapsed: (personId: string) => void;
+  onAddProject: () => void;
+  children: (blocksReady: boolean) => ReactNode;
+};
+
+const PersonScheduleSection = memo(function PersonScheduleSection({
+  person,
+  collapsed,
+  bodyCollapsed,
+  personProjects,
+  utilBands,
+  labelPx,
+  zoom,
+  canManage,
+  scrollRef,
+  onToggleCollapsed,
+  onAddProject,
+  children,
+}: PersonScheduleSectionProps) {
+  return (
+    <PersonReveal
+      personId={person.id}
+      rootRef={scrollRef}
+      className="border-b-2 border-[var(--border)] [content-visibility:auto] [contain-intrinsic-size:auto_120px]"
+    >
+      {(blocksReady) => (
+        <>
+          <div className="flex items-stretch">
+            <div
+              className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 sm:px-3"
+              style={{ width: labelPx }}
+            >
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:opacity-30"
+                aria-label={
+                  collapsed
+                    ? `Expand assignments for ${person.name}`
+                    : `Collapse assignments for ${person.name}`
+                }
+                aria-expanded={!collapsed}
+                onClick={() => onToggleCollapsed(person.id)}
+              >
+                {collapsed ? (
+                  <ChevronRight size={14} strokeWidth={2} />
+                ) : (
+                  <ChevronDown size={14} strokeWidth={2} />
+                )}
+              </button>
+              <PersonAvatar
+                avatarUrl={person.avatar_url}
+                name={person.name}
+                size="row"
+                fallback="initials"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium leading-tight">
+                  {person.name}
+                </div>
+                <div className="truncate text-[10px] text-[var(--text-muted)]">
+                  {person.role_title || "—"}
+                  {collapsed && personProjects.length > 0
+                    ? ` · ${personProjects.length} project${personProjects.length === 1 ? "" : "s"}`
+                    : ""}
+                </div>
+              </div>
+              {canManage && (
+                <button
+                  type="button"
+                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                  aria-label={`Add Project row for ${person.name}`}
+                  title="Add Project row"
+                  onClick={onAddProject}
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+            <div className="flex min-h-0 flex-1 items-center self-stretch">
+              {utilBands.map((band) => (
+                <div
+                  key={band.id}
+                  className={cn(
+                    "flex items-center px-1 text-[10px] font-medium",
+                    zoom === "month"
+                      ? "border-r border-[var(--schedule-day-border)]"
+                      : "border-r-2 border-[var(--schedule-week-border)]",
+                    band.level === "over" &&
+                      "bg-[var(--status-over)]/30 text-[var(--status-over)]",
+                    band.level === "near" &&
+                      "bg-[var(--status-near)]/25 text-[var(--status-near)]",
+                    band.level === "healthy" &&
+                      "bg-[var(--status-healthy)]/25 text-[var(--status-healthy)]",
+                    band.level === "unavailable" &&
+                      "bg-[var(--status-unavailable)]/20 text-[var(--text-muted)]",
+                  )}
+                  style={{
+                    width: band.width,
+                    height: "calc(100% - 8px)",
+                  }}
+                >
+                  <span className="truncate">
+                    {band.available <= 0
+                      ? "—"
+                      : `${Math.round(band.pct)}% | ${formatHours(band.booked)}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {!bodyCollapsed ? children(blocksReady) : null}
+        </>
+      )}
+    </PersonReveal>
+  );
+}, personSectionPropsEqual);
+
 function PersonReveal({
   personId,
   rootRef,
-  onReveal,
   className,
   children,
 }: {
   personId: string;
-  rootRef: React.RefObject<HTMLDivElement | null>;
-  onReveal: (id: string) => void;
+  rootRef: RefObject<HTMLDivElement | null>;
   className?: string;
-  children: React.ReactNode;
+  children: (blocksReady: boolean) => ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [blocksReady, setBlocksReady] = useState(false);
+  const revealedRef = useRef(false);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el) return;
+    if (!el || revealedRef.current) return;
     const io = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) onReveal(personId);
+        if (!entry.isIntersecting || revealedRef.current) return;
+        revealedRef.current = true;
+        startTransition(() => setBlocksReady(true));
+        io.disconnect();
       },
       {
         root: rootRef.current,
@@ -3300,11 +3483,11 @@ function PersonReveal({
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [personId, rootRef, onReveal]);
+  }, [personId, rootRef]);
 
   return (
     <div ref={ref} className={className}>
-      {children}
+      {children(blocksReady)}
     </div>
   );
 }
