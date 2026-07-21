@@ -18,6 +18,10 @@ import {
   ORG_ID,
 } from "@/lib/demo/seed";
 import {
+  applyRealtimeTableEvent,
+  realtimeEchoId,
+} from "@/lib/data/realtime-patch";
+import {
   applyProjectTemplateRows,
   bootstrapOrganization,
   deleteAssignmentRow,
@@ -432,6 +436,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const orgId = state.organization.id || ORG_ID;
+  /** Recently written row ids — ignore realtime echoes of our own optimistic writes. */
+  const localWritesRef = useRef<Map<string, number>>(new Map());
+  const LOCAL_WRITE_TTL_MS = 3000;
+
+  const noteLocalWrite = useCallback((table: string, id: string) => {
+    if (!id) return;
+    localWritesRef.current.set(
+      `${table}:${id}`,
+      Date.now() + LOCAL_WRITE_TTL_MS,
+    );
+  }, []);
+
+  const shouldIgnoreLocalEcho = useCallback(
+    (table: string, id: string | null) => {
+      if (!id) return false;
+      const key = `${table}:${id}`;
+      const until = localWritesRef.current.get(key);
+      if (until == null) return false;
+      if (Date.now() > until) {
+        localWritesRef.current.delete(key);
+        return false;
+      }
+      return true;
+    },
+    [],
+  );
 
   const refreshSupabase = useCallback(async (client: SupabaseClient) => {
     const {
@@ -483,11 +513,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             setState(emptySupabaseState());
             return;
           }
-          if (
-            event === "SIGNED_IN" ||
-            event === "TOKEN_REFRESHED" ||
-            event === "INITIAL_SESSION"
-          ) {
+          // Token refresh must not reload the whole workspace (periodic freezes).
+          if (event === "TOKEN_REFRESHED") return;
+          if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
             try {
               await refreshSupabase(client);
             } catch (err) {
@@ -521,22 +549,67 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [mode, refreshSupabase]);
 
-  // Live sync: schedule + tasks + mentions + bulletins refresh for other clients.
+  // Live sync: patch only changed rows (assignments/tasks/leave/comments/bulletins).
   useEffect(() => {
     if (mode !== "supabase" || !ready) return;
     const client = supabaseRef.current;
     const organizationId = state.organization.id;
     if (!client || !organizationId) return;
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleRefresh = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        void refreshSupabase(client).catch((err) => {
-          console.error("Realtime workspace refresh failed", err);
-        });
-      }, 250);
+    type PendingEvent = {
+      table: string;
+      eventType: string;
+      newRecord: Record<string, unknown> | null;
+      oldRecord: Record<string, unknown> | null;
     };
+    let pending: PendingEvent[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const flush = () => {
+      flushTimer = null;
+      const batch = pending;
+      pending = [];
+      if (batch.length === 0) return;
+      setState((prev) => {
+        let next = prev;
+        for (const ev of batch) {
+          next = applyRealtimeTableEvent(
+            next,
+            ev.table,
+            ev.eventType,
+            ev.newRecord,
+            ev.oldRecord,
+          );
+        }
+        return next;
+      });
+    };
+
+    const onChange =
+      (table: string) =>
+      (payload: {
+        eventType: string;
+        new: Record<string, unknown>;
+        old: Record<string, unknown>;
+      }) => {
+        const id = realtimeEchoId(
+          table,
+          payload.eventType,
+          payload.new,
+          payload.old,
+        );
+        if (shouldIgnoreLocalEcho(table, id)) return;
+        pending.push({
+          table,
+          eventType: payload.eventType,
+          newRecord: payload.new ?? null,
+          oldRecord: payload.old ?? null,
+        });
+        if (flushTimer == null) {
+          // Coalesce burst writes (e.g. leave + assignment cascades) into one paint.
+          flushTimer = setTimeout(flush, 16);
+        }
+      };
 
     const channel = client
       .channel(`org-live:${organizationId}`)
@@ -548,7 +621,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "assignments",
           filter: `organization_id=eq.${organizationId}`,
         },
-        scheduleRefresh,
+        onChange("assignments"),
       )
       .on(
         "postgres_changes",
@@ -558,7 +631,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "leave_days",
           filter: `organization_id=eq.${organizationId}`,
         },
-        scheduleRefresh,
+        onChange("leave_days"),
       )
       .on(
         "postgres_changes",
@@ -568,7 +641,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "task_comments",
           filter: `organization_id=eq.${organizationId}`,
         },
-        scheduleRefresh,
+        onChange("task_comments"),
       )
       .on(
         "postgres_changes",
@@ -578,7 +651,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "task_comment_mentions",
           filter: `organization_id=eq.${organizationId}`,
         },
-        scheduleRefresh,
+        onChange("task_comment_mentions"),
       )
       .on(
         "postgres_changes",
@@ -588,7 +661,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "bulletins",
           filter: `organization_id=eq.${organizationId}`,
         },
-        scheduleRefresh,
+        onChange("bulletins"),
       )
       .on(
         "postgres_changes",
@@ -598,15 +671,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "tasks",
           filter: `organization_id=eq.${organizationId}`,
         },
-        scheduleRefresh,
+        onChange("tasks"),
       )
       .subscribe();
 
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
+      if (flushTimer) clearTimeout(flushTimer);
       void client.removeChannel(channel);
     };
-  }, [mode, ready, state.organization.id, refreshSupabase]);
+  }, [mode, ready, state.organization.id, shouldIgnoreLocalEcho]);
 
   useEffect(() => {
     if (!ready || mode !== "demo") return;
@@ -1106,6 +1179,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("assignments", row.id);
           runRemoteSoft(() => upsertAssignmentRow(supabaseRef.current!, row));
         }
       },
@@ -1115,6 +1189,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           assignments: prev.assignments.filter((a) => a.id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("assignments", id);
           runRemoteSoft(() => deleteAssignmentRow(supabaseRef.current!, id));
         }
       },
@@ -1206,6 +1281,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const leavesToWrite = [...remoteLeaves];
           const asgDeletes = [...remoteDeletes];
           const asgUpserts = [...remoteUpserts];
+          for (const l of leavesToWrite) noteLocalWrite("leave_days", l.id);
+          for (const id of asgDeletes) noteLocalWrite("assignments", id);
+          for (const a of asgUpserts) noteLocalWrite("assignments", a.id);
           runRemoteSoft(async () => {
             for (const l of leavesToWrite) {
               await upsertLeaveRow(client, l);
@@ -1327,6 +1405,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const leaveDeleteIds = [...payload.leaveDeleteIds];
           const asgDeletes = [...payload.asgDeletes];
           const asgUpserts = [...payload.asgUpserts];
+          for (const id of leaveDeleteIds) noteLocalWrite("leave_days", id);
+          for (const l of leavesToWrite) noteLocalWrite("leave_days", l.id);
+          for (const id of asgDeletes) noteLocalWrite("assignments", id);
+          for (const a of asgUpserts) noteLocalWrite("assignments", a.id);
           runRemoteSoft(async () => {
             for (const id of leaveDeleteIds) {
               await deleteLeaveRow(client, id);
@@ -1353,6 +1435,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           leave_days: prev.leave_days.filter((l) => l.id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("leave_days", id);
           runRemoteSoft(() => deleteLeaveRow(supabaseRef.current!, id));
         }
       },
@@ -1494,6 +1577,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         if (mode === "supabase" && supabaseRef.current) {
           const client = supabaseRef.current;
+          for (const leave of created) noteLocalWrite("leave_days", leave.id);
+          for (const id of remoteDeletes) noteLocalWrite("assignments", id);
+          for (const a of remoteUpserts) noteLocalWrite("assignments", a.id);
           await runRemote(async () => {
             for (const leave of created) {
               await upsertLeaveRow(client, leave);
@@ -1588,6 +1674,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("tasks", row.id);
           runRemoteSoft(() => upsertTaskRow(supabaseRef.current!, row));
         }
       },
@@ -1598,6 +1685,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           task_comments: prev.task_comments.filter((c) => c.task_id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("tasks", id);
           runRemoteSoft(() => deleteTaskRow(supabaseRef.current!, id));
         }
       },
@@ -1618,6 +1706,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("task_comments", row.id);
+          noteLocalWrite("task_comment_mentions", row.id);
           runRemoteSoft(() =>
             upsertTaskCommentRow(supabaseRef.current!, row),
           );
@@ -1629,6 +1719,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           task_comments: prev.task_comments.filter((c) => c.id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("task_comments", id);
+          noteLocalWrite("task_comment_mentions", id);
           runRemoteSoft(() =>
             deleteTaskCommentRow(supabaseRef.current!, id),
           );
@@ -1647,6 +1739,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("bulletins", row.id);
           runRemoteSoft(() => upsertBulletinRow(supabaseRef.current!, row));
         }
       },
@@ -1657,6 +1750,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           bulletins: prev.bulletins.filter((b) => b.id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("bulletins", id);
           runRemoteSoft(() => deleteBulletinRow(supabaseRef.current!, id));
         }
       },
@@ -2089,6 +2183,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       runRemote,
       runRemoteSoft,
       refreshSupabase,
+      noteLocalWrite,
     ],
   );
 

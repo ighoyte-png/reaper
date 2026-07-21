@@ -128,7 +128,7 @@ function mapTaskList(row: Record<string, unknown>): TaskList {
   };
 }
 
-function mapTask(row: Record<string, unknown>): Task {
+export function mapTask(row: Record<string, unknown>): Task {
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -147,7 +147,7 @@ function mapTask(row: Record<string, unknown>): Task {
   };
 }
 
-function mapTaskComment(row: Record<string, unknown>): TaskComment {
+export function mapTaskComment(row: Record<string, unknown>): TaskComment {
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -160,7 +160,7 @@ function mapTaskComment(row: Record<string, unknown>): TaskComment {
   };
 }
 
-function mapBulletin(row: Record<string, unknown>): Bulletin {
+export function mapBulletin(row: Record<string, unknown>): Bulletin {
   const audienceRaw = String(row.audience ?? "all");
   const audience = audienceRaw === "people" ? "people" : "all";
   const ids = Array.isArray(row.audience_person_ids)
@@ -250,7 +250,7 @@ function mapPerson(row: Record<string, unknown>): Person {
   };
 }
 
-function mapAssignment(row: Record<string, unknown>): Assignment {
+export function mapAssignment(row: Record<string, unknown>): Assignment {
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -268,6 +268,22 @@ function mapAssignment(row: Record<string, unknown>): Assignment {
     recurrence_end_date: row.recurrence_end_date
       ? String(row.recurrence_end_date)
       : null,
+  };
+}
+
+export function mapLeaveDay(row: Record<string, unknown>): LeaveDay {
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    person_id: String(row.person_id),
+    date: String(row.date),
+    kind: row.kind as LeaveDay["kind"],
+    status: row.status as LeaveDay["status"],
+    hours_per_day:
+      row.hours_per_day == null || row.hours_per_day === ""
+        ? null
+        : Number(row.hours_per_day),
+    notes: String(row.notes ?? ""),
   };
 }
 
@@ -544,19 +560,9 @@ export async function loadOrgWorkspace(
       mapAssignment(row as Record<string, unknown>),
     ),
     project_members,
-    leave_days: (leaveRes.data ?? []).map((row) => ({
-      id: String(row.id),
-      organization_id: String(row.organization_id),
-      person_id: String(row.person_id),
-      date: String(row.date),
-      kind: row.kind as LeaveDay["kind"],
-      status: row.status as LeaveDay["status"],
-      hours_per_day:
-        row.hours_per_day == null || row.hours_per_day === ""
-          ? null
-          : Number(row.hours_per_day),
-      notes: String(row.notes ?? ""),
-    })),
+    leave_days: (leaveRes.data ?? []).map((row) =>
+      mapLeaveDay(row as Record<string, unknown>),
+    ),
     holiday_calendars,
     holiday_calendar_days,
     project_assets,
