@@ -719,6 +719,7 @@ export function createDemoSeed(): DemoState {
         author_profile_id: "profile-manager",
         body: "Let's lock this by Friday.",
         created_at: dt(1, week),
+        updated_at: null,
       mentioned_person_ids: [],
       },
       {
@@ -728,6 +729,7 @@ export function createDemoSeed(): DemoState {
         author_profile_id: "profile-admin",
         body: "Confirm DNS cutover window with client.",
         created_at: dt(2, week),
+        updated_at: null,
       mentioned_person_ids: [],
       },
     ],

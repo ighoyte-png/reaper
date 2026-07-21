@@ -155,6 +155,7 @@ function mapTaskComment(row: Record<string, unknown>): TaskComment {
     author_profile_id: String(row.author_profile_id),
     body: String(row.body ?? ""),
     created_at: String(row.created_at ?? ""),
+    updated_at: row.updated_at ? String(row.updated_at) : null,
     mentioned_person_ids: [],
   };
 }
@@ -1259,14 +1260,25 @@ export async function upsertTaskCommentRow(
   supabase: SupabaseClient,
   comment: TaskComment,
 ) {
-  const { error } = await supabase.from("task_comments").upsert({
+  const payload = {
     id: comment.id,
     organization_id: comment.organization_id,
     task_id: comment.task_id,
     author_profile_id: comment.author_profile_id,
     body: comment.body,
     created_at: comment.created_at,
-  });
+    updated_at: comment.updated_at,
+  };
+  let { error } = await supabase.from("task_comments").upsert(payload);
+  if (error && /updated_at/i.test(error.message)) {
+    const { updated_at: _drop, ...legacy } = payload;
+    ({ error } = await supabase.from("task_comments").upsert(legacy));
+    if (!error) {
+      console.warn(
+        "task_comments.updated_at missing — apply supabase/migrations/029_task_comment_update.sql",
+      );
+    }
+  }
   if (error) throw error;
 
   const { error: delErr } = await supabase

@@ -145,14 +145,15 @@ export default function DashboardPage() {
         project_id: o.project_id,
         hours_per_day: o.hours_per_day,
       }));
-    // Public share keeps the org-wide schedule; otherwise personal only.
-    if (isPublicShare) return today;
+    // Org dashboard / public share: all people. Members: self (or View As).
+    if (isPublicShare || showingAsManager) return today;
     if (!personalPersonId) return [];
     return today.filter((a) => a.person_id === personalPersonId);
   }, [
     state.assignments,
     todayKey,
     isPublicShare,
+    showingAsManager,
     personalPersonId,
   ]);
 
@@ -666,9 +667,10 @@ export default function DashboardPage() {
             assignments={todaysAssignments}
             projects={state.projects}
             clients={state.clients}
-            people={state.people}
-            showPerson={isPublicShare}
+            people={sortedPeople}
+            orgMode={showingAsManager || isPublicShare}
             fallbackPerson={focusPerson}
+            defaultPersonId={personalPersonId}
             appHref={appHref}
           />
 
@@ -1242,8 +1244,9 @@ function TodaySchedule({
   projects,
   clients,
   people,
-  showPerson,
+  orgMode,
   fallbackPerson,
+  defaultPersonId,
   appHref,
 }: {
   assignments: {
@@ -1253,48 +1256,91 @@ function TodaySchedule({
     hours_per_day: number;
   }[];
   projects: Project[];
-  clients: { id: string; name: string; color: string }[];
+  clients: Client[];
   people: Person[];
-  showPerson: boolean;
+  /** Manager / public: person filter across the org. */
+  orgMode: boolean;
   fallbackPerson?: Person | null;
+  defaultPersonId?: string | null;
   appHref: (path: string) => string;
 }) {
-  const groups = useMemo(() => {
-    if (!showPerson) {
-      return [{ person: null as Person | null, items: assignments }];
-    }
-    const byPerson = new Map<string, typeof assignments>();
-    for (const a of assignments) {
-      const list = byPerson.get(a.person_id) ?? [];
-      list.push(a);
-      byPerson.set(a.person_id, list);
-    }
-    const peopleSorted = sortPeopleByName(
-      people.filter((p) => byPerson.has(p.id)),
-    );
-    return peopleSorted.map((person) => ({
-      person,
-      items: byPerson.get(person.id) ?? [],
-    }));
-  }, [assignments, people, showPerson]);
-
-  const dayBooked = useMemo(
-    () => assignments.reduce((sum, a) => sum + a.hours_per_day, 0),
-    [assignments],
+  const [personFilter, setPersonFilter] = useState<string>(
+    () => defaultPersonId ?? people[0]?.id ?? "",
   );
 
-  const dayAvailable = useMemo(() => {
-    const ids = new Set(assignments.map((a) => a.person_id));
-    let available = 0;
-    for (const id of ids) {
-      const person = people.find((p) => p.id === id);
-      if (person) available += dailyCapacityHours(person);
+  // Keep filter valid when roster / default changes.
+  const selectedPersonId = useMemo(() => {
+    if (!orgMode) return defaultPersonId ?? fallbackPerson?.id ?? "";
+    if (personFilter && people.some((p) => p.id === personFilter)) {
+      return personFilter;
     }
-    if (available <= 0 && fallbackPerson) {
-      available = dailyCapacityHours(fallbackPerson);
+    if (defaultPersonId && people.some((p) => p.id === defaultPersonId)) {
+      return defaultPersonId;
     }
-    return available;
-  }, [assignments, people, fallbackPerson]);
+    return people[0]?.id ?? "";
+  }, [orgMode, personFilter, people, defaultPersonId, fallbackPerson?.id]);
+
+  const selectedPerson =
+    people.find((p) => p.id === selectedPersonId) ?? fallbackPerson ?? null;
+
+  const scoped = useMemo(() => {
+    if (!orgMode) return assignments;
+    if (!selectedPersonId) return [];
+    return assignments.filter((a) => a.person_id === selectedPersonId);
+  }, [assignments, orgMode, selectedPersonId]);
+
+  const dayAvailable = selectedPerson
+    ? dailyCapacityHours(selectedPerson)
+    : 0;
+
+  const slices = useMemo(() => {
+    const byProject = new Map<
+      string,
+      { projectId: string; hours: number; color: string; label: string }
+    >();
+    for (const a of scoped) {
+      const project = projects.find((p) => p.id === a.project_id);
+      const client = project?.client_id
+        ? clients.find((c) => c.id === project.client_id)
+        : undefined;
+      const color = project
+        ? projectDisplayColor(project, clients)
+        : "#64748B";
+      const label = client?.name
+        ? `${client.name} · ${project?.name ?? "Project"}`
+        : (project?.name ?? "Project");
+      const prev = byProject.get(a.project_id);
+      if (prev) {
+        prev.hours += a.hours_per_day;
+      } else {
+        byProject.set(a.project_id, {
+          projectId: a.project_id,
+          hours: a.hours_per_day,
+          color,
+          label,
+        });
+      }
+    }
+    const projectSlices = [...byProject.values()].sort(
+      (a, b) => b.hours - a.hours,
+    );
+    const booked = projectSlices.reduce((s, p) => s + p.hours, 0);
+    const free = Math.max(0, dayAvailable - booked);
+    if (free > 0.01) {
+      projectSlices.push({
+        projectId: "__free__",
+        hours: free,
+        color: "#94a3b8",
+        label: "Available",
+      });
+    }
+    return projectSlices;
+  }, [scoped, projects, clients, dayAvailable]);
+
+  const dayBooked = useMemo(
+    () => scoped.reduce((sum, a) => sum + a.hours_per_day, 0),
+    [scoped],
+  );
 
   const dayLevel = capacityLevel(
     dayBooked,
@@ -1302,99 +1348,128 @@ function TodaySchedule({
     dayAvailable <= 0 && dayBooked <= 0,
   );
 
-  function scheduleRow(a: (typeof assignments)[number]) {
-    const project = projects.find((p) => p.id === a.project_id);
-    const client = project?.client_id
-      ? clients.find((c) => c.id === project.client_id)
-      : undefined;
-    const color = project
-      ? projectDisplayColor(project, clients)
-      : "#64748B";
-    const pct = Math.min(100, (a.hours_per_day / 8) * 100);
-    return (
-      <li key={a.id}>
-        <Link
-          href={appHref(`/projects/${a.project_id}`)}
-          className="block rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
-        >
-          <div className="mb-1.5 flex items-center gap-2 text-sm">
-            <span
-              className="h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{ background: color }}
-            />
-            <span className="min-w-0 flex-1 truncate">
-              {client?.name ? (
-                <>
-                  <span className="font-medium">{client.name}</span>
-                  <span className="text-[var(--text-muted)]">
-                    {" "}
-                    · {project?.name ?? "Project"}
-                  </span>
-                </>
-              ) : (
-                project?.name ?? "Project"
-              )}
-            </span>
-            <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
-              {formatHours(a.hours_per_day)}
-            </span>
-          </div>
-          <div className="relative h-2.5 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
-            <div
-              className="h-full rounded-full bg-[var(--status-healthy)] transition-[width]"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </Link>
-      </li>
-    );
-  }
+  const pieTotal = slices.reduce((s, x) => s + x.hours, 0);
 
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-      <h2 className="text-sm font-semibold">
-        {showPerson ? "Today’s Schedule" : "My Schedule"}
-      </h2>
-      <p className="mb-3 mt-0.5 text-xs text-[var(--text-muted)]">
-        Today&apos;s schedule
-      </p>
-      {(assignments.length > 0 || dayAvailable > 0) && (
-        <div className="mb-3 border-b border-[var(--border)] pb-3">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Schedules</h2>
+          <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+            Today&apos;s hours by project
+          </p>
+        </div>
+        {orgMode && people.length > 0 ? (
+          <label className="flex min-w-0 items-center gap-2 text-xs text-[var(--text-muted)]">
+            <span className="shrink-0">Person</span>
+            <select
+              className={cn(inputClass, "h-8 w-auto min-w-[9rem] max-w-[14rem] py-0 text-xs")}
+              value={selectedPersonId}
+              onChange={(e) => setPersonFilter(e.target.value)}
+            >
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+      </div>
+
+      {selectedPerson && dayAvailable > 0 ? (
+        <div className="mb-3 border-b border-[var(--section-rule)] pb-3">
           <CapacityBar
-            label="Today"
+            label={orgMode ? selectedPerson.name : "Today"}
             booked={dayBooked}
-            available={dayAvailable > 0 ? dayAvailable : 8}
+            available={dayAvailable}
             level={dayLevel}
           />
         </div>
-      )}
-      {assignments.length === 0 ? (
+      ) : null}
+
+      {pieTotal <= 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
-          Nothing scheduled today.
+          Nothing scheduled today
+          {orgMode && selectedPerson ? ` for ${selectedPerson.name}` : ""}.
         </p>
-      ) : showPerson ? (
-        <div className="space-y-4">
-          {groups.map(({ person, items }) => (
-            <div key={person?.id ?? "solo"}>
-              {person ? (
-                <div className="mb-2 flex items-center gap-2">
-                  <PersonAvatar
-                    avatarUrl={person.avatar_url}
-                    name={person.name}
-                    size="xs"
-                    fallback="initials"
-                  />
-                  <h3 className="text-xs font-semibold">{person.name}</h3>
-                </div>
-              ) : null}
-              <ul className="space-y-2">{items.map(scheduleRow)}</ul>
-            </div>
-          ))}
-        </div>
       ) : (
-        <ul className="space-y-2">{assignments.map(scheduleRow)}</ul>
+        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+          <SchedulePie slices={slices} totalHours={dayBooked} />
+          <ul className="min-w-0 flex-1 space-y-1.5 self-stretch">
+            {slices.map((slice) => {
+              const pct =
+                pieTotal > 0 ? Math.round((slice.hours / pieTotal) * 100) : 0;
+              const isFree = slice.projectId === "__free__";
+              const row = (
+                <span className="flex items-center gap-2 text-sm">
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: slice.color }}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{slice.label}</span>
+                  <span className="shrink-0 tabular-nums text-xs text-[var(--text-muted)]">
+                    {formatHours(slice.hours)}
+                    <span className="ml-1 opacity-70">· {pct}%</span>
+                  </span>
+                </span>
+              );
+              return (
+                <li key={slice.projectId}>
+                  {isFree ? (
+                    <div className="rounded-md px-2 py-1.5">{row}</div>
+                  ) : (
+                    <Link
+                      href={appHref(`/projects/${slice.projectId}`)}
+                      className="block rounded-md px-2 py-1.5 hover:bg-[var(--row-hover)]"
+                    >
+                      {row}
+                    </Link>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
     </section>
+  );
+}
+
+function SchedulePie({
+  slices,
+  totalHours,
+}: {
+  slices: { projectId: string; hours: number; color: string; label: string }[];
+  totalHours: number;
+}) {
+  const total = slices.reduce((s, x) => s + x.hours, 0);
+  let cursor = 0;
+  const stops: string[] = [];
+  for (const slice of slices) {
+    const start = (cursor / total) * 360;
+    cursor += slice.hours;
+    const end = (cursor / total) * 360;
+    stops.push(`${slice.color} ${start}deg ${end}deg`);
+  }
+
+  return (
+    <div
+      className="relative size-36 shrink-0 sm:size-40"
+      role="img"
+      aria-label={`Schedule pie: ${formatHours(totalHours)} booked`}
+    >
+      <div
+        className="size-full rounded-full"
+        style={{ background: `conic-gradient(${stops.join(", ")})` }}
+      />
+      <div className="absolute inset-[26%] flex flex-col items-center justify-center rounded-full bg-[var(--bg)] text-center shadow-[0_0_0_1px_var(--border)]">
+        <span className="text-sm font-semibold tabular-nums tracking-tight">
+          {formatHours(totalHours)}
+        </span>
+        <span className="text-[10px] text-[var(--text-muted)]">booked</span>
+      </div>
+    </div>
   );
 }
 

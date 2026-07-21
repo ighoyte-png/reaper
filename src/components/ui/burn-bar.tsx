@@ -2,6 +2,11 @@ import { clsx } from "clsx";
 import type { BudgetBurn } from "@/lib/types";
 import { budgetHealth, formatHours, formatMoney } from "@/lib/domain/budget";
 
+const hatchStyle = {
+  backgroundImage:
+    "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
+} as const;
+
 export function BurnBar({
   burn,
   compact = false,
@@ -17,8 +22,19 @@ export function BurnBar({
   }
 
   const health = budgetHealth(burn);
-  const width = Math.min(100, burn.pct);
   const isAmount = burn.mode === "amount";
+  const budget = isAmount ? (burn.totalAmount ?? 0) : burn.totalHours;
+  const used = isAmount ? burn.usedAmount : burn.usedHours;
+  const future = isAmount ? burn.futureAmount : burn.futureHours;
+
+  const usedPct = budget > 0 ? (used / budget) * 100 : 0;
+  const futurePct = budget > 0 ? (future / budget) * 100 : 0;
+
+  const fillClass = clsx(
+    health === "over" && "bg-[var(--status-over)]",
+    health === "near" && "bg-[var(--status-near)]",
+    (health === "healthy" || health === "none") && "bg-[var(--accent)]",
+  );
 
   return (
     <div className="min-w-0">
@@ -47,16 +63,37 @@ export function BurnBar({
           </span>
         </div>
       )}
-      <div className="h-3 overflow-hidden rounded-full bg-[var(--border)]">
-        <div
-          className={clsx(
-            "h-full rounded-full transition-all",
-            health === "over" && "bg-[var(--status-over)]",
-            health === "near" && "bg-[var(--status-near)]",
-            (health === "healthy" || health === "none") && "bg-[var(--accent)]",
-          )}
-          style={{ width: `${width}%` }}
-        />
+      <div
+        className={clsx(
+          "flex overflow-hidden rounded-full bg-[var(--border)]",
+          compact ? "h-3.5" : "h-4",
+        )}
+        title={
+          future > 0
+            ? isAmount
+              ? `${formatMoney(used)} used · ${formatMoney(future)} planned`
+              : `${formatHours(used)} used · ${formatHours(future)} planned`
+            : undefined
+        }
+      >
+        {usedPct > 0 ? (
+          <div
+            className={clsx("h-full shrink-0", fillClass)}
+            style={{ width: `${usedPct}%` }}
+          />
+        ) : null}
+        {futurePct > 0 ? (
+          <div
+            className={clsx("relative h-full min-w-0 shrink-0", fillClass)}
+            style={{ width: `${futurePct}%` }}
+          >
+            <div
+              className="absolute inset-0"
+              style={hatchStyle}
+              aria-hidden
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

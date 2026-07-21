@@ -114,34 +114,78 @@ export function budgetBurn(
     project.budget_hours,
     project.budget_amount,
   );
-  const monthOpts =
-    mode === "hours" && project.budget_monthly_reset
-      ? { year: asOf.getFullYear(), monthIndex: asOf.getMonth() }
-      : undefined;
 
-  const plannedHours = projectPlannedHours(
-    project.id,
-    assignments,
-    includeTentative,
-    monthOpts,
-  );
-  const plannedAmount = projectPlannedAmount(
-    project.id,
-    assignments,
-    people,
-    includeTentative,
-    monthOpts,
-  );
+  const todayKey = toDateKey(asOf);
+  const tomorrow = new Date(asOf);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = toDateKey(tomorrow);
+
+  let rangeStart = "1970-01-01";
+  let rangeEnd = "2099-12-31";
+  if (mode === "hours" && project.budget_monthly_reset) {
+    rangeStart = toDateKey(startOfMonth(asOf));
+    rangeEnd = toDateKey(endOfMonth(asOf));
+  }
+
+  const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
+  const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
+
+  const usedHours =
+    usedEnd >= rangeStart
+      ? projectHoursInDateRange(
+          project.id,
+          assignments,
+          rangeStart,
+          usedEnd,
+          includeTentative,
+        )
+      : 0;
+  const futureHours =
+    futureStart <= rangeEnd
+      ? projectHoursInDateRange(
+          project.id,
+          assignments,
+          futureStart,
+          rangeEnd,
+          includeTentative,
+        )
+      : 0;
+  const plannedHours = usedHours + futureHours;
+
+  const byId = new Map(people.map((p) => [p.id, p]));
+  function amountInRange(from: string, to: string): number {
+    if (to < from) return 0;
+    let sum = 0;
+    for (const a of assignments) {
+      if (a.project_id !== project.id) continue;
+      if (!includeTentative && a.status !== "confirmed") continue;
+      const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+      for (const occ of expandAssignmentInRange(a, from, to)) {
+        sum += occurrenceHoursInRange(occ, from, to) * rate;
+      }
+    }
+    return sum;
+  }
+
+  const usedAmount =
+    usedEnd >= rangeStart ? amountInRange(rangeStart, usedEnd) : 0;
+  const futureAmount =
+    futureStart <= rangeEnd ? amountInRange(futureStart, rangeEnd) : 0;
+  const plannedAmount = usedAmount + futureAmount;
 
   if (mode === "none") {
     return {
       totalHours: 0,
       plannedHours,
+      usedHours,
+      futureHours,
       remainingHours: 0,
       pct: 0,
       overBy: 0,
       totalAmount: null,
       plannedAmount,
+      usedAmount,
+      futureAmount,
       remainingAmount: null,
       amountOverBy: 0,
       mode: "none",
@@ -154,6 +198,8 @@ export function budgetBurn(
     return {
       totalHours: 0,
       plannedHours,
+      usedHours,
+      futureHours,
       remainingHours: 0,
       pct:
         totalAmount <= 0
@@ -162,6 +208,8 @@ export function budgetBurn(
       overBy: 0,
       totalAmount,
       plannedAmount,
+      usedAmount,
+      futureAmount,
       remainingAmount,
       amountOverBy: Math.max(0, plannedAmount - totalAmount),
       mode: "amount",
@@ -173,11 +221,15 @@ export function budgetBurn(
   return {
     totalHours,
     plannedHours,
+    usedHours,
+    futureHours,
     remainingHours,
     pct: totalHours <= 0 ? 0 : Math.min(999, (plannedHours / totalHours) * 100),
     overBy: Math.max(0, plannedHours - totalHours),
     totalAmount: null,
     plannedAmount,
+    usedAmount,
+    futureAmount,
     remainingAmount: null,
     amountOverBy: 0,
     mode: "hours",

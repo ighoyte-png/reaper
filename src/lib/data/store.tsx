@@ -178,6 +178,8 @@ function loadDemoState(): DemoState {
       tasks: parsed.tasks ?? seed.tasks,
       task_comments: (parsed.task_comments ?? seed.task_comments).map((c) => ({
         ...c,
+        updated_at:
+          typeof c.updated_at === "string" ? c.updated_at : null,
         mentioned_person_ids: Array.isArray(c.mentioned_person_ids)
           ? c.mentioned_person_ids
           : [],

@@ -118,6 +118,11 @@ type BoardCtx = {
   toggleExpand: (id: string) => void;
   childrenMap: Map<string, Task[]>;
   addComment: (taskId: string, html: string, mentionedPersonIds: string[]) => void;
+  editComment: (
+    comment: TaskComment,
+    html: string,
+    mentionedPersonIds: string[],
+  ) => void;
   deleteComment: (id: string) => void;
   /** Project team available for @mentions. */
   mentionPeople: Person[];
@@ -353,6 +358,22 @@ export function ProjectTaskBoard({
       author_profile_id: profile.id,
       body: html,
       created_at: new Date().toISOString(),
+      updated_at: null,
+      mentioned_person_ids: [...new Set(mentionedPersonIds)],
+    });
+  }
+
+  function editComment(
+    comment: TaskComment,
+    html: string,
+    mentionedPersonIds: string[],
+  ) {
+    if (!profile) return;
+    if (comment.author_profile_id !== profile.id) return;
+    upsertTaskComment({
+      ...comment,
+      body: html,
+      updated_at: new Date().toISOString(),
       mentioned_person_ids: [...new Set(mentionedPersonIds)],
     });
   }
@@ -639,6 +660,7 @@ export function ProjectTaskBoard({
     toggleExpand,
     childrenMap,
     addComment,
+    editComment,
     deleteComment: deleteTaskComment,
     mentionPeople,
   };
@@ -1291,30 +1313,9 @@ function CommentThread({
       {sorted.length === 0 ? (
         <p className="text-xs text-[var(--text-muted)]">No comments yet</p>
       ) : (
-        sorted.map((c) => {
-          const author = ctx.profiles.find((p) => p.id === c.author_profile_id);
-          return (
-            <div
-              key={c.id}
-              className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-sm"
-            >
-              <div className="mb-1 flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
-                <span>{author?.full_name ?? "Someone"}</span>
-                <span>{c.created_at.slice(0, 10)}</span>
-              </div>
-              <RichNotesHtml html={c.body} />
-              {ctx.canManage || c.author_profile_id === ctx.profileId ? (
-                <button
-                  type="button"
-                  className="mt-1 cursor-pointer text-xs text-[var(--status-over)]"
-                  onClick={() => ctx.deleteComment(c.id)}
-                >
-                  Delete
-                </button>
-              ) : null}
-            </div>
-          );
-        })
+        sorted.map((c) => (
+          <CommentItem key={c.id} comment={c} ctx={ctx} />
+        ))
       )}
       {ctx.profileId ? (
         <div className="space-y-2">
@@ -1341,6 +1342,109 @@ function CommentThread({
           </button>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function CommentItem({
+  comment,
+  ctx,
+}: {
+  comment: TaskComment;
+  ctx: BoardCtx;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(comment.body);
+  const author = ctx.profiles.find((p) => p.id === comment.author_profile_id);
+  const isAuthor = Boolean(
+    ctx.profileId && comment.author_profile_id === ctx.profileId,
+  );
+  const canDelete = ctx.canManage || isAuthor;
+  const wasEdited = Boolean(
+    comment.updated_at && comment.updated_at !== comment.created_at,
+  );
+
+  function startEdit() {
+    setDraft(comment.body);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setDraft(comment.body);
+    setEditing(false);
+  }
+
+  function saveEdit() {
+    if (!notesHasContent(draft)) return;
+    ctx.editComment(comment, draft, extractMentionPersonIds(draft));
+    setEditing(false);
+  }
+
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-sm">
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
+        <span>{author?.full_name ?? "Someone"}</span>
+        <span className="shrink-0 tabular-nums">
+          {comment.created_at.slice(0, 10)}
+          {wasEdited ? (
+            <span className="ml-1 italic" title={comment.updated_at ?? undefined}>
+              · edited
+            </span>
+          ) : null}
+        </span>
+      </div>
+      {editing ? (
+        <div className="space-y-2">
+          <SimpleRichTextEditor
+            value={draft}
+            onChange={setDraft}
+            placeholder="Edit comment… Use @ to mention"
+            mentionPeople={ctx.mentionPeople}
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
+              onClick={saveEdit}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+              onClick={cancelEdit}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <RichNotesHtml html={comment.body} />
+          {isAuthor || canDelete ? (
+            <div className="mt-1 flex flex-wrap gap-2">
+              {isAuthor ? (
+                <button
+                  type="button"
+                  className="cursor-pointer text-xs text-[var(--accent)] hover:underline"
+                  onClick={startEdit}
+                >
+                  Edit
+                </button>
+              ) : null}
+              {canDelete ? (
+                <button
+                  type="button"
+                  className="cursor-pointer text-xs text-[var(--status-over)] hover:underline"
+                  onClick={() => ctx.deleteComment(comment.id)}
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }

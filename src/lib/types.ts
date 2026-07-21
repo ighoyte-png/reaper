@@ -132,6 +132,8 @@ export interface TaskComment {
   author_profile_id: string;
   body: string;
   created_at: string;
+  /** Set when the author edits the body; null if never edited. */
+  updated_at: string | null;
   /** People tagged in this comment (dashboard notifications). */
   mentioned_person_ids: string[];
 }
@@ -289,11 +291,17 @@ export interface DemoState {
 export interface BudgetBurn {
   totalHours: number;
   plannedHours: number;
+  /** Schedule hours used through today (within burn window). */
+  usedHours: number;
+  /** Schedule hours after today (within burn window). */
+  futureHours: number;
   remainingHours: number;
   pct: number;
   overBy: number;
   totalAmount: number | null;
   plannedAmount: number;
+  usedAmount: number;
+  futureAmount: number;
   remainingAmount: number | null;
   amountOverBy: number;
   /** Active ledger for this burn (exclusive: never both hours and amount). */
