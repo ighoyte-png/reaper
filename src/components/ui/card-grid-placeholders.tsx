@@ -10,7 +10,7 @@ export function CardGridPlaceholders({
   xlColumns = 3,
   className = "min-h-[10rem]",
   onAdd,
-  addLabel = "Add project",
+  addLabel = "Add Project",
 }: {
   /** Number of real cards already in the grid. */
   count: number;

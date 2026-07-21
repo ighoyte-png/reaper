@@ -167,7 +167,7 @@ export default function ProjectsPage() {
                   setEditing(emptyProject(newId("proj")));
                 }}
               >
-                Add project
+                Add Project
               </button>
             </div>
           ) : undefined
@@ -290,7 +290,7 @@ export default function ProjectsPage() {
               <div className="space-y-6">
                 {groups.map(({ client, projects: groupProjects }) => (
                   <section key={client?.id ?? "none"}>
-                    <div className="mb-4 flex items-center gap-2 border-b border-[var(--border)] px-1 pb-2">
+                    <div className="mb-4 flex items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2">
                       {client ? (
                         <span
                           className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -338,7 +338,7 @@ export default function ProjectsPage() {
 
       {canManage && editing && (
         <Modal
-          title={editing.name ? "Edit project" : "Add project"}
+          title={editing.name ? "Edit project" : "Add Project"}
           onClose={() => {
             setEditing(null);
             setMemberIds([]);
