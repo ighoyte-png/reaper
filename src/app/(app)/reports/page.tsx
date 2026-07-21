@@ -171,7 +171,13 @@ export default function ReportsPage() {
         if (health === "healthy") healthy += 1;
         else if (health === "near") near += 1;
         else if (health === "over") over += 1;
-        return { id: p.id, name: p.name, pct: burn.pct, health };
+        const client = state.clients.find((c) => c.id === p.client_id);
+        return {
+          id: p.id,
+          name: client?.name ? `${client.name} · ${p.name}` : p.name,
+          pct: burn.pct,
+          health,
+        };
       })
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 5);
@@ -182,7 +188,7 @@ export default function ReportsPage() {
       over,
       top,
     };
-  }, [state.projects, state.assignments, state.people]);
+  }, [state.projects, state.assignments, state.people, state.clients]);
 
   const tasks = useMemo(() => {
     const open = state.tasks.filter((t) => t.status !== "complete");

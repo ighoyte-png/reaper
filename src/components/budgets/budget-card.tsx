@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { useData } from "@/lib/data/store";
 import {
   budgetBurn,
   budgetHealth,
+  calendarYearBars,
   formatHours,
   formatMoney,
+  normalizeBudgetMode,
   projectHoursForecast,
 } from "@/lib/domain/budget";
 import { cn } from "@/lib/cn";
@@ -30,6 +33,22 @@ export function BudgetCard({
     state.assignments,
     state.people,
   );
+  const mode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  const isMonthlyHours =
+    mode === "hours" && Boolean(project.budget_monthly_reset);
+  const year = new Date().getFullYear();
+  const yearBars = isMonthlyHours
+    ? calendarYearBars(
+        project,
+        state.assignments,
+        state.people,
+        new Date(year, 0, 1),
+      )
+    : [];
 
   const summary =
     burn.mode === "none"
@@ -75,8 +94,19 @@ export function BudgetCard({
             )}
           >
             {summary}
+            {isMonthlyHours ? " · this month" : ""}
           </div>
-          <BurnBar burn={burn} compact />
+          {isMonthlyHours ? (
+            <ProjectYearBurnChart
+              bars={yearBars}
+              unit="hours"
+              monthlyCap={project.budget_hours ?? 0}
+              year={year}
+              compact
+            />
+          ) : (
+            <BurnBar burn={burn} compact />
+          )}
         </div>
         <div className="border-t border-[var(--border)] pt-3">
           <div className="mb-2 text-xs font-semibold text-[var(--text)]">
