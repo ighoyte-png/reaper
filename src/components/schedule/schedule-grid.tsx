@@ -1286,8 +1286,8 @@ export function ScheduleGrid() {
                       className={cn(
                         "relative flex items-center justify-center py-1.5 text-xs font-semibold leading-none text-[var(--text-muted)]",
                         zoom === "month"
-                          ? "border-r border-[var(--border)]"
-                          : "border-r-2 border-[var(--border)]",
+                          ? "border-r border-[var(--border)] dark:border-white/15"
+                          : "border-r-2 border-[var(--border)] dark:border-white/30",
                         g.isCurrent && "bg-[var(--today-col)]",
                       )}
                       style={{ width: g.width }}
@@ -1332,8 +1332,8 @@ export function ScheduleGrid() {
                       className={cn(
                         "relative flex items-center justify-center text-xs",
                         col.isWeekBoundaryEnd
-                          ? "border-r-2 border-white dark:border-[var(--border)]"
-                          : "border-r border-white dark:border-[var(--border)]",
+                          ? "border-r-2 border-white dark:border-white/30"
+                          : "border-r border-white dark:border-white/15",
                         zoom === "day" &&
                           col.isToday &&
                           "bg-[var(--today-col)] font-semibold text-[var(--accent)]",
@@ -1467,8 +1467,8 @@ export function ScheduleGrid() {
                             className={cn(
                               "flex items-center px-1 text-[10px] font-medium",
                               zoom === "month"
-                                ? "border-r border-[var(--border)]"
-                                : "border-r-2 border-[var(--border)]",
+                                ? "border-r border-[var(--border)] dark:border-white/15"
+                                : "border-r-2 border-[var(--border)] dark:border-white/30",
                               level === "over" &&
                                 "bg-[var(--status-over)]/30 text-[var(--status-over)]",
                               level === "near" &&
@@ -1751,8 +1751,8 @@ export function ScheduleGrid() {
                               className={cn(
                                 "box-border shrink-0 transition-colors",
                                 col.isWeekBoundaryEnd
-                                  ? "border-r-2 border-white dark:border-[var(--border)]"
-                                  : "border-r border-white dark:border-[var(--border)]/40",
+                                  ? "border-r-2 border-white dark:border-white/30"
+                                  : "border-r border-white dark:border-white/15",
                                 (inLeaveDraft || isHover) &&
                                   "bg-[var(--leave-block-draft)]",
                                 canManage &&
@@ -2065,8 +2065,8 @@ export function ScheduleGrid() {
                                   className={cn(
                                     "box-border shrink-0 transition-colors",
                                     col.isWeekBoundaryEnd
-                                      ? "border-r-2 border-white dark:border-[var(--border)]"
-                                      : "border-r border-white dark:border-[var(--border)]/40",
+                                      ? "border-r-2 border-white dark:border-white/30"
+                                      : "border-r border-white dark:border-white/15",
                                     leave &&
                                       !fullDayLeave &&
                                       "bg-[var(--leave-block-fill)]",

@@ -1,8 +1,13 @@
-import { endOfMonth, format, startOfMonth } from "date-fns";
+import { addWeeks, endOfMonth, format, startOfMonth } from "date-fns";
 import type { Assignment, BudgetBurn, Person, Project } from "@/lib/types";
 import { expandAssignmentInRange } from "@/lib/domain/recurrence";
 import { assignmentHoursWithRecurrence } from "@/lib/domain/recurrence";
-import { toDateKey, workingDaysBetween } from "@/lib/domain/dates";
+import {
+  toDateKey,
+  weekEnd,
+  weekStart,
+  workingDaysBetween,
+} from "@/lib/domain/dates";
 
 export function normalizeBudgetMode(
   mode: string | null | undefined,
@@ -514,6 +519,24 @@ export interface CumulativeBurnPoint {
   isFuture: boolean;
 }
 
+export interface WeeklyProgressPoint {
+  key: string;
+  /** Week start (Mon) date key. */
+  weekStartKey: string;
+  weekEndKey: string;
+  /** Short label for tooltips. */
+  label: string;
+  /** Hours scheduled in this week only. */
+  weekHours: number;
+  /** Cumulative used through min(week end, today). */
+  cumulativeUsed: number;
+  /** Cumulative planned through week end. */
+  cumulativePlanned: number;
+  isCurrentWeek: boolean;
+  /** Week starts after today — entirely future. */
+  isFuture: boolean;
+}
+
 export function projectDateSpan(
   project: Project,
   assignments: Assignment[],
@@ -608,6 +631,76 @@ export function cumulativeHoursSeries(
     });
 
     cursor = new Date(y, m + 1, 1);
+  }
+  return points;
+}
+
+/** Week-by-week cumulative used vs planned for project progress charts. */
+export function weeklyProgressSeries(
+  project: Project,
+  assignments: Assignment[],
+  asOf: Date = new Date(),
+): WeeklyProgressPoint[] {
+  const span = projectDateSpan(project, assignments);
+  if (!span) return [];
+  const todayKey = toDateKey(asOf);
+  const start = weekStart(parseISOSafe(span.startKey));
+  const end = weekStart(parseISOSafe(span.endKey));
+  const currentWeekStart = toDateKey(weekStart(asOf));
+  const points: WeeklyProgressPoint[] = [];
+  let cursor = new Date(start);
+  let cumUsed = 0;
+  let cumPlanned = 0;
+  let guard = 0;
+
+  while (cursor <= end && guard < 260) {
+    guard += 1;
+    const ws = weekStart(cursor);
+    const we = weekEnd(ws);
+    const weekStartKey = toDateKey(ws);
+    const weekEndKey = toDateKey(we);
+    const rangeFrom =
+      weekStartKey < span.startKey ? span.startKey : weekStartKey;
+    const rangeTo = weekEndKey > span.endKey ? span.endKey : weekEndKey;
+
+    const weekHours =
+      rangeTo >= rangeFrom
+        ? projectHoursInDateRange(
+            project.id,
+            assignments,
+            rangeFrom,
+            rangeTo,
+          )
+        : 0;
+    cumPlanned += weekHours;
+
+    let weekUsed = 0;
+    if (rangeFrom <= todayKey && rangeTo >= rangeFrom) {
+      const usedTo = rangeTo < todayKey ? rangeTo : todayKey;
+      if (usedTo >= rangeFrom) {
+        weekUsed = projectHoursInDateRange(
+          project.id,
+          assignments,
+          rangeFrom,
+          usedTo,
+        );
+      }
+    }
+    cumUsed += weekUsed;
+
+    points.push({
+      key: weekStartKey,
+      weekStartKey,
+      weekEndKey,
+      label: format(ws, "MMM d"),
+      weekHours,
+      cumulativeUsed: cumUsed,
+      cumulativePlanned: cumPlanned,
+      isCurrentWeek: weekStartKey === currentWeekStart,
+      isFuture: weekStartKey > todayKey,
+    });
+
+    cursor = addWeeks(ws, 1);
   }
   return points;
 }

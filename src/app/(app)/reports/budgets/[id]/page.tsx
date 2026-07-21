@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { CumulativeHoursChart } from "@/components/budgets/cumulative-hours-chart";
+import { ProjectProgressCharts } from "@/components/budgets/cumulative-hours-chart";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -19,13 +19,13 @@ import {
   budgetBurn,
   budgetHealth,
   calendarYearBars,
-  cumulativeHoursSeries,
   formatHours,
   formatMoney,
   normalizeBudgetMode,
   projectHoursForecast,
   projectPlannedAmount,
   projectPlannedHours,
+  weeklyProgressSeries,
 } from "@/lib/domain/budget";
 import { projectForecast } from "@/lib/domain/forecast";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
@@ -82,10 +82,10 @@ export default function ProjectBudgetDetailPage() {
     [project, state.assignments, state.people, year],
   );
 
-  const cumulativePoints = useMemo(
+  const weeklyPoints = useMemo(
     () =>
       project && !isRetainer
-        ? cumulativeHoursSeries(project, state.assignments)
+        ? weeklyProgressSeries(project, state.assignments)
         : [],
     [project, state.assignments, isRetainer],
   );
@@ -224,13 +224,6 @@ export default function ProjectBudgetDetailPage() {
         : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}${
             burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
           }`;
-
-  const hoursBudgetCap =
-    mode === "hours"
-      ? project.budget_hours
-      : mode === "amount"
-        ? null
-        : null;
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -428,17 +421,10 @@ export default function ProjectBudgetDetailPage() {
               />
             </>
           ) : (
-            <>
-              <h2 className="mb-3 text-sm font-semibold">
-                Hours trend
-              </h2>
-              <CumulativeHoursChart
-                points={cumulativePoints}
-                budgetHours={
-                  mode === "hours" ? hoursBudgetCap : null
-                }
-              />
-            </>
+            <ProjectProgressCharts
+              points={weeklyPoints}
+              budgetHours={project.budget_hours ?? null}
+            />
           )}
         </section>
 

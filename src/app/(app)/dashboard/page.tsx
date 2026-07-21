@@ -632,13 +632,9 @@ export default function DashboardPage() {
                 appHref={appHref}
               />
 
-              <ProjectHealthBudget
-                canManage={canManage}
-                atRisk={atRisk}
-                upcoming={upcomingDueTasks}
-                projectById={projectById}
+              <TaggedCommentsPanel
+                taggedComments={taggedComments}
                 appHref={appHref}
-                clients={state.clients}
               />
             </div>
 
@@ -673,7 +669,16 @@ export default function DashboardPage() {
             upcomingLeaveBlocks={upcomingLeaveBlocks}
             people={state.people}
             appHref={appHref}
-            taggedComments={taggedComments}
+            projectHealth={
+              <ProjectHealthBudget
+                canManage={canManage}
+                atRisk={atRisk}
+                upcoming={upcomingDueTasks}
+                projectById={projectById}
+                appHref={appHref}
+                clients={state.clients}
+              />
+            }
           />
         </div>
       ) : (
@@ -702,6 +707,11 @@ export default function DashboardPage() {
               clients={state.clients}
               people={state.people}
               showPerson={showingAsManager}
+              appHref={appHref}
+            />
+
+            <TaggedCommentsPanel
+              taggedComments={taggedComments}
               appHref={appHref}
             />
 
@@ -735,68 +745,6 @@ export default function DashboardPage() {
                 <UtilizationHeatmap weeks={6} />
               </section>
             ) : null}
-
-            {canManage ? (
-              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">Budget at risk</h2>
-                  <Link
-                    href={appHref("/reports/budgets")}
-                    className="text-xs text-[var(--accent)]"
-                  >
-                    View budgets
-                  </Link>
-                </div>
-                {atRisk.length === 0 ? (
-                  <p className="text-sm text-[var(--text-muted)]">
-                    All active project totals look healthy this week.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {atRisk.map(({ project, burn, client }) => (
-                      <Link
-                        key={project.id}
-                        href={appHref(`/projects/${project.id}`)}
-                        className="block rounded-md border border-[var(--border)] p-3 hover:bg-[var(--row-hover)]"
-                      >
-                        <div className="mb-2 flex items-center gap-2">
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{
-                              background: projectDisplayColor(
-                                project,
-                                state.clients,
-                              ),
-                            }}
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">
-                              {project.name}
-                            </div>
-                            <div className="truncate text-xs text-[var(--text-muted)]">
-                              {client?.name ?? "No client"}
-                            </div>
-                          </div>
-                          <span
-                            className={cn(
-                              "shrink-0 text-xs",
-                              budgetHealth(burn) === "over"
-                                ? "text-[var(--status-over)]"
-                                : "text-[var(--status-near)]",
-                            )}
-                          >
-                            {budgetHealth(burn) === "over"
-                              ? "Over total"
-                              : "Near total"}
-                          </span>
-                        </div>
-                        <BurnBar burn={burn} />
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </section>
-            ) : null}
           </div>
 
           <DashboardSidebar
@@ -810,7 +758,16 @@ export default function DashboardPage() {
             upcomingLeaveBlocks={upcomingLeaveBlocks}
             people={state.people}
             appHref={appHref}
-            taggedComments={taggedComments}
+            projectHealth={
+              <ProjectHealthBudget
+                canManage={canManage}
+                atRisk={atRisk}
+                upcoming={upcomingDueTasks}
+                projectById={projectById}
+                appHref={appHref}
+                clients={state.clients}
+              />
+            }
           />
         </div>
       )}
@@ -899,6 +856,56 @@ function Sparkline({ values }: { values: number[] }) {
         points={points}
       />
     </svg>
+  );
+}
+
+function TaggedCommentsPanel({
+  taggedComments,
+  appHref,
+}: {
+  taggedComments: {
+    comment: TaskComment;
+    task: Task | undefined;
+    project: Project | undefined;
+    author: Profile | undefined;
+  }[];
+  appHref: (path: string) => string;
+}) {
+  return (
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <h2 className="mb-2 text-sm font-semibold">Tagged comments</h2>
+      {taggedComments.length === 0 ? (
+        <p className="text-sm text-[var(--text-muted)]">
+          No comments tagging you yet.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {taggedComments.map(({ comment, task, project, author }) => (
+            <li key={comment.id}>
+              <Link
+                href={appHref(
+                  `/projects/${project!.id}?task=${task!.id}&comments=1`,
+                )}
+                className="block rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
+              >
+                <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
+                  <span className="truncate">
+                    {author?.full_name ?? "Someone"} · {project!.name}
+                  </span>
+                  <span className="shrink-0">
+                    {comment.created_at.slice(0, 10)}
+                  </span>
+                </div>
+                <div className="truncate text-xs font-medium">{task!.title}</div>
+                <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
+                  <RichNotesHtml html={comment.body} />
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -1013,7 +1020,7 @@ function DashboardSidebar({
   upcomingLeaveBlocks,
   people,
   appHref,
-  taggedComments,
+  projectHealth,
 }: {
   identityPerson: Person | null | undefined;
   viewAsPerson: Person | null | undefined;
@@ -1037,12 +1044,7 @@ function DashboardSidebar({
   }[];
   people: Person[];
   appHref: (path: string) => string;
-  taggedComments: {
-    comment: TaskComment;
-    task: Task | undefined;
-    project: Project | undefined;
-    author: Profile | undefined;
-  }[];
+  projectHealth: ReactNode;
 }) {
   const displayName =
     identityPerson?.name ??
@@ -1095,42 +1097,7 @@ function DashboardSidebar({
         </section>
       ) : null}
 
-      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-        <h2 className="mb-2 text-sm font-semibold">Tagged comments</h2>
-        {taggedComments.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">
-            No comments tagging you yet.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {taggedComments.map(({ comment, task, project, author }) => (
-              <li key={comment.id}>
-                <Link
-                  href={appHref(
-                    `/projects/${project!.id}?task=${task!.id}&comments=1`,
-                  )}
-                  className="block rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
-                >
-                  <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
-                    <span className="truncate">
-                      {author?.full_name ?? "Someone"} · {project!.name}
-                    </span>
-                    <span className="shrink-0">
-                      {comment.created_at.slice(0, 10)}
-                    </span>
-                  </div>
-                  <div className="truncate text-xs font-medium">
-                    {task!.title}
-                  </div>
-                  <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
-                    <RichNotesHtml html={comment.body} />
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {projectHealth}
 
       <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <div className="mb-3 flex items-center justify-between">
