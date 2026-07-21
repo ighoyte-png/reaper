@@ -5,7 +5,6 @@ import {
   CalendarRange,
   FolderKanban,
   LayoutDashboard,
-  LayoutTemplate,
   Users,
 } from "lucide-react";
 
@@ -22,7 +21,6 @@ export const primaryNavLinks: NavLinkDef[] = [
   { href: "/people", label: "People", icon: Users, manageOnly: true },
   { href: "/projects", label: "Projects", icon: FolderKanban, manageOnly: false },
   { href: "/clients", label: "Clients", icon: Building2, manageOnly: true },
-  { href: "/templates", label: "Templates", icon: LayoutTemplate, manageOnly: true },
   { href: "/reports", label: "Reports", icon: BarChart3, manageOnly: true },
 ];
 

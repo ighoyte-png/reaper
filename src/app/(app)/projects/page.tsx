@@ -151,16 +151,24 @@ export default function ProjectsPage() {
         title="Projects"
         actions={
           canManage ? (
-            <button
-              type="button"
-              className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={() => {
-                setMemberIds([]);
-                setEditing(emptyProject(newId("proj")));
-              }}
-            >
-              Add project
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href={appHref("/templates")}
+                className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+              >
+                Templates
+              </Link>
+              <button
+                type="button"
+                className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                onClick={() => {
+                  setMemberIds([]);
+                  setEditing(emptyProject(newId("proj")));
+                }}
+              >
+                Add project
+              </button>
+            </div>
           ) : undefined
         }
       />
