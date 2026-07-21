@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 
 export function ReportBreadcrumb({ current }: { current: string }) {
   const appHref = useAppHref();
+  useDocumentTitle(current);
+
   return (
     <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
       <Link

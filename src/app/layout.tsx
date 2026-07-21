@@ -13,7 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Reaper",
+  title: {
+    default: "Reaper",
+    template: "%s · Reaper",
+  },
   description: "Resource planning — schedule blocks that burn project budgets",
   icons: {
     icon: "/reaper_logo.svg",

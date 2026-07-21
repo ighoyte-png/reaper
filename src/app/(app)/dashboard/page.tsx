@@ -646,7 +646,7 @@ export default function DashboardPage() {
             <KpiCard
               title="Overdue / Critical Tasks"
               className={
-                overdueTasks.length > 0
+                pulseOverdueTasks.length > 0
                   ? "!border-0 bg-[var(--status-over)]/20"
                   : undefined
               }
@@ -654,10 +654,10 @@ export default function DashboardPage() {
               <div
                 className={cn(
                   "text-sm font-semibold tabular-nums",
-                  overdueTasks.length > 0 && "text-[var(--status-over)]",
+                  pulseOverdueTasks.length > 0 && "text-[var(--status-over)]",
                 )}
               >
-                {overdueTasks.length} Overdue
+                {pulseOverdueTasks.length} Overdue
               </div>
             </KpiCard>
           </div>
@@ -855,7 +855,7 @@ function TaggedCommentsPanel({
         <MessageSquare size={14} className="text-[var(--text-muted)]" />
         <h2 className="text-sm font-semibold">Tagged Comments</h2>
         {total > 0 ? (
-          <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
+          <span className="rounded-full bg-[var(--bg-elevated)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">
             {total}
           </span>
         ) : null}

@@ -44,8 +44,15 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
 type ClientFilter = "all" | "none" | string;
 
 export default function ProjectsPage() {
-  const { state, upsertProject, setProjectMembers, newId, canManage, myPerson } =
-    useData();
+  const {
+    state,
+    upsertProject,
+    setProjectMembers,
+    newId,
+    canManage,
+    isPublicShare,
+    myPerson,
+  } = useData();
   const appHref = useAppHref();
   const { push } = useToast();
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
@@ -56,7 +63,7 @@ export default function ProjectsPage() {
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
 
   const visibleProjects = useMemo(() => {
-    if (canManage) return state.projects;
+    if (canManage || isPublicShare) return state.projects;
     if (!myPerson) return [];
     const ids = projectIdsForPerson(
       myPerson.id,
@@ -67,6 +74,7 @@ export default function ProjectsPage() {
     return state.projects.filter((p) => ids.has(p.id));
   }, [
     canManage,
+    isPublicShare,
     myPerson,
     state.projects,
     state.assignments,
@@ -169,7 +177,9 @@ export default function ProjectsPage() {
             />
           ) : (
             <p className="py-16 text-center text-sm text-[var(--text-muted)]">
-              No projects assigned to you yet
+              {isPublicShare
+                ? "No projects yet"
+                : "No projects assigned to you yet"}
             </p>
           )}
         </div>

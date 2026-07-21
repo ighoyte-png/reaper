@@ -62,6 +62,7 @@ export default function ProjectDetailPage() {
     updateProjectShare,
     newId,
     canManage,
+    isPublicShare,
     myPerson,
   } = useData();
   const { push } = useToast();
@@ -82,7 +83,7 @@ export default function ProjectDetailPage() {
   const project = state.projects.find((p) => p.id === params.id);
 
   const memberCanAccess = useMemo(() => {
-    if (canManage || !project) return true;
+    if (canManage || isPublicShare || !project) return true;
     if (!myPerson) return false;
     return projectIdsForPerson(
       myPerson.id,
@@ -92,6 +93,7 @@ export default function ProjectDetailPage() {
     ).has(project.id);
   }, [
     canManage,
+    isPublicShare,
     project,
     myPerson,
     state.assignments,

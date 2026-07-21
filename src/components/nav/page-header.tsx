@@ -1,16 +1,24 @@
 "use client";
 
 import { ChevronLeft } from "lucide-react";
+import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 
 export function PageHeader({
   title,
+  documentTitle,
   actions,
   onBack,
 }: {
   title: React.ReactNode;
+  /** Browser tab title; defaults to `title` when it is a string. */
+  documentTitle?: string;
   actions?: React.ReactNode;
   onBack?: () => void;
 }) {
+  const tabTitle =
+    documentTitle ?? (typeof title === "string" ? title : undefined);
+  useDocumentTitle(tabTitle);
+
   return (
     <header className="flex h-11 w-full shrink-0 items-center border-b border-[var(--border)] bg-[var(--bg)] px-4">
       <div className="mx-auto flex h-full w-full max-w-[1400px] items-center justify-between gap-3">

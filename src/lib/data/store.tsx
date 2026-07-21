@@ -519,7 +519,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [mode, refreshSupabase]);
 
-  // Live schedule sync: other users' assignment / leave edits refresh this workspace.
+  // Live sync: schedule + @mention comments refresh this workspace for other clients.
   useEffect(() => {
     if (mode !== "supabase" || !ready) return;
     const client = supabaseRef.current;
@@ -537,7 +537,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
 
     const channel = client
-      .channel(`org-schedule:${organizationId}`)
+      .channel(`org-live:${organizationId}`)
       .on(
         "postgres_changes",
         {
@@ -554,6 +554,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
           event: "*",
           schema: "public",
           table: "leave_days",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        scheduleRefresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_comments",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        scheduleRefresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_comment_mentions",
           filter: `organization_id=eq.${organizationId}`,
         },
         scheduleRefresh,
@@ -1593,7 +1613,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertBulletin: (bulletin) => {
-        if (!admin) return;
+        if (!manage) return;
         const row = withOrg(bulletin) as Bulletin;
         patch((prev) => {
           const exists = prev.bulletins.some((b) => b.id === row.id);
@@ -1609,7 +1629,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteBulletin: (id) => {
-        if (!admin) return;
+        if (!manage) return;
         patch((prev) => ({
           ...prev,
           bulletins: prev.bulletins.filter((b) => b.id !== id),

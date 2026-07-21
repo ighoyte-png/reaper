@@ -9,6 +9,7 @@ import { useData } from "@/lib/data/store";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { ReaperLogo } from "@/components/brand/reaper-logo";
+import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 
 export default function SetPasswordPage() {
   const { mode, updatePassword, refresh } = useData();
@@ -20,6 +21,8 @@ export default function SetPasswordPage() {
   const [hasSession, setHasSession] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  useDocumentTitle("Set password");
 
   useEffect(() => {
     if (!isSupabaseConfigured() || mode === "demo") {

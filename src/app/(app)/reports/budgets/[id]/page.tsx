@@ -256,6 +256,9 @@ export default function ProjectBudgetDetailPage() {
             </span>
           </nav>
         }
+        documentTitle={
+          client?.name ? `${client.name} · ${project.name}` : project.name
+        }
         onBack={goBack}
         actions={
           <Link

@@ -18,6 +18,7 @@ import type { ProjectAssetKind } from "@/lib/types";
 import { toDateKey } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { DemoState } from "@/lib/types";
+import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 
 function loadDemoPortal(token: string): ProjectPortalPayload | null {
   if (typeof window === "undefined") return null;
@@ -111,6 +112,8 @@ export default function ProjectSharePage() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
+
+  useDocumentTitle(portal?.project.name ?? "Client portal");
 
   useEffect(() => {
     let cancelled = false;

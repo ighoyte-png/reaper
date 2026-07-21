@@ -7,6 +7,7 @@ import { useData } from "@/lib/data/store";
 import { inputClass } from "@/components/ui/form";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { APP_VERSION } from "@/lib/version";
+import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 
 function LoginForm() {
   const {
@@ -29,6 +30,8 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+
+  useDocumentTitle(tab === "signup" ? "Sign up" : "Log in");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
