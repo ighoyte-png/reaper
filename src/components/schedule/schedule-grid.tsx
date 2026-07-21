@@ -88,8 +88,8 @@ const DAY_W_MOBILE = 40;
 const DAY_H = 32;
 const DAY_PAD_Y = 3;
 const ROW_H = DAY_H + DAY_PAD_Y * 2;
-const LABEL_DESKTOP = 196;
-const LABEL_MOBILE = 112;
+const LABEL_DESKTOP = 248;
+const LABEL_MOBILE = 136;
 
 const EMPTY_PROJECTS: Project[] = [];
 const EMPTY_OCCS: AssignmentOccurrence[] = [];
