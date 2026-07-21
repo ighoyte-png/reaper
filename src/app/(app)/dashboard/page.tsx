@@ -30,7 +30,11 @@ import {
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
-import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
+import { useDismissedMentions, useDismissedBulletins } from "@/lib/hooks/use-dismissed-mentions";
+import {
+  bulletinVisibleToPerson,
+  isUnreadBulletin,
+} from "@/lib/domain/bulletins";
 import { useViewAs } from "@/lib/view-as";
 import {
   budgetBurn,
@@ -77,15 +81,6 @@ const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
   { key: "three_days", label: "Due in 3 days" },
   { key: "week", label: "Due this week" },
 ];
-
-function bulletinVisibleToPerson(
-  bulletin: Bulletin,
-  personId: string | null,
-): boolean {
-  if (bulletin.audience === "all") return true;
-  if (!personId) return false;
-  return bulletin.audience_person_ids.includes(personId);
-}
 
 export default function DashboardPage() {
   const {
@@ -495,6 +490,25 @@ export default function DashboardPage() {
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
   const { dismiss: dismissMention, dismissed: dismissedMentions } =
     useDismissedMentions(mentionPersonId);
+  const { dismiss: dismissBulletin, dismissed: dismissedBulletins } =
+    useDismissedBulletins(mentionPersonId);
+
+  const unreadBulletinCount = useMemo(() => {
+    if (!mentionPersonId) return 0;
+    return state.bulletins.filter((b) =>
+      isUnreadBulletin(
+        b,
+        mentionPersonId,
+        profile?.id ?? null,
+        dismissedBulletins,
+      ),
+    ).length;
+  }, [
+    mentionPersonId,
+    state.bulletins,
+    profile?.id,
+    dismissedBulletins,
+  ]);
 
   const taggedComments = useMemo(() => {
     const personId = mentionPersonId;
@@ -722,6 +736,16 @@ export default function DashboardPage() {
               people={sortedPeople}
               canEdit={canManage && !isPublicShare}
               profileId={profile?.id ?? null}
+              isUnread={(b) =>
+                isUnreadBulletin(
+                  b,
+                  mentionPersonId,
+                  profile?.id ?? null,
+                  dismissedBulletins,
+                )
+              }
+              unreadCount={unreadBulletinCount}
+              onDismissUnread={dismissBulletin}
               onSave={(row) => {
                 upsertBulletin(row);
                 push("Bulletin saved");
@@ -1608,6 +1632,9 @@ function BulletinBoard({
   people,
   canEdit,
   profileId,
+  isUnread,
+  unreadCount = 0,
+  onDismissUnread,
   onSave,
   onDelete,
   newId,
@@ -1618,6 +1645,9 @@ function BulletinBoard({
   people: Person[];
   canEdit: boolean;
   profileId: string | null;
+  isUnread?: (b: Bulletin) => boolean;
+  unreadCount?: number;
+  onDismissUnread?: (id: string) => void;
   onSave: (row: BulletinDraft) => void;
   onDelete: (id: string) => void;
   newId: (prefix: string) => string;
@@ -1633,6 +1663,11 @@ function BulletinBoard({
         <div className="flex items-center gap-2">
           <Megaphone size={14} className="text-[var(--text-muted)]" />
           <h2 className="text-sm font-semibold">Bulletin Board</h2>
+          {unreadCount > 0 ? (
+            <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
+              {unreadCount}
+            </span>
+          ) : null}
         </div>
         {canEdit ? (
           <button
@@ -1655,19 +1690,28 @@ function BulletinBoard({
             const author = profiles.find(
               (p) => p.id === b.created_by_profile_id,
             );
+            const unread = isUnread?.(b) ?? false;
             return (
               <li
                 key={b.id}
                 className={cn(
                   "rounded-md border px-3 py-2 text-sm",
-                  b.pinned
-                    ? "border-[var(--accent)]/40 bg-[var(--accent)]/5"
-                    : "border-[var(--border)]",
+                  unread
+                    ? "border-orange-500/50 bg-orange-500/5"
+                    : b.pinned
+                      ? "border-[var(--accent)]/40 bg-[var(--accent)]/5"
+                      : "border-[var(--border)]",
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 font-medium">
+                      {unread ? (
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"
+                          aria-label="New"
+                        />
+                      ) : null}
                       {b.pinned ? (
                         <Pin size={11} className="text-[var(--accent)]" />
                       ) : null}
@@ -1686,38 +1730,51 @@ function BulletinBoard({
                         : " · Everyone"}
                     </div>
                   </div>
-                  {canEdit ? (
-                    <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 items-start gap-1">
+                    {unread && onDismissUnread ? (
                       <button
                         type="button"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                        aria-label="Edit bulletin"
-                        onClick={() =>
-                          setEditing({
-                            id: b.id,
-                            project_id: b.project_id,
-                            title: b.title,
-                            body: b.body,
-                            pinned: b.pinned,
-                            audience: b.audience,
-                            audience_person_ids: [...b.audience_person_ids],
-                            created_by_profile_id: b.created_by_profile_id,
-                            created_at: b.created_at,
-                          })
-                        }
+                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                        aria-label="Dismiss bulletin"
+                        title="Dismiss"
+                        onClick={() => onDismissUnread(b.id)}
                       >
-                        <Pencil size={13} />
+                        <X size={13} strokeWidth={2} />
                       </button>
-                      <button
-                        type="button"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
-                        aria-label="Delete bulletin"
-                        onClick={() => setConfirmDeleteId(b.id)}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  ) : null}
+                    ) : null}
+                    {canEdit ? (
+                      <>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                          aria-label="Edit bulletin"
+                          onClick={() =>
+                            setEditing({
+                              id: b.id,
+                              project_id: b.project_id,
+                              title: b.title,
+                              body: b.body,
+                              pinned: b.pinned,
+                              audience: b.audience,
+                              audience_person_ids: [...b.audience_person_ids],
+                              created_by_profile_id: b.created_by_profile_id,
+                              created_at: b.created_at,
+                            })
+                          }
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
+                          aria-label="Delete bulletin"
+                          onClick={() => setConfirmDeleteId(b.id)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               </li>
             );

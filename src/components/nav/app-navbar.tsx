@@ -10,7 +10,13 @@ import { primaryNavLinks } from "@/components/nav/nav-links";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
-import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
+import {
+  isUnreadBulletin,
+} from "@/lib/domain/bulletins";
+import {
+  useDismissedBulletins,
+  useDismissedMentions,
+} from "@/lib/hooks/use-dismissed-mentions";
 import { useViewAs } from "@/lib/view-as";
 
 function navLinkClass(active: boolean) {
@@ -25,23 +31,40 @@ function navLinkClass(active: boolean) {
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { canManage, logout, state, myPerson } = useData();
+  const { canManage, logout, state, myPerson, profile } = useData();
   const { effectivePersonId } = useViewAs();
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
-  const { dismissed } = useDismissedMentions(mentionPersonId);
+  const { dismissed: dismissedMentions } = useDismissedMentions(mentionPersonId);
+  const { dismissed: dismissedBulletins } = useDismissedBulletins(mentionPersonId);
   const { open, setOpen, toggle } = useMobileNav();
   const links = primaryNavLinks.filter((l) => canManage || !l.manageOnly);
   const settingsActive =
     pathname === "/settings" || pathname.startsWith("/settings/");
 
-  const hasTaggedCommentDot = useMemo(() => {
+  const hasDashboardDot = useMemo(() => {
     if (!mentionPersonId) return false;
-    return state.task_comments.some(
+    const hasMention = state.task_comments.some(
       (c) =>
         (c.mentioned_person_ids ?? []).includes(mentionPersonId) &&
-        !dismissed.has(c.id),
+        !dismissedMentions.has(c.id),
     );
-  }, [mentionPersonId, state.task_comments, dismissed]);
+    if (hasMention) return true;
+    return state.bulletins.some((b) =>
+      isUnreadBulletin(
+        b,
+        mentionPersonId,
+        profile?.id ?? null,
+        dismissedBulletins,
+      ),
+    );
+  }, [
+    mentionPersonId,
+    state.task_comments,
+    state.bulletins,
+    dismissedMentions,
+    dismissedBulletins,
+    profile?.id,
+  ]);
 
   return (
     <>
@@ -68,7 +91,7 @@ export function AppNavbar() {
           {links.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href || pathname.startsWith(`${href}/`);
-            const showDot = href === "/dashboard" && hasTaggedCommentDot;
+            const showDot = href === "/dashboard" && hasDashboardDot;
             return (
               <Link
                 key={href}
@@ -80,7 +103,7 @@ export function AppNavbar() {
                 {showDot ? (
                   <span
                     className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"
-                    aria-label="New tagged comments"
+                    aria-label="New dashboard notifications"
                   />
                 ) : null}
               </Link>
@@ -150,7 +173,7 @@ export function AppNavbar() {
             {links.map(({ href, label, icon: Icon }) => {
               const active =
                 pathname === href || pathname.startsWith(`${href}/`);
-              const showDot = href === "/dashboard" && hasTaggedCommentDot;
+              const showDot = href === "/dashboard" && hasDashboardDot;
               return (
                 <Link
                   key={href}
@@ -168,7 +191,7 @@ export function AppNavbar() {
                   {showDot ? (
                     <span
                       className="ml-auto h-2 w-2 rounded-full bg-orange-500"
-                      aria-label="New tagged comments"
+                      aria-label="New dashboard notifications"
                     />
                   ) : null}
                 </Link>

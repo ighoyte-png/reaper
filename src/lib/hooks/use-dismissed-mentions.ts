@@ -2,16 +2,20 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-function storageKey(personId: string) {
-  return `reaper-dismissed-mentions:${personId}`;
+type DismissKind = "mentions" | "bulletins";
+
+function storageKey(kind: DismissKind, personId: string) {
+  return kind === "mentions"
+    ? `reaper-dismissed-mentions:${personId}`
+    : `reaper-dismissed-bulletins:${personId}`;
 }
 
-const CHANGE_EVENT = "reaper-dismissed-mentions-changed";
+const CHANGE_EVENT = "reaper-dismissed-ids-changed";
 
-function readIds(personId: string): string[] {
+function readIds(kind: DismissKind, personId: string): string[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(storageKey(personId));
+    const raw = localStorage.getItem(storageKey(kind, personId));
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed)
@@ -22,21 +26,20 @@ function readIds(personId: string): string[] {
   }
 }
 
-function writeIds(personId: string, ids: string[]) {
+function writeIds(kind: DismissKind, personId: string, ids: string[]) {
   try {
-    localStorage.setItem(storageKey(personId), JSON.stringify(ids));
+    localStorage.setItem(storageKey(kind, personId), JSON.stringify(ids));
     window.dispatchEvent(
-      new CustomEvent(CHANGE_EVENT, { detail: { personId } }),
+      new CustomEvent(CHANGE_EVENT, { detail: { kind, personId } }),
     );
   } catch {
     /* ignore quota / private mode */
   }
 }
 
-/** Persist dismissed @mention comment ids for a person (local to this browser). */
-export function useDismissedMentions(personId: string | null) {
+function useDismissedIds(kind: DismissKind, personId: string | null) {
   const [dismissed, setDismissed] = useState<Set<string>>(() =>
-    personId ? new Set(readIds(personId)) : new Set(),
+    personId ? new Set(readIds(kind, personId)) : new Set(),
   );
 
   useEffect(() => {
@@ -46,19 +49,21 @@ export function useDismissedMentions(personId: string | null) {
     }
 
     function reload() {
-      setDismissed(new Set(readIds(personId!)));
+      setDismissed(new Set(readIds(kind, personId!)));
     }
 
     reload();
 
     function onLocalChange(e: Event) {
-      const detail = (e as CustomEvent<{ personId?: string }>).detail;
+      const detail = (e as CustomEvent<{ kind?: DismissKind; personId?: string }>)
+        .detail;
+      if (detail?.kind && detail.kind !== kind) return;
       if (detail?.personId && detail.personId !== personId) return;
       reload();
     }
 
     function onStorage(e: StorageEvent) {
-      if (e.key && e.key !== storageKey(personId!)) return;
+      if (e.key && e.key !== storageKey(kind, personId!)) return;
       reload();
     }
 
@@ -68,23 +73,33 @@ export function useDismissedMentions(personId: string | null) {
       window.removeEventListener(CHANGE_EVENT, onLocalChange);
       window.removeEventListener("storage", onStorage);
     };
-  }, [personId]);
+  }, [kind, personId]);
 
   const dismiss = useCallback(
-    (commentId: string) => {
+    (id: string) => {
       if (!personId) return;
-      const next = new Set(readIds(personId));
-      next.add(commentId);
-      writeIds(personId, [...next]);
+      const next = new Set(readIds(kind, personId));
+      next.add(id);
+      writeIds(kind, personId, [...next]);
       setDismissed(next);
     },
-    [personId],
+    [kind, personId],
   );
 
   const isDismissed = useCallback(
-    (commentId: string) => dismissed.has(commentId),
+    (id: string) => dismissed.has(id),
     [dismissed],
   );
 
   return { dismiss, isDismissed, dismissed };
+}
+
+/** Persist dismissed @mention comment ids for a person (local to this browser). */
+export function useDismissedMentions(personId: string | null) {
+  return useDismissedIds("mentions", personId);
+}
+
+/** Persist dismissed bulletin ids for a person (local to this browser). */
+export function useDismissedBulletins(personId: string | null) {
+  return useDismissedIds("bulletins", personId);
 }
