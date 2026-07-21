@@ -1215,40 +1215,45 @@ function TaskRow({
   return (
     <Link
       href={appHref(`/projects/${task.project_id}`)}
-      className="flex items-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--row-hover)]"
+      className="flex gap-2 rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
     >
       <span
-        className="h-2 w-2 shrink-0 rounded-full"
+        className="mt-1.5 h-2 w-2 shrink-0 rounded-full"
         style={{ background: project?.color ?? "#64748B" }}
       />
-      <span className="min-w-0 flex-1 truncate">{task.title}</span>
-      {showAssignee ? (
-        <span className="flex max-w-[9rem] shrink-0 items-center gap-1.5 truncate text-xs text-[var(--text-muted)]">
-          <PersonAvatar
-            avatarUrl={assignee?.avatar_url}
-            name={assignee?.name}
-            size="xs"
-            fallback="initials"
-          />
-          <span className="truncate">{assignee?.name ?? "Unassigned"}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium leading-snug">
+          {task.title}
         </span>
-      ) : null}
-      <span className="shrink-0 truncate text-xs text-[var(--text-muted)]">
-        {client?.name ? `${client.name} · ` : ""}
-        {project?.name ?? "Project"}
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[var(--text-muted)]">
+          {showAssignee ? (
+            <span className="inline-flex max-w-full items-center gap-1 truncate">
+              <PersonAvatar
+                avatarUrl={assignee?.avatar_url}
+                name={assignee?.name}
+                size="xs"
+                fallback="initials"
+              />
+              <span className="truncate">
+                {assignee?.name ?? "Unassigned"}
+              </span>
+            </span>
+          ) : null}
+          <span className="truncate">
+            {client?.name ? `${client.name} · ` : ""}
+            {project?.name ?? "Project"}
+          </span>
+          {task.due_date ? (
+            <span
+              className={cn(
+                overdue && "font-medium text-[var(--status-over)]",
+              )}
+            >
+              {overdue ? "Overdue" : task.due_date}
+            </span>
+          ) : null}
+        </span>
       </span>
-      {task.due_date ? (
-        <span
-          className={cn(
-            "shrink-0 text-xs",
-            overdue
-              ? "font-medium text-[var(--status-over)]"
-              : "text-[var(--text-muted)]",
-          )}
-        >
-          {overdue ? "Overdue" : task.due_date}
-        </span>
-      ) : null}
     </Link>
   );
 }
