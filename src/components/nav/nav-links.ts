@@ -20,7 +20,7 @@ export const primaryNavLinks: NavLinkDef[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, manageOnly: false },
   { href: "/schedule", label: "Schedule", icon: CalendarRange, manageOnly: false },
   { href: "/people", label: "People", icon: Users, manageOnly: true },
-  { href: "/projects", label: "Projects", icon: FolderKanban, manageOnly: true },
+  { href: "/projects", label: "Projects", icon: FolderKanban, manageOnly: false },
   { href: "/clients", label: "Clients", icon: Building2, manageOnly: true },
   { href: "/templates", label: "Templates", icon: LayoutTemplate, manageOnly: true },
   { href: "/reports", label: "Reports", icon: BarChart3, manageOnly: true },

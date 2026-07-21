@@ -20,6 +20,7 @@ import { useData } from "@/lib/data/store";
 import {
   projectDateProgress,
 } from "@/lib/domain/progress";
+import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
@@ -60,6 +61,7 @@ export default function ProjectDetailPage() {
     updateProjectShare,
     newId,
     canManage,
+    myPerson,
   } = useData();
   const { push } = useToast();
   const [editing, setEditing] = useState(false);
@@ -76,6 +78,22 @@ export default function ProjectDetailPage() {
   const [templatesExpanded, setTemplatesExpanded] = useState(false);
 
   const project = state.projects.find((p) => p.id === params.id);
+
+  const memberCanAccess = useMemo(() => {
+    if (canManage || !project) return true;
+    if (!myPerson) return false;
+    return projectIdsForPerson(
+      myPerson.id,
+      state.assignments,
+      state.tasks,
+    ).has(project.id);
+  }, [
+    canManage,
+    project,
+    myPerson,
+    state.assignments,
+    state.tasks,
+  ]);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const isRetainer = Boolean(project?.budget_monthly_reset);
   const budgetHref = project
@@ -112,6 +130,23 @@ export default function ProjectDetailPage() {
           Project not found.{" "}
           <Link href={appHref("/projects")} className="text-[var(--accent)]">
             Back to projects
+          </Link>
+        </div>
+      </PageContainer>
+    );
+  }
+
+  if (!memberCanAccess) {
+    return (
+      <PageContainer className="overflow-y-auto">
+        <PageHeader
+          title="Project"
+          onBack={() => router.push(appHref("/projects"))}
+        />
+        <div className="p-5 text-sm text-[var(--text-muted)]">
+          You don&apos;t have access to this project.{" "}
+          <Link href={appHref("/projects")} className="text-[var(--accent)]">
+            Back to your projects
           </Link>
         </div>
       </PageContainer>

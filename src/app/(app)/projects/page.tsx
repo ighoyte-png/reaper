@@ -14,6 +14,7 @@ import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { projectDateProgress } from "@/lib/domain/progress";
 import {
   sortClientsByName,
@@ -43,7 +44,7 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
 type ClientFilter = "all" | "none" | string;
 
 export default function ProjectsPage() {
-  const { state, upsertProject, newId, canManage } = useData();
+  const { state, upsertProject, newId, canManage, myPerson } = useData();
   const appHref = useAppHref();
   const { push } = useToast();
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
@@ -52,7 +53,24 @@ export default function ProjectsPage() {
   const [query, setQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
 
-  const projects = sortProjectsByClientThenName(state.projects, state.clients);
+  const visibleProjects = useMemo(() => {
+    if (canManage) return state.projects;
+    if (!myPerson) return [];
+    const ids = projectIdsForPerson(
+      myPerson.id,
+      state.assignments,
+      state.tasks,
+    );
+    return state.projects.filter((p) => ids.has(p.id));
+  }, [
+    canManage,
+    myPerson,
+    state.projects,
+    state.assignments,
+    state.tasks,
+  ]);
+
+  const projects = sortProjectsByClientThenName(visibleProjects, state.clients);
   const clients = sortClientsByName(state.clients);
   // Archived clients keep their projects visible in the grouped list, but
   // don't clutter the sidebar's quick-filter navigation by default.
@@ -131,7 +149,7 @@ export default function ProjectsPage() {
           ) : undefined
         }
       />
-      {state.projects.length === 0 ? (
+      {visibleProjects.length === 0 ? (
         <div className="p-5">
           {canManage ? (
             <EmptyState
@@ -141,7 +159,7 @@ export default function ProjectsPage() {
             />
           ) : (
             <p className="py-16 text-center text-sm text-[var(--text-muted)]">
-              No projects yet
+              No projects assigned to you yet
             </p>
           )}
         </div>
