@@ -144,7 +144,7 @@ export default function ReportsPage() {
       if (level === "healthy") healthy += 1;
       else if (level === "near") near += 1;
       else if (level === "over") over += 1;
-      else unavailable += 1;
+      else unavailable += 1; // low + unavailable
     }
 
     return {

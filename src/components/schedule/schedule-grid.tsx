@@ -3420,13 +3420,13 @@ const PersonScheduleSection = memo(function PersonScheduleSection({
                     zoom === "month"
                       ? "border-r border-[var(--schedule-day-border)]"
                       : "border-r-2 border-[var(--schedule-week-border)]",
-                    band.level === "over" &&
-                      "bg-[var(--status-over)]/30 text-[var(--status-over)]",
-                    band.level === "near" &&
-                      "bg-[var(--status-near)]/25 text-[var(--status-near)]",
                     band.level === "healthy" &&
                       "bg-[var(--status-healthy)]/25 text-[var(--status-healthy)]",
-                    band.level === "unavailable" &&
+                    band.level === "near" &&
+                      "bg-[var(--status-near)]/25 text-[var(--status-near)]",
+                    band.level === "over" &&
+                      "bg-[var(--status-over)]/30 text-[var(--status-over)]",
+                    (band.level === "unavailable" || band.level === "low") &&
                       "bg-[var(--status-unavailable)]/20 text-[var(--text-muted)]",
                   )}
                   style={{
@@ -3681,7 +3681,10 @@ function MemberTodaySummary({
                 "border-t border-[var(--border)] pt-3 text-xs",
                 level === "over" && "text-[var(--status-over)]",
                 level === "near" && "text-[var(--status-near)]",
-                level === "healthy" && "text-[var(--text-muted)]",
+                (level === "healthy" ||
+                  level === "low" ||
+                  level === "unavailable") &&
+                  "text-[var(--text-muted)]",
               )}
             >
               {formatHours(bookedHours)} booked of {formatHours(capacity)}

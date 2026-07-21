@@ -424,7 +424,7 @@ export default function PeoplePage() {
                               level === "healthy" && "bg-[var(--status-healthy)]",
                               level === "near" && "bg-[var(--status-near)]",
                               level === "over" && "bg-[var(--status-over)]",
-                              level === "unavailable" &&
+                              (level === "unavailable" || level === "low") &&
                                 "bg-[var(--status-unavailable)]",
                             )}
                           />

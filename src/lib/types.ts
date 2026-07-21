@@ -308,4 +308,9 @@ export interface BudgetBurn {
   mode: BudgetMode;
 }
 
-export type CapacityLevel = "healthy" | "near" | "over" | "unavailable";
+export type CapacityLevel =
+  | "low"
+  | "healthy"
+  | "near"
+  | "over"
+  | "unavailable";

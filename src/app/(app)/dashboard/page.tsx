@@ -694,18 +694,14 @@ export default function DashboardPage() {
               {showOrgDashboard ? (
                 <Link
                   href={appHref("/reports/utilization")}
-                  className="text-xs text-[var(--accent)]"
+                  className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
                 >
-                  Full report
+                  Full Report
                 </Link>
               ) : null}
             </div>
-            <p className="mb-3 text-xs text-[var(--text-muted)]">
-              Green Healthy · yellow near full · red overbooked · gray
-              unavailable
-            </p>
             <UtilizationHeatmap
-              weeks={6}
+              weeks={4}
               personIds={
                 showingAsManager
                   ? null

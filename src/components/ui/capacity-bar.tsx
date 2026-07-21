@@ -30,7 +30,9 @@ export function CapacityBar({
             "shrink-0 text-xs tabular-nums",
             level === "over" && "text-[var(--status-over)]",
             level === "near" && "text-[var(--status-near)]",
-            (level === "healthy" || level === "unavailable") &&
+            (level === "healthy" ||
+              level === "low" ||
+              level === "unavailable") &&
               "text-[var(--text-muted)]",
           )}
         >
@@ -45,7 +47,8 @@ export function CapacityBar({
             level === "healthy" && "bg-[var(--status-healthy)]",
             level === "near" && "bg-[var(--status-near)]",
             level === "over" && "bg-[var(--status-over)]",
-            level === "unavailable" && "bg-[var(--status-unavailable)]",
+            (level === "unavailable" || level === "low") &&
+              "bg-[var(--status-unavailable)]",
           )}
           style={{ width: `${pct}%` }}
         />
