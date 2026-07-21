@@ -7,6 +7,7 @@ import { LogOut, Menu, Settings } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
@@ -87,6 +88,12 @@ export function AppNavbar() {
           })}
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          <ThemeToggle
+            className={cn(
+              navLinkClass(false),
+              "hidden h-auto w-auto border-0 bg-transparent sm:inline-flex",
+            )}
+          />
           <Link
             href="/settings"
             className={cn(navLinkClass(settingsActive), "hidden sm:inline-flex")}
@@ -169,6 +176,10 @@ export function AppNavbar() {
             })}
           </nav>
           <div className="space-y-0.5 border-t border-[var(--border)] p-2">
+            <div className="flex items-center justify-between gap-2 rounded-md px-2.5 py-2">
+              <span className="text-sm text-[var(--text-muted)]">Theme</span>
+              <ThemeToggle />
+            </div>
             <Link
               href="/settings"
               onClick={() => setOpen(false)}
