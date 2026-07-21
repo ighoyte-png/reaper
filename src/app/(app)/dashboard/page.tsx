@@ -32,7 +32,6 @@ import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
 import { useViewAs } from "@/lib/view-as";
-import { isAdmin } from "@/lib/auth/roles";
 import {
   budgetBurn,
   budgetHealth,
@@ -123,6 +122,9 @@ export default function DashboardPage() {
   /** Right-column identity: View As person, else linked person. */
   const identityPerson = viewAsPerson ?? myPerson;
 
+  /** Task Pulse + Today's Schedule: always the signed-in (or View As) person. */
+  const personalPersonId = viewAsPerson?.id ?? myPerson?.id ?? null;
+
   /** Members / View As: capacity + leave widgets scoped to one person. */
   const scopePersonalCapacity = !showingAsManager;
   const focusPerson = identityPerson;
@@ -143,10 +145,16 @@ export default function DashboardPage() {
         project_id: o.project_id,
         hours_per_day: o.hours_per_day,
       }));
-    if (showingAsManager) return today;
-    if (!viewedPersonId) return [];
-    return today.filter((a) => a.person_id === viewedPersonId);
-  }, [state.assignments, todayKey, showingAsManager, viewedPersonId]);
+    // Public share keeps the org-wide schedule; otherwise personal only.
+    if (isPublicShare) return today;
+    if (!personalPersonId) return [];
+    return today.filter((a) => a.person_id === personalPersonId);
+  }, [
+    state.assignments,
+    todayKey,
+    isPublicShare,
+    personalPersonId,
+  ]);
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
@@ -159,6 +167,13 @@ export default function DashboardPage() {
     return state.tasks.filter((t) => t.assignee_person_id === viewedPersonId);
   }, [state.tasks, showingAllTasks, viewedPersonId]);
 
+  /** Tasks for Task Pulse — personal even when the rest of the dash is org-wide. */
+  const pulseTasks = useMemo(() => {
+    if (isPublicShare) return state.tasks;
+    if (!personalPersonId) return [];
+    return state.tasks.filter((t) => t.assignee_person_id === personalPersonId);
+  }, [state.tasks, isPublicShare, personalPersonId]);
+
   const overdueTasks = useMemo(
     () =>
       scopedTasks
@@ -168,6 +183,17 @@ export default function DashboardPage() {
         )
         .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
     [scopedTasks, todayKey],
+  );
+
+  const pulseOverdueTasks = useMemo(
+    () =>
+      pulseTasks
+        .filter(
+          (t) =>
+            t.status !== "complete" && t.due_date && t.due_date < todayKey,
+        )
+        .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
+    [pulseTasks, todayKey],
   );
 
   const urgentByGroup = useMemo(() => {
@@ -188,6 +214,24 @@ export default function DashboardPage() {
     return map;
   }, [scopedTasks, todayKey]);
 
+  const pulseUrgentByGroup = useMemo(() => {
+    const map = new Map<TaskUrgency, Task[]>();
+    for (const t of pulseTasks) {
+      if (t.status === "complete" || !t.due_date || t.due_date < todayKey) {
+        continue;
+      }
+      const urgency = taskUrgency(t.due_date, todayKey);
+      if (urgency === "none" || urgency === "overdue") continue;
+      const list = map.get(urgency) ?? [];
+      list.push(t);
+      map.set(urgency, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+    }
+    return map;
+  }, [pulseTasks, todayKey]);
+
   const urgentTaskIds = useMemo(() => {
     const ids = new Set<string>();
     for (const list of urgentByGroup.values()) {
@@ -195,6 +239,14 @@ export default function DashboardPage() {
     }
     return ids;
   }, [urgentByGroup]);
+
+  const pulseUrgentTaskIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const list of pulseUrgentByGroup.values()) {
+      for (const t of list) ids.add(t.id);
+    }
+    return ids;
+  }, [pulseUrgentByGroup]);
 
   const highPriorityTasks = useMemo(
     () =>
@@ -208,10 +260,27 @@ export default function DashboardPage() {
     [scopedTasks, urgentTaskIds, overdueTasks, projectById],
   );
 
+  const pulseHighPriorityTasks = useMemo(
+    () =>
+      pulseTasks.filter((t) => {
+        if (t.status === "complete") return false;
+        if (pulseUrgentTaskIds.has(t.id)) return false;
+        if (pulseOverdueTasks.some((o) => o.id === t.id)) return false;
+        const project = projectById.get(t.project_id);
+        return Boolean(project && project.priority <= 2);
+      }),
+    [pulseTasks, pulseUrgentTaskIds, pulseOverdueTasks, projectById],
+  );
+
   const pinnedTotal =
     overdueTasks.length +
     [...urgentByGroup.values()].reduce((sum, l) => sum + l.length, 0) +
     highPriorityTasks.length;
+
+  const pulsePinnedTotal =
+    pulseOverdueTasks.length +
+    [...pulseUrgentByGroup.values()].reduce((sum, l) => sum + l.length, 0) +
+    pulseHighPriorityTasks.length;
 
   const bulletins = useMemo(() => {
     const filtered = showOrgDashboard
@@ -330,7 +399,6 @@ export default function DashboardPage() {
   );
 
   const sortedPeople = sortPeopleByName(state.people);
-  const admin = isAdmin(profile?.role);
 
   const activeProjects = useMemo(
     () => state.projects.filter((p) => p.status === "active"),
@@ -501,14 +569,14 @@ export default function DashboardPage() {
               compact
             />
             <TaskPulse
-              overdue={overdueTasks}
-              urgentByGroup={urgentByGroup}
-              highPriority={highPriorityTasks}
-              total={pinnedTotal}
+              overdue={pulseOverdueTasks}
+              urgentByGroup={pulseUrgentByGroup}
+              highPriority={pulseHighPriorityTasks}
+              total={pulsePinnedTotal}
               projectById={projectById}
               clientById={clientById}
               peopleById={peopleById}
-              showAssignee={showingAsManager}
+              showAssignee={isPublicShare}
               appHref={appHref}
               compact
             />
@@ -599,7 +667,7 @@ export default function DashboardPage() {
             projects={state.projects}
             clients={state.clients}
             people={state.people}
-            showPerson={showingAsManager}
+            showPerson={isPublicShare}
             fallbackPerson={focusPerson}
             appHref={appHref}
           />
@@ -650,7 +718,7 @@ export default function DashboardPage() {
               bulletins={bulletins}
               profiles={state.profiles}
               people={sortedPeople}
-              canEdit={admin && !isPublicShare}
+              canEdit={canManage && !isPublicShare}
               profileId={profile?.id ?? null}
               onSave={(row) => {
                 upsertBulletin(row);
