@@ -113,7 +113,12 @@ export default function ProjectSharePage() {
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
 
-  useDocumentTitle(portal?.project.name ?? "Client portal");
+  const portalTabTitle = portal
+    ? portal.clientName
+      ? `${portal.clientName} · ${portal.project.name}`
+      : portal.project.name
+    : "Client portal";
+  useDocumentTitle(portalTabTitle);
 
   useEffect(() => {
     let cancelled = false;
