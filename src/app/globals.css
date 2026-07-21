@@ -11,6 +11,9 @@
   --text-muted: #6b7280;
   --border: #f0f1f3;
   --divider: #f3f4f6;
+  /* Schedule grid day/week separators (must read on white --bg) */
+  --schedule-day-border: #e5e7eb;
+  --schedule-week-border: #d1d5db;
   --accent: #2563eb;
   --accent-fg: #ffffff;
   --status-healthy: #16a34a;
@@ -46,6 +49,8 @@
   --text-muted: #9aa3b2;
   --border: #151921;
   --divider: #1a1f28;
+  --schedule-day-border: rgba(255, 255, 255, 0.1);
+  --schedule-week-border: rgba(255, 255, 255, 0.2);
   --accent: #3b82f6;
   --accent-fg: #ffffff;
   --status-healthy: #22c55e;
