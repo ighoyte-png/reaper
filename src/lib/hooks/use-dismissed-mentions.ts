@@ -6,6 +6,8 @@ function storageKey(personId: string) {
   return `reaper-dismissed-mentions:${personId}`;
 }
 
+const CHANGE_EVENT = "reaper-dismissed-mentions-changed";
+
 function readIds(personId: string): string[] {
   if (typeof window === "undefined") return [];
   try {
@@ -23,6 +25,9 @@ function readIds(personId: string): string[] {
 function writeIds(personId: string, ids: string[]) {
   try {
     localStorage.setItem(storageKey(personId), JSON.stringify(ids));
+    window.dispatchEvent(
+      new CustomEvent(CHANGE_EVENT, { detail: { personId } }),
+    );
   } catch {
     /* ignore quota / private mode */
   }
@@ -30,25 +35,48 @@ function writeIds(personId: string, ids: string[]) {
 
 /** Persist dismissed @mention comment ids for a person (local to this browser). */
 export function useDismissedMentions(personId: string | null) {
-  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
+  const [dismissed, setDismissed] = useState<Set<string>>(() =>
+    personId ? new Set(readIds(personId)) : new Set(),
+  );
 
   useEffect(() => {
     if (!personId) {
       setDismissed(new Set());
       return;
     }
-    setDismissed(new Set(readIds(personId)));
+
+    function reload() {
+      setDismissed(new Set(readIds(personId!)));
+    }
+
+    reload();
+
+    function onLocalChange(e: Event) {
+      const detail = (e as CustomEvent<{ personId?: string }>).detail;
+      if (detail?.personId && detail.personId !== personId) return;
+      reload();
+    }
+
+    function onStorage(e: StorageEvent) {
+      if (e.key && e.key !== storageKey(personId!)) return;
+      reload();
+    }
+
+    window.addEventListener(CHANGE_EVENT, onLocalChange);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(CHANGE_EVENT, onLocalChange);
+      window.removeEventListener("storage", onStorage);
+    };
   }, [personId]);
 
   const dismiss = useCallback(
     (commentId: string) => {
       if (!personId) return;
-      setDismissed((prev) => {
-        const next = new Set(prev);
-        next.add(commentId);
-        writeIds(personId, [...next]);
-        return next;
-      });
+      const next = new Set(readIds(personId));
+      next.add(commentId);
+      writeIds(personId, [...next]);
+      setDismissed(next);
     },
     [personId],
   );

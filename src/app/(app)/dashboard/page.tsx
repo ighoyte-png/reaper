@@ -79,8 +79,6 @@ const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
   { key: "week", label: "Due this week" },
 ];
 
-type DashView = "overview" | "detailed";
-
 function bulletinVisibleToPerson(
   bulletin: Bulletin,
   personId: string | null,
@@ -102,7 +100,6 @@ export default function DashboardPage() {
   } = useData();
   const { push } = useToast();
   const appHref = useAppHref();
-  const [dashView, setDashView] = useState<DashView>("overview");
   const {
     viewAsPersonId,
     setViewAsPersonId,
@@ -422,11 +419,12 @@ export default function DashboardPage() {
     [state.clients],
   );
 
+  const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
   const { dismiss: dismissMention, dismissed: dismissedMentions } =
-    useDismissedMentions(effectivePersonId);
+    useDismissedMentions(mentionPersonId);
 
   const taggedComments = useMemo(() => {
-    const personId = effectivePersonId;
+    const personId = mentionPersonId;
     if (!personId) return [];
     const taskById = new Map(state.tasks.map((t) => [t.id, t]));
     return state.task_comments
@@ -446,7 +444,7 @@ export default function DashboardPage() {
       )
       .slice(0, 20);
   }, [
-    effectivePersonId,
+    mentionPersonId,
     state.task_comments,
     state.tasks,
     state.profiles,
@@ -489,303 +487,190 @@ export default function DashboardPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Dashboard" />
 
-      <div className="border-b border-[var(--border)] px-3 sm:px-5">
-        <div className="flex gap-4">
-          {(
-            [
-              { id: "overview", label: "Overview" },
-              { id: "detailed", label: "Detailed View" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={cn(
-                "cursor-pointer border-b-2 px-0.5 py-2.5 text-sm font-medium transition-colors",
-                dashView === tab.id
-                  ? "border-[var(--text)] text-[var(--text)]"
-                  : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]",
-              )}
-              onClick={() => setDashView(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
+        <div className="min-w-0 space-y-4 lg:col-span-2">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TaggedCommentsPanel
+              taggedComments={taggedComments}
+              appHref={appHref}
+              onDismiss={dismissMention}
+              compact
+            />
+            <TaskPulse
+              overdue={overdueTasks}
+              urgentByGroup={urgentByGroup}
+              highPriority={highPriorityTasks}
+              total={pinnedTotal}
+              projectById={projectById}
+              clientById={clientById}
+              peopleById={peopleById}
+              showAssignee={admin && showingAsManager}
+              appHref={appHref}
+              compact
+            />
+          </div>
 
-      {dashView === "overview" ? (
-        <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
-          <div className="min-w-0 space-y-4 lg:col-span-2">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TaggedCommentsPanel
-                taggedComments={taggedComments}
-                appHref={appHref}
-                onDismiss={dismissMention}
-                compact
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <KpiCard title="Active Projects / Health">
+              <div className="text-sm font-semibold tabular-nums">
+                {projectHealthStats.total} Active
+                {projectHealthStats.total > 0 ? (
+                  <span className="font-normal text-[var(--text-muted)]">
+                    {" "}
+                    | {projectHealthStats.onTrackPct}% On Track
+                  </span>
+                ) : null}
+              </div>
+              <SegmentBar
+                segments={[
+                  {
+                    value: projectHealthStats.healthy,
+                    className: "bg-[var(--status-healthy)]",
+                  },
+                  {
+                    value: projectHealthStats.near,
+                    className: "bg-[var(--status-near)]",
+                  },
+                  {
+                    value: projectHealthStats.over,
+                    className: "bg-[var(--status-over)]",
+                  },
+                  {
+                    value: projectHealthStats.none,
+                    className: "bg-[var(--status-unavailable)]",
+                  },
+                ]}
               />
-              <TaskPulse
-                overdue={overdueTasks}
-                urgentByGroup={urgentByGroup}
-                highPriority={highPriorityTasks}
-                total={pinnedTotal}
-                projectById={projectById}
-                clientById={clientById}
-                peopleById={peopleById}
-                showAssignee={admin && showingAsManager}
-                appHref={appHref}
-                compact
-              />
-            </div>
+            </KpiCard>
 
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <KpiCard title="Active Projects / Health">
+            <KpiCard title="Team Utilization Rate">
+              <div className="flex items-end justify-between gap-2">
                 <div className="text-sm font-semibold tabular-nums">
-                  {projectHealthStats.total} Active
-                  {projectHealthStats.total > 0 ? (
-                    <span className="font-normal text-[var(--text-muted)]">
-                      {" "}
-                      | {projectHealthStats.onTrackPct}% On Track
-                    </span>
-                  ) : null}
+                  {Math.round(teamUtilization.avg)}% Avg
                 </div>
-                <SegmentBar
-                  segments={[
-                    {
-                      value: projectHealthStats.healthy,
-                      className: "bg-[var(--status-healthy)]",
-                    },
-                    {
-                      value: projectHealthStats.near,
-                      className: "bg-[var(--status-near)]",
-                    },
-                    {
-                      value: projectHealthStats.over,
-                      className: "bg-[var(--status-over)]",
-                    },
-                    {
-                      value: projectHealthStats.none,
-                      className: "bg-[var(--status-unavailable)]",
-                    },
-                  ]}
-                />
-              </KpiCard>
+                <Sparkline values={teamUtilization.series} />
+              </div>
+            </KpiCard>
 
-              <KpiCard title="Team Utilization Rate">
-                <div className="flex items-end justify-between gap-2">
-                  <div className="text-sm font-semibold tabular-nums">
-                    {Math.round(teamUtilization.avg)}% Avg
-                  </div>
-                  <Sparkline values={teamUtilization.series} />
-                </div>
-              </KpiCard>
-
-              <KpiCard
-                title="Tagged Comments"
-                className={
-                  taggedComments.length > 0
-                    ? "!border-0 bg-orange-500/15"
-                    : undefined
-                }
+            <KpiCard
+              title="Tagged Comments"
+              className={
+                taggedComments.length > 0
+                  ? "!border-0 bg-orange-500/15"
+                  : undefined
+              }
+            >
+              <div
+                className={cn(
+                  "text-sm font-semibold tabular-nums",
+                  taggedComments.length > 0 &&
+                    "text-orange-600 dark:text-orange-400",
+                )}
               >
-                <div
-                  className={cn(
-                    "text-sm font-semibold tabular-nums",
-                    taggedComments.length > 0 && "text-orange-600 dark:text-orange-400",
-                  )}
-                >
-                  {taggedComments.length} to review
-                </div>
-              </KpiCard>
+                {taggedComments.length} to review
+              </div>
+            </KpiCard>
 
-              <KpiCard
-                title="Overdue / Critical Tasks"
-                className={
-                  overdueTasks.length > 0
-                    ? "!border-0 bg-[var(--status-over)]/20"
-                    : undefined
-                }
+            <KpiCard
+              title="Overdue / Critical Tasks"
+              className={
+                overdueTasks.length > 0
+                  ? "!border-0 bg-[var(--status-over)]/20"
+                  : undefined
+              }
+            >
+              <div
+                className={cn(
+                  "text-sm font-semibold tabular-nums",
+                  overdueTasks.length > 0 && "text-[var(--status-over)]",
+                )}
               >
-                <div
-                  className={cn(
-                    "text-sm font-semibold tabular-nums",
-                    overdueTasks.length > 0 && "text-[var(--status-over)]",
-                  )}
-                >
-                  {overdueTasks.length} Overdue
-                </div>
-              </KpiCard>
-            </div>
-
-            <TodaySchedule
-              assignments={todaysAssignments}
-              projects={state.projects}
-              clients={state.clients}
-              people={state.people}
-              showPerson={showingAsManager}
-              fallbackPerson={focusPerson}
-              appHref={appHref}
-            />
-
-            {canManage ? (
-              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold">People Utilization</h2>
-                  <Link
-                    href={appHref("/reports/utilization")}
-                    className="text-xs text-[var(--accent)]"
-                  >
-                    Full report
-                  </Link>
-                </div>
-                <p className="mb-3 text-xs text-[var(--text-muted)]">
-                  Green Healthy · yellow near full · red overbooked · gray
-                  unavailable
-                </p>
-                <UtilizationHeatmap weeks={6} />
-              </section>
-            ) : null}
+                {overdueTasks.length} Overdue
+              </div>
+            </KpiCard>
           </div>
 
-          <DashboardSidebar
-            identityPerson={identityPerson}
-            viewAsPerson={viewAsPerson}
-            profile={profile}
-            canManage={canManage}
-            viewAsControl={viewAsControl}
-            peopleLoad={peopleLoad}
-            approvedLeave={approvedLeave}
-            upcomingLeaveBlocks={upcomingLeaveBlocks}
-            people={leaveCalendarPeople}
+          <TodaySchedule
+            assignments={todaysAssignments}
+            projects={state.projects}
+            clients={state.clients}
+            people={state.people}
+            showPerson={showingAsManager}
+            fallbackPerson={focusPerson}
             appHref={appHref}
-            bulletin={
-              <BulletinBoard
-                bulletins={bulletins}
-                profiles={state.profiles}
-                people={sortedPeople}
-                canEdit={admin}
-                profileId={profile?.id ?? null}
-                onSave={(row) => {
-                  upsertBulletin(row);
-                  push("Bulletin saved");
-                }}
-                onDelete={(id) => {
-                  deleteBulletin(id);
-                  push("Bulletin deleted");
-                }}
-                newId={newId}
-                compact
-              />
-            }
-            projectHealth={
-              <ProjectHealthBudget
-                canManage={canManage}
-                atRisk={atRisk}
-                upcoming={upcomingDueTasks}
-                projectById={projectById}
-                appHref={appHref}
-                clients={state.clients}
-              />
-            }
           />
-        </div>
-      ) : (
-        <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
-          <div className="space-y-4 lg:col-span-2">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TaggedCommentsPanel
-                taggedComments={taggedComments}
-                appHref={appHref}
-                onDismiss={dismissMention}
-                compact
-              />
-              <TaskPulse
-                overdue={overdueTasks}
-                urgentByGroup={urgentByGroup}
-                highPriority={highPriorityTasks}
-                total={pinnedTotal}
-                projectById={projectById}
-                clientById={clientById}
-                peopleById={peopleById}
-                showAssignee={admin && showingAsManager}
-                appHref={appHref}
-                compact
-              />
+
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">People Utilization</h2>
+              {canManage ? (
+                <Link
+                  href={appHref("/reports/utilization")}
+                  className="text-xs text-[var(--accent)]"
+                >
+                  Full report
+                </Link>
+              ) : null}
             </div>
-
-            <TodaySchedule
-              assignments={todaysAssignments}
-              projects={state.projects}
-              clients={state.clients}
-              people={state.people}
-              showPerson={showingAsManager}
-              fallbackPerson={focusPerson}
-              appHref={appHref}
+            <p className="mb-3 text-xs text-[var(--text-muted)]">
+              Green Healthy · yellow near full · red overbooked · gray
+              unavailable
+            </p>
+            <UtilizationHeatmap
+              weeks={6}
+              personIds={
+                showingAsManager
+                  ? null
+                  : focusPerson
+                    ? [focusPerson.id]
+                    : []
+              }
             />
-
-            {admin ? (
-              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold">People utilization</h2>
-                  <Link
-                    href={appHref("/reports/utilization")}
-                    className="text-xs text-[var(--accent)]"
-                  >
-                    Full report
-                  </Link>
-                </div>
-                <p className="mb-3 text-xs text-[var(--text-muted)]">
-                  Green healthy · yellow near full · red overbooked · gray
-                  unavailable
-                </p>
-                <UtilizationHeatmap weeks={6} />
-              </section>
-            ) : null}
-          </div>
-
-          <DashboardSidebar
-            identityPerson={identityPerson}
-            viewAsPerson={viewAsPerson}
-            profile={profile}
-            canManage={canManage}
-            viewAsControl={viewAsControl}
-            peopleLoad={peopleLoad}
-            approvedLeave={approvedLeave}
-            upcomingLeaveBlocks={upcomingLeaveBlocks}
-            people={leaveCalendarPeople}
-            appHref={appHref}
-            bulletin={
-              <BulletinBoard
-                bulletins={bulletins}
-                profiles={state.profiles}
-                people={sortedPeople}
-                canEdit={admin}
-                profileId={profile?.id ?? null}
-                onSave={(row) => {
-                  upsertBulletin(row);
-                  push("Bulletin saved");
-                }}
-                onDelete={(id) => {
-                  deleteBulletin(id);
-                  push("Bulletin deleted");
-                }}
-                newId={newId}
-                compact
-              />
-            }
-            projectHealth={
-              <ProjectHealthBudget
-                canManage={canManage}
-                atRisk={atRisk}
-                upcoming={upcomingDueTasks}
-                projectById={projectById}
-                appHref={appHref}
-                clients={state.clients}
-              />
-            }
-          />
+          </section>
         </div>
-      )}
+
+        <DashboardSidebar
+          identityPerson={identityPerson}
+          viewAsPerson={viewAsPerson}
+          profile={profile}
+          canManage={canManage}
+          viewAsControl={viewAsControl}
+          peopleLoad={peopleLoad}
+          approvedLeave={approvedLeave}
+          upcomingLeaveBlocks={upcomingLeaveBlocks}
+          people={leaveCalendarPeople}
+          appHref={appHref}
+          bulletin={
+            <BulletinBoard
+              bulletins={bulletins}
+              profiles={state.profiles}
+              people={sortedPeople}
+              canEdit={admin}
+              profileId={profile?.id ?? null}
+              onSave={(row) => {
+                upsertBulletin(row);
+                push("Bulletin saved");
+              }}
+              onDelete={(id) => {
+                deleteBulletin(id);
+                push("Bulletin deleted");
+              }}
+              newId={newId}
+              compact
+            />
+          }
+          projectHealth={
+            <ProjectHealthBudget
+              canManage={canManage}
+              atRisk={atRisk}
+              upcoming={upcomingDueTasks}
+              projectById={projectById}
+              appHref={appHref}
+              clients={state.clients}
+            />
+          }
+        />
+      </div>
     </PageContainer>
   );
 }

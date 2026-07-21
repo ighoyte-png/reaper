@@ -11,11 +11,22 @@ import {
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 
-export function UtilizationHeatmap({ weeks = 8 }: { weeks?: number }) {
+export function UtilizationHeatmap({
+  weeks = 8,
+  personIds,
+}: {
+  weeks?: number;
+  /** When set, only these people are shown (member / View As scoping). */
+  personIds?: string[] | null;
+}) {
   const { state } = useData();
   const anchors = Array.from({ length: weeks }, (_, i) =>
     weekStart(addWeeks(new Date(), i)),
   );
+  const people =
+    personIds && personIds.length > 0
+      ? state.people.filter((p) => personIds.includes(p.id))
+      : state.people;
 
   return (
     <div className="overflow-auto rounded-md border border-[var(--border)]">
@@ -37,7 +48,7 @@ export function UtilizationHeatmap({ weeks = 8 }: { weeks?: number }) {
           </div>
         ))}
 
-        {state.people.map((person) => (
+        {people.map((person) => (
           <div key={person.id} className="contents">
             <div className="sticky left-0 border-t border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm">
               {person.name}

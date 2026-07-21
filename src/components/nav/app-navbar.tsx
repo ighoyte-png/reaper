@@ -26,21 +26,21 @@ export function AppNavbar() {
   const router = useRouter();
   const { canManage, logout, state, myPerson } = useData();
   const { effectivePersonId } = useViewAs();
-  const { dismissed } = useDismissedMentions(effectivePersonId);
+  const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
+  const { dismissed } = useDismissedMentions(mentionPersonId);
   const { open, setOpen, toggle } = useMobileNav();
   const links = primaryNavLinks.filter((l) => canManage || !l.manageOnly);
   const settingsActive =
     pathname === "/settings" || pathname.startsWith("/settings/");
 
   const hasTaggedCommentDot = useMemo(() => {
-    const personId = effectivePersonId ?? myPerson?.id ?? null;
-    if (!personId) return false;
+    if (!mentionPersonId) return false;
     return state.task_comments.some(
       (c) =>
-        (c.mentioned_person_ids ?? []).includes(personId) &&
+        (c.mentioned_person_ids ?? []).includes(mentionPersonId) &&
         !dismissed.has(c.id),
     );
-  }, [effectivePersonId, myPerson?.id, state.task_comments, dismissed]);
+  }, [mentionPersonId, state.task_comments, dismissed]);
 
   return (
     <>
