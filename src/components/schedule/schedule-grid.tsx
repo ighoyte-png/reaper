@@ -1584,6 +1584,7 @@ export function ScheduleGrid() {
                           }}
                           title={label}
                           onPointerDown={(e) => {
+                            if (e.button !== 0) return;
                             e.stopPropagation();
                             e.preventDefault();
                             selectLeaveBlock(block);
@@ -1630,6 +1631,7 @@ export function ScheduleGrid() {
                               <span
                                 className="absolute left-0 top-0 z-20 h-full w-2 cursor-ew-resize"
                                 onPointerDown={(e) => {
+                                  if (e.button !== 0) return;
                                   e.stopPropagation();
                                   e.preventDefault();
                                   if (
@@ -1662,6 +1664,7 @@ export function ScheduleGrid() {
                               <span
                                 className="absolute right-0 top-0 z-20 h-full w-2 cursor-ew-resize"
                                 onPointerDown={(e) => {
+                                  if (e.button !== 0) return;
                                   e.stopPropagation();
                                   e.preventDefault();
                                   if (
@@ -1808,6 +1811,7 @@ export function ScheduleGrid() {
                                 }
                               }}
                               onPointerDown={(e) => {
+                                if (e.button !== 0) return;
                                 if (!canManage) return;
                                 if (leaveInBand) return;
                                 if (isCoarse || e.pointerType === "touch") {
@@ -1928,6 +1932,7 @@ export function ScheduleGrid() {
                                     : `Time off · ${hoursLabel}`
                                 }
                                 onPointerDown={(e) => {
+                                  if (e.button !== 0) return;
                                   e.stopPropagation();
                                   e.preventDefault();
                                   if (primary) selectLeaveBlock(primary);
@@ -2187,6 +2192,7 @@ export function ScheduleGrid() {
                                     }
                                   }}
                                   onPointerDown={(e) => {
+                                    if (e.button !== 0) return;
                                     if (!canManage || leave) return;
                                     if (isCoarse || e.pointerType === "touch") {
                                       return;
@@ -2272,6 +2278,7 @@ export function ScheduleGrid() {
                                         background: projectDisplayColor(project, clientsById),
                                       }}
                                       onPointerDown={(e) => {
+                                        if (e.button !== 0) return;
                                         e.stopPropagation();
                                         e.preventDefault();
                                         selectAssignment(occ.assignmentId, {
@@ -2361,6 +2368,7 @@ export function ScheduleGrid() {
                                           <span
                                             className="absolute left-0 top-0 z-20 h-full w-2 cursor-ew-resize"
                                             onPointerDown={(e) => {
+                                              if (e.button !== 0) return;
                                               e.stopPropagation();
                                               e.preventDefault();
                                               if (
@@ -2394,6 +2402,7 @@ export function ScheduleGrid() {
                                           <span
                                             className="absolute right-0 top-0 z-20 h-full w-2 cursor-ew-resize"
                                             onPointerDown={(e) => {
+                                              if (e.button !== 0) return;
                                               e.stopPropagation();
                                               e.preventDefault();
                                               if (
@@ -2507,6 +2516,7 @@ export function ScheduleGrid() {
                                         background: projectDisplayColor(project, clientsById),
                                       }}
                                       onPointerDown={(e) => {
+                                        if (e.button !== 0) return;
                                         e.stopPropagation();
                                         e.preventDefault();
                                         selectAssignment(primary.assignmentId, {

@@ -1,5 +1,11 @@
-import type { DemoState, Person } from "@/lib/types";
+import { normalizeBudgetMode } from "@/lib/domain/budget";
 import { projectTeamPersonIds } from "@/lib/domain/project-access";
+import type {
+  AssignmentStatus,
+  DemoState,
+  Person,
+  Recurrence,
+} from "@/lib/types";
 
 /** Strip cost/bill rates and emails from a public share payload. */
 export function sanitizePublicWorkspace(state: DemoState): DemoState {
@@ -17,6 +23,19 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
       }),
     ),
   };
+}
+
+/** Schedule stubs for client-facing monthly hours chart (no people/rates). */
+export interface PortalHoursRetainer {
+  budgetHours: number;
+  assignments: {
+    start_date: string;
+    end_date: string;
+    hours_per_day: number;
+    recurrence: Recurrence;
+    recurrence_end_date: string | null;
+    status: AssignmentStatus;
+  }[];
 }
 
 /** Public, read-only per-project client portal payload. */
@@ -63,6 +82,11 @@ export interface ProjectPortalPayload {
     body: string;
     sort_order: number;
   }[];
+  /**
+   * Hourly retainer (monthly reset) schedule for the budget hours chart.
+   * Null for non-retainer / non-hours projects.
+   */
+  hoursRetainer: PortalHoursRetainer | null;
 }
 
 /**
@@ -94,6 +118,28 @@ export function sanitizeProjectPortal(
       avatar_url: p.avatar_url ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+
+  const budgetMode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  const hoursRetainer: PortalHoursRetainer | null =
+    budgetMode === "hours" && project.budget_monthly_reset
+      ? {
+          budgetHours: project.budget_hours ?? 0,
+          assignments: state.assignments
+            .filter((a) => a.project_id === projectId)
+            .map((a) => ({
+              start_date: a.start_date,
+              end_date: a.end_date,
+              hours_per_day: a.hours_per_day,
+              recurrence: a.recurrence,
+              recurrence_end_date: a.recurrence_end_date,
+              status: a.status,
+            })),
+        }
+      : null;
 
   return {
     organizationName: state.organization.name,
@@ -155,5 +201,6 @@ export function sanitizeProjectPortal(
         body: a.body,
         sort_order: a.sort_order,
       })),
+    hoursRetainer,
   };
 }

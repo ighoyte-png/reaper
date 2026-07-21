@@ -240,7 +240,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--page-bg)] text-[var(--text)]">
+    <div className="flex h-dvh flex-col overflow-y-auto bg-[var(--page-bg)] text-[var(--text)]">
       <div className="flex justify-end p-4">
         <ThemeToggle />
       </div>

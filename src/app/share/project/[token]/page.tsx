@@ -3,22 +3,67 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { format, parseISO } from "date-fns";
-import { ExternalLink, Mail } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProgressBar } from "@/components/projects/progress-bar";
+import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { createDemoSeed, DEMO_STORAGE_KEY } from "@/lib/demo/seed";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   sanitizeProjectPortal,
+  type PortalHoursRetainer,
   type ProjectPortalPayload,
 } from "@/lib/share/sanitize";
 import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
+import { calendarYearBars } from "@/lib/domain/budget";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
-import type { ProjectAssetKind } from "@/lib/types";
+import type { Assignment, Project, ProjectAssetKind } from "@/lib/types";
 import { toDateKey } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { DemoState } from "@/lib/types";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
+
+function portalChartProject(
+  projectId: string,
+  budgetHours: number,
+): Project {
+  return {
+    id: projectId,
+    organization_id: "portal",
+    client_id: null,
+    name: "",
+    status: "active",
+    priority: 0,
+    color: "",
+    start_date: null,
+    end_date: null,
+    budget_hours: budgetHours,
+    budget_amount: null,
+    budget_mode: "hours",
+    budget_monthly_reset: true,
+    notes: "",
+  };
+}
+
+function portalChartAssignments(
+  projectId: string,
+  stubs: PortalHoursRetainer["assignments"],
+): Assignment[] {
+  return stubs.map((a, i) => ({
+    id: `portal-${i}`,
+    organization_id: "portal",
+    person_id: "portal",
+    project_id: projectId,
+    start_date: a.start_date,
+    end_date: a.end_date,
+    hours_per_day: a.hours_per_day,
+    allocation_pct: null,
+    status: a.status,
+    notes: "",
+    recurrence: a.recurrence,
+    recurrence_end_date: a.recurrence_end_date,
+  }));
+}
 
 function loadDemoPortal(token: string): ProjectPortalPayload | null {
   if (typeof window === "undefined") return null;
@@ -112,6 +157,7 @@ export default function ProjectSharePage() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
+  const [chartYear, setChartYear] = useState(() => new Date().getFullYear());
 
   const portalTabTitle = portal
     ? portal.clientName
@@ -119,6 +165,22 @@ export default function ProjectSharePage() {
       : portal.project.name
     : "Client portal";
   useDocumentTitle(portalTabTitle);
+
+  const yearBars =
+    portal?.hoursRetainer != null
+      ? calendarYearBars(
+          portalChartProject(
+            portal.project.id,
+            portal.hoursRetainer.budgetHours,
+          ),
+          portalChartAssignments(
+            portal.project.id,
+            portal.hoursRetainer.assignments,
+          ),
+          [],
+          new Date(chartYear, 0, 1),
+        )
+      : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -279,6 +341,38 @@ export default function ProjectSharePage() {
           }
         />
       </section>
+
+      {portal.hoursRetainer ? (
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">{chartYear} Calendar</h2>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                onClick={() => setChartYear((y) => y - 1)}
+                aria-label="Previous year"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                onClick={() => setChartYear((y) => y + 1)}
+                aria-label="Next year"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+          <ProjectYearBurnChart
+            bars={yearBars}
+            unit="hours"
+            monthlyCap={portal.hoursRetainer.budgetHours}
+            year={chartYear}
+          />
+        </section>
+      ) : null}
 
       {milestonesSorted.length > 0 ? (
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
