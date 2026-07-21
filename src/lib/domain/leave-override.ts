@@ -55,6 +55,12 @@ function cloneAssignment(
         : patch.recurrence === "weekly"
           ? (base.recurrence_end_date ?? null)
           : null,
+    recurrence_exceptions:
+      patch.recurrence_exceptions !== undefined
+        ? patch.recurrence_exceptions
+        : patch.recurrence === "weekly"
+          ? (base.recurrence_exceptions ?? [])
+          : [],
   };
 }
 
@@ -80,6 +86,7 @@ function punchNonRecurring(
       end_date: first.end,
       recurrence: "none",
       recurrence_end_date: null,
+      recurrence_exceptions: [],
     },
   ];
   for (const range of rest) {
@@ -90,6 +97,7 @@ function punchNonRecurring(
         end_date: range.end,
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
       }),
     );
   }
@@ -124,6 +132,7 @@ function punchWeekly(
         end_date: range.end,
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
       }),
     );
   }

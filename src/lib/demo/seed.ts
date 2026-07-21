@@ -324,6 +324,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "",
       },
       {
@@ -338,6 +339,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "",
       },
       {
@@ -352,6 +354,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "Overbooks Jordan this week",
       },
       {
@@ -366,6 +369,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "",
       },
       {
@@ -380,6 +384,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "Pushes Atlas over total budget",
       },
       {
@@ -394,6 +399,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "",
       },
       {
@@ -408,6 +414,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "",
       },
       {
@@ -422,6 +429,7 @@ export function createDemoSeed(): DemoState {
         status: "tentative",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "Does not burn budget",
       },
       {
@@ -436,6 +444,7 @@ export function createDemoSeed(): DemoState {
         status: "confirmed",
         recurrence: "none",
         recurrence_end_date: null,
+        recurrence_exceptions: [],
         notes: "",
       },
     ],

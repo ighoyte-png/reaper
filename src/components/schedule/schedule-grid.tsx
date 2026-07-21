@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, memo, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { format, isWeekend, parseISO } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { inputClass, Modal, DateInput } from "@/components/ui/form";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -45,7 +45,14 @@ import {
   workingDaysBetween,
 } from "@/lib/domain/dates";
 import { expandAssignmentsInRange, occurrenceCoversDay, type AssignmentOccurrence } from "@/lib/domain/recurrence";
-import { splitWeeklySeriesForInstance } from "@/lib/domain/recurrence-split";
+import { splitWeeklySeriesForInstance, withRecurrenceException } from "@/lib/domain/recurrence-split";
+import {
+  assignmentPlacementConflicts,
+  clampResizeEnd,
+  clampResizeStart,
+  clipRangeToFreeDays,
+  occupiedDaysForRow,
+} from "@/lib/domain/assignment-occupancy";
 import {
   buildScheduleColumns,
   columnOffsetPx,
@@ -91,6 +98,11 @@ const ROW_H = DAY_H + DAY_PAD_Y * 2;
 const LABEL_DESKTOP = 248;
 const LABEL_MOBILE = 136;
 
+const TENTATIVE_HATCH_STYLE: CSSProperties = {
+  backgroundImage:
+    "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--assignment-tentative-hatch) 3px, var(--assignment-tentative-hatch) 6px)",
+};
+
 const EMPTY_PROJECTS: Project[] = [];
 const EMPTY_OCCS: AssignmentOccurrence[] = [];
 const EMPTY_UTIL: PersonUtilBand[] = [];
@@ -106,7 +118,16 @@ type PersonUtilBand = {
 
 type UndoEntry =
   | { kind: "restore"; assignment: Assignment }
-  | { kind: "remove"; id: string };
+  | { kind: "remove"; id: string }
+  | {
+      kind: "leave";
+      restoreLeaves: LeaveDay[];
+      removeLeaveIds: string[];
+      /** person_id:date keys — survives id remaps from realtime. */
+      removeLeaveKeys: string[];
+      restoreAssignments: Assignment[];
+      removeAssignmentIds: string[];
+    };
 
 export function ScheduleGrid() {
   const {
@@ -114,6 +135,7 @@ export function ScheduleGrid() {
     upsertAssignment,
     deleteAssignment,
     deleteLeave,
+    applyLeaveUndo,
     setLeaveBlock,
     newId,
     canManage,
@@ -219,9 +241,14 @@ export function ScheduleGrid() {
     occurrenceStart: string;
     occurrenceEnd: string;
   } | null>(null);
+  const [deletePrompt, setDeletePrompt] = useState<{
+    assignment: Assignment;
+    occurrence: { start: string; end: string } | null;
+  } | null>(null);
   const undoStackRef = useRef<UndoEntry[]>([]);
   const applyingUndoRef = useRef(false);
   const performUndoRef = useRef(() => {});
+  const [undoDepth, setUndoDepth] = useState(0);
   const closeSidePanelRef = useRef(() => {});
   const deleteSelectedAssignmentRef = useRef(() => {});
   const assignmentsRef = useRef(state.assignments);
@@ -445,11 +472,18 @@ export function ScheduleGrid() {
   useEffect(() => {
     if (!editForm || focusHoursAfterCreateRef.current !== editForm.id) return;
     focusHoursAfterCreateRef.current = null;
+    const scrollEl = scrollRef.current;
+    const scrollLeft = scrollEl?.scrollLeft ?? 0;
+    const scrollTop = scrollEl?.scrollTop ?? 0;
     const id = window.setTimeout(() => {
       const el = hoursInputRef.current;
       if (!el) return;
-      el.focus();
+      el.focus({ preventScroll: true });
       el.select();
+      if (scrollEl) {
+        scrollEl.scrollLeft = scrollLeft;
+        scrollEl.scrollTop = scrollTop;
+      }
     }, 0);
     return () => window.clearTimeout(id);
   }, [editForm?.id]);
@@ -643,11 +677,13 @@ export function ScheduleGrid() {
     if (undoStackRef.current.length > 50) {
       undoStackRef.current.shift();
     }
+    setUndoDepth(undoStackRef.current.length);
   }
 
   function performUndo() {
     if (!canManage) return;
     const entry = undoStackRef.current.pop();
+    setUndoDepth(undoStackRef.current.length);
     if (!entry) {
       push("Nothing to undo");
       return;
@@ -657,9 +693,33 @@ export function ScheduleGrid() {
       deleteAssignment(entry.id);
       setSelectedId((id) => (id === entry.id ? null : id));
       setEditForm((f) => (f?.id === entry.id ? null : f));
-    } else {
+    } else if (entry.kind === "restore") {
       upsertAssignment(entry.assignment);
       setSelectedId(entry.assignment.id);
+    } else {
+      applyLeaveUndo({
+        restoreLeaves: entry.restoreLeaves,
+        removeLeaveIds: entry.removeLeaveIds,
+        removeLeaveKeys: entry.removeLeaveKeys,
+        restoreAssignments: entry.restoreAssignments,
+        removeAssignmentIds: entry.removeAssignmentIds,
+      });
+      assignmentsRef.current = (() => {
+        let next = assignmentsRef.current.filter(
+          (a) => !entry.removeAssignmentIds.includes(a.id),
+        );
+        for (const assignment of entry.restoreAssignments) {
+          const exists = next.some((a) => a.id === assignment.id);
+          next = exists
+            ? next.map((a) => (a.id === assignment.id ? assignment : a))
+            : [...next, assignment];
+        }
+        return next;
+      })();
+      setSelectedLeaveBlockId(null);
+      setLeaveEditForm(null);
+      setSelectedId(null);
+      setEditForm(null);
     }
     applyingUndoRef.current = false;
     push("Undone");
@@ -693,8 +753,90 @@ export function ScheduleGrid() {
     assignmentsRef.current = assignmentsRef.current.filter((a) => a.id !== id);
   }
 
+  function trackedSetLeaveBlock(args: {
+    personId: string;
+    startDate: string;
+    endDate: string;
+    kind: LeaveKind;
+    hours_per_day: number | null;
+    notes: string;
+    previousDayIds?: string[];
+  }): LeaveDay[] {
+    const previousDayIds = args.previousDayIds ?? [];
+    const rangeStart =
+      args.startDate <= args.endDate ? args.startDate : args.endDate;
+    const rangeEnd =
+      args.startDate <= args.endDate ? args.endDate : args.startDate;
+    const dates = workingDaysBetween(rangeStart, rangeEnd);
+    const dateSet = new Set(dates);
+    const prevIdSet = new Set(previousDayIds);
+    const restoreLeaves = state.leave_days
+      .filter(
+        (l) =>
+          l.person_id === args.personId &&
+          (prevIdSet.has(l.id) || dateSet.has(l.date)),
+      )
+      .map((l) => ({ ...l }));
+    const beforeAsgById = new Map(
+      state.assignments.map((a) => [a.id, { ...a }]),
+    );
+
+    const result = setLeaveBlock(args);
+
+    const removeAssignmentIds = result.asgUpserts
+      .filter((a) => !beforeAsgById.has(a.id))
+      .map((a) => a.id);
+    const restoreAssignments: Assignment[] = [];
+    for (const id of result.asgDeletes) {
+      const prev = beforeAsgById.get(id);
+      if (prev) restoreAssignments.push(prev);
+    }
+    for (const a of result.asgUpserts) {
+      const prev = beforeAsgById.get(a.id);
+      if (prev) restoreAssignments.push(prev);
+    }
+
+    pushUndo({
+      kind: "leave",
+      restoreLeaves,
+      removeLeaveIds: result.rows.map((r) => r.id),
+      removeLeaveKeys: result.rows.map((r) => `${r.person_id}:${r.date}`),
+      restoreAssignments,
+      removeAssignmentIds,
+    });
+
+    if (result.asgUpserts.length > 0 || result.asgDeletes.length > 0) {
+      assignmentsRef.current = (() => {
+        let next = assignmentsRef.current.filter(
+          (a) => !result.asgDeletes.includes(a.id),
+        );
+        for (const a of result.asgUpserts) {
+          const exists = next.some((x) => x.id === a.id);
+          next = exists
+            ? next.map((x) => (x.id === a.id ? a : x))
+            : [...next, a];
+        }
+        return next;
+      })();
+    }
+
+    return result.rows;
+  }
+
   function deleteSelectedAssignment() {
     if (!canManage || !editForm) return;
+    const before = state.assignments.find((a) => a.id === editForm.id);
+    if (
+      before &&
+      (before.recurrence ?? "none") === "weekly" &&
+      selectedOccurrence
+    ) {
+      setDeletePrompt({
+        assignment: before,
+        occurrence: selectedOccurrence,
+      });
+      return;
+    }
     trackedDelete(editForm.id);
     selectAssignment(null);
     setEditForm(null);
@@ -702,6 +844,30 @@ export function ScheduleGrid() {
     push("Assignment deleted");
   }
   deleteSelectedAssignmentRef.current = deleteSelectedAssignment;
+
+  function applyDeleteChoice(scope: "occurrence" | "series") {
+    const pending = deletePrompt;
+    if (!pending) return;
+    setDeletePrompt(null);
+    if (scope === "occurrence" && pending.occurrence) {
+      commitAssignment(
+        withRecurrenceException(
+          pending.assignment,
+          pending.occurrence.start,
+        ),
+        "Occurrence removed from series",
+      );
+      selectAssignment(null);
+      setEditForm(null);
+      setMobilePanelOpen(false);
+      return;
+    }
+    trackedDelete(pending.assignment.id);
+    selectAssignment(null);
+    setEditForm(null);
+    setMobilePanelOpen(false);
+    push("Assignment deleted");
+  }
 
   function selectAssignment(
     id: string | null,
@@ -729,7 +895,7 @@ export function ScheduleGrid() {
       commitAssignment(pending.after, "Assignment saved");
       return;
     }
-    // Revert series then split around occurrence
+    // Revert live edits, then detach this week (exception) + one-off instance.
     upsertAssignment(pending.before);
     assignmentsRef.current = assignmentsRef.current.map((a) =>
       a.id === pending.before.id ? pending.before : a,
@@ -889,19 +1055,33 @@ export function ScheduleGrid() {
     if (!canManage) return;
     const startDate = start <= end ? start : end;
     const endDate = start <= end ? end : start;
+    const origin = startDate;
+    const clipped = clipRangeToFreeDays(
+      personId,
+      projectId,
+      origin,
+      startDate,
+      endDate,
+      state.assignments,
+    );
+    if (!clipped) {
+      push("That day is already booked", "warning");
+      return;
+    }
     const row: Assignment = {
       id: newId("asg"),
       organization_id: state.organization.id,
       person_id: personId,
       project_id: projectId,
-      start_date: startDate,
-      end_date: endDate,
+      start_date: clipped.start,
+      end_date: clipped.end,
       hours_per_day: 4,
       allocation_pct: 50,
       status: "confirmed",
       notes: "",
       recurrence: "none",
       recurrence_end_date: null,
+      recurrence_exceptions: [],
     };
     trackedUpsert(
       row,
@@ -959,7 +1139,7 @@ export function ScheduleGrid() {
     // New paints default to Partial Day — keep other assignments intact.
     const defaultHours = 4;
     const kind: LeaveKind = "vacation";
-    const rows = setLeaveBlock({
+    const rows = trackedSetLeaveBlock({
       personId,
       startDate,
       endDate,
@@ -1010,7 +1190,7 @@ export function ScheduleGrid() {
       leaveEditForm.start_date <= leaveEditForm.end_date
         ? leaveEditForm.end_date
         : leaveEditForm.start_date;
-    const rows = setLeaveBlock({
+    const rows = trackedSetLeaveBlock({
       personId: leaveEditForm.person_id,
       startDate,
       endDate,
@@ -1080,7 +1260,7 @@ export function ScheduleGrid() {
       const snap = leaveDragSnapshot.current;
       leaveDragSnapshot.current = null;
       if (snap.dirty) {
-        const rows = setLeaveBlock({
+        const rows = trackedSetLeaveBlock({
           personId: snap.personId,
           startDate: snap.currentStart,
           endDate: snap.currentEnd,
@@ -1332,20 +1512,33 @@ export function ScheduleGrid() {
                   ))}
                 </select>
                 {canManage ? (
-                  <button
-                    type="button"
-                    className={cn(
-                      "inline-flex h-8 w-8 items-center justify-center rounded-md border",
-                      sliceMode
-                        ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
-                        : "border-[var(--border)] text-[var(--text-muted)]",
-                    )}
-                    onClick={() => setSliceMode((v) => !v)}
-                    title="Slice: click a day on a multi-day block to split it"
-                    aria-label="Slice"
-                  >
-                    <Scissors size={14} />
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={cn(
+                        "inline-flex h-8 w-8 items-center justify-center rounded-md border",
+                        sliceMode
+                          ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+                          : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                      )}
+                      onClick={() => setSliceMode((v) => !v)}
+                      title="Slice: click a day on a multi-day block to split it"
+                      aria-label="Slice"
+                      aria-pressed={sliceMode}
+                    >
+                      <Scissors size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+                      onClick={() => performUndo()}
+                      disabled={undoDepth === 0}
+                      title="Undo (Ctrl+Z)"
+                      aria-label="Undo"
+                    >
+                      <Undo2 size={14} />
+                    </button>
+                  </>
                 ) : null}
               </>
             )}
@@ -1517,6 +1710,13 @@ export function ScheduleGrid() {
                   ? selectedOccurrence
                   : null;
 
+              const personLeaveDays = state.leave_days.filter(
+                (l) => l.person_id === person.id,
+              );
+              const leaveSignature = personLeaveDays
+                .map((l) => `${l.id}:${l.date}:${l.kind}:${l.hours_per_day ?? ""}`)
+                .join("|");
+
               return (
                 <PersonScheduleSection
                   key={person.id}
@@ -1526,6 +1726,7 @@ export function ScheduleGrid() {
                   personProjects={personProjects}
                   utilBands={utilBands}
                   personOccs={personOccs}
+                  leaveSignature={leaveSignature}
                   labelPx={LABEL_PX}
                   zoom={zoom}
                   canManage={canManage}
@@ -2122,17 +2323,29 @@ export function ScheduleGrid() {
                                 draft.personId === person.id &&
                                 draft.projectId === project.id
                               ) {
-                                setDraft({
-                                  ...draft,
-                                  start:
-                                    col.startKey < draft.originStart
-                                      ? col.startKey
-                                      : draft.originStart,
-                                  end:
-                                    col.endKey > draft.originEnd
-                                      ? col.endKey
-                                      : draft.originEnd,
-                                });
+                                const rawStart =
+                                  col.startKey < draft.originStart
+                                    ? col.startKey
+                                    : draft.originStart;
+                                const rawEnd =
+                                  col.endKey > draft.originEnd
+                                    ? col.endKey
+                                    : draft.originEnd;
+                                const clipped = clipRangeToFreeDays(
+                                  person.id,
+                                  project.id,
+                                  draft.originStart,
+                                  rawStart,
+                                  rawEnd,
+                                  state.assignments,
+                                );
+                                if (clipped) {
+                                  setDraft({
+                                    ...draft,
+                                    start: clipped.start,
+                                    end: clipped.end,
+                                  });
+                                }
                               }
                               const snap = dragSnapshot.current;
                               if (!snap || !canManage) return;
@@ -2147,10 +2360,18 @@ export function ScheduleGrid() {
                               }
                               if (snap.mode === "resize-end") {
                                 const minEnd = snap.before.start_date;
-                                const end =
+                                const desiredEnd =
                                   col.endKey >= minEnd
                                     ? col.endKey
                                     : minEnd;
+                                const end = clampResizeEnd(
+                                  current.person_id,
+                                  current.project_id,
+                                  snap.before.start_date,
+                                  desiredEnd,
+                                  state.assignments,
+                                  snap.id,
+                                );
                                 if (end !== current.end_date) {
                                   snap.dirty = true;
                                   upsertAssignment({
@@ -2160,10 +2381,18 @@ export function ScheduleGrid() {
                                 }
                               } else if (snap.mode === "resize-start") {
                                 const maxStart = snap.before.end_date;
-                                const start =
+                                const desiredStart =
                                   col.startKey <= maxStart
                                     ? col.startKey
                                     : maxStart;
+                                const start = clampResizeStart(
+                                  current.person_id,
+                                  current.project_id,
+                                  desiredStart,
+                                  snap.before.end_date,
+                                  state.assignments,
+                                  snap.id,
+                                );
                                 if (start !== current.start_date) {
                                   snap.dirty = true;
                                   upsertAssignment({
@@ -2173,17 +2402,16 @@ export function ScheduleGrid() {
                                 }
                               } else {
                                 const hoverKey = col.startKey;
-                                const delta = workingDayDelta(
+                                const desiredDelta = workingDayDelta(
                                   snap.grabDateKey,
                                   hoverKey,
                                 );
-                                const start = shiftWorkingDays(
-                                  snap.before.start_date,
-                                  delta,
-                                );
-                                const end = shiftWorkingDays(
-                                  snap.before.end_date,
-                                  delta,
+                                const { start, end } = resolveMovePlacement(
+                                  snap.before,
+                                  desiredDelta,
+                                  state.assignments,
+                                  startKey,
+                                  endKey,
                                 );
                                 if (
                                   start !== current.start_date ||
@@ -2214,6 +2442,20 @@ export function ScheduleGrid() {
                                       state.leave_days,
                                     ) <= 0;
                               if (!canManage || leaveBlocked) return;
+                              const occupied = occupiedDaysForRow(
+                                person.id,
+                                project.id,
+                                col.startKey,
+                                col.endKey,
+                                state.assignments,
+                              );
+                              const paintDays = workingDaysBetween(
+                                col.startKey,
+                                col.endKey,
+                              );
+                              const originDay =
+                                paintDays.find((d) => !occupied.has(d)) ?? null;
+                              if (!originDay) return;
                               if (isCoarse || e.pointerType === "touch") {
                                 return;
                               }
@@ -2224,10 +2466,10 @@ export function ScheduleGrid() {
                               setDraft({
                                 personId: person.id,
                                 projectId: project.id,
-                                start: col.startKey,
-                                end: col.endKey,
-                                originStart: col.startKey,
-                                originEnd: col.endKey,
+                                start: originDay,
+                                end: originDay,
+                                originStart: originDay,
+                                originEnd: originDay,
                               });
                             }}
                             onColumnClick={(col) => {
@@ -2294,14 +2536,12 @@ export function ScheduleGrid() {
                                       key={`${occ.assignmentId}-${occ.weekOffset}`}
                                       data-schedule-block
                                       className={cn(
-                                        "absolute z-10 flex items-center rounded px-1 text-[10px] font-medium leading-none text-white",
+                                        "absolute z-10 flex items-center overflow-hidden rounded px-1 text-[10px] font-medium leading-none text-white",
                                         canManage &&
                                           (sliceMode
                                             ? "cursor-crosshair"
                                             : "cursor-grab"),
                                         gridDragging && "pointer-events-none",
-                                        occ.status === "tentative" &&
-                                          "border border-dashed border-white/60 opacity-80",
                                         isSelected &&
                                           "ring-2 ring-[var(--accent)] ring-offset-1 ring-offset-[var(--bg)]",
                                       )}
@@ -2367,9 +2607,16 @@ export function ScheduleGrid() {
                                         };
                                         setGridDragging(true);
                                       }}
-                                      title={`${project.name} · ${hoursLabel}${occ.recurrence === "weekly" ? " · weekly" : ""}`}
+                                      title={`${project.name} · ${hoursLabel}${occ.recurrence === "weekly" ? " · weekly" : ""}${occ.status === "tentative" ? " · tentative" : ""}`}
                                     >
-                                      <span className="truncate">
+                                      {occ.status === "tentative" ? (
+                                        <span
+                                          className="pointer-events-none absolute inset-0 z-0"
+                                          style={TENTATIVE_HATCH_STYLE}
+                                          aria-hidden
+                                        />
+                                      ) : null}
+                                      <span className="relative z-[1] truncate">
                                         {spanDays.length > 1
                                           ? `${formatHours(occ.hours_per_day)}/d · ${formatHours(totalHours)}`
                                           : formatHours(occ.hours_per_day)}
@@ -2382,7 +2629,7 @@ export function ScheduleGrid() {
                                           content={
                                             <RichNotesHtml html={occ.notes!} />
                                           }
-                                          className="ml-0.5 inline-flex shrink-0"
+                                          className="relative z-[1] ml-0.5 inline-flex shrink-0"
                                         >
                                           <span
                                             className="inline-flex cursor-default text-white/95"
@@ -2552,14 +2799,12 @@ export function ScheduleGrid() {
                                       key={`${project.id}-${col.id}-agg`}
                                       data-schedule-block
                                       className={cn(
-                                        "absolute z-10 flex items-center rounded px-1 text-[10px] font-medium leading-none text-white",
+                                        "absolute z-10 flex items-center overflow-hidden rounded px-1 text-[10px] font-medium leading-none text-white",
                                         canManage &&
                                           (sliceMode
                                             ? "cursor-crosshair"
                                             : "cursor-pointer"),
                                         gridDragging && "pointer-events-none",
-                                        tentative &&
-                                          "border border-dashed border-white/60 opacity-80",
                                         isSelected &&
                                           "ring-2 ring-[var(--accent)] ring-offset-1 ring-offset-[var(--bg)]",
                                       )}
@@ -2601,9 +2846,16 @@ export function ScheduleGrid() {
                                         };
                                         setGridDragging(true);
                                       }}
-                                      title={`${project.name} · ${hoursLabel}${overlapping.length > 1 ? ` · ${overlapping.length} blocks` : ""}${hasWeekly ? " · weekly" : ""}`}
+                                      title={`${project.name} · ${hoursLabel}${overlapping.length > 1 ? ` · ${overlapping.length} blocks` : ""}${hasWeekly ? " · weekly" : ""}${tentative ? " · tentative" : ""}`}
                                     >
-                                      <span className="truncate">
+                                      {tentative ? (
+                                        <span
+                                          className="pointer-events-none absolute inset-0 z-0"
+                                          style={TENTATIVE_HATCH_STYLE}
+                                          aria-hidden
+                                        />
+                                      ) : null}
+                                      <span className="relative z-[1] truncate">
                                         {hoursLabel}
                                         {hasWeekly ? " ↻" : ""}
                                       </span>
@@ -2619,7 +2871,7 @@ export function ScheduleGrid() {
                                               ))}
                                             </span>
                                           }
-                                          className="ml-0.5 inline-flex shrink-0"
+                                          className="relative z-[1] ml-0.5 inline-flex shrink-0"
                                         >
                                           <span
                                             className="inline-flex cursor-default text-white/95"
@@ -2830,6 +3082,17 @@ export function ScheduleGrid() {
               type="button"
               className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)]"
               onClick={() => {
+                const restoreLeaves = state.leave_days
+                  .filter((l) => leaveEditForm.dayIds.includes(l.id))
+                  .map((l) => ({ ...l }));
+                pushUndo({
+                  kind: "leave",
+                  restoreLeaves,
+                  removeLeaveIds: [],
+                  removeLeaveKeys: [],
+                  restoreAssignments: [],
+                  removeAssignmentIds: [],
+                });
                 for (const id of leaveEditForm.dayIds) {
                   deleteLeave(id);
                 }
@@ -2927,6 +3190,9 @@ export function ScheduleGrid() {
                     recurrence_end_date: e.target.checked
                       ? editForm.recurrence_end_date
                       : null,
+                    recurrence_exceptions: e.target.checked
+                      ? (editForm.recurrence_exceptions ?? [])
+                      : [],
                   })
                 }
               />
@@ -3287,7 +3553,7 @@ export function ScheduleGrid() {
         >
           <p className="mb-4 text-sm text-[var(--text-muted)]">
             This is part of a weekly series. Apply your change to this instance
-            only, or to the entire series?
+            only (other weeks stay in the same series), or to the entire series?
           </p>
           <div className="flex flex-col gap-2">
             <button
@@ -3314,6 +3580,40 @@ export function ScheduleGrid() {
           </div>
         </Modal>
       ) : null}
+      {deletePrompt ? (
+        <Modal
+          title="Delete recurring assignment"
+          onClose={() => setDeletePrompt(null)}
+        >
+          <p className="mb-4 text-sm text-[var(--text-muted)]">
+            Remove only this week from the series, or delete the entire weekly
+            series?
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              className="h-9 cursor-pointer rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)]"
+              onClick={() => applyDeleteChoice("occurrence")}
+            >
+              Remove this occurrence
+            </button>
+            <button
+              type="button"
+              className="h-9 cursor-pointer rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+              onClick={() => applyDeleteChoice("series")}
+            >
+              Delete entire series
+            </button>
+            <button
+              type="button"
+              className="h-9 cursor-pointer text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+              onClick={() => setDeletePrompt(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }
@@ -3331,6 +3631,7 @@ function personSectionPropsEqual(
     prev.personProjects === next.personProjects &&
     prev.utilBands === next.utilBands &&
     prev.personOccs === next.personOccs &&
+    prev.leaveSignature === next.leaveSignature &&
     prev.labelPx === next.labelPx &&
     prev.zoom === next.zoom &&
     prev.canManage === next.canManage &&
@@ -3373,6 +3674,8 @@ type PersonScheduleSectionProps = {
   personProjects: Project[];
   utilBands: PersonUtilBand[];
   personOccs: AssignmentOccurrence[];
+  /** Changes when this person's leave rows change — busts memo so blocks clear on undo. */
+  leaveSignature: string;
   labelPx: number;
   zoom: ScheduleZoom;
   canManage: boolean;
@@ -3870,4 +4173,48 @@ function workingDayDelta(fromKey: string, toKey: string): number {
     return workingDaysBetween(fromKey, toKey).length - 1;
   }
   return -(workingDaysBetween(toKey, fromKey).length - 1);
+}
+
+/**
+ * Move an assignment by the desired working-day delta, skipping further in the
+ * drag direction when the landing span would overlap another block on the row.
+ */
+function resolveMovePlacement(
+  before: Assignment,
+  desiredDelta: number,
+  assignments: Assignment[],
+  viewStart: string,
+  viewEnd: string,
+): { start: string; end: string } {
+  const dir = desiredDelta === 0 ? 0 : desiredDelta > 0 ? 1 : -1;
+  let delta = desiredDelta;
+  for (let step = 0; step < 400; step++) {
+    const start = shiftWorkingDays(before.start_date, delta);
+    const end = shiftWorkingDays(before.end_date, delta);
+    const candidate: Assignment = {
+      ...before,
+      start_date: start,
+      end_date: end,
+    };
+    const checkStart = start < viewStart ? start : viewStart;
+    const checkEnd = end > viewEnd ? end : viewEnd;
+    // Pad so weekly series collisions just outside the viewport still count.
+    const padStart = shiftWorkingDays(checkStart, -20);
+    const padEnd = shiftWorkingDays(checkEnd, 60);
+    if (
+      !assignmentPlacementConflicts(
+        candidate,
+        assignments,
+        padStart,
+        padEnd,
+      )
+    ) {
+      return { start, end };
+    }
+    if (dir === 0) {
+      return { start: before.start_date, end: before.end_date };
+    }
+    delta += dir;
+  }
+  return { start: before.start_date, end: before.end_date };
 }

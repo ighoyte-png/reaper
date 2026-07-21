@@ -332,8 +332,20 @@ interface DataContextValue {
     notes: string;
     /** Days that belonged to the block before this edit (may be shrunk). */
     previousDayIds?: string[];
-  }) => LeaveDay[];
+  }) => {
+    rows: LeaveDay[];
+    asgUpserts: Assignment[];
+    asgDeletes: string[];
+  };
   deleteLeave: (id: string) => void;
+  /** Undo a leave mutation without re-running full-day assignment punches. */
+  applyLeaveUndo: (args: {
+    restoreLeaves: LeaveDay[];
+    removeLeaveIds: string[];
+    removeLeaveKeys?: string[];
+    restoreAssignments: Assignment[];
+    removeAssignmentIds: string[];
+  }) => void;
   upsertHolidayCalendar: (
     calendar: Omit<HolidayCalendar, "organization_id"> & {
       organization_id?: string;
@@ -439,6 +451,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   /** Recently written row ids — ignore realtime echoes of our own optimistic writes. */
   const localWritesRef = useRef<Map<string, number>>(new Map());
   const LOCAL_WRITE_TTL_MS = 3000;
+  /**
+   * Bumped on every leave mutation so an in-flight create upsert cannot
+   * resurrect rows after a newer undo/delete.
+   */
+  const leaveWriteEpochRef = useRef(0);
 
   const noteLocalWrite = useCallback((table: string, id: string) => {
     if (!id) return;
@@ -1168,6 +1185,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const row = {
           ...withOrg(assignment),
           recurrence: assignment.recurrence ?? "none",
+          recurrence_exceptions: assignment.recurrence_exceptions ?? [],
         } as Assignment;
         patch((prev) => {
           const exists = prev.assignments.some((a) => a.id === row.id);
@@ -1405,6 +1423,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const leaveDeleteIds = [...payload.leaveDeleteIds];
           const asgDeletes = [...payload.asgDeletes];
           const asgUpserts = [...payload.asgUpserts];
+          const epoch = ++leaveWriteEpochRef.current;
           for (const id of leaveDeleteIds) noteLocalWrite("leave_days", id);
           for (const l of leavesToWrite) noteLocalWrite("leave_days", l.id);
           for (const id of asgDeletes) noteLocalWrite("assignments", id);
@@ -1414,7 +1433,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
               await deleteLeaveRow(client, id);
             }
             for (const l of leavesToWrite) {
+              if (leaveWriteEpochRef.current !== epoch) break;
               await upsertLeaveRow(client, l);
+            }
+            // Create/edit was superseded (e.g. undo) — remove what we upserted.
+            if (leaveWriteEpochRef.current !== epoch) {
+              for (const l of leavesToWrite) {
+                noteLocalWrite("leave_days", l.id);
+                await deleteLeaveRow(client, l.id);
+              }
+              return;
             }
             for (const id of asgDeletes) {
               await deleteAssignmentRow(client, id);
@@ -1427,9 +1455,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           });
         }
 
-        return payload.rows;
+        return {
+          rows: payload.rows,
+          asgUpserts: payload.asgUpserts,
+          asgDeletes: payload.asgDeletes,
+        };
       },
       deleteLeave: (id) => {
+        leaveWriteEpochRef.current += 1;
         patch((prev) => ({
           ...prev,
           leave_days: prev.leave_days.filter((l) => l.id !== id),
@@ -1437,6 +1470,85 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("leave_days", id);
           runRemoteSoft(() => deleteLeaveRow(supabaseRef.current!, id));
+        }
+      },
+      applyLeaveUndo: ({
+        restoreLeaves,
+        removeLeaveIds,
+        removeLeaveKeys = [],
+        restoreAssignments,
+        removeAssignmentIds,
+      }) => {
+        const removeLeaveSet = new Set(removeLeaveIds);
+        const removeKeySet = new Set(removeLeaveKeys);
+        const removeAsgSet = new Set(removeAssignmentIds);
+        const epoch = ++leaveWriteEpochRef.current;
+        patch((prev) => {
+          let leave_days = prev.leave_days.filter(
+            (l) =>
+              !removeLeaveSet.has(l.id) &&
+              !removeKeySet.has(`${l.person_id}:${l.date}`),
+          );
+          for (const leave of restoreLeaves) {
+            const row = { ...leave };
+            const idx = leave_days.findIndex((l) => l.id === row.id);
+            if (idx >= 0) leave_days[idx] = row;
+            else leave_days.push(row);
+            leave_days = leave_days.filter(
+              (l) =>
+                l.id === row.id ||
+                !(l.person_id === row.person_id && l.date === row.date),
+            );
+          }
+
+          let assignments = prev.assignments.filter(
+            (a) => !removeAsgSet.has(a.id),
+          );
+          for (const assignment of restoreAssignments) {
+            const idx = assignments.findIndex((a) => a.id === assignment.id);
+            if (idx >= 0) assignments[idx] = assignment;
+            else assignments.push(assignment);
+          }
+
+          return { ...prev, leave_days, assignments };
+        });
+
+        if (mode === "supabase" && supabaseRef.current) {
+          const client = supabaseRef.current;
+          // Resolve current ids for person+date keys in case realtime remapped them.
+          const idsToDelete = new Set(removeLeaveIds);
+          for (const key of removeLeaveKeys) {
+            const [personId, date] = key.split(":");
+            for (const l of state.leave_days) {
+              if (l.person_id === personId && l.date === date) {
+                idsToDelete.add(l.id);
+              }
+            }
+          }
+          for (const id of idsToDelete) noteLocalWrite("leave_days", id);
+          for (const l of restoreLeaves) noteLocalWrite("leave_days", l.id);
+          for (const id of removeAssignmentIds)
+            noteLocalWrite("assignments", id);
+          for (const a of restoreAssignments)
+            noteLocalWrite("assignments", a.id);
+          runRemoteSoft(async () => {
+            for (const id of idsToDelete) {
+              await deleteLeaveRow(client, id);
+            }
+            if (leaveWriteEpochRef.current !== epoch) return;
+            for (const l of restoreLeaves) {
+              if (leaveWriteEpochRef.current !== epoch) return;
+              await upsertLeaveRow(client, l);
+            }
+            for (const id of removeAssignmentIds) {
+              await deleteAssignmentRow(client, id);
+            }
+            for (const a of restoreAssignments) {
+              if (!removeAssignmentIds.includes(a.id)) {
+                await upsertAssignmentRow(client, withOrg(a) as Assignment);
+              }
+            }
+          });
         }
       },
       upsertHolidayCalendar: (calendar) => {

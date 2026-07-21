@@ -34,6 +34,7 @@ export interface PortalHoursRetainer {
     hours_per_day: number;
     recurrence: Recurrence;
     recurrence_end_date: string | null;
+    recurrence_exceptions: string[];
     status: AssignmentStatus;
   }[];
 }
@@ -136,6 +137,7 @@ export function sanitizeProjectPortal(
               hours_per_day: a.hours_per_day,
               recurrence: a.recurrence,
               recurrence_end_date: a.recurrence_end_date,
+              recurrence_exceptions: a.recurrence_exceptions ?? [],
               status: a.status,
             })),
         }

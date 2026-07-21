@@ -62,6 +62,7 @@ function portalChartAssignments(
     notes: "",
     recurrence: a.recurrence,
     recurrence_end_date: a.recurrence_end_date,
+    recurrence_exceptions: a.recurrence_exceptions ?? [],
   }));
 }
 

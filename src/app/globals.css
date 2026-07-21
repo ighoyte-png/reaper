@@ -39,6 +39,8 @@
   --task-complete-bg: color-mix(in srgb, #6b7280 18%, var(--bg));
   --task-complete-fg: #6b7280;
   --progress-approved-hatch: rgba(0, 0, 0, 0.22);
+  /* Diagonal hash over tentative schedule blocks (reads on project colors) */
+  --assignment-tentative-hatch: rgba(255, 255, 255, 0.38);
 }
 
 .dark {
@@ -76,6 +78,7 @@
   --task-complete-bg: color-mix(in srgb, #9ca3af 22%, var(--bg));
   --task-complete-fg: #9ca3af;
   --progress-approved-hatch: rgba(255, 255, 255, 0.28);
+  --assignment-tentative-hatch: rgba(255, 255, 255, 0.28);
 }
 
 @theme inline {

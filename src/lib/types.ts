@@ -240,6 +240,11 @@ export interface Assignment {
   recurrence: Recurrence;
   /** Inclusive end of weekly series; null = indefinite (budget uses 52 weeks). */
   recurrence_end_date: string | null;
+  /**
+   * Week-start (Monday) date keys excluded from expansion. Lets one week be
+   * removed or detached without splitting the series into multiple rows.
+   */
+  recurrence_exceptions: string[];
 }
 
 /** Explicit project team roster (may also appear via schedule/tasks). */

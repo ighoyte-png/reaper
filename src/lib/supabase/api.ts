@@ -268,6 +268,9 @@ export function mapAssignment(row: Record<string, unknown>): Assignment {
     recurrence_end_date: row.recurrence_end_date
       ? String(row.recurrence_end_date)
       : null,
+    recurrence_exceptions: Array.isArray(row.recurrence_exceptions)
+      ? (row.recurrence_exceptions as unknown[]).map(String)
+      : [],
   };
 }
 
@@ -936,6 +939,7 @@ export async function upsertAssignmentRow(
     notes: assignment.notes,
     recurrence: assignment.recurrence ?? "none",
     recurrence_end_date: assignment.recurrence_end_date,
+    recurrence_exceptions: assignment.recurrence_exceptions ?? [],
   });
   if (error) throw error;
 }
@@ -1758,6 +1762,7 @@ export async function seedDemoWorkspace(
     notes: a.notes,
     recurrence: a.recurrence ?? "none",
     recurrence_end_date: a.recurrence_end_date ?? null,
+    recurrence_exceptions: a.recurrence_exceptions ?? [],
   }));
 
   const leaveDays = seed.leave_days.map((l) => ({

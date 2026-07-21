@@ -63,6 +63,7 @@ export function expandAssignmentInRange(
   const viewWeekStart = weekStart(rangeStart);
   const viewWeekEnd = weekStart(rangeEnd);
   const seriesEndKey = assignment.recurrence_end_date ?? null;
+  const exceptions = new Set(assignment.recurrence_exceptions ?? []);
 
   const firstOffset = Math.max(
     0,
@@ -90,6 +91,8 @@ export function expandAssignmentInRange(
     const startKey = toDateKey(start);
     const endKey = toDateKey(end);
     if (seriesEndKey && startKey > seriesEndKey) break;
+    const weekKey = toDateKey(weekStart(start));
+    if (exceptions.has(weekKey)) continue;
     if (endKey < rangeStartKey || startKey > rangeEndKey) continue;
     out.push({
       assignmentId: assignment.id,
@@ -127,6 +130,25 @@ function weeksInSeries(assignment: Assignment): number {
   return Math.max(1, Math.min(RECURRENCE_BUDGET_WEEKS, weeks));
 }
 
+function exceptionWeeksInSeries(assignment: Assignment): number {
+  const exceptions = assignment.recurrence_exceptions ?? [];
+  if (exceptions.length === 0) return 0;
+  const templateWeek = weekStart(parseISO(assignment.start_date));
+  const maxOffset = weeksInSeries(assignment) - 1;
+  const seriesEndKey = assignment.recurrence_end_date;
+  let count = 0;
+  for (const key of exceptions) {
+    const week = weekStart(parseISO(key));
+    const offset = differenceInCalendarWeeks(week, templateWeek, {
+      weekStartsOn: 1,
+    });
+    if (offset < 0 || offset > maxOffset) continue;
+    if (seriesEndKey && key > seriesEndKey) continue;
+    count += 1;
+  }
+  return count;
+}
+
 /** Hours for budget: non-recurring as stored; weekly counted through end or 52 weeks. */
 export function assignmentHoursWithRecurrence(assignment: Assignment): number {
   const recurrence = assignment.recurrence ?? "none";
@@ -134,7 +156,11 @@ export function assignmentHoursWithRecurrence(assignment: Assignment): number {
     workingDaysBetween(assignment.start_date, assignment.end_date).length *
     assignment.hours_per_day;
   if (recurrence !== "weekly") return one;
-  return one * weeksInSeries(assignment);
+  const weeks = Math.max(
+    0,
+    weeksInSeries(assignment) - exceptionWeeksInSeries(assignment),
+  );
+  return one * weeks;
 }
 
 export function occurrenceCoversDay(
