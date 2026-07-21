@@ -149,7 +149,7 @@ export default function ReportsPage() {
         if (health === "healthy") healthy += 1;
         else if (health === "near") near += 1;
         else if (health === "over") over += 1;
-        return { name: p.name, pct: burn.pct, health };
+        return { id: p.id, name: p.name, pct: burn.pct, health };
       })
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 5);
@@ -335,7 +335,7 @@ function BudgetsOverview({
     healthy: number;
     near: number;
     over: number;
-    top: { name: string; pct: number; health: string }[];
+    top: { id: string; name: string; pct: number; health: string }[];
   };
 }) {
   return (
@@ -352,7 +352,7 @@ function BudgetsOverview({
       {data.top.length > 0 ? (
         <div className="space-y-1.5">
           {data.top.map((row) => (
-            <div key={row.name} className="space-y-0.5">
+            <div key={row.id} className="space-y-0.5">
               <div className="flex justify-between gap-2 text-[11px]">
                 <span className="truncate text-[var(--text-muted)]">
                   {row.name}
