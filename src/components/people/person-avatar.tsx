@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 
 function personInitials(name: string): string {
@@ -27,27 +28,35 @@ export function PersonAvatar({
   name,
   className,
   size = "md",
-  fallback = "hidden",
+  fallback = "initials",
   title,
 }: {
   avatarUrl: string | null | undefined;
   name?: string;
   className?: string;
   size?: keyof typeof SIZE_CLASS;
-  /** hidden = render nothing without a photo (dashboard/portal). initials = letter fallback. */
+  /** initials = letter circle when no photo (default). hidden = render nothing. */
   fallback?: "hidden" | "initials";
   title?: string;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const sizeClass = SIZE_CLASS[size];
   const label = name?.trim() || "";
 
-  if (avatarUrl) {
+  useEffect(() => {
+    setImageFailed(false);
+  }, [avatarUrl]);
+
+  const showPhoto = Boolean(avatarUrl) && !imageFailed;
+
+  if (showPhoto) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={avatarUrl}
+        src={avatarUrl!}
         alt={label ? `${label} photo` : "Person photo"}
         title={title ?? (label || undefined)}
+        onError={() => setImageFailed(true)}
         className={cn(
           "shrink-0 rounded-full object-cover bg-[var(--bg-elevated)]",
           sizeClass,
