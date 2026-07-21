@@ -20,7 +20,7 @@ import { useData } from "@/lib/data/store";
 import {
   projectDateProgress,
 } from "@/lib/domain/progress";
-import { projectIdsForPerson } from "@/lib/domain/project-access";
+import { projectIdsForPerson, projectTeamPersonIds } from "@/lib/domain/project-access";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
@@ -53,6 +53,7 @@ export default function ProjectDetailPage() {
   const {
     state,
     upsertProject,
+    setProjectMembers,
     deleteProject,
     upsertMilestone,
     deleteMilestone,
@@ -68,6 +69,7 @@ export default function ProjectDetailPage() {
   const [draft, setDraft] = useState<Omit<Project, "organization_id"> | null>(
     null,
   );
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [templateId, setTemplateId] = useState("");
   const [exportName, setExportName] = useState("");
@@ -86,6 +88,7 @@ export default function ProjectDetailPage() {
       myPerson.id,
       state.assignments,
       state.tasks,
+      state.project_members,
     ).has(project.id);
   }, [
     canManage,
@@ -93,6 +96,7 @@ export default function ProjectDetailPage() {
     myPerson,
     state.assignments,
     state.tasks,
+    state.project_members,
   ]);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const isRetainer = Boolean(project?.budget_monthly_reset);
@@ -102,16 +106,24 @@ export default function ProjectDetailPage() {
 
   const team = useMemo(() => {
     if (!project) return [];
-    const ids = new Set<string>();
-    for (const a of state.assignments) {
-      if (a.project_id === project.id) ids.add(a.person_id);
-    }
-    for (const t of state.tasks) {
-      if (t.project_id === project.id && t.assignee_person_id)
-        ids.add(t.assignee_person_id);
-    }
-    return state.people.filter((p) => ids.has(p.id));
-  }, [project, state.assignments, state.tasks, state.people]);
+    const ids = projectTeamPersonIds(
+      project.id,
+      state.project_members,
+      state.assignments,
+      state.tasks,
+    );
+    return state.people
+      .filter((p) => ids.has(p.id))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+  }, [
+    project,
+    state.assignments,
+    state.project_members,
+    state.tasks,
+    state.people,
+  ]);
 
   if (!project) {
     return (
@@ -207,6 +219,11 @@ export default function ProjectDetailPage() {
                     ...rest,
                     budget_monthly_reset: Boolean(rest.budget_monthly_reset),
                   });
+                  setMemberIds(
+                    state.project_members
+                      .filter((m) => m.project_id === project.id)
+                      .map((m) => m.person_id),
+                  );
                   setEditing(true);
                 }}
               >
@@ -535,11 +552,15 @@ export default function ProjectDetailPage() {
           onClose={() => {
             setEditing(false);
             setDraft(null);
+            setMemberIds([]);
           }}
         >
           <ProjectForm
             project={draft}
             clients={state.clients}
+            people={state.people}
+            memberIds={memberIds}
+            onMemberIdsChange={setMemberIds}
             onChange={setDraft}
             onSave={async () => {
               if (!draft.name.trim()) return;
@@ -559,8 +580,10 @@ export default function ProjectDetailPage() {
                       ? Boolean(draft.budget_monthly_reset)
                       : false,
                 });
+                await setProjectMembers(draft.id, memberIds);
                 setEditing(false);
                 setDraft(null);
+                setMemberIds([]);
                 push("Project saved");
               } catch (err) {
                 push(
@@ -572,6 +595,7 @@ export default function ProjectDetailPage() {
             onCancel={() => {
               setEditing(false);
               setDraft(null);
+              setMemberIds([]);
             }}
             onDelete={() => setConfirmDelete(true)}
           />

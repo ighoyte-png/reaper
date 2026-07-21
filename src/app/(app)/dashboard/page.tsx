@@ -92,6 +92,7 @@ export default function DashboardPage() {
   const {
     state,
     canManage,
+    isPublicShare,
     myPerson,
     profile,
     upsertBulletin,
@@ -112,6 +113,9 @@ export default function DashboardPage() {
   const start = toDateKey(weekStart(now));
   const end = toDateKey(weekEnd(now));
   const monthEndKey = toDateKey(endOfMonth(now));
+
+  /** Org-wide read layout (managers + public org share). */
+  const showOrgDashboard = canManage || isPublicShare;
 
   const showingAllTasks = showingAsManager;
   const viewedPersonId = effectivePersonId;
@@ -210,7 +214,7 @@ export default function DashboardPage() {
     highPriorityTasks.length;
 
   const bulletins = useMemo(() => {
-    const filtered = canManage
+    const filtered = showOrgDashboard
       ? state.bulletins
       : state.bulletins.filter((b) =>
           bulletinVisibleToPerson(b, myPerson?.id ?? null),
@@ -219,9 +223,9 @@ export default function DashboardPage() {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.created_at.localeCompare(a.created_at);
     });
-  }, [state.bulletins, canManage, myPerson?.id]);
+  }, [state.bulletins, showOrgDashboard, myPerson?.id]);
 
-  const atRisk = canManage
+  const atRisk = showOrgDashboard
     ? state.projects
         .map((p) => ({
           project: p,
@@ -354,7 +358,7 @@ export default function DashboardPage() {
   }, [activeProjects, state.assignments, state.people]);
 
   const teamUtilization = useMemo(() => {
-    const people = canManage
+    const people = showOrgDashboard
       ? state.people
       : myPerson
         ? [myPerson]
@@ -391,7 +395,7 @@ export default function DashboardPage() {
     const avg = weekAvgs[weekAvgs.length - 1] ?? 0;
     return { avg, series: weekAvgs };
   }, [
-    canManage,
+    showOrgDashboard,
     myPerson,
     state.people,
     state.assignments,
@@ -504,7 +508,7 @@ export default function DashboardPage() {
               projectById={projectById}
               clientById={clientById}
               peopleById={peopleById}
-              showAssignee={admin && showingAsManager}
+              showAssignee={showingAsManager}
               appHref={appHref}
               compact
             />
@@ -603,7 +607,7 @@ export default function DashboardPage() {
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold">People Utilization</h2>
-              {canManage ? (
+              {showOrgDashboard ? (
                 <Link
                   href={appHref("/reports/utilization")}
                   className="text-xs text-[var(--accent)]"
@@ -633,7 +637,8 @@ export default function DashboardPage() {
           identityPerson={identityPerson}
           viewAsPerson={viewAsPerson}
           profile={profile}
-          canManage={canManage}
+          canManage={showOrgDashboard}
+          hideIdentity={isPublicShare}
           viewAsControl={viewAsControl}
           peopleLoad={peopleLoad}
           approvedLeave={approvedLeave}
@@ -645,7 +650,7 @@ export default function DashboardPage() {
               bulletins={bulletins}
               profiles={state.profiles}
               people={sortedPeople}
-              canEdit={admin}
+              canEdit={admin && !isPublicShare}
               profileId={profile?.id ?? null}
               onSave={(row) => {
                 upsertBulletin(row);
@@ -661,7 +666,7 @@ export default function DashboardPage() {
           }
           projectHealth={
             <ProjectHealthBudget
-              canManage={canManage}
+              canManage={showOrgDashboard}
               atRisk={atRisk}
               upcoming={upcomingDueTasks}
               projectById={projectById}
@@ -946,6 +951,7 @@ function DashboardSidebar({
   viewAsPerson,
   profile,
   canManage,
+  hideIdentity = false,
   viewAsControl,
   peopleLoad,
   approvedLeave,
@@ -959,6 +965,7 @@ function DashboardSidebar({
   viewAsPerson: Person | null | undefined;
   profile: Profile | null;
   canManage: boolean;
+  hideIdentity?: boolean;
   viewAsControl: ReactNode;
   peopleLoad: {
     person: Person;
@@ -990,7 +997,8 @@ function DashboardSidebar({
     : profile?.role
       ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
       : null;
-  const showIdentity = Boolean(identityPerson || profile || viewAsControl);
+  const showIdentity =
+    !hideIdentity && Boolean(identityPerson || profile || viewAsControl);
 
   return (
     <div className="space-y-4 lg:col-span-1">

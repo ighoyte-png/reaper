@@ -439,6 +439,7 @@ export function createDemoSeed(): DemoState {
         notes: "",
       },
     ],
+    project_members: [],
     leave_days: [
       {
         id: "leave-1",

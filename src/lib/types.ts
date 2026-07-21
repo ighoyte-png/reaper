@@ -240,6 +240,13 @@ export interface Assignment {
   recurrence_end_date: string | null;
 }
 
+/** Explicit project team roster (may also appear via schedule/tasks). */
+export interface ProjectMember {
+  project_id: string;
+  person_id: string;
+  organization_id: string;
+}
+
 export interface LeaveDay {
   id: string;
   organization_id: string;
@@ -263,6 +270,7 @@ export interface DemoState {
   milestones: Milestone[];
   people: Person[];
   assignments: Assignment[];
+  project_members: ProjectMember[];
   leave_days: LeaveDay[];
   holiday_calendars: HolidayCalendar[];
   holiday_calendar_days: HolidayCalendarDay[];

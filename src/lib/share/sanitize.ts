@@ -1,4 +1,5 @@
 import type { DemoState, Person } from "@/lib/types";
+import { projectTeamPersonIds } from "@/lib/domain/project-access";
 
 /** Strip cost/bill rates and emails from a public share payload. */
 export function sanitizePublicWorkspace(state: DemoState): DemoState {
@@ -78,14 +79,12 @@ export function sanitizeProjectPortal(
     ? state.clients.find((c) => c.id === project.client_id)
     : undefined;
 
-  const teamIds = new Set<string>();
-  for (const a of state.assignments) {
-    if (a.project_id === projectId) teamIds.add(a.person_id);
-  }
-  for (const t of state.tasks) {
-    if (t.project_id === projectId && t.assignee_person_id)
-      teamIds.add(t.assignee_person_id);
-  }
+  const teamIds = projectTeamPersonIds(
+    projectId,
+    state.project_members,
+    state.assignments,
+    state.tasks,
+  );
   const team = state.people
     .filter((p) => teamIds.has(p.id))
     .map((p) => ({

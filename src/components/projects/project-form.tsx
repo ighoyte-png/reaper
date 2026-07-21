@@ -1,13 +1,16 @@
 "use client";
 
 import { Field, inputClass, DateInput } from "@/components/ui/form";
-import type { BudgetMode, Project, ProjectStatus } from "@/lib/types";
+import type { BudgetMode, Person, Project, ProjectStatus } from "@/lib/types";
 
 const DEFAULT_PROJECT_COLOR = "#3498DB";
 
 export function ProjectForm({
   project,
   clients,
+  people,
+  memberIds,
+  onMemberIdsChange,
   onChange,
   onSave,
   onCancel,
@@ -15,12 +18,18 @@ export function ProjectForm({
 }: {
   project: Omit<Project, "organization_id">;
   clients: { id: string; name: string; color?: string }[];
+  people: Person[];
+  memberIds: string[];
+  onMemberIdsChange: (ids: string[]) => void;
   onChange: (p: Omit<Project, "organization_id">) => void;
   onSave: () => void;
   onCancel: () => void;
   onDelete?: () => void;
 }) {
   const clientsSorted = [...clients].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  const peopleSorted = [...people].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 
@@ -72,6 +81,46 @@ export function ProjectForm({
             </option>
           ))}
         </select>
+      </Field>
+      <Field label="Team members">
+        <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-[var(--border)] p-2">
+          {peopleSorted.length === 0 ? (
+            <p className="text-xs text-[var(--text-muted)]">
+              Add people in the directory first.
+            </p>
+          ) : (
+            peopleSorted.map((p) => {
+              const checked = memberIds.includes(p.id);
+              return (
+                <label
+                  key={p.id}
+                  className="flex cursor-pointer items-center gap-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      onMemberIdsChange(
+                        e.target.checked
+                          ? [...memberIds, p.id]
+                          : memberIds.filter((id) => id !== p.id),
+                      );
+                    }}
+                  />
+                  <span className="min-w-0 truncate">
+                    {p.name}
+                    {p.role_title ? (
+                      <span className="text-[var(--text-muted)]">
+                        {" "}
+                        · {p.role_title}
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
+              );
+            })
+          )}
+        </div>
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start date">

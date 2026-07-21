@@ -53,6 +53,7 @@ import {
   updateProfileRoleRow,
   upsertProjectAssetRow,
   upsertProjectRow,
+  setProjectMembersRows,
   upsertProjectTemplateRow,
   upsertTaskCommentRow,
   upsertTaskListRow,
@@ -167,6 +168,9 @@ function loadDemoState(): DemoState {
         ...a,
         hide_from_client: Boolean(a.hide_from_client),
       })),
+      project_members: Array.isArray(parsed.project_members)
+        ? parsed.project_members
+        : seed.project_members,
       task_lists: (parsed.task_lists ?? seed.task_lists).map((l) => ({
         ...l,
         color: l.color ?? null,
@@ -207,6 +211,7 @@ function emptySupabaseState(): DemoState {
     milestones: [],
     people: [],
     assignments: [],
+    project_members: [],
     leave_days: [],
     holiday_calendars: [],
     holiday_calendar_days: [],
@@ -277,6 +282,11 @@ interface DataContextValue {
   updateProfileRole: (profileId: string, role: Role) => Promise<void>;
   upsertProject: (
     project: Omit<Project, "organization_id"> & { organization_id?: string },
+  ) => Promise<void>;
+  /** Replace explicit team members for a project. */
+  setProjectMembers: (
+    projectId: string,
+    personIds: string[],
   ) => Promise<void>;
   deleteProject: (id: string) => void;
   upsertPerson: (
@@ -960,11 +970,40 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         });
       },
+      setProjectMembers: async (projectId, personIds) => {
+        const orgId = state.organization.id;
+        const unique = [...new Set(personIds)];
+        const rows = unique.map((person_id) => ({
+          project_id: projectId,
+          person_id,
+          organization_id: orgId,
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            setProjectMembersRows(
+              supabaseRef.current!,
+              projectId,
+              orgId,
+              unique,
+            ),
+          );
+        }
+        patch((prev) => ({
+          ...prev,
+          project_members: [
+            ...prev.project_members.filter((m) => m.project_id !== projectId),
+            ...rows,
+          ],
+        }));
+      },
       deleteProject: (id) => {
         patch((prev) => ({
           ...prev,
           projects: prev.projects.filter((p) => p.id !== id),
           assignments: prev.assignments.filter((a) => a.project_id !== id),
+          project_members: prev.project_members.filter(
+            (m) => m.project_id !== id,
+          ),
           milestones: prev.milestones.filter((m) => m.project_id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {

@@ -14,6 +14,7 @@ import type {
   Profile,
   Project,
   ProjectAsset,
+  ProjectMember,
   ProjectTemplate,
   Task,
   TaskComment,
@@ -278,6 +279,7 @@ function emptyWorkspace(): DemoState {
     milestones: [],
     people: [],
     assignments: [],
+    project_members: [],
     leave_days: [],
     holiday_calendars: [],
     holiday_calendar_days: [],
@@ -352,6 +354,7 @@ export async function loadOrgWorkspace(
     milestonesRes,
     peopleRes,
     assignmentsRes,
+    projectMembersRes,
     leaveRes,
     calendarsRes,
     calendarDaysRes,
@@ -373,6 +376,7 @@ export async function loadOrgWorkspace(
     supabase.from("milestones").select("*").eq("organization_id", orgId),
     supabase.from("people").select("*").eq("organization_id", orgId),
     supabase.from("assignments").select("*").eq("organization_id", orgId),
+    supabase.from("project_members").select("*").eq("organization_id", orgId),
     supabase.from("leave_days").select("*").eq("organization_id", orgId),
     supabase.from("holiday_calendars").select("*").eq("organization_id", orgId),
     supabase
@@ -433,6 +437,16 @@ export async function loadOrgWorkspace(
         calendar_id: String(row.calendar_id),
         date: String(row.date),
         name: String(row.name ?? ""),
+      }));
+
+  const project_members: ProjectMember[] = projectMembersRes.error
+    ? []
+    : (projectMembersRes.data ?? []).map((row) => ({
+        project_id: String((row as { project_id: unknown }).project_id),
+        person_id: String((row as { person_id: unknown }).person_id),
+        organization_id: String(
+          (row as { organization_id: unknown }).organization_id,
+        ),
       }));
 
   // PM execution tables are optional until migration 015 is applied.
@@ -528,6 +542,7 @@ export async function loadOrgWorkspace(
     assignments: (assignmentsRes.data ?? []).map((row) =>
       mapAssignment(row as Record<string, unknown>),
     ),
+    project_members,
     leave_days: (leaveRes.data ?? []).map((row) => ({
       id: String(row.id),
       organization_id: String(row.organization_id),
@@ -774,6 +789,42 @@ export async function upsertProjectRow(
 export async function deleteProjectRow(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("projects").delete().eq("id", id);
   if (error) throw error;
+}
+
+/** Replace the explicit team roster for a project. */
+export async function setProjectMembersRows(
+  supabase: SupabaseClient,
+  projectId: string,
+  organizationId: string,
+  personIds: string[],
+) {
+  const { error: delErr } = await supabase
+    .from("project_members")
+    .delete()
+    .eq("project_id", projectId);
+  if (delErr) {
+    if (
+      /relation .*project_members.* does not exist/i.test(delErr.message) ||
+      delErr.code === "42P01"
+    ) {
+      console.warn(
+        "project_members missing — apply supabase/migrations/026_project_members.sql",
+      );
+      return;
+    }
+    throw delErr;
+  }
+
+  const ids = [...new Set(personIds)];
+  if (ids.length === 0) return;
+  const { error: insErr } = await supabase.from("project_members").insert(
+    ids.map((person_id) => ({
+      project_id: projectId,
+      person_id,
+      organization_id: organizationId,
+    })),
+  );
+  if (insErr) throw insErr;
 }
 
 export async function upsertPersonRow(

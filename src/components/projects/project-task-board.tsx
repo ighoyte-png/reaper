@@ -44,6 +44,7 @@ import { useViewAsOptional } from "@/lib/view-as";
 import { notesHasContent } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
+import { projectTeamPersonIds } from "@/lib/domain/project-access";
 import {
   filterTasksForViewer,
   parentTasks,
@@ -357,19 +358,22 @@ export function ProjectTaskBoard({
   }
 
   const mentionPeople = useMemo(() => {
-    const ids = new Set<string>();
-    for (const a of state.assignments) {
-      if (a.project_id === projectId) ids.add(a.person_id);
-    }
-    for (const t of state.tasks) {
-      if (t.project_id === projectId && t.assignee_person_id) {
-        ids.add(t.assignee_person_id);
-      }
-    }
+    const ids = projectTeamPersonIds(
+      projectId,
+      state.project_members,
+      state.assignments,
+      state.tasks,
+    );
     return state.people
       .filter((p) => ids.has(p.id))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [state.assignments, state.tasks, state.people, projectId]);
+  }, [
+    state.assignments,
+    state.project_members,
+    state.tasks,
+    state.people,
+    projectId,
+  ]);
 
   useEffect(() => {
     if (!focusTaskId || !openComments) return;

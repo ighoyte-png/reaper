@@ -36,7 +36,7 @@ function readStoredId(): string | null {
 }
 
 export function ViewAsProvider({ children }: { children: ReactNode }) {
-  const { state, canManage, myPerson } = useData();
+  const { state, canManage, myPerson, isPublicShare } = useData();
   const [viewAsPersonId, setViewAsPersonIdState] = useState<string | null>(
     () => readStoredId(),
   );
@@ -65,8 +65,10 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     viewAsPersonId && viewedPerson ? viewAsPersonId : null;
 
   const value = useMemo<ViewAsContextValue>(() => {
-    const showingAsManager = canManage && !resolvedViewAsId;
-    const effectivePersonId = canManage
+    // Public org share uses the same org-wide scope as managers (read-only).
+    const orgWide = canManage || isPublicShare;
+    const showingAsManager = orgWide && !resolvedViewAsId;
+    const effectivePersonId = orgWide
       ? resolvedViewAsId
       : myPerson?.id ?? null;
     return {
@@ -79,6 +81,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     };
   }, [
     canManage,
+    isPublicShare,
     resolvedViewAsId,
     myPerson?.id,
     setViewAsPersonId,

@@ -264,7 +264,7 @@ function ProgressLineChart({
               y1={padT}
               y2={padT}
               stroke="var(--accent)"
-              strokeWidth={2}
+              strokeWidth={1.25}
             />
             <text
               x={thisWeekX}
@@ -286,7 +286,8 @@ function ProgressLineChart({
             y1={budgetY}
             y2={budgetY}
             stroke="#ef4444"
-            strokeWidth={1.75}
+            strokeWidth={1.25}
+            strokeDasharray="4 3"
             strokeLinecap="round"
           />
         ) : null}
@@ -297,7 +298,7 @@ function ProgressLineChart({
             d={pathSegment(handoffIdx, points.length - 1)}
             fill="none"
             stroke={mutedLine}
-            strokeWidth={2}
+            strokeWidth={1.25}
             strokeDasharray="5 4"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -310,7 +311,7 @@ function ProgressLineChart({
             d={pathSegment(0, handoffIdx)}
             fill="none"
             stroke={lineColor}
-            strokeWidth={2}
+            strokeWidth={1.25}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -324,7 +325,7 @@ function ProgressLineChart({
               key={p.key}
               cx={xAt(i)}
               cy={yAt(valueAt(i))}
-              r={2.75}
+              r={2}
               fill={future ? mutedLine : lineColor}
             />
           );

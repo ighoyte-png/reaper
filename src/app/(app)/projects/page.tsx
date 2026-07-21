@@ -44,12 +44,14 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
 type ClientFilter = "all" | "none" | string;
 
 export default function ProjectsPage() {
-  const { state, upsertProject, newId, canManage, myPerson } = useData();
+  const { state, upsertProject, setProjectMembers, newId, canManage, myPerson } =
+    useData();
   const appHref = useAppHref();
   const { push } = useToast();
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
     null,
   );
+  const [memberIds, setMemberIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
 
@@ -60,6 +62,7 @@ export default function ProjectsPage() {
       myPerson.id,
       state.assignments,
       state.tasks,
+      state.project_members,
     );
     return state.projects.filter((p) => ids.has(p.id));
   }, [
@@ -68,6 +71,7 @@ export default function ProjectsPage() {
     state.projects,
     state.assignments,
     state.tasks,
+    state.project_members,
   ]);
 
   const projects = sortProjectsByClientThenName(visibleProjects, state.clients);
@@ -142,7 +146,10 @@ export default function ProjectsPage() {
             <button
               type="button"
               className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={() => setEditing(emptyProject(newId("proj")))}
+              onClick={() => {
+                setMemberIds([]);
+                setEditing(emptyProject(newId("proj")));
+              }}
             >
               Add project
             </button>
@@ -155,7 +162,10 @@ export default function ProjectsPage() {
             <EmptyState
               title="No projects yet"
               cta="Create your first project"
-              onClick={() => setEditing(emptyProject(newId("proj")))}
+              onClick={() => {
+                setMemberIds([]);
+                setEditing(emptyProject(newId("proj")));
+              }}
             />
           ) : (
             <p className="py-16 text-center text-sm text-[var(--text-muted)]">
@@ -296,11 +306,17 @@ export default function ProjectsPage() {
       {canManage && editing && (
         <Modal
           title={editing.name ? "Edit project" : "Add project"}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            setEditing(null);
+            setMemberIds([]);
+          }}
         >
           <ProjectForm
             project={editing}
             clients={state.clients}
+            people={state.people}
+            memberIds={memberIds}
+            onMemberIdsChange={setMemberIds}
             onChange={setEditing}
             onSave={async () => {
               if (!editing.name.trim()) return;
@@ -336,7 +352,9 @@ export default function ProjectsPage() {
                       ? editing.budget_monthly_reset
                       : false,
                 });
+                await setProjectMembers(editing.id, memberIds);
                 setEditing(null);
+                setMemberIds([]);
                 push("Project saved");
               } catch (err) {
                 push(
@@ -345,7 +363,10 @@ export default function ProjectsPage() {
                 );
               }
             }}
-            onCancel={() => setEditing(null)}
+            onCancel={() => {
+              setEditing(null);
+              setMemberIds([]);
+            }}
           />
         </Modal>
       )}
