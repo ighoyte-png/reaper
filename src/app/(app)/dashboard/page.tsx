@@ -855,7 +855,7 @@ function TaggedCommentsPanel({
         <MessageSquare size={14} className="text-[var(--text-muted)]" />
         <h2 className="text-sm font-semibold">Tagged Comments</h2>
         {total > 0 ? (
-          <span className="rounded-full bg-[var(--bg-elevated)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">
+          <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
             {total}
           </span>
         ) : null}
@@ -1453,7 +1453,7 @@ function TaskPulse({
         <Pin size={14} className="text-[var(--text-muted)]" />
         <h2 className="text-sm font-semibold">Task Pulse</h2>
         {total > 0 ? (
-          <span className="rounded-full bg-[var(--bg-elevated)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">
+          <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
             {total}
           </span>
         ) : null}
