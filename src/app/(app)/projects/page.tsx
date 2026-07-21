@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
@@ -312,6 +313,20 @@ export default function ProjectsPage() {
                           href={appHref(`/projects/${project.id}`)}
                         />
                       ))}
+                      <CardGridPlaceholders
+                        count={groupProjects.length}
+                        onAdd={
+                          canManage
+                            ? () => {
+                                setMemberIds([]);
+                                setEditing({
+                                  ...emptyProject(newId("proj")),
+                                  client_id: client?.id ?? null,
+                                });
+                              }
+                            : undefined
+                        }
+                      />
                     </div>
                   </section>
                 ))}

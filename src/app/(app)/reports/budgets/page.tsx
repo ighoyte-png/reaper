@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { BudgetCard } from "@/components/budgets/budget-card";
+import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -28,7 +29,7 @@ export default function BudgetsReportPage() {
 }
 
 function BudgetsReportContent() {
-  const { state } = useData();
+  const { state, canManage } = useData();
   const appHref = useAppHref();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -231,6 +232,14 @@ function BudgetsReportContent() {
                           href={appHref(`/reports/budgets/${project.id}`)}
                         />
                       ))}
+                      <CardGridPlaceholders
+                        count={groupProjects.length}
+                        onAdd={
+                          canManage
+                            ? () => router.push(appHref("/projects"))
+                            : undefined
+                        }
+                      />
                     </div>
                   </section>
                 ))}
