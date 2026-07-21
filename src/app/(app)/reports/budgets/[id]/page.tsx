@@ -2,27 +2,33 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { CumulativeHoursChart } from "@/components/budgets/cumulative-hours-chart";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
+  assignmentHours,
   assignmentHoursInMonth,
   budgetBurn,
   budgetHealth,
   calendarYearBars,
+  cumulativeHoursSeries,
   formatHours,
   formatMoney,
   normalizeBudgetMode,
+  projectHoursForecast,
   projectPlannedAmount,
   projectPlannedHours,
 } from "@/lib/domain/budget";
 import { projectForecast } from "@/lib/domain/forecast";
-import { projectDisplayColor } from "@/lib/domain/sorting";
+import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 
 export default function ProjectBudgetDetailPage() {
@@ -35,7 +41,9 @@ export default function ProjectBudgetDetailPage() {
     ? state.clients.find((c) => c.id === project.client_id)
     : undefined;
 
-  const year = new Date().getFullYear();
+  const [year, setYear] = useState(() => new Date().getFullYear());
+
+  const isRetainer = Boolean(project?.budget_monthly_reset);
 
   const burn = useMemo(
     () =>
@@ -53,6 +61,14 @@ export default function ProjectBudgetDetailPage() {
     [project, state.assignments, state.people],
   );
 
+  const hoursFx = useMemo(
+    () =>
+      project
+        ? projectHoursForecast(project, state.assignments, state.people)
+        : null,
+    [project, state.assignments, state.people],
+  );
+
   const yearBars = useMemo(
     () =>
       project
@@ -64,6 +80,14 @@ export default function ProjectBudgetDetailPage() {
           )
         : [],
     [project, state.assignments, state.people, year],
+  );
+
+  const cumulativePoints = useMemo(
+    () =>
+      project && !isRetainer
+        ? cumulativeHoursSeries(project, state.assignments)
+        : [],
+    [project, state.assignments, isRetainer],
   );
 
   const yearTotals = useMemo(() => {
@@ -86,23 +110,50 @@ export default function ProjectBudgetDetailPage() {
     return { hours, amount };
   }, [project, state.assignments, state.people, year]);
 
+  const team = useMemo(() => {
+    if (!project) return [];
+    const ids = new Set<string>();
+    for (const a of state.assignments) {
+      if (a.project_id === project.id) ids.add(a.person_id);
+    }
+    for (const t of state.tasks) {
+      if (t.project_id === project.id && t.assignee_person_id) {
+        ids.add(t.assignee_person_id);
+      }
+    }
+    return sortPeopleByName(state.people.filter((p) => ids.has(p.id)));
+  }, [project, state.assignments, state.tasks, state.people]);
+
   const teamYear = useMemo(() => {
     if (!project) return [];
     const byPerson = new Map<
       string,
-      { name: string; hours: number; revenue: number; cost: number }
+      {
+        id: string;
+        name: string;
+        avatar_url: string | null;
+        hours: number;
+        revenue: number;
+        cost: number;
+      }
     >();
     for (const a of state.assignments) {
       if (a.project_id !== project.id || a.status !== "confirmed") continue;
       const person = state.people.find((p) => p.id === a.person_id);
       if (!person) continue;
       let hours = 0;
-      for (let m = 0; m < 12; m++) {
-        hours += assignmentHoursInMonth(a, year, m);
+      if (isRetainer) {
+        for (let m = 0; m < 12; m++) {
+          hours += assignmentHoursInMonth(a, year, m);
+        }
+      } else {
+        hours = assignmentHours(a);
       }
       if (hours <= 0) continue;
       const row = byPerson.get(person.id) ?? {
+        id: person.id,
         name: person.name,
+        avatar_url: person.avatar_url,
         hours: 0,
         revenue: 0,
         cost: 0,
@@ -112,8 +163,21 @@ export default function ProjectBudgetDetailPage() {
       row.cost += hours * (person.cost_rate ?? 0);
       byPerson.set(person.id, row);
     }
+    // Include team members with 0 hours so avatars still show
+    for (const p of team) {
+      if (!byPerson.has(p.id)) {
+        byPerson.set(p.id, {
+          id: p.id,
+          name: p.name,
+          avatar_url: p.avatar_url,
+          hours: 0,
+          revenue: 0,
+          cost: 0,
+        });
+      }
+    }
     return [...byPerson.values()].sort((a, b) => b.hours - a.hours);
-  }, [project, state.assignments, state.people, year]);
+  }, [project, state.assignments, state.people, year, isRetainer, team]);
 
   function goBack() {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -123,7 +187,7 @@ export default function ProjectBudgetDetailPage() {
     }
   }
 
-  if (!project || !burn || !forecast) {
+  if (!project || !burn || !forecast || !hoursFx) {
     return (
       <PageContainer className="overflow-y-auto">
         <PageHeader title="Budget" onBack={goBack} />
@@ -160,6 +224,13 @@ export default function ProjectBudgetDetailPage() {
         : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}${
             burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
           }`;
+
+  const hoursBudgetCap =
+    mode === "hours"
+      ? project.budget_hours
+      : mode === "amount"
+        ? null
+        : null;
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -255,7 +326,40 @@ export default function ProjectBudgetDetailPage() {
           <dl className="mt-4 grid gap-3 sm:grid-cols-3">
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
-                {mode === "amount" ? "Budget" : "Hours budget"}
+                Hours used to date
+              </dt>
+              <dd className="mt-0.5 text-sm font-medium tabular-nums">
+                {formatHours(hoursFx.hoursUsedToDate)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--text-muted)]">
+                Future hours planned
+              </dt>
+              <dd className="mt-0.5 text-sm font-medium tabular-nums">
+                {formatHours(hoursFx.hoursFuturePlanned)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-[var(--text-muted)]">
+                Hours remaining
+              </dt>
+              <dd
+                className={cn(
+                  "mt-0.5 text-sm font-medium tabular-nums",
+                  hoursFx.overBudget && "text-[var(--status-over)]",
+                )}
+              >
+                {hoursFx.hoursRemaining == null
+                  ? "—"
+                  : formatHours(hoursFx.hoursRemaining)}
+              </dd>
+            </div>
+          </dl>
+          <dl className="mt-3 grid gap-3 border-t border-[var(--border)] pt-3 sm:grid-cols-3">
+            <div>
+              <dt className="text-xs text-[var(--text-muted)]">
+                {mode === "amount" ? "Budget $" : "Budget"}
               </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
                 {mode === "none"
@@ -266,7 +370,9 @@ export default function ProjectBudgetDetailPage() {
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-[var(--text-muted)]">Remaining</dt>
+              <dt className="text-xs text-[var(--text-muted)]">
+                {mode === "amount" ? "$ remaining" : "Budget remaining"}
+              </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
                 {mode === "none"
                   ? "—"
@@ -277,55 +383,128 @@ export default function ProjectBudgetDetailPage() {
             </div>
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
-                {year} Planned
+                {isRetainer ? `${year} planned` : "Total planned"}
               </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
-                {mode === "amount"
-                  ? formatMoney(yearTotals.amount)
-                  : formatHours(yearTotals.hours)}
+                {isRetainer
+                  ? mode === "amount"
+                    ? formatMoney(yearTotals.amount)
+                    : formatHours(yearTotals.hours)
+                  : formatHours(hoursFx.hoursTotalPlanned)}
               </dd>
             </div>
           </dl>
         </section>
 
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-          <h2 className="mb-3 text-sm font-semibold">{year} Calendar</h2>
-          <ProjectYearBurnChart
-            bars={yearBars}
-            unit={chartUnit}
-            monthlyCap={monthlyCap}
-            year={year}
-          />
+          {isRetainer ? (
+            <>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">{year} Calendar</h2>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                    onClick={() => setYear((y) => y - 1)}
+                    aria-label="Previous year"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                    onClick={() => setYear((y) => y + 1)}
+                    aria-label="Next year"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+              <ProjectYearBurnChart
+                bars={yearBars}
+                unit={chartUnit}
+                monthlyCap={monthlyCap}
+                year={year}
+              />
+            </>
+          ) : (
+            <>
+              <h2 className="mb-3 text-sm font-semibold">
+                Hours trend
+              </h2>
+              <CumulativeHoursChart
+                points={cumulativePoints}
+                budgetHours={
+                  mode === "hours" ? hoursBudgetCap : null
+                }
+              />
+            </>
+          )}
         </section>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="mb-3 text-sm font-semibold">Forecast</h2>
+            <h2 className="mb-3 text-sm font-semibold">Forecast vs budget</h2>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
-              Confirmed schedule only — full project lifetime.
+              Schedule hours and margin against the project budget.
             </p>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
-                <dt className="text-[var(--text-muted)]">Planned hours</dt>
+                <dt className="text-[var(--text-muted)]">Hours used</dt>
                 <dd className="tabular-nums font-medium">
-                  {formatHours(forecast.plannedHours)}
+                  {formatHours(forecast.hoursUsedToDate)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
-                <dt className="text-[var(--text-muted)]">Revenue</dt>
+                <dt className="text-[var(--text-muted)]">Future planned</dt>
                 <dd className="tabular-nums font-medium">
-                  {formatMoney(forecast.revenue)}
+                  {formatHours(forecast.hoursFuturePlanned)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
-                <dt className="text-[var(--text-muted)]">Cost</dt>
-                <dd className="tabular-nums font-medium">
-                  {formatMoney(forecast.cost)}
+                <dt className="text-[var(--text-muted)]">Remaining hours</dt>
+                <dd
+                  className={cn(
+                    "tabular-nums font-medium",
+                    forecast.overBudget && "text-[var(--status-over)]",
+                  )}
+                >
+                  {forecast.hoursRemaining == null
+                    ? "—"
+                    : formatHours(forecast.hoursRemaining)}
                 </dd>
               </div>
-              <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2">
-                <dt className="text-[var(--text-muted)]">Margin</dt>
-                <dd className="tabular-nums font-medium">
+              {forecast.budgetMargin != null ? (
+                <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2">
+                  <dt className="text-[var(--text-muted)]">
+                    Margin vs budget
+                  </dt>
+                  <dd
+                    className={cn(
+                      "tabular-nums font-medium",
+                      forecast.budgetMargin < 0 && "text-[var(--status-over)]",
+                    )}
+                  >
+                    {mode === "amount"
+                      ? formatMoney(forecast.budgetMargin)
+                      : formatMoney(forecast.budgetMargin)}
+                    {forecast.budgetMarginPct != null
+                      ? ` (${forecast.budgetMarginPct.toFixed(0)}%)`
+                      : ""}
+                  </dd>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2 text-xs">
+                <dt className="text-[var(--text-muted)]">
+                  Rate revenue / cost
+                </dt>
+                <dd className="tabular-nums text-[var(--text-muted)]">
+                  {formatMoney(forecast.revenue)} / {formatMoney(forecast.cost)}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2 text-xs">
+                <dt className="text-[var(--text-muted)]">Rate margin</dt>
+                <dd className="tabular-nums text-[var(--text-muted)]">
                   {formatMoney(forecast.margin)} ({forecast.marginPct.toFixed(0)}
                   %)
                 </dd>
@@ -335,11 +514,11 @@ export default function ProjectBudgetDetailPage() {
 
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">
-              Team · {year}
+              Team{isRetainer ? ` · ${year}` : ""}
             </h2>
             {teamYear.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">
-                No confirmed assignments in {year}.
+                No one assigned yet.
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -355,10 +534,20 @@ export default function ProjectBudgetDetailPage() {
                   <tbody>
                     {teamYear.map((row) => (
                       <tr
-                        key={row.name}
+                        key={row.id}
                         className="border-b border-[var(--border)]/60"
                       >
-                        <td className="py-2 pr-2">{row.name}</td>
+                        <td className="py-2 pr-2">
+                          <div className="flex items-center gap-2">
+                            <PersonAvatar
+                              avatarUrl={row.avatar_url}
+                              name={row.name}
+                              size="xs"
+                              fallback="initials"
+                            />
+                            <span className="min-w-0 truncate">{row.name}</span>
+                          </div>
+                        </td>
                         <td className="py-2 text-right tabular-nums">
                           {formatHours(row.hours)}
                         </td>

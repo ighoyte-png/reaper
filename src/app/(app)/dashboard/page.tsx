@@ -18,6 +18,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { UtilizationHeatmap } from "@/components/heatmap/utilization-heatmap";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CapacityBar } from "@/components/ui/capacity-bar";
+import { RichNotesHtml } from "@/components/ui/simple-rich-text";
 import {
   ConfirmDialog,
   Field,
@@ -54,12 +55,14 @@ import { taskUrgency, type TaskUrgency } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
 import type {
   Bulletin,
+  Client,
   LeaveDay,
   LeaveKind,
   Person,
   Profile,
   Project,
   Task,
+  TaskComment,
 } from "@/lib/types";
 
 const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
@@ -409,6 +412,38 @@ export default function DashboardPage() {
     [state.people],
   );
 
+  const clientById = useMemo(
+    () => new Map(state.clients.map((c) => [c.id, c])),
+    [state.clients],
+  );
+
+  const taggedComments = useMemo(() => {
+    const personId = effectivePersonId;
+    if (!personId) return [];
+    const taskById = new Map(state.tasks.map((t) => [t.id, t]));
+    return state.task_comments
+      .filter((c) => (c.mentioned_person_ids ?? []).includes(personId))
+      .map((c) => {
+        const task = taskById.get(c.task_id);
+        const project = task ? projectById.get(task.project_id) : undefined;
+        const author = state.profiles.find(
+          (p) => p.id === c.author_profile_id,
+        );
+        return { comment: c, task, project, author };
+      })
+      .filter((row) => row.task && row.project)
+      .sort((a, b) =>
+        b.comment.created_at.localeCompare(a.comment.created_at),
+      )
+      .slice(0, 20);
+  }, [
+    effectivePersonId,
+    state.task_comments,
+    state.tasks,
+    state.profiles,
+    projectById,
+  ]);
+
   const viewAsControl =
     canManage ? (
       <div className="flex items-center gap-2">
@@ -496,6 +531,7 @@ export default function DashboardPage() {
                 highPriority={highPriorityTasks}
                 total={pinnedTotal}
                 projectById={projectById}
+                clientById={clientById}
                 peopleById={peopleById}
                 showAssignee={admin && showingAsManager}
                 appHref={appHref}
@@ -637,6 +673,7 @@ export default function DashboardPage() {
             upcomingLeaveBlocks={upcomingLeaveBlocks}
             people={state.people}
             appHref={appHref}
+            taggedComments={taggedComments}
           />
         </div>
       ) : (
@@ -674,6 +711,7 @@ export default function DashboardPage() {
               highPriority={highPriorityTasks}
               total={pinnedTotal}
               projectById={projectById}
+              clientById={clientById}
               peopleById={peopleById}
               showAssignee={admin && showingAsManager}
               appHref={appHref}
@@ -772,6 +810,7 @@ export default function DashboardPage() {
             upcomingLeaveBlocks={upcomingLeaveBlocks}
             people={state.people}
             appHref={appHref}
+            taggedComments={taggedComments}
           />
         </div>
       )}
@@ -974,6 +1013,7 @@ function DashboardSidebar({
   upcomingLeaveBlocks,
   people,
   appHref,
+  taggedComments,
 }: {
   identityPerson: Person | null | undefined;
   viewAsPerson: Person | null | undefined;
@@ -997,6 +1037,12 @@ function DashboardSidebar({
   }[];
   people: Person[];
   appHref: (path: string) => string;
+  taggedComments: {
+    comment: TaskComment;
+    task: Task | undefined;
+    project: Project | undefined;
+    author: Profile | undefined;
+  }[];
 }) {
   const displayName =
     identityPerson?.name ??
@@ -1048,6 +1094,43 @@ function DashboardSidebar({
           </div>
         </section>
       ) : null}
+
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <h2 className="mb-2 text-sm font-semibold">Tagged comments</h2>
+        {taggedComments.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">
+            No comments tagging you yet.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {taggedComments.map(({ comment, task, project, author }) => (
+              <li key={comment.id}>
+                <Link
+                  href={appHref(
+                    `/projects/${project!.id}?task=${task!.id}&comments=1`,
+                  )}
+                  className="block rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
+                >
+                  <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
+                    <span className="truncate">
+                      {author?.full_name ?? "Someone"} · {project!.name}
+                    </span>
+                    <span className="shrink-0">
+                      {comment.created_at.slice(0, 10)}
+                    </span>
+                  </div>
+                  <div className="truncate text-xs font-medium">
+                    {task!.title}
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
+                    <RichNotesHtml html={comment.body} />
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <div className="mb-3 flex items-center justify-between">
@@ -1115,6 +1198,7 @@ function DashboardSidebar({
 function TaskRow({
   task,
   project,
+  client,
   overdue,
   assignee,
   showAssignee,
@@ -1122,6 +1206,7 @@ function TaskRow({
 }: {
   task: Task;
   project: Project | undefined;
+  client?: Client | null;
   overdue: boolean;
   assignee?: Person | null;
   showAssignee?: boolean;
@@ -1149,6 +1234,7 @@ function TaskRow({
         </span>
       ) : null}
       <span className="shrink-0 truncate text-xs text-[var(--text-muted)]">
+        {client?.name ? `${client.name} · ` : ""}
         {project?.name ?? "Project"}
       </span>
       {task.due_date ? (
@@ -1187,9 +1273,78 @@ function TodaySchedule({
   showPerson: boolean;
   appHref: (path: string) => string;
 }) {
+  const groups = useMemo(() => {
+    if (!showPerson) {
+      return [{ person: null as Person | null, items: assignments }];
+    }
+    const byPerson = new Map<string, typeof assignments>();
+    for (const a of assignments) {
+      const list = byPerson.get(a.person_id) ?? [];
+      list.push(a);
+      byPerson.set(a.person_id, list);
+    }
+    const peopleSorted = sortPeopleByName(
+      people.filter((p) => byPerson.has(p.id)),
+    );
+    return peopleSorted.map((person) => ({
+      person,
+      items: byPerson.get(person.id) ?? [],
+    }));
+  }, [assignments, people, showPerson]);
+
+  function scheduleRow(a: (typeof assignments)[number]) {
+    const project = projects.find((p) => p.id === a.project_id);
+    const client = project?.client_id
+      ? clients.find((c) => c.id === project.client_id)
+      : undefined;
+    const color = project
+      ? projectDisplayColor(project, clients)
+      : "#64748B";
+    const pct = Math.min(100, (a.hours_per_day / 8) * 100);
+    return (
+      <li key={a.id}>
+        <Link
+          href={appHref(`/projects/${a.project_id}`)}
+          className="block rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
+        >
+          <div className="mb-1.5 flex items-center gap-2 text-sm">
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ background: color }}
+            />
+            <span className="min-w-0 flex-1 truncate">
+              {client?.name ? (
+                <>
+                  <span className="font-medium">{client.name}</span>
+                  <span className="text-[var(--text-muted)]">
+                    {" "}
+                    · {project?.name ?? "Project"}
+                  </span>
+                </>
+              ) : (
+                project?.name ?? "Project"
+              )}
+            </span>
+            <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
+              {formatHours(a.hours_per_day)}
+            </span>
+          </div>
+          <div className="relative h-2.5 overflow-hidden rounded-full bg-[var(--bg-elevated)]">
+            <div
+              className="h-full rounded-full bg-[var(--status-healthy)] transition-[width]"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </Link>
+      </li>
+    );
+  }
+
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-      <h2 className="text-sm font-semibold">My Schedule</h2>
+      <h2 className="text-sm font-semibold">
+        {showPerson ? "Today’s Schedule" : "My Schedule"}
+      </h2>
       <p className="mb-3 mt-0.5 text-xs text-[var(--text-muted)]">
         Today&apos;s schedule
       </p>
@@ -1197,51 +1352,27 @@ function TodaySchedule({
         <p className="text-sm text-[var(--text-muted)]">
           Nothing scheduled today.
         </p>
-      ) : (
-        <ul className="space-y-2">
-          {assignments.map((a) => {
-            const project = projects.find((p) => p.id === a.project_id);
-            const client = project?.client_id
-              ? clients.find((c) => c.id === project.client_id)
-              : undefined;
-            const person = showPerson
-              ? people.find((p) => p.id === a.person_id)
-              : undefined;
-            const color = project
-              ? projectDisplayColor(project, clients)
-              : "#64748B";
-            return (
-              <li key={a.id}>
-                <Link
-                  href={appHref(`/projects/${a.project_id}`)}
-                  className="flex items-center gap-2 rounded-md border border-[var(--border)] px-3 py-2 text-sm hover:bg-[var(--row-hover)]"
-                >
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full"
-                    style={{ background: color }}
+      ) : showPerson ? (
+        <div className="space-y-4">
+          {groups.map(({ person, items }) => (
+            <div key={person?.id ?? "solo"}>
+              {person ? (
+                <div className="mb-2 flex items-center gap-2">
+                  <PersonAvatar
+                    avatarUrl={person.avatar_url}
+                    name={person.name}
+                    size="xs"
+                    fallback="initials"
                   />
-                  <span className="min-w-0 flex-1 truncate">
-                    {project?.name ?? "Project"}
-                    {person ? (
-                      <span className="text-[var(--text-muted)]">
-                        {" "}
-                        · {person.name}
-                      </span>
-                    ) : null}
-                  </span>
-                  {client ? (
-                    <span className="shrink-0 truncate text-xs text-[var(--text-muted)]">
-                      {client.name}
-                    </span>
-                  ) : null}
-                  <span className="shrink-0 text-xs text-[var(--text-muted)]">
-                    {formatHours(a.hours_per_day)}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+                  <h3 className="text-xs font-semibold">{person.name}</h3>
+                </div>
+              ) : null}
+              <ul className="space-y-2">{items.map(scheduleRow)}</ul>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <ul className="space-y-2">{assignments.map(scheduleRow)}</ul>
       )}
     </section>
   );
@@ -1253,6 +1384,7 @@ function TaskPulse({
   highPriority,
   total,
   projectById,
+  clientById,
   peopleById,
   showAssignee,
   appHref,
@@ -1263,6 +1395,7 @@ function TaskPulse({
   highPriority: Task[];
   total: number;
   projectById: Map<string, Project>;
+  clientById: Map<string, Client>;
   peopleById: Map<string, Person>;
   showAssignee?: boolean;
   appHref: (path: string) => string;
@@ -1272,11 +1405,16 @@ function TaskPulse({
     const assignee = task.assignee_person_id
       ? peopleById.get(task.assignee_person_id) ?? null
       : null;
+    const project = projectById.get(task.project_id);
+    const client = project?.client_id
+      ? clientById.get(project.client_id) ?? null
+      : null;
     return (
       <TaskRow
         key={task.id}
         task={task}
-        project={projectById.get(task.project_id)}
+        project={project}
+        client={client}
         overdue={overdueRow}
         assignee={assignee}
         showAssignee={showAssignee}

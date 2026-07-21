@@ -93,6 +93,7 @@ function mapMilestone(row: Record<string, unknown>): Milestone {
     organization_id: String(row.organization_id),
     project_id: String(row.project_id),
     name: String(row.name ?? ""),
+    start_date: row.start_date ? String(row.start_date) : null,
     due_date: String(row.due_date),
     status: row.status as Milestone["status"],
     client_approved: Boolean(row.client_approved),
@@ -110,6 +111,7 @@ function mapProjectAsset(row: Record<string, unknown>): ProjectAsset {
     url: String(row.url ?? ""),
     body: String(row.body ?? ""),
     sort_order: num(row.sort_order),
+    hide_from_client: Boolean(row.hide_from_client),
   };
 }
 
@@ -152,6 +154,7 @@ function mapTaskComment(row: Record<string, unknown>): TaskComment {
     author_profile_id: String(row.author_profile_id),
     body: String(row.body ?? ""),
     created_at: String(row.created_at ?? ""),
+    mentioned_person_ids: [],
   };
 }
 
@@ -356,6 +359,7 @@ export async function loadOrgWorkspace(
     taskListsRes,
     tasksRes,
     taskCommentsRes,
+    taskCommentMentionsRes,
     bulletinsRes,
     projectTemplatesRes,
     templateMilestonesRes,
@@ -379,6 +383,10 @@ export async function loadOrgWorkspace(
     supabase.from("task_lists").select("*").eq("organization_id", orgId),
     supabase.from("tasks").select("*").eq("organization_id", orgId),
     supabase.from("task_comments").select("*").eq("organization_id", orgId),
+    supabase
+      .from("task_comment_mentions")
+      .select("*")
+      .eq("organization_id", orgId),
     supabase.from("bulletins").select("*").eq("organization_id", orgId),
     supabase
       .from("project_templates")
@@ -443,11 +451,25 @@ export async function loadOrgWorkspace(
     : (tasksRes.data ?? []).map((row) =>
         mapTask(row as Record<string, unknown>),
       );
-  const task_comments: TaskComment[] = taskCommentsRes.error
+  const task_commentsRaw: TaskComment[] = taskCommentsRes.error
     ? []
     : (taskCommentsRes.data ?? []).map((row) =>
         mapTaskComment(row as Record<string, unknown>),
       );
+  const mentionByComment = new Map<string, string[]>();
+  if (!taskCommentMentionsRes.error) {
+    for (const row of taskCommentMentionsRes.data ?? []) {
+      const cid = String((row as { comment_id: unknown }).comment_id);
+      const pid = String((row as { person_id: unknown }).person_id);
+      const list = mentionByComment.get(cid) ?? [];
+      list.push(pid);
+      mentionByComment.set(cid, list);
+    }
+  }
+  const task_comments: TaskComment[] = task_commentsRaw.map((c) => ({
+    ...c,
+    mentioned_person_ids: mentionByComment.get(c.id) ?? [],
+  }));
   const bulletins: Bulletin[] = bulletinsRes.error
     ? []
     : (bulletinsRes.data ?? []).map((row) =>
@@ -877,6 +899,7 @@ export async function upsertMilestoneRow(
     organization_id: milestone.organization_id,
     project_id: milestone.project_id,
     name: milestone.name,
+    start_date: milestone.start_date,
     due_date: milestone.due_date,
     status: milestone.status,
     client_approved: Boolean(milestone.client_approved),
@@ -891,11 +914,15 @@ export async function upsertMilestoneRow(
   const missingSort =
     /Could not find the 'sort_order' column/i.test(error.message) ||
     (error.code === "PGRST204" && /sort_order/i.test(error.message));
+  const missingStart =
+    /Could not find the 'start_date' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /start_date/i.test(error.message));
 
-  if (missingApproved || missingSort) {
+  if (missingApproved || missingSort || missingStart) {
     const rest = { ...payload };
     if (missingApproved) delete (rest as { client_approved?: boolean }).client_approved;
     if (missingSort) delete (rest as { sort_order?: number }).sort_order;
+    if (missingStart) delete (rest as { start_date?: string | null }).start_date;
     const retry = await supabase.from("milestones").upsert(rest);
     if (!retry.error) {
       if (missingApproved) {
@@ -906,6 +933,11 @@ export async function upsertMilestoneRow(
       if (missingSort) {
         console.warn(
           "milestones.sort_order missing — apply supabase/migrations/018_milestone_sort_order.sql",
+        );
+      }
+      if (missingStart) {
+        console.warn(
+          "milestones.start_date missing — apply supabase/migrations/025_assets_milestones_mentions.sql",
         );
       }
       return;
@@ -1088,8 +1120,36 @@ export async function upsertProjectAssetRow(
     url: asset.url,
     body: asset.body,
     sort_order: asset.sort_order,
+    hide_from_client: Boolean(asset.hide_from_client),
   });
-  if (error) throw error;
+  if (!error) return;
+
+  const missingHide =
+    /Could not find the 'hide_from_client' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /hide_from_client/i.test(error.message));
+  if (missingHide) {
+    const { hide_from_client: _, ...rest } = {
+      id: asset.id,
+      organization_id: asset.organization_id,
+      project_id: asset.project_id,
+      kind: asset.kind,
+      label: asset.label,
+      url: asset.url,
+      body: asset.body,
+      sort_order: asset.sort_order,
+      hide_from_client: Boolean(asset.hide_from_client),
+    };
+    void _;
+    const retry = await supabase.from("project_assets").upsert(rest);
+    if (!retry.error) {
+      console.warn(
+        "project_assets.hide_from_client missing — apply supabase/migrations/025_assets_milestones_mentions.sql",
+      );
+      return;
+    }
+    throw retry.error;
+  }
+  throw error;
 }
 
 export async function deleteProjectAssetRow(
@@ -1157,6 +1217,34 @@ export async function upsertTaskCommentRow(
     created_at: comment.created_at,
   });
   if (error) throw error;
+
+  const { error: delErr } = await supabase
+    .from("task_comment_mentions")
+    .delete()
+    .eq("comment_id", comment.id);
+  if (delErr) {
+    if (
+      /relation .*task_comment_mentions.* does not exist/i.test(delErr.message) ||
+      delErr.code === "42P01"
+    ) {
+      console.warn(
+        "task_comment_mentions missing — apply supabase/migrations/025_assets_milestones_mentions.sql",
+      );
+      return;
+    }
+    throw delErr;
+  }
+
+  const ids = [...new Set(comment.mentioned_person_ids ?? [])];
+  if (ids.length === 0) return;
+  const { error: insErr } = await supabase.from("task_comment_mentions").insert(
+    ids.map((person_id) => ({
+      comment_id: comment.id,
+      person_id,
+      organization_id: comment.organization_id,
+    })),
+  );
+  if (insErr) throw insErr;
 }
 
 export async function deleteTaskCommentRow(

@@ -196,7 +196,9 @@ export default function ProjectSharePage() {
     (a, b) =>
       a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
   );
-  const assetsSorted = [...portal.assets];
+  const assetsSorted = [...portal.assets].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
+  );
   const teamSorted = [...portal.team];
 
   return (

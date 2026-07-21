@@ -152,6 +152,7 @@ function loadDemoState(): DemoState {
       })),
       milestones: (parsed.milestones ?? seed.milestones).map((m, idx) => ({
         ...m,
+        start_date: m.start_date ?? null,
         client_approved: Boolean(m.client_approved),
         sort_order:
           typeof m.sort_order === "number" ? m.sort_order : idx,
@@ -162,13 +163,21 @@ function loadDemoState(): DemoState {
         share_enabled: Boolean(parsed.organization?.share_enabled),
         share_token: parsed.organization?.share_token ?? null,
       },
-      project_assets: parsed.project_assets ?? seed.project_assets,
+      project_assets: (parsed.project_assets ?? seed.project_assets).map((a) => ({
+        ...a,
+        hide_from_client: Boolean(a.hide_from_client),
+      })),
       task_lists: (parsed.task_lists ?? seed.task_lists).map((l) => ({
         ...l,
         color: l.color ?? null,
       })),
       tasks: parsed.tasks ?? seed.tasks,
-      task_comments: parsed.task_comments ?? seed.task_comments,
+      task_comments: (parsed.task_comments ?? seed.task_comments).map((c) => ({
+        ...c,
+        mentioned_person_ids: Array.isArray(c.mentioned_person_ids)
+          ? c.mentioned_person_ids
+          : [],
+      })),
       bulletins: (parsed.bulletins ?? seed.bulletins).map((b) => ({
         ...b,
         audience: b.audience === "people" ? "people" : "all",
@@ -1421,7 +1430,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return created.length;
       },
       upsertProjectAsset: (asset) => {
-        const row = withOrg(asset) as ProjectAsset;
+        const row = {
+          ...withOrg(asset),
+          hide_from_client: Boolean(asset.hide_from_client),
+        } as ProjectAsset;
         patch((prev) => {
           const exists = prev.project_assets.some((a) => a.id === row.id);
           return {
@@ -1509,7 +1521,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertTaskComment: (comment) => {
-        const row = withOrg(comment) as TaskComment;
+        const row = {
+          ...withOrg(comment),
+          mentioned_person_ids: Array.isArray(comment.mentioned_person_ids)
+            ? comment.mentioned_person_ids
+            : [],
+        } as TaskComment;
         patch((prev) => {
           const exists = prev.task_comments.some((c) => c.id === row.id);
           return {
@@ -1729,6 +1746,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             organization_id: organizationId,
             project_id: projectId,
             name: m.name,
+            start_date: null,
             due_date: offsetDate(m.offset_days) ?? anchorDate,
             status: "upcoming",
             client_approved: false,

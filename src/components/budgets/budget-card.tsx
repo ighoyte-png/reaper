@@ -8,8 +8,8 @@ import {
   budgetHealth,
   formatHours,
   formatMoney,
+  projectHoursForecast,
 } from "@/lib/domain/budget";
-import { projectForecast } from "@/lib/domain/forecast";
 import { cn } from "@/lib/cn";
 import type { Project } from "@/lib/types";
 
@@ -25,7 +25,7 @@ export function BudgetCard({
   const { state } = useData();
   const burn = budgetBurn(project, state.assignments, state.people);
   const health = budgetHealth(burn);
-  const forecast = projectForecast(
+  const hoursFx = projectHoursForecast(
     project,
     state.assignments,
     state.people,
@@ -80,26 +80,32 @@ export function BudgetCard({
         </div>
         <div className="border-t border-[var(--border)] pt-3">
           <div className="mb-2 text-xs font-semibold text-[var(--text)]">
-            Forecast $
+            Forecast
           </div>
           <dl className="space-y-1.5 text-xs">
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Revenue</dt>
+              <dt className="text-[var(--text-muted)]">Hours used</dt>
               <dd className="tabular-nums font-medium">
-                {formatMoney(forecast.revenue)}
+                {formatHours(hoursFx.hoursUsedToDate)}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Cost</dt>
+              <dt className="text-[var(--text-muted)]">Future planned</dt>
               <dd className="tabular-nums font-medium">
-                {formatMoney(forecast.cost)}
+                {formatHours(hoursFx.hoursFuturePlanned)}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Margin</dt>
-              <dd className="tabular-nums font-medium">
-                {formatMoney(forecast.margin)} ({forecast.marginPct.toFixed(0)}
-                %)
+              <dt className="text-[var(--text-muted)]">Remaining</dt>
+              <dd
+                className={cn(
+                  "tabular-nums font-medium",
+                  hoursFx.overBudget && "text-[var(--status-over)]",
+                )}
+              >
+                {hoursFx.hoursRemaining == null
+                  ? "—"
+                  : formatHours(hoursFx.hoursRemaining)}
               </dd>
             </div>
           </dl>
@@ -123,9 +129,5 @@ export function BudgetCard({
     );
   }
 
-  return (
-    <div id={`project-card-${project.id}`} className={className}>
-      {body}
-    </div>
-  );
+  return <div className={className}>{body}</div>;
 }

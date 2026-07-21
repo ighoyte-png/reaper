@@ -42,7 +42,7 @@ export function milestoneDateProgress(
   project: Project,
   todayKey: string,
 ): number | null {
-  const start = project.start_date;
+  const start = milestone.start_date ?? project.start_date;
   if (!start) return null;
   if (milestone.due_date <= start) return milestone.due_date <= todayKey ? 100 : 0;
   const s = new Date(`${start}T12:00:00`).getTime();

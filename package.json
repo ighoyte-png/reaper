@@ -1,6 +1,6 @@
 {
   "name": "reaper",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -16,6 +16,7 @@
     "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.5",
     "@tiptap/extension-link": "^3.27.4",
+    "@tiptap/extension-mention": "3.27.4",
     "@tiptap/extension-underline": "^3.27.4",
     "@tiptap/pm": "^3.27.4",
     "@tiptap/react": "^3.27.4",

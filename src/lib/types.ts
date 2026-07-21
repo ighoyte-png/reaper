@@ -76,6 +76,8 @@ export interface Milestone {
   organization_id: string;
   project_id: string;
   name: string;
+  /** Optional start of milestone window; falls back to project start for progress. */
+  start_date: string | null;
   due_date: string;
   status: MilestoneStatus;
   /** Admin-checked after formal client sign-off. */
@@ -93,6 +95,8 @@ export interface ProjectAsset {
   /** Plain text body for note-style assets (link assets leave this empty). */
   body: string;
   sort_order: number;
+  /** When true, asset is omitted from the client portal. */
+  hide_from_client: boolean;
 }
 
 export interface TaskList {
@@ -128,6 +132,8 @@ export interface TaskComment {
   author_profile_id: string;
   body: string;
   created_at: string;
+  /** People tagged in this comment (dashboard notifications). */
+  mentioned_person_ids: string[];
 }
 
 export interface Bulletin {

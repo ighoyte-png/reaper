@@ -1332,8 +1332,8 @@ export function ScheduleGrid() {
                       className={cn(
                         "relative flex items-center justify-center text-xs",
                         col.isWeekBoundaryEnd
-                          ? "border-r-2 border-[var(--border)]"
-                          : "border-r border-[var(--border)]",
+                          ? "border-r-2 border-white dark:border-[var(--border)]"
+                          : "border-r border-white dark:border-[var(--border)]",
                         zoom === "day" &&
                           col.isToday &&
                           "bg-[var(--today-col)] font-semibold text-[var(--accent)]",
@@ -1751,8 +1751,8 @@ export function ScheduleGrid() {
                               className={cn(
                                 "box-border shrink-0 transition-colors",
                                 col.isWeekBoundaryEnd
-                                  ? "border-r-2 border-[var(--border)]"
-                                  : "border-r border-[var(--border)]/40",
+                                  ? "border-r-2 border-white dark:border-[var(--border)]"
+                                  : "border-r border-white dark:border-[var(--border)]/40",
                                 (inLeaveDraft || isHover) &&
                                   "bg-[var(--leave-block-draft)]",
                                 canManage &&
@@ -2065,8 +2065,8 @@ export function ScheduleGrid() {
                                   className={cn(
                                     "box-border shrink-0 transition-colors",
                                     col.isWeekBoundaryEnd
-                                      ? "border-r-2 border-[var(--border)]"
-                                      : "border-r border-[var(--border)]/40",
+                                      ? "border-r-2 border-white dark:border-[var(--border)]"
+                                      : "border-r border-white dark:border-[var(--border)]/40",
                                     leave &&
                                       !fullDayLeave &&
                                       "bg-[var(--leave-block-fill)]",

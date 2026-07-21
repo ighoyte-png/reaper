@@ -42,6 +42,7 @@ import {
 import { useData } from "@/lib/data/store";
 import { useViewAsOptional } from "@/lib/view-as";
 import { notesHasContent } from "@/lib/notes-html";
+import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
 import {
   filterTasksForViewer,
@@ -71,6 +72,9 @@ type Props = {
   allowCardView?: boolean;
   /** When false, hide row/list selection checkboxes and bulk bar. */
   allowSelect?: boolean;
+  /** Deep-link: expand this task (and optionally open comments). */
+  focusTaskId?: string | null;
+  openComments?: boolean;
 };
 
 function todayKey() {
@@ -112,8 +116,10 @@ type BoardCtx = {
   expanded: Set<string>;
   toggleExpand: (id: string) => void;
   childrenMap: Map<string, Task[]>;
-  addComment: (taskId: string, html: string) => void;
+  addComment: (taskId: string, html: string, mentionedPersonIds: string[]) => void;
   deleteComment: (id: string) => void;
+  /** Project team available for @mentions. */
+  mentionPeople: Person[];
 };
 
 type TaskDragData = { type: "task"; listId: string; parentId: string | null };
@@ -134,6 +140,8 @@ export function ProjectTaskBoard({
   compact = false,
   allowCardView = false,
   allowSelect: allowSelectProp,
+  focusTaskId = null,
+  openComments = false,
 }: Props) {
   const {
     state,
@@ -331,7 +339,11 @@ export function ProjectTaskBoard({
     upsertTask({ ...task, status: next });
   }
 
-  function addComment(taskId: string, html: string) {
+  function addComment(
+    taskId: string,
+    html: string,
+    mentionedPersonIds: string[],
+  ) {
     if (!profile) return;
     upsertTaskComment({
       id: newId("tcom"),
@@ -340,8 +352,39 @@ export function ProjectTaskBoard({
       author_profile_id: profile.id,
       body: html,
       created_at: new Date().toISOString(),
+      mentioned_person_ids: [...new Set(mentionedPersonIds)],
     });
   }
+
+  const mentionPeople = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of state.assignments) {
+      if (a.project_id === projectId) ids.add(a.person_id);
+    }
+    for (const t of state.tasks) {
+      if (t.project_id === projectId && t.assignee_person_id) {
+        ids.add(t.assignee_person_id);
+      }
+    }
+    return state.people
+      .filter((p) => ids.has(p.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [state.assignments, state.tasks, state.people, projectId]);
+
+  useEffect(() => {
+    if (!focusTaskId || !openComments) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.add(focusTaskId);
+      return next;
+    });
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(`task-row-${focusTaskId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+    return () => window.clearTimeout(t);
+  }, [focusTaskId, openComments]);
 
   function moveTaskToColumn(taskId: string, destStatus: TaskStatus, destIndex: number) {
     const task = state.tasks.find((t) => t.id === taskId);
@@ -593,6 +636,7 @@ export function ProjectTaskBoard({
     childrenMap,
     addComment,
     deleteComment: deleteTaskComment,
+    mentionPeople,
   };
 
   if (view === "card" && allowCardView) {
@@ -1083,6 +1127,7 @@ function TaskRow({
 
   return (
     <div
+      id={`task-row-${task.id}`}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -1272,14 +1317,19 @@ function CommentThread({
           <SimpleRichTextEditor
             value={draft}
             onChange={setDraft}
-            placeholder="Add a comment…"
+            placeholder="Add a comment… Use @ to mention"
+            mentionPeople={ctx.mentionPeople}
           />
           <button
             type="button"
             className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
             onClick={() => {
               if (!notesHasContent(draft)) return;
-              ctx.addComment(task.id, draft);
+              ctx.addComment(
+                task.id,
+                draft,
+                extractMentionPersonIds(draft),
+              );
               setDraft("");
             }}
           >

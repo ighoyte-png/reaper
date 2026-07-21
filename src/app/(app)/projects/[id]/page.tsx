@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
 import { ChevronDown, ChevronRight, Copy, Link2, Pencil, Plus } from "lucide-react";
@@ -45,6 +45,9 @@ function overallProgressLabel(
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const focusTaskId = searchParams.get("task");
+  const openComments = searchParams.get("comments") === "1";
   const appHref = useAppHref();
   const {
     state,
@@ -199,11 +202,43 @@ export default function ProjectDetailPage() {
           ) : null}
         </div>
 
+        {team.length > 0 ? (
+          <section className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <h2 className="mb-3 text-sm font-semibold">Team</h2>
+            <ul className="flex flex-wrap gap-x-4 gap-y-2">
+              {team.map((p) => (
+                <li key={p.id} className="flex min-w-0 items-center gap-2 text-sm">
+                  <PersonAvatar
+                    avatarUrl={p.avatar_url}
+                    name={p.name}
+                    size="team"
+                    fallback="initials"
+                  />
+                  <span className="min-w-0 truncate">
+                    {p.name}
+                    {p.role_title ? (
+                      <span className="text-[var(--text-muted)]">
+                        {" "}
+                        · {p.role_title}
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         <div className="grid gap-4 lg:grid-cols-3">
           {/* Main: tasks + templates */}
           <div className="min-w-0 space-y-4 lg:col-span-2">
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <ProjectTaskBoard projectId={project.id} allowCardView />
+              <ProjectTaskBoard
+                projectId={project.id}
+                allowCardView
+                focusTaskId={focusTaskId}
+                openComments={openComments}
+              />
             </section>
 
             {canManage ? (
@@ -279,7 +314,7 @@ export default function ProjectDetailPage() {
             ) : null}
           </div>
 
-          {/* Sidebar: Progress → Assets → Team → Budget → Client portal */}
+          {/* Sidebar: Progress → Assets → Budget → Client portal */}
           <div className="space-y-4">
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -333,6 +368,7 @@ export default function ProjectDetailPage() {
                             id: newId("ms"),
                             project_id: project.id,
                             name: "New milestone",
+                            start_date: null,
                             due_date: today,
                             status: "upcoming",
                             client_approved: false,
@@ -376,37 +412,6 @@ export default function ProjectDetailPage() {
             </section>
 
             <ProjectNotebook projectId={project.id} />
-
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <h2 className="mb-3 text-sm font-semibold">Team</h2>
-              {team.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">
-                  No one assigned yet.
-                </p>
-              ) : (
-                <ul className="space-y-1.5 text-sm">
-                  {team.map((p) => (
-                    <li key={p.id} className="flex items-center gap-2">
-                      <PersonAvatar
-                        avatarUrl={p.avatar_url}
-                        name={p.name}
-                        size="team"
-                        fallback="initials"
-                      />
-                      <span className="min-w-0 truncate">
-                        {p.name}
-                        {p.role_title ? (
-                          <span className="text-[var(--text-muted)]">
-                            {" "}
-                            · {p.role_title}
-                          </span>
-                        ) : null}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
 
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <h2 className="mb-2 text-sm font-semibold">Budget</h2>
@@ -552,6 +557,18 @@ export default function ProjectDetailPage() {
                   setEditingMilestone({
                     ...editingMilestone,
                     name: e.target.value,
+                  })
+                }
+              />
+            </Field>
+            <Field label="Start date">
+              <DateInput
+                className={inputClass}
+                value={editingMilestone.start_date ?? ""}
+                onChange={(e) =>
+                  setEditingMilestone({
+                    ...editingMilestone,
+                    start_date: e.target.value || null,
                   })
                 }
               />

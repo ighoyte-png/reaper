@@ -1,38 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import Mention from "@tiptap/extension-mention";
+import Underline from "@tiptap/extension-underline";
 import { Bold, Link as LinkIcon, Underline as UnderlineIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { notesToEditorHtml, sanitizeNotesHtml } from "@/lib/notes-html";
-
-const extensions = [
-  StarterKit.configure({
-    blockquote: false,
-    bulletList: false,
-    code: false,
-    codeBlock: false,
-    heading: false,
-    horizontalRule: false,
-    italic: false,
-    listItem: false,
-    listKeymap: false,
-    orderedList: false,
-    strike: false,
-    trailingNode: false,
-    link: {
-      openOnClick: false,
-      autolink: true,
-      defaultProtocol: "https",
-      HTMLAttributes: {
-        rel: "noopener noreferrer",
-        target: "_blank",
-        class: "text-[var(--accent)] underline underline-offset-2",
-      },
-    },
-  }),
-];
+import type { MentionPerson } from "@/lib/mentions";
+import { createMentionSuggestion } from "@/components/ui/mention-suggestion";
 
 function normalizeLinkUrl(raw: string): string | null {
   const t = raw.trim();
@@ -47,31 +24,101 @@ export function SimpleRichTextEditor({
   onChange,
   className,
   placeholder = "Add a note…",
+  mentionPeople,
 }: {
   value: string;
   onChange: (html: string) => void;
   className?: string;
   placeholder?: string;
+  /** When set, typing @ opens a Slack-style mention flyout. */
+  mentionPeople?: MentionPerson[];
 }) {
-  const editor = useEditor({
-    extensions,
-    content: notesToEditorHtml(value),
-    immediatelyRender: false,
-    editorProps: {
-      attributes: {
-        class: cn(
-          "min-h-[4.5rem] px-2 py-2 text-sm text-[var(--text)] outline-none",
-          "[&_p]:m-0 [&_p+p]:mt-1",
-          "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
-        ),
-        "data-placeholder": placeholder,
+  const peopleKey = (mentionPeople ?? [])
+    .map((p) => p.id)
+    .sort()
+    .join(",");
+
+  const extensions = useMemo(() => {
+    const base = [
+      StarterKit.configure({
+        blockquote: false,
+        bulletList: false,
+        code: false,
+        codeBlock: false,
+        heading: false,
+        horizontalRule: false,
+        italic: false,
+        listItem: false,
+        listKeymap: false,
+        orderedList: false,
+        strike: false,
+        trailingNode: false,
+        link: {
+          openOnClick: false,
+          autolink: true,
+          defaultProtocol: "https",
+          HTMLAttributes: {
+            rel: "noopener noreferrer",
+            target: "_blank",
+            class: "text-[var(--accent)] underline underline-offset-2",
+          },
+        },
+      }),
+      Underline,
+    ];
+
+    if (!mentionPeople || mentionPeople.length === 0) return base;
+
+    return [
+      ...base,
+      Mention.configure({
+        HTMLAttributes: {
+          class:
+            "mention rounded px-0.5 font-medium text-[var(--accent)]",
+        },
+        renderText: ({ node }) =>
+          `@${node.attrs.label ?? node.attrs.id ?? ""}`,
+        renderHTML: ({ node }) => [
+          "span",
+          {
+            "data-type": "mention",
+            "data-id": node.attrs.id,
+            "data-label": node.attrs.label,
+            class:
+              "mention rounded px-0.5 font-medium text-[var(--accent)]",
+          },
+          `@${node.attrs.label ?? node.attrs.id ?? ""}`,
+        ],
+        suggestion: createMentionSuggestion(mentionPeople),
+      }),
+    ];
+    // peopleKey captures identity of the list without unstable array refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peopleKey]);
+
+  const editor = useEditor(
+    {
+      extensions,
+      content: notesToEditorHtml(value),
+      immediatelyRender: false,
+      editorProps: {
+        attributes: {
+          class: cn(
+            "min-h-[4.5rem] px-2 py-2 text-sm text-[var(--text)] outline-none",
+            "[&_p]:m-0 [&_p+p]:mt-1",
+            "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
+            "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
+          ),
+          "data-placeholder": placeholder,
+        },
+      },
+      onUpdate: ({ editor: ed }) => {
+        const html = ed.isEmpty ? "" : ed.getHTML();
+        onChange(html);
       },
     },
-    onUpdate: ({ editor: ed }) => {
-      const html = ed.isEmpty ? "" : ed.getHTML();
-      onChange(html);
-    },
-  });
+    [extensions],
+  );
 
   useEffect(() => {
     if (!editor) return;
@@ -144,6 +191,11 @@ export function SimpleRichTextEditor({
         </ToolbarButton>
       </div>
       <EditorContent editor={editor} />
+      {mentionPeople && mentionPeople.length > 0 ? (
+        <p className="border-t border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
+          Type @ to mention someone
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -191,6 +243,7 @@ export function RichNotesHtml({
       className={cn(
         "block [&_a]:pointer-events-auto [&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
         "[&_p]:m-0 [&_p+p]:mt-1",
+        "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
         className,
       )}
       dangerouslySetInnerHTML={{ __html: safe }}

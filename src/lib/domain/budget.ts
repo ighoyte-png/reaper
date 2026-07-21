@@ -323,3 +323,291 @@ export function calendarYearHourBars(
 ): MonthBurnBar[] {
   return calendarYearBars(project, assignments, [], asOf);
 }
+
+/** Hours for one assignment occurrence overlapping [fromKey, toKey] inclusive. */
+function occurrenceHoursInRange(
+  occ: { start_date: string; end_date: string; hours_per_day: number },
+  fromKey: string,
+  toKey: string,
+): number {
+  if (occ.end_date < fromKey || occ.start_date > toKey) return 0;
+  const days = workingDaysBetween(occ.start_date, occ.end_date).filter(
+    (d) => d >= fromKey && d <= toKey,
+  );
+  return days.length * occ.hours_per_day;
+}
+
+/**
+ * Confirmed schedule hours for a project overlapping [fromKey, toKey].
+ * Expands weekly recurrence across the range.
+ */
+export function projectHoursInDateRange(
+  projectId: string,
+  assignments: Assignment[],
+  fromKey: string,
+  toKey: string,
+  includeTentative = false,
+): number {
+  if (toKey < fromKey) return 0;
+  return assignments
+    .filter(
+      (a) =>
+        a.project_id === projectId &&
+        (includeTentative || a.status === "confirmed"),
+    )
+    .reduce((sum, a) => {
+      const occs = expandAssignmentInRange(a, fromKey, toKey);
+      return (
+        sum +
+        occs.reduce(
+          (s, occ) => s + occurrenceHoursInRange(occ, fromKey, toKey),
+          0,
+        )
+      );
+    }, 0);
+}
+
+export interface ProjectHoursForecast {
+  hoursUsedToDate: number;
+  hoursFuturePlanned: number;
+  hoursTotalPlanned: number;
+  /** Null when budget_mode is none (no hours remaining concept). */
+  hoursRemaining: number | null;
+  /** True when used + future exceeds hours budget (or $→hours equiv). */
+  overBudget: boolean;
+  mode: Project["budget_mode"];
+}
+
+function blendedBillRate(
+  projectId: string,
+  assignments: Assignment[],
+  people: Person[],
+): number {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  let hours = 0;
+  let weighted = 0;
+  for (const a of assignments) {
+    if (a.project_id !== projectId || a.status !== "confirmed") continue;
+    const h = assignmentHours(a);
+    const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+    hours += h;
+    weighted += h * rate;
+  }
+  if (hours <= 0) {
+    const rates = people.map((p) => p.bill_rate ?? 0).filter((r) => r > 0);
+    if (rates.length === 0) return 0;
+    return rates.reduce((s, r) => s + r, 0) / rates.length;
+  }
+  return weighted / hours;
+}
+
+/** Schedule hours used (≤ today) vs future, plus remaining vs project budget. */
+export function projectHoursForecast(
+  project: Project,
+  assignments: Assignment[],
+  people: Person[],
+  asOf: Date = new Date(),
+): ProjectHoursForecast {
+  const mode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  const todayKey = toDateKey(asOf);
+  const tomorrow = new Date(asOf);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = toDateKey(tomorrow);
+
+  let rangeStart = "1970-01-01";
+  let rangeEnd = "2099-12-31";
+  if (mode === "hours" && project.budget_monthly_reset) {
+    const start = startOfMonth(asOf);
+    const end = endOfMonth(asOf);
+    rangeStart = toDateKey(start);
+    rangeEnd = toDateKey(end);
+  }
+
+  const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
+  const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
+
+  const hoursUsedToDate =
+    usedEnd >= rangeStart
+      ? projectHoursInDateRange(
+          project.id,
+          assignments,
+          rangeStart,
+          usedEnd,
+        )
+      : 0;
+  const hoursFuturePlanned =
+    futureStart <= rangeEnd
+      ? projectHoursInDateRange(
+          project.id,
+          assignments,
+          futureStart,
+          rangeEnd,
+        )
+      : 0;
+  const hoursTotalPlanned = hoursUsedToDate + hoursFuturePlanned;
+
+  let hoursRemaining: number | null = null;
+  let overBudget = false;
+
+  if (mode === "hours") {
+    const totalHours = project.budget_hours ?? 0;
+    hoursRemaining = totalHours - hoursTotalPlanned;
+    overBudget = hoursTotalPlanned > totalHours && totalHours > 0;
+  } else if (mode === "amount") {
+    const totalAmount = project.budget_amount ?? 0;
+    const usedAmount = (() => {
+      const byId = new Map(people.map((p) => [p.id, p]));
+      let sum = 0;
+      for (const a of assignments) {
+        if (a.project_id !== project.id || a.status !== "confirmed") continue;
+        const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+        const from = rangeStart;
+        const to = usedEnd;
+        if (to < from) continue;
+        for (const occ of expandAssignmentInRange(a, from, to)) {
+          sum += occurrenceHoursInRange(occ, from, to) * rate;
+        }
+      }
+      return sum;
+    })();
+    const futureAmount = (() => {
+      const byId = new Map(people.map((p) => [p.id, p]));
+      let sum = 0;
+      for (const a of assignments) {
+        if (a.project_id !== project.id || a.status !== "confirmed") continue;
+        const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+        if (futureStart > rangeEnd) continue;
+        for (const occ of expandAssignmentInRange(a, futureStart, rangeEnd)) {
+          sum += occurrenceHoursInRange(occ, futureStart, rangeEnd) * rate;
+        }
+      }
+      return sum;
+    })();
+    const remainingAmount = totalAmount - usedAmount - futureAmount;
+    const rate = blendedBillRate(project.id, assignments, people);
+    hoursRemaining = rate > 0 ? remainingAmount / rate : null;
+    overBudget = usedAmount + futureAmount > totalAmount && totalAmount > 0;
+  }
+
+  return {
+    hoursUsedToDate,
+    hoursFuturePlanned,
+    hoursTotalPlanned,
+    hoursRemaining,
+    overBudget,
+    mode,
+  };
+}
+
+export interface CumulativeBurnPoint {
+  key: string;
+  label: string;
+  /** Cumulative hours through end of this month (used portion only up to today). */
+  cumulativeUsed: number;
+  /** Cumulative hours through end of this month including all planned. */
+  cumulativePlanned: number;
+  /** Whether this month is entirely in the future (dashed segment). */
+  isFuture: boolean;
+}
+
+export function projectDateSpan(
+  project: Project,
+  assignments: Assignment[],
+): { startKey: string; endKey: string } | null {
+  if (project.start_date && project.end_date) {
+    return { startKey: project.start_date, endKey: project.end_date };
+  }
+  let min: string | null = null;
+  let max: string | null = null;
+  for (const a of assignments) {
+    if (a.project_id !== project.id || a.status !== "confirmed") continue;
+    // Expand weekly a bit to find span
+    const endHorizon =
+      a.recurrence === "weekly"
+        ? a.recurrence_end_date ??
+          toDateKey(
+            new Date(
+              parseISOSafe(a.start_date).getTime() +
+                52 * 7 * 24 * 60 * 60 * 1000,
+            ),
+          )
+        : a.end_date;
+    const start = a.start_date;
+    const end = endHorizon;
+    if (!min || start < min) min = start;
+    if (!max || end > max) max = end;
+  }
+  if (!min || !max) return null;
+  return {
+    startKey: project.start_date ?? min,
+    endKey: project.end_date ?? max,
+  };
+}
+
+function parseISOSafe(key: string): Date {
+  return new Date(`${key}T12:00:00`);
+}
+
+/** Month-by-month cumulative used vs planned hours for non-retainer charts. */
+export function cumulativeHoursSeries(
+  project: Project,
+  assignments: Assignment[],
+  asOf: Date = new Date(),
+): CumulativeBurnPoint[] {
+  const span = projectDateSpan(project, assignments);
+  if (!span) return [];
+  const todayKey = toDateKey(asOf);
+  const start = startOfMonth(parseISOSafe(span.startKey));
+  const end = startOfMonth(parseISOSafe(span.endKey));
+  const points: CumulativeBurnPoint[] = [];
+  let cursor = new Date(start);
+  let cumUsed = 0;
+  let cumPlanned = 0;
+
+  while (cursor <= end) {
+    const y = cursor.getFullYear();
+    const m = cursor.getMonth();
+    const monthStartKey = toDateKey(startOfMonth(cursor));
+    const monthEndKey = toDateKey(endOfMonth(cursor));
+    const rangeFrom =
+      monthStartKey < span.startKey ? span.startKey : monthStartKey;
+    const rangeTo = monthEndKey > span.endKey ? span.endKey : monthEndKey;
+
+    const monthPlanned = projectHoursInDateRange(
+      project.id,
+      assignments,
+      rangeFrom,
+      rangeTo,
+    );
+    cumPlanned += monthPlanned;
+
+    let monthUsed = 0;
+    if (rangeFrom <= todayKey) {
+      const usedTo = rangeTo < todayKey ? rangeTo : todayKey;
+      if (usedTo >= rangeFrom) {
+        monthUsed = projectHoursInDateRange(
+          project.id,
+          assignments,
+          rangeFrom,
+          usedTo,
+        );
+      }
+    }
+    cumUsed += monthUsed;
+
+    points.push({
+      key: format(cursor, "yyyy-MM"),
+      label: format(cursor, "MMM yyyy"),
+      cumulativeUsed: cumUsed,
+      cumulativePlanned: cumPlanned,
+      isFuture: monthStartKey > todayKey,
+    });
+
+    cursor = new Date(y, m + 1, 1);
+  }
+  return points;
+}

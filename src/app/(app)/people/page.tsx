@@ -17,7 +17,8 @@ import {
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
-import type { LeaveKind, Person } from "@/lib/types";
+import { isAdmin } from "@/lib/auth/roles";
+import type { LeaveKind, Person, Role } from "@/lib/types";
 import {
   LEAVE_KINDS,
   leaveKindLabel,
@@ -34,6 +35,17 @@ const actionIconClass =
 
 const mutedActionIconClass =
   "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]";
+
+function accessLabel(role: Role): string {
+  switch (role) {
+    case "admin":
+      return "Admin";
+    case "manager":
+      return "Manager";
+    default:
+      return "Member";
+  }
+}
 
 const emptyPerson = (): Omit<Person, "organization_id"> => ({
   id: "",
@@ -54,9 +66,11 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
 export default function PeoplePage() {
   const {
     state,
+    profile,
     upsertPerson,
     deletePerson,
     upsertLeave,
+    updateProfileRole,
     newId,
     canManage,
     isPublicShare,
@@ -66,11 +80,13 @@ export default function PeoplePage() {
   } = useData();
   const { push } = useToast();
   const router = useRouter();
+  const admin = isAdmin(profile?.role);
   const [editing, setEditing] = useState<Omit<Person, "organization_id"> | null>(
     null,
   );
   const [isNewPerson, setIsNewPerson] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
+  const [editAccessRole, setEditAccessRole] = useState<Role>("member");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +103,15 @@ export default function PeoplePage() {
   const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
   const start = toDateKey(weekStart(new Date()));
   const end = toDateKey(weekEnd(new Date()));
+
+  const editingLinkedProfile = editing?.profile_id
+    ? state.profiles.find((p) => p.id === editing.profile_id)
+    : undefined;
+  const adminCount = state.profiles.filter((p) => p.role === "admin").length;
+  const editingIsLastAdmin =
+    Boolean(editingLinkedProfile) &&
+    editingLinkedProfile!.role === "admin" &&
+    adminCount <= 1;
 
   useEffect(() => {
     if (!canManage && !isPublicShare) router.replace("/schedule");
@@ -228,6 +253,16 @@ export default function PeoplePage() {
       }
       const row = { ...editing, email, avatar_url };
       await upsertPerson(row);
+
+      if (
+        admin &&
+        row.profile_id &&
+        editingLinkedProfile &&
+        editAccessRole !== editingLinkedProfile.role
+      ) {
+        await updateProfileRole(row.profile_id, editAccessRole);
+      }
+
       setEditing(null);
       setAvatarFile(null);
       setAvatarPreview(null);
@@ -255,6 +290,10 @@ export default function PeoplePage() {
     setEditing(person);
     setAvatarFile(null);
     setAvatarPreview(person.avatar_url);
+    const linked = person.profile_id
+      ? state.profiles.find((p) => p.id === person.profile_id)
+      : undefined;
+    setEditAccessRole(linked?.role ?? "member");
   }
 
   return (
@@ -359,8 +398,16 @@ export default function PeoplePage() {
                       {canManage ? (
                         <td className="px-3 py-2.5">
                           {linked ? (
-                            <span className="text-xs text-[var(--status-healthy)]">
-                              Member · {linked.email}
+                            <span className="text-xs">
+                              <span className="font-medium text-[var(--status-healthy)]">
+                                {accessLabel(linked.role)}
+                              </span>
+                              {linked.email ? (
+                                <span className="text-[var(--text-muted)]">
+                                  {" "}
+                                  · {linked.email}
+                                </span>
+                              ) : null}
                             </span>
                           ) : (
                             <span className="text-xs text-[var(--text-muted)]">
@@ -552,6 +599,46 @@ export default function PeoplePage() {
                 }
               />
             </Field>
+            {editing.profile_id && editingLinkedProfile ? (
+              <Field label="Access">
+                {admin ? (
+                  <>
+                    <select
+                      className={inputClass}
+                      value={editAccessRole}
+                      disabled={editingIsLastAdmin}
+                      onChange={(e) =>
+                        setEditAccessRole(e.target.value as Role)
+                      }
+                    >
+                      <option value="member">Member</option>
+                      <option value="manager">Manager</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                    {editingIsLastAdmin ? (
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        Keep at least one admin on the workspace.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        Controls what this login can manage in the app.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm">
+                    {accessLabel(editingLinkedProfile.role)}
+                    {editingLinkedProfile.email
+                      ? ` · ${editingLinkedProfile.email}`
+                      : ""}
+                  </p>
+                )}
+              </Field>
+            ) : !isNewPerson ? (
+              <p className="text-xs text-[var(--text-muted)]">
+                No login linked yet — invite them to set Access.
+              </p>
+            ) : null}
             <div className="grid grid-cols-2 gap-3">
               <Field label="Department">
                 <input

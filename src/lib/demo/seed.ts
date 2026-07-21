@@ -163,6 +163,7 @@ export function createDemoSeed(): DemoState {
         organization_id: ORG_ID,
         project_id: "proj-1",
         name: "Design freeze",
+        start_date: null,
         due_date: d(5, week),
         status: "upcoming",
         client_approved: true,
@@ -173,6 +174,7 @@ export function createDemoSeed(): DemoState {
         organization_id: ORG_ID,
         project_id: "proj-1",
         name: "Launch",
+        start_date: null,
         due_date: d(40, week),
         status: "upcoming",
         client_approved: false,
@@ -183,6 +185,7 @@ export function createDemoSeed(): DemoState {
         organization_id: ORG_ID,
         project_id: "proj-2",
         name: "Beta",
+        start_date: null,
         due_date: d(18, week),
         status: "upcoming",
         client_approved: false,
@@ -508,6 +511,7 @@ export function createDemoSeed(): DemoState {
         url: "https://docs.example.com/harbor-sow",
         body: "",
         sort_order: 0,
+      hide_from_client: false,
       },
       {
         id: "asset-2",
@@ -518,6 +522,7 @@ export function createDemoSeed(): DemoState {
         url: "https://harbor-retail.example.com",
         body: "",
         sort_order: 1,
+      hide_from_client: false,
       },
       {
         id: "asset-3",
@@ -528,6 +533,7 @@ export function createDemoSeed(): DemoState {
         url: "https://figma.com/file/harbor-storefront",
         body: "",
         sort_order: 2,
+      hide_from_client: false,
       },
       {
         id: "asset-4",
@@ -538,6 +544,7 @@ export function createDemoSeed(): DemoState {
         url: "https://staging.harbor.example.com",
         body: "",
         sort_order: 3,
+      hide_from_client: false,
       },
       {
         id: "asset-5",
@@ -548,6 +555,7 @@ export function createDemoSeed(): DemoState {
         url: "https://vault.example.com/harbor",
         body: "",
         sort_order: 4,
+      hide_from_client: false,
       },
     ],
     task_lists: [
@@ -710,6 +718,7 @@ export function createDemoSeed(): DemoState {
         author_profile_id: "profile-manager",
         body: "Let's lock this by Friday.",
         created_at: dt(1, week),
+      mentioned_person_ids: [],
       },
       {
         id: "comment-2",
@@ -718,6 +727,7 @@ export function createDemoSeed(): DemoState {
         author_profile_id: "profile-admin",
         body: "Confirm DNS cutover window with client.",
         created_at: dt(2, week),
+      mentioned_person_ids: [],
       },
     ],
     bulletins: [

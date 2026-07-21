@@ -60,6 +60,7 @@ export interface ProjectPortalPayload {
     label: string;
     url: string;
     body: string;
+    sort_order: number;
   }[];
 }
 
@@ -145,13 +146,15 @@ export function sanitizeProjectPortal(
         }));
     })(),
     assets: state.project_assets
-      .filter((a) => a.project_id === projectId)
+      .filter((a) => a.project_id === projectId && !a.hide_from_client)
+      .sort((a, b) => a.sort_order - b.sort_order)
       .map((a) => ({
         id: a.id,
         kind: a.kind,
         label: a.label,
         url: a.url,
         body: a.body,
+        sort_order: a.sort_order,
       })),
   };
 }

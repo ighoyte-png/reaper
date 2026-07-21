@@ -29,14 +29,14 @@ function escapeText(text: string): string {
 export function notesToEditorHtml(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (/<\/?(?:p|strong|b|u|a|br)\b/i.test(trimmed)) return value;
+  if (/<\/?(?:p|strong|b|u|a|br|span)\b/i.test(trimmed)) return value;
   return trimmed
     .split(/\n/)
     .map((line) => `<p>${escapeText(line) || "<br>"}</p>`)
     .join("");
 }
 
-const ALLOWED_TAGS = new Set(["P", "BR", "STRONG", "B", "U", "A"]);
+const ALLOWED_TAGS = new Set(["P", "BR", "STRONG", "B", "U", "A", "SPAN"]);
 
 function sanitizeHref(href: string | null): string | null {
   if (!href) return null;
@@ -48,7 +48,7 @@ function sanitizeHref(href: string | null): string | null {
   return `https://${t}`;
 }
 
-/** Allow only p / br / strong / b / u / a — for tooltips and any HTML render. */
+/** Allow only p / br / strong / b / u / a / mention spans — for tooltips and any HTML render. */
 export function sanitizeNotesHtml(html: string): string {
   if (typeof window === "undefined") {
     return notesHasContent(html) ? html : "";
@@ -71,6 +71,13 @@ export function sanitizeNotesHtml(html: string): string {
 
     if (!ALLOWED_TAGS.has(tag)) return inner;
     if (tag === "BR") return "<br>";
+    if (tag === "SPAN") {
+      if (el.getAttribute("data-type") !== "mention") return inner;
+      const id = el.getAttribute("data-id");
+      const label = el.getAttribute("data-label") ?? inner;
+      if (!id) return escapeText(label);
+      return `<span data-type="mention" data-id="${escapeText(id)}" data-label="${escapeText(label)}" class="mention">@${escapeText(label.replace(/^@/, ""))}</span>`;
+    }
     if (tag === "A") {
       const href = sanitizeHref(el.getAttribute("href"));
       if (!href) return inner;

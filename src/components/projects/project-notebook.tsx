@@ -48,6 +48,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
   const [url, setUrl] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [editMode, setEditMode] = useState(false);
+  const [hideFromClient, setHideFromClient] = useState(false);
   const editable = canManage && editMode;
 
   const sensors = useSensors(
@@ -62,6 +63,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
     setUrl("");
     setNoteBody("");
     setKind("custom");
+    setHideFromClient(false);
   }
 
   function startAdd(next: "link" | "note") {
@@ -74,6 +76,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
     setUrl("");
     setNoteBody("");
     setKind("custom");
+    setHideFromClient(false);
     setMode(next);
   }
 
@@ -85,6 +88,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
     setUrl(asset.url);
     setNoteBody(asset.body);
     setKind(asset.kind);
+    setHideFromClient(Boolean(asset.hide_from_client));
   }
 
   function saveLink() {
@@ -97,6 +101,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         label: label.trim() || ASSET_KIND_LABELS[inferred],
         url: url.trim(),
         body: "",
+        hide_from_client: hideFromClient,
       });
     } else {
       upsertProjectAsset({
@@ -108,6 +113,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         url: url.trim(),
         body: "",
         sort_order: assets.length,
+        hide_from_client: hideFromClient,
       });
     }
     resetForm();
@@ -122,6 +128,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         label: label.trim() || "Note",
         url: "",
         body: noteBody,
+        hide_from_client: hideFromClient,
       });
     } else {
       upsertProjectAsset({
@@ -133,6 +140,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         url: "",
         body: noteBody,
         sort_order: assets.length,
+        hide_from_client: hideFromClient,
       });
     }
     resetForm();
@@ -248,6 +256,14 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
               placeholder="https://"
             />
           </Field>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--text-muted)] sm:col-span-3">
+            <input
+              type="checkbox"
+              checked={hideFromClient}
+              onChange={(e) => setHideFromClient(e.target.checked)}
+            />
+            Hide from client portal
+          </label>
           <div className="flex items-end gap-2 sm:col-span-3">
             <button
               type="button"
@@ -285,6 +301,14 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
               placeholder="Write a note…"
             />
           </Field>
+          <label className="flex cursor-pointer items-center gap-2 text-xs text-[var(--text-muted)]">
+            <input
+              type="checkbox"
+              checked={hideFromClient}
+              onChange={(e) => setHideFromClient(e.target.checked)}
+            />
+            Hide from client portal
+          </label>
           <div className="flex items-end gap-2">
             <button
               type="button"
@@ -326,6 +350,12 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
                   isEditing={editing?.id === a.id}
                   onEdit={() => startEdit(a)}
                   onDelete={() => deleteProjectAsset(a.id)}
+                  onToggleHide={() =>
+                    upsertProjectAsset({
+                      ...a,
+                      hide_from_client: !a.hide_from_client,
+                    })
+                  }
                 />
               ))}
             </ul>
@@ -342,19 +372,32 @@ function SortableAssetRow({
   isEditing,
   onEdit,
   onDelete,
+  onToggleHide,
 }: {
   asset: ProjectAsset;
   canManage: boolean;
   isEditing: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleHide: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: asset.id, disabled: !canManage });
   const isNote = Boolean(asset.body.trim());
 
   const actions = canManage ? (
-    <div className="flex shrink-0 items-center gap-1">
+    <div className="flex shrink-0 items-center gap-2">
+      <label
+        className="flex cursor-pointer items-center gap-1 text-[10px] text-[var(--text-muted)]"
+        title="Hide from client portal"
+      >
+        <input
+          type="checkbox"
+          checked={Boolean(asset.hide_from_client)}
+          onChange={onToggleHide}
+        />
+        Hide
+      </label>
       <button
         type="button"
         className={cn(
