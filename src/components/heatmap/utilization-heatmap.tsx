@@ -52,10 +52,10 @@ function levelTone(level: CapacityLevel) {
     case "unavailable":
     default:
       return {
-        border: "border-[var(--border)]",
+        border: "border-[var(--status-unavailable)]/40",
         fill: "bg-[var(--status-unavailable)]/20",
         text: "text-[var(--text-muted)]",
-        chip: "border-[var(--border)] text-[var(--text-muted)]",
+        chip: "border-[var(--status-unavailable)]/40 text-[var(--text-muted)]",
       };
   }
 }
@@ -139,20 +139,20 @@ export function UtilizationHeatmap({
         </div>
       ) : null}
 
-      <div className="overflow-auto rounded-md border border-[var(--border)]">
+      <div className="overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg)]">
         <div
           className="min-w-max grid"
           style={{
             gridTemplateColumns: `200px repeat(${weeks}, minmax(88px, 1fr))`,
           }}
         >
-          <div className="sticky left-0 z-[1] bg-[var(--bg-elevated)] px-3 py-2.5 text-xs font-medium text-[var(--text-muted)]">
+          <div className="sticky left-0 z-[1] bg-[var(--bg)] px-3 py-2.5 text-xs font-medium text-[var(--text-muted)]">
             People
           </div>
           {anchors.map((anchor) => (
             <div
               key={anchor.toISOString()}
-              className="border-l border-[var(--border)] bg-[var(--bg-elevated)] px-2 py-2.5 text-center text-[11px] font-medium text-[var(--text-muted)]"
+              className="border-l border-[var(--border)] bg-[var(--bg)] px-2 py-2.5 text-center text-[11px] font-medium text-[var(--text-muted)]"
             >
               {format(anchor, "MMM d")}
             </div>
