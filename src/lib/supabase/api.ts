@@ -1234,7 +1234,10 @@ export async function deleteTaskListRow(supabase: SupabaseClient, id: string) {
 }
 
 export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
-  const { error } = await supabase.from("tasks").upsert({
+  // Prefer UPDATE first: members only have UPDATE RLS (assigned tasks), and
+  // PostgREST upsert requires INSERT which members lack — that caused status
+  // to flip locally then bounce back after refreshSupabase on error.
+  const payload = {
     id: task.id,
     organization_id: task.organization_id,
     project_id: task.project_id,
@@ -1247,7 +1250,16 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     due_date: task.due_date,
     notes: task.notes,
     sort_order: task.sort_order,
-  });
+  };
+  const { data, error: updateError } = await supabase
+    .from("tasks")
+    .update(payload)
+    .eq("id", task.id)
+    .select("id");
+  if (updateError) throw updateError;
+  if (data && data.length > 0) return;
+
+  const { error } = await supabase.from("tasks").insert(payload);
   if (error) throw error;
 }
 

@@ -521,7 +521,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [mode, refreshSupabase]);
 
-  // Live sync: schedule + mentions + bulletins refresh this workspace for other clients.
+  // Live sync: schedule + tasks + mentions + bulletins refresh for other clients.
   useEffect(() => {
     if (mode !== "supabase" || !ready) return;
     const client = supabaseRef.current;
@@ -586,6 +586,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           event: "*",
           schema: "public",
           table: "bulletins",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        scheduleRefresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tasks",
           filter: `organization_id=eq.${organizationId}`,
         },
         scheduleRefresh,
