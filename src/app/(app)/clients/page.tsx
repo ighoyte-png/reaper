@@ -5,6 +5,7 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { ColorPicker } from "@/components/ui/color-picker";
+import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { sortClientsByName } from "@/lib/domain/sorting";
@@ -128,10 +129,7 @@ export default function ClientsPage() {
                     >
                       <td className="px-3 py-2.5 font-medium">
                         <span className="inline-flex items-center gap-2">
-                          <span
-                            className="h-2.5 w-2.5 rounded-full"
-                            style={{ background: client.color }}
-                          />
+                          <ProjectColorBar color={client.color} />
                           {client.name}
                         </span>
                       </td>

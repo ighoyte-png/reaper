@@ -10,6 +10,7 @@ import { ProjectForm } from "@/components/projects/project-form";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
+import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
@@ -161,7 +162,7 @@ export default function ProjectsPage() {
               </Link>
               <button
                 type="button"
-                className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
                 onClick={() => {
                   setMemberIds([]);
                   setEditing(emptyProject(newId("proj")));
@@ -292,10 +293,7 @@ export default function ProjectsPage() {
                   <section key={client?.id ?? "none"}>
                     <div className="mb-4 flex items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2">
                       {client ? (
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ background: client.color }}
-                        />
+                        <ProjectColorBar color={client.color} />
                       ) : null}
                       <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
                         {client?.name ?? "No client"}
@@ -432,12 +430,9 @@ function ClientNavButton({
       )}
     >
       {color ? (
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ background: color }}
-        />
+        <ProjectColorBar color={color} size="sm" />
       ) : (
-        <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--border)]" />
+        <ProjectColorBar color="var(--border)" size="sm" />
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="text-[11px] tabular-nums text-[var(--text-muted)]">
@@ -469,12 +464,7 @@ function MobileClientChip({
           : "border-[var(--border)] text-[var(--text-muted)]",
       )}
     >
-      {color ? (
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ background: color }}
-        />
-      ) : null}
+      {color ? <ProjectColorBar color={color} size="sm" /> : null}
       {label}
     </button>
   );

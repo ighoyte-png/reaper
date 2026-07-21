@@ -53,8 +53,8 @@
   --text-muted: #9aa3b2;
   --border: #151921;
   --divider: #1a1f28;
-  --schedule-day-border: rgba(255, 255, 255, 0.15);
-  --schedule-week-border: rgba(255, 255, 255, 0.3);
+  --schedule-day-border: rgba(255, 255, 255, 0.09);
+  --schedule-week-border: rgba(255, 255, 255, 0.2);
   --section-rule: rgba(255, 255, 255, 0.12);
   --accent: #3b82f6;
   --accent-fg: #ffffff;

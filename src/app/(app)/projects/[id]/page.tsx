@@ -14,6 +14,7 @@ import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { SortableMilestoneList } from "@/components/projects/sortable-milestone-list";
 import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
+import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { ProjectForm } from "@/components/projects/project-form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
@@ -238,11 +239,8 @@ export default function ProjectDetailPage() {
 
       <div className="p-5">
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span
-            className="h-3 w-3 rounded-full"
-            style={{
-              background: projectDisplayColor(project, state.clients),
-            }}
+          <ProjectColorBar
+            color={projectDisplayColor(project, state.clients)}
           />
           <span className="text-xs text-[var(--text-muted)]">
             {client?.name ?? "No client"} ·{" "}

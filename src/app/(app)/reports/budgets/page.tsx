@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { BudgetCard } from "@/components/budgets/budget-card";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
+import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -211,10 +212,7 @@ function BudgetsReportContent() {
                   <section key={client?.id ?? "none"}>
                     <div className="mb-4 flex items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2">
                       {client ? (
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ background: client.color }}
-                        />
+                        <ProjectColorBar color={client.color} />
                       ) : null}
                       <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
                         {client?.name ?? "No Client"}
@@ -277,12 +275,9 @@ function ClientNavButton({
       )}
     >
       {color ? (
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ background: color }}
-        />
+        <ProjectColorBar color={color} size="sm" />
       ) : (
-        <span className="h-2 w-2 shrink-0 rounded-full bg-[var(--border)]" />
+        <ProjectColorBar color="var(--border)" size="sm" />
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="text-[11px] tabular-nums text-[var(--text-muted)]">
@@ -314,12 +309,7 @@ function MobileClientChip({
           : "border-[var(--border)] text-[var(--text-muted)]",
       )}
     >
-      {color ? (
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ background: color }}
-        />
-      ) : null}
+      {color ? <ProjectColorBar color={color} size="sm" /> : null}
       {label}
     </button>
   );

@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
@@ -272,11 +273,8 @@ export default function ProjectBudgetDetailPage() {
 
       <div className="w-full space-y-6 p-5">
         <div className="flex flex-wrap items-center gap-2">
-          <span
-            className="h-3 w-3 rounded-full"
-            style={{
-              background: projectDisplayColor(project, state.clients),
-            }}
+          <ProjectColorBar
+            color={projectDisplayColor(project, state.clients)}
           />
           <span className="text-sm text-[var(--text-muted)]">
             {client?.name ?? "No client"} ·{" "}
