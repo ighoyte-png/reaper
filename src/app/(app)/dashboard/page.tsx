@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { format, parseISO } from "date-fns";
+import { addWeeks, format, parseISO } from "date-fns";
 import {
   AlertTriangle,
   Megaphone,
@@ -29,11 +29,17 @@ import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { isAdmin } from "@/lib/auth/roles";
-import { budgetBurn, budgetHealth, formatHours } from "@/lib/domain/budget";
+import {
+  budgetBurn,
+  budgetHealth,
+  formatHours,
+  formatMoney,
+} from "@/lib/domain/budget";
 import {
   capacityLevel,
   personBookedHoursInRange,
   availableHoursInRange,
+  utilizationPct,
 } from "@/lib/domain/capacity";
 import {
   endOfMonth,
@@ -46,7 +52,15 @@ import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { taskUrgency, type TaskUrgency } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
-import type { Bulletin, Person, Profile, Project, Task } from "@/lib/types";
+import type {
+  Bulletin,
+  LeaveDay,
+  LeaveKind,
+  Person,
+  Profile,
+  Project,
+  Task,
+} from "@/lib/types";
 
 const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
   { key: "today", label: "Due today" },
@@ -55,6 +69,8 @@ const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
   { key: "week", label: "Due this week" },
 ];
 
+type DashView = "overview" | "detailed";
+
 function bulletinVisibleToPerson(
   bulletin: Bulletin,
   personId: string | null,
@@ -62,6 +78,13 @@ function bulletinVisibleToPerson(
   if (bulletin.audience === "all") return true;
   if (!personId) return false;
   return bulletin.audience_person_ids.includes(personId);
+}
+
+function formatCompactMoney(amount: number): string {
+  const abs = Math.abs(amount);
+  if (abs >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `$${(amount / 1_000).toFixed(1)}k`;
+  return formatMoney(amount);
 }
 
 export default function DashboardPage() {
@@ -76,6 +99,7 @@ export default function DashboardPage() {
   } = useData();
   const { push } = useToast();
   const appHref = useAppHref();
+  const [dashView, setDashView] = useState<DashView>("overview");
   const {
     viewAsPersonId,
     setViewAsPersonId,
@@ -257,259 +281,834 @@ export default function DashboardPage() {
   const sortedPeople = sortPeopleByName(state.people);
   const admin = isAdmin(profile?.role);
 
+  const activeProjects = useMemo(
+    () => state.projects.filter((p) => p.status === "active"),
+    [state.projects],
+  );
+
+  const projectHealthStats = useMemo(() => {
+    let healthy = 0;
+    let near = 0;
+    let over = 0;
+    let none = 0;
+    for (const p of activeProjects) {
+      const health = budgetHealth(
+        budgetBurn(p, state.assignments, state.people),
+      );
+      if (health === "healthy") healthy += 1;
+      else if (health === "near") near += 1;
+      else if (health === "over") over += 1;
+      else none += 1;
+    }
+    const scored = healthy + near + over;
+    const onTrackPct =
+      scored <= 0 ? 100 : Math.round((healthy / scored) * 100);
+    return { healthy, near, over, none, onTrackPct, total: activeProjects.length };
+  }, [activeProjects, state.assignments, state.people]);
+
+  const teamUtilization = useMemo(() => {
+    const people = canManage
+      ? state.people
+      : myPerson
+        ? [myPerson]
+        : [];
+    if (people.length === 0) return { avg: 0, series: [] as number[] };
+
+    const weekAvgs: number[] = [];
+    for (let i = 5; i >= 0; i -= 1) {
+      const anchor = weekStart(addWeeks(now, -i));
+      const wStart = toDateKey(anchor);
+      const wEnd = toDateKey(weekEnd(anchor));
+      let sum = 0;
+      let n = 0;
+      for (const person of people) {
+        const booked = personBookedHoursInRange(
+          person.id,
+          wStart,
+          wEnd,
+          state.assignments,
+          state.leave_days,
+        );
+        const available = availableHoursInRange(
+          person,
+          wStart,
+          wEnd,
+          state.leave_days,
+        );
+        if (available <= 0) continue;
+        sum += utilizationPct(booked, available);
+        n += 1;
+      }
+      weekAvgs.push(n > 0 ? sum / n : 0);
+    }
+    const avg = weekAvgs[weekAvgs.length - 1] ?? 0;
+    return { avg, series: weekAvgs };
+  }, [
+    canManage,
+    myPerson,
+    state.people,
+    state.assignments,
+    state.leave_days,
+    now,
+  ]);
+
+  const orgBudgetBurn = useMemo(() => {
+    let plannedAmount = 0;
+    let totalAmount = 0;
+    let plannedHours = 0;
+    let totalHours = 0;
+    let amountProjects = 0;
+    let hoursProjects = 0;
+    for (const p of activeProjects) {
+      const burn = budgetBurn(p, state.assignments, state.people);
+      if (burn.mode === "amount") {
+        plannedAmount += burn.plannedAmount;
+        totalAmount += burn.totalAmount ?? 0;
+        amountProjects += 1;
+      } else if (burn.mode === "hours") {
+        plannedHours += burn.plannedHours;
+        totalHours += burn.totalHours;
+        hoursProjects += 1;
+      }
+    }
+    if (amountProjects > 0) {
+      const pct =
+        totalAmount <= 0
+          ? 0
+          : Math.min(100, (plannedAmount / totalAmount) * 100);
+      return {
+        label: `${formatCompactMoney(plannedAmount)} / ${formatCompactMoney(totalAmount)} Spent`,
+        pct,
+        over: plannedAmount > totalAmount && totalAmount > 0,
+      };
+    }
+    if (hoursProjects > 0) {
+      const pct =
+        totalHours <= 0 ? 0 : Math.min(100, (plannedHours / totalHours) * 100);
+      return {
+        label: `${formatHours(plannedHours)} / ${formatHours(totalHours)}`,
+        pct,
+        over: plannedHours > totalHours && totalHours > 0,
+      };
+    }
+    return { label: "No budgets set", pct: 0, over: false };
+  }, [activeProjects, state.assignments, state.people]);
+
+  const upcomingDueTasks = useMemo(() => {
+    const groups = ["today", "tomorrow", "three_days"] as const;
+    const list: Task[] = [];
+    for (const key of groups) {
+      const tasks = urgentByGroup.get(key) ?? [];
+      list.push(...tasks);
+    }
+    return list.slice(0, 8);
+  }, [urgentByGroup]);
+
+  const peopleById = useMemo(
+    () => new Map(state.people.map((p) => [p.id, p])),
+    [state.people],
+  );
+
+  const viewAsControl =
+    canManage ? (
+      <div className="flex items-center gap-2">
+        <label className="sr-only" htmlFor="view-as-person">
+          View as
+        </label>
+        <select
+          id="view-as-person"
+          className={cn(inputClass, "mt-0 h-8 w-[10.5rem] py-0 text-xs")}
+          value={viewAsPersonId ?? ""}
+          onChange={(e) => setViewAsPersonId(e.target.value || null)}
+        >
+          <option value="">View as…</option>
+          {sortedPeople.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        {viewAsPersonId ? (
+          <button
+            type="button"
+            className="cursor-pointer text-xs text-[var(--accent)]"
+            onClick={() => setViewAsPersonId(null)}
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+    ) : null;
+
   return (
     <PageContainer className="overflow-y-auto">
-      <PageHeader
-        title="Dashboard"
-        actions={
-          canManage ? (
-            <div className="flex items-center gap-2">
-              <label className="sr-only" htmlFor="view-as-person">
-                View as
-              </label>
-              <select
-                id="view-as-person"
-                className={cn(inputClass, "mt-0 h-8 w-[10.5rem] py-0 text-xs")}
-                value={viewAsPersonId ?? ""}
-                onChange={(e) => setViewAsPersonId(e.target.value || null)}
-              >
-                <option value="">View as…</option>
-                {sortedPeople.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-              {viewAsPersonId ? (
-                <button
-                  type="button"
-                  className="cursor-pointer text-xs text-[var(--accent)]"
-                  onClick={() => setViewAsPersonId(null)}
-                >
-                  Clear
-                </button>
-              ) : null}
-            </div>
-          ) : undefined
-        }
-      />
-      <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
-          <BulletinBoard
-            bulletins={bulletins}
-            profiles={state.profiles}
-            people={sortedPeople}
-            canEdit={admin}
-            profileId={profile?.id ?? null}
-            onSave={(row) => {
-              upsertBulletin(row);
-              push("Bulletin saved");
-            }}
-            onDelete={(id) => {
-              deleteBulletin(id);
-              push("Bulletin deleted");
-            }}
-            newId={newId}
-          />
+      <PageHeader title="Dashboard" />
 
-          <TodaySchedule
-            assignments={todaysAssignments}
-            projects={state.projects}
-            clients={state.clients}
-            people={state.people}
-            showPerson={showingAsManager}
-            appHref={appHref}
-          />
-
-          <TaskPulse
-            overdue={overdueTasks}
-            urgentByGroup={urgentByGroup}
-            highPriority={highPriorityTasks}
-            total={pinnedTotal}
-            projectById={projectById}
-            peopleById={new Map(state.people.map((p) => [p.id, p]))}
-            showAssignee={admin && showingAsManager}
-            appHref={appHref}
-          />
-
-          {admin ? (
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">People utilization</h2>
-                <Link
-                  href={appHref("/reports/utilization")}
-                  className="text-xs text-[var(--accent)]"
-                >
-                  Full report
-                </Link>
-              </div>
-              <p className="mb-3 text-xs text-[var(--text-muted)]">
-                Green healthy · yellow near full · red overbooked · gray
-                unavailable
-              </p>
-              <UtilizationHeatmap weeks={6} />
-            </section>
-          ) : null}
-
-          {canManage ? (
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Budget at risk</h2>
-                <Link
-                  href={appHref("/reports/budgets")}
-                  className="text-xs text-[var(--accent)]"
-                >
-                  View budgets
-                </Link>
-              </div>
-              {atRisk.length === 0 ? (
-                <p className="text-sm text-[var(--text-muted)]">
-                  All active project totals look healthy this week.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {atRisk.map(({ project, burn, client }) => (
-                    <Link
-                      key={project.id}
-                      href={appHref(`/projects/${project.id}`)}
-                      className="block rounded-md border border-[var(--border)] p-3 hover:bg-[var(--row-hover)]"
-                    >
-                      <div className="mb-2 flex items-center gap-2">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full"
-                          style={{
-                            background: projectDisplayColor(
-                              project,
-                              state.clients,
-                            ),
-                          }}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">
-                            {project.name}
-                          </div>
-                          <div className="truncate text-xs text-[var(--text-muted)]">
-                            {client?.name ?? "No client"}
-                          </div>
-                        </div>
-                        <span
-                          className={cn(
-                            "shrink-0 text-xs",
-                            budgetHealth(burn) === "over"
-                              ? "text-[var(--status-over)]"
-                              : "text-[var(--status-near)]",
-                          )}
-                        >
-                          {budgetHealth(burn) === "over"
-                            ? "Over total"
-                            : "Near total"}
-                        </span>
-                      </div>
-                      <BurnBar burn={burn} />
-                    </Link>
-                  ))}
-                </div>
+      <div className="border-b border-[var(--border)] px-3 sm:px-5">
+        <div className="flex gap-4">
+          {(
+            [
+              { id: "overview", label: "Overview" },
+              { id: "detailed", label: "Detailed View" },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={cn(
+                "cursor-pointer border-b-2 px-0.5 py-2.5 text-sm font-medium transition-colors",
+                dashView === tab.id
+                  ? "border-[var(--text)] text-[var(--text)]"
+                  : "border-transparent text-[var(--text-muted)] hover:text-[var(--text)]",
               )}
-            </section>
-          ) : null}
-        </div>
-
-        <div className="space-y-4 lg:col-span-1">
-          {identityPerson ? (
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <div className="flex flex-col items-start gap-3">
-                <PersonAvatar
-                  avatarUrl={identityPerson.avatar_url}
-                  name={identityPerson.name}
-                  size="xl"
-                />
-                <div>
-                  <div className="text-sm font-semibold">
-                    {identityPerson.name}
-                  </div>
-                  {identityPerson.role_title ? (
-                    <div className="text-xs text-[var(--text-muted)]">
-                      {identityPerson.role_title}
-                    </div>
-                  ) : null}
-                  {viewAsPerson && canManage ? (
-                    <div className="mt-1 text-[11px] text-[var(--accent)]">
-                      Viewing as
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </section>
-          ) : null}
-
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">This week&apos;s load</h2>
-              <Link
-                href={appHref("/schedule")}
-                className="text-xs text-[var(--accent)]"
-              >
-                Open schedule
-              </Link>
-            </div>
-            {peopleLoad.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">
-                No capacity data yet.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {peopleLoad.map(({ person, booked, available, level }) => (
-                  <CapacityBar
-                    key={person.id}
-                    label={canManage ? person.name : "You"}
-                    booked={booked}
-                    available={available}
-                    level={level}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="mb-3 text-sm font-semibold">Upcoming leave</h2>
-            <div className="space-y-4">
-              <LeaveMonthCalendar
-                leaveDays={approvedLeave}
-                people={state.people}
-              />
-              {upcomingLeaveBlocks.length > 0 ? (
-                <div className="space-y-2">
-                  {upcomingLeaveBlocks.map((block) => {
-                    const person = state.people.find(
-                      (p) => p.id === block.person_id,
-                    );
-                    const rangeLabel =
-                      block.start_date === block.end_date
-                        ? format(parseISO(block.start_date), "MMM d")
-                        : `${format(parseISO(block.start_date), "MMM d")} – ${format(parseISO(block.end_date), "MMM d")}`;
-                    return (
-                      <div
-                        key={`${block.id}-${block.start_date}`}
-                        className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
-                      >
-                        <div className="font-medium">
-                          {person?.name ?? "Person"}
-                        </div>
-                        <div className="mt-0.5 text-xs text-[var(--text-muted)]">
-                          {rangeLabel} ·{" "}
-                          {leaveBlockLabel(block.kind, block.hours_per_day)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          </section>
+              onClick={() => setDashView(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      {dashView === "overview" ? (
+        <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
+          <div className="min-w-0 space-y-4 lg:col-span-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <BulletinBoard
+                bulletins={bulletins}
+                profiles={state.profiles}
+                people={sortedPeople}
+                canEdit={admin}
+                profileId={profile?.id ?? null}
+                onSave={(row) => {
+                  upsertBulletin(row);
+                  push("Bulletin saved");
+                }}
+                onDelete={(id) => {
+                  deleteBulletin(id);
+                  push("Bulletin deleted");
+                }}
+                newId={newId}
+                compact
+              />
+              <TaskPulse
+                overdue={overdueTasks}
+                urgentByGroup={urgentByGroup}
+                highPriority={highPriorityTasks}
+                total={pinnedTotal}
+                projectById={projectById}
+                peopleById={peopleById}
+                showAssignee={admin && showingAsManager}
+                appHref={appHref}
+                compact
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <KpiCard title="Active Projects / Health">
+                <div className="text-sm font-semibold tabular-nums">
+                  {projectHealthStats.total} Active
+                  {projectHealthStats.total > 0 ? (
+                    <span className="font-normal text-[var(--text-muted)]">
+                      {" "}
+                      | {projectHealthStats.onTrackPct}% On Track
+                    </span>
+                  ) : null}
+                </div>
+                <SegmentBar
+                  segments={[
+                    {
+                      value: projectHealthStats.healthy,
+                      className: "bg-[var(--status-healthy)]",
+                    },
+                    {
+                      value: projectHealthStats.near,
+                      className: "bg-[var(--status-near)]",
+                    },
+                    {
+                      value: projectHealthStats.over,
+                      className: "bg-[var(--status-over)]",
+                    },
+                    {
+                      value: projectHealthStats.none,
+                      className: "bg-[var(--status-unavailable)]",
+                    },
+                  ]}
+                />
+              </KpiCard>
+
+              <KpiCard title="Team Utilization Rate">
+                <div className="flex items-end justify-between gap-2">
+                  <div className="text-sm font-semibold tabular-nums">
+                    {Math.round(teamUtilization.avg)}% Avg
+                  </div>
+                  <Sparkline values={teamUtilization.series} />
+                </div>
+              </KpiCard>
+
+              <KpiCard title="Budget Burn Rate">
+                <div
+                  className={cn(
+                    "text-sm font-semibold tabular-nums",
+                    orgBudgetBurn.over && "text-[var(--status-over)]",
+                  )}
+                >
+                  {orgBudgetBurn.label}
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      orgBudgetBurn.over
+                        ? "bg-[var(--status-over)]"
+                        : "bg-[var(--accent)]",
+                    )}
+                    style={{ width: `${Math.min(100, orgBudgetBurn.pct)}%` }}
+                  />
+                </div>
+              </KpiCard>
+
+              <KpiCard
+                title="Overdue / Critical Tasks"
+                className={
+                  overdueTasks.length > 0
+                    ? "!border-0 bg-[var(--status-over)]/20"
+                    : undefined
+                }
+              >
+                <div
+                  className={cn(
+                    "text-sm font-semibold tabular-nums",
+                    overdueTasks.length > 0 && "text-[var(--status-over)]",
+                  )}
+                >
+                  {overdueTasks.length} Overdue
+                </div>
+              </KpiCard>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TodaySchedule
+                assignments={todaysAssignments}
+                projects={state.projects}
+                clients={state.clients}
+                people={state.people}
+                showPerson={showingAsManager}
+                appHref={appHref}
+              />
+
+              <ProjectHealthBudget
+                canManage={canManage}
+                atRisk={atRisk}
+                upcoming={upcomingDueTasks}
+                projectById={projectById}
+                appHref={appHref}
+                clients={state.clients}
+              />
+            </div>
+
+            {canManage ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">People Utilization</h2>
+                  <Link
+                    href={appHref("/reports/utilization")}
+                    className="text-xs text-[var(--accent)]"
+                  >
+                    Full report
+                  </Link>
+                </div>
+                <p className="mb-3 text-xs text-[var(--text-muted)]">
+                  Green Healthy · yellow near full · red overbooked · gray
+                  unavailable
+                </p>
+                <UtilizationHeatmap weeks={6} />
+              </section>
+            ) : null}
+          </div>
+
+          <DashboardSidebar
+            identityPerson={identityPerson}
+            viewAsPerson={viewAsPerson}
+            profile={profile}
+            canManage={canManage}
+            viewAsControl={viewAsControl}
+            peopleLoad={peopleLoad}
+            approvedLeave={approvedLeave}
+            upcomingLeaveBlocks={upcomingLeaveBlocks}
+            people={state.people}
+            appHref={appHref}
+          />
+        </div>
+      ) : (
+        <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
+          <div className="space-y-4 lg:col-span-2">
+            <BulletinBoard
+              bulletins={bulletins}
+              profiles={state.profiles}
+              people={sortedPeople}
+              canEdit={admin}
+              profileId={profile?.id ?? null}
+              onSave={(row) => {
+                upsertBulletin(row);
+                push("Bulletin saved");
+              }}
+              onDelete={(id) => {
+                deleteBulletin(id);
+                push("Bulletin deleted");
+              }}
+              newId={newId}
+            />
+
+            <TodaySchedule
+              assignments={todaysAssignments}
+              projects={state.projects}
+              clients={state.clients}
+              people={state.people}
+              showPerson={showingAsManager}
+              appHref={appHref}
+            />
+
+            <TaskPulse
+              overdue={overdueTasks}
+              urgentByGroup={urgentByGroup}
+              highPriority={highPriorityTasks}
+              total={pinnedTotal}
+              projectById={projectById}
+              peopleById={peopleById}
+              showAssignee={admin && showingAsManager}
+              appHref={appHref}
+            />
+
+            {admin ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">People utilization</h2>
+                  <Link
+                    href={appHref("/reports/utilization")}
+                    className="text-xs text-[var(--accent)]"
+                  >
+                    Full report
+                  </Link>
+                </div>
+                <p className="mb-3 text-xs text-[var(--text-muted)]">
+                  Green healthy · yellow near full · red overbooked · gray
+                  unavailable
+                </p>
+                <UtilizationHeatmap weeks={6} />
+              </section>
+            ) : null}
+
+            {canManage ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold">Budget at risk</h2>
+                  <Link
+                    href={appHref("/reports/budgets")}
+                    className="text-xs text-[var(--accent)]"
+                  >
+                    View budgets
+                  </Link>
+                </div>
+                {atRisk.length === 0 ? (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    All active project totals look healthy this week.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {atRisk.map(({ project, burn, client }) => (
+                      <Link
+                        key={project.id}
+                        href={appHref(`/projects/${project.id}`)}
+                        className="block rounded-md border border-[var(--border)] p-3 hover:bg-[var(--row-hover)]"
+                      >
+                        <div className="mb-2 flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{
+                              background: projectDisplayColor(
+                                project,
+                                state.clients,
+                              ),
+                            }}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium">
+                              {project.name}
+                            </div>
+                            <div className="truncate text-xs text-[var(--text-muted)]">
+                              {client?.name ?? "No client"}
+                            </div>
+                          </div>
+                          <span
+                            className={cn(
+                              "shrink-0 text-xs",
+                              budgetHealth(burn) === "over"
+                                ? "text-[var(--status-over)]"
+                                : "text-[var(--status-near)]",
+                            )}
+                          >
+                            {budgetHealth(burn) === "over"
+                              ? "Over total"
+                              : "Near total"}
+                          </span>
+                        </div>
+                        <BurnBar burn={burn} />
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : null}
+          </div>
+
+          <DashboardSidebar
+            identityPerson={identityPerson}
+            viewAsPerson={viewAsPerson}
+            profile={profile}
+            canManage={canManage}
+            viewAsControl={viewAsControl}
+            peopleLoad={peopleLoad}
+            approvedLeave={approvedLeave}
+            upcomingLeaveBlocks={upcomingLeaveBlocks}
+            people={state.people}
+            appHref={appHref}
+          />
+        </div>
+      )}
     </PageContainer>
+  );
+}
+
+function KpiCard({
+  title,
+  children,
+  className,
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-md border border-[var(--border)] bg-[var(--bg)] p-3",
+        className,
+      )}
+    >
+      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        {title}
+      </h3>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function SegmentBar({
+  segments,
+}: {
+  segments: { value: number; className: string }[];
+}) {
+  const total = segments.reduce((sum, s) => sum + s.value, 0);
+  if (total <= 0) {
+    return (
+      <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]" />
+    );
+  }
+  return (
+    <div className="flex h-1.5 overflow-hidden rounded-full bg-[var(--border)]">
+      {segments.map((s, i) =>
+        s.value > 0 ? (
+          <div
+            key={i}
+            className={cn("h-full", s.className)}
+            style={{ width: `${(s.value / total) * 100}%` }}
+          />
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return null;
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = Math.max(max - min, 1);
+  const w = 64;
+  const h = 24;
+  const points = values
+    .map((v, i) => {
+      const x = (i / (values.length - 1)) * w;
+      const y = h - ((v - min) / range) * (h - 2) - 1;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      className="shrink-0 text-[var(--text)]"
+      aria-hidden
+    >
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        points={points}
+      />
+    </svg>
+  );
+}
+
+function ProjectHealthBudget({
+  canManage,
+  atRisk,
+  upcoming,
+  projectById,
+  appHref,
+  clients,
+}: {
+  canManage: boolean;
+  atRisk: {
+    project: Project;
+    burn: ReturnType<typeof budgetBurn>;
+    client: { id: string; name: string } | undefined;
+  }[];
+  upcoming: Task[];
+  projectById: Map<string, Project>;
+  appHref: (path: string) => string;
+  clients: { id: string; name: string; color: string }[];
+}) {
+  return (
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Project Health &amp; Budget</h2>
+        {canManage ? (
+          <Link
+            href={appHref("/reports/budgets")}
+            className="text-xs text-[var(--accent)]"
+          >
+            View budgets
+          </Link>
+        ) : null}
+      </div>
+      {canManage ? (
+        atRisk.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">
+            All active project totals look healthy this week.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {atRisk.slice(0, 5).map(({ project, burn, client }) => (
+              <Link
+                key={project.id}
+                href={appHref(`/projects/${project.id}`)}
+                className="block rounded-md border border-[var(--border)] p-3 hover:bg-[var(--row-hover)]"
+              >
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full"
+                    style={{
+                      background: projectDisplayColor(project, clients),
+                    }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">
+                      {project.name}
+                    </div>
+                    <div className="truncate text-xs text-[var(--text-muted)]">
+                      {client?.name ?? "No client"}
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      "shrink-0 text-xs",
+                      budgetHealth(burn) === "over"
+                        ? "text-[var(--status-over)]"
+                        : "text-[var(--status-near)]",
+                    )}
+                  >
+                    {budgetHealth(burn) === "over" ? "Over" : "Near"}
+                  </span>
+                </div>
+                <BurnBar burn={burn} compact />
+              </Link>
+            ))}
+          </div>
+        )
+      ) : upcoming.length === 0 ? (
+        <p className="text-sm text-[var(--text-muted)]">
+          No upcoming due dates in the next few days.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          <div className="mb-1.5 text-xs font-medium text-[var(--text-muted)]">
+            Due soon
+          </div>
+          {upcoming.map((t) => (
+            <TaskRow
+              key={t.id}
+              task={t}
+              project={projectById.get(t.project_id)}
+              overdue={false}
+              appHref={appHref}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DashboardSidebar({
+  identityPerson,
+  viewAsPerson,
+  profile,
+  canManage,
+  viewAsControl,
+  peopleLoad,
+  approvedLeave,
+  upcomingLeaveBlocks,
+  people,
+  appHref,
+}: {
+  identityPerson: Person | null | undefined;
+  viewAsPerson: Person | null | undefined;
+  profile: Profile | null;
+  canManage: boolean;
+  viewAsControl: ReactNode;
+  peopleLoad: {
+    person: Person;
+    booked: number;
+    available: number;
+    level: ReturnType<typeof capacityLevel>;
+  }[];
+  approvedLeave: LeaveDay[];
+  upcomingLeaveBlocks: {
+    id: string;
+    person_id: string;
+    start_date: string;
+    end_date: string;
+    kind: LeaveKind | string;
+    hours_per_day: number | null;
+  }[];
+  people: Person[];
+  appHref: (path: string) => string;
+}) {
+  const displayName =
+    identityPerson?.name ??
+    profile?.full_name ??
+    profile?.email ??
+    "Signed in";
+  const displayTitle = identityPerson?.role_title
+    ? identityPerson.role_title
+    : profile?.role
+      ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
+      : null;
+  const showIdentity = Boolean(identityPerson || profile || viewAsControl);
+
+  return (
+    <div className="space-y-4 lg:col-span-1">
+      {showIdentity ? (
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+          <div className="flex flex-col items-start gap-3">
+            <PersonAvatar
+              avatarUrl={identityPerson?.avatar_url}
+              name={displayName}
+              size="xl"
+            />
+            <div className="w-full min-w-0">
+              <div className="text-sm font-semibold">{displayName}</div>
+              {displayTitle ? (
+                <div className="text-xs text-[var(--text-muted)]">
+                  {displayTitle}
+                </div>
+              ) : null}
+              {!identityPerson && profile ? (
+                <div className="mt-1 text-[11px] text-[var(--text-muted)]">
+                  Account only · not linked to a team member
+                </div>
+              ) : null}
+              {viewAsControl ? (
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <div className="shrink-0 text-[11px] text-[var(--text-muted)]">
+                    Viewing as
+                  </div>
+                  {viewAsControl}
+                </div>
+              ) : viewAsPerson && canManage ? (
+                <div className="mt-1 text-[11px] text-[var(--accent)]">
+                  Viewing as
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Capacity &amp; Load</h2>
+          <Link
+            href={appHref("/schedule")}
+            className="text-xs text-[var(--accent)]"
+          >
+            Open schedule
+          </Link>
+        </div>
+        <p className="mb-2 text-xs text-[var(--text-muted)]">
+          This week&apos;s load
+        </p>
+        {peopleLoad.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">No capacity data yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {peopleLoad.map(({ person, booked, available, level }) => (
+              <CapacityBar
+                key={person.id}
+                label={canManage ? person.name : "You"}
+                booked={booked}
+                available={available}
+                level={level}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <h2 className="mb-3 text-sm font-semibold">Upcoming Leave</h2>
+        <div className="space-y-4">
+          <LeaveMonthCalendar leaveDays={approvedLeave} people={people} />
+          {upcomingLeaveBlocks.length > 0 ? (
+            <div className="space-y-2">
+              {upcomingLeaveBlocks.map((block) => {
+                const person = people.find((p) => p.id === block.person_id);
+                const rangeLabel =
+                  block.start_date === block.end_date
+                    ? format(parseISO(block.start_date), "MMM d")
+                    : `${format(parseISO(block.start_date), "MMM d")} – ${format(parseISO(block.end_date), "MMM d")}`;
+                return (
+                  <div
+                    key={`${block.id}-${block.start_date}`}
+                    className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2 text-sm"
+                  >
+                    <div className="font-medium">{person?.name ?? "Person"}</div>
+                    <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                      {rangeLabel} ·{" "}
+                      {leaveBlockLabel(block.kind, block.hours_per_day)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -590,7 +1189,10 @@ function TodaySchedule({
 }) {
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-      <h2 className="mb-3 text-sm font-semibold">Today&apos;s schedule</h2>
+      <h2 className="text-sm font-semibold">My Schedule</h2>
+      <p className="mb-3 mt-0.5 text-xs text-[var(--text-muted)]">
+        Today&apos;s schedule
+      </p>
       {assignments.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           Nothing scheduled today.
@@ -654,6 +1256,7 @@ function TaskPulse({
   peopleById,
   showAssignee,
   appHref,
+  compact = false,
 }: {
   overdue: Task[];
   urgentByGroup: Map<TaskUrgency, Task[]>;
@@ -663,6 +1266,7 @@ function TaskPulse({
   peopleById: Map<string, Person>;
   showAssignee?: boolean;
   appHref: (path: string) => string;
+  compact?: boolean;
 }) {
   function row(task: Task, overdueRow: boolean) {
     const assignee = task.assignee_person_id
@@ -681,11 +1285,15 @@ function TaskPulse({
     );
   }
 
+  const groupsToShow = compact
+    ? URGENCY_GROUPS.filter((g) => g.key !== "week")
+    : URGENCY_GROUPS;
+
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <div className="mb-3 flex items-center gap-2">
         <Pin size={14} className="text-[var(--text-muted)]" />
-        <h2 className="text-sm font-semibold">Task pulse</h2>
+        <h2 className="text-sm font-semibold">Task Pulse</h2>
         {total > 0 ? (
           <span className="rounded-full bg-[var(--bg-elevated)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">
             {total}
@@ -697,7 +1305,7 @@ function TaskPulse({
           Nothing overdue or urgent right now.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className={cn("space-y-3", compact && "max-h-72 overflow-y-auto")}>
           {overdue.length > 0 ? (
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--status-over)]">
@@ -705,12 +1313,14 @@ function TaskPulse({
                 Overdue
               </div>
               <div className="space-y-1.5">
-                {overdue.map((t) => row(t, true))}
+                {(compact ? overdue.slice(0, 4) : overdue).map((t) =>
+                  row(t, true),
+                )}
               </div>
             </div>
           ) : null}
 
-          {URGENCY_GROUPS.map(({ key, label }) => {
+          {groupsToShow.map(({ key, label }) => {
             const tasks = urgentByGroup.get(key);
             if (!tasks || tasks.length === 0) return null;
             return (
@@ -719,13 +1329,15 @@ function TaskPulse({
                   {label}
                 </div>
                 <div className="space-y-1.5">
-                  {tasks.map((t) => row(t, false))}
+                  {(compact ? tasks.slice(0, 4) : tasks).map((t) =>
+                    row(t, false),
+                  )}
                 </div>
               </div>
             );
           })}
 
-          {highPriority.length > 0 ? (
+          {!compact && highPriority.length > 0 ? (
             <div>
               <div className="mb-1.5 text-xs font-medium text-[var(--text-muted)]">
                 High priority
@@ -766,6 +1378,7 @@ function BulletinBoard({
   onSave,
   onDelete,
   newId,
+  compact = false,
 }: {
   bulletins: Bulletin[];
   profiles: Profile[];
@@ -775,21 +1388,23 @@ function BulletinBoard({
   onSave: (row: BulletinDraft) => void;
   onDelete: (id: string) => void;
   newId: (prefix: string) => string;
+  compact?: boolean;
 }) {
   const [editing, setEditing] = useState<BulletinDraft | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const visible = compact ? bulletins.slice(0, 4) : bulletins.slice(0, 8);
 
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Megaphone size={14} className="text-[var(--text-muted)]" />
-          <h2 className="text-sm font-semibold">Bulletin board</h2>
+          <h2 className="text-sm font-semibold">Bulletin Board</h2>
         </div>
         {canEdit ? (
           <button
             type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-2 text-xs text-[var(--accent)] hover:bg-[var(--row-hover)]"
+            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-[var(--accent)] px-2 text-xs text-[var(--accent-fg)] hover:opacity-90"
             onClick={() =>
               setEditing(emptyBulletin(newId("bulletin"), profileId))
             }
@@ -799,11 +1414,11 @@ function BulletinBoard({
           </button>
         ) : null}
       </div>
-      {bulletins.length === 0 ? (
+      {visible.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">No announcements yet.</p>
       ) : (
-        <ul className="space-y-2">
-          {bulletins.slice(0, 8).map((b) => {
+        <ul className={cn("space-y-2", compact && "max-h-72 overflow-y-auto")}>
+          {visible.map((b) => {
             const author = profiles.find(
               (p) => p.id === b.created_by_profile_id,
             );
