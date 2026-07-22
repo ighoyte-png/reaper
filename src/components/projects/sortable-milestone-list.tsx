@@ -17,10 +17,10 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pencil } from "lucide-react";
+import { Check, GripVertical, Pencil } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
-import { Checkbox } from "@/components/ui/checkbox";
 import { milestoneDateProgress } from "@/lib/domain/progress";
+import { cn } from "@/lib/cn";
 import type { Milestone, Project } from "@/lib/types";
 
 export function SortableMilestoneList({
@@ -143,17 +143,7 @@ function SortableMilestoneRow({
         </div>
       </div>
       {canManage ? (
-        <div className="flex items-center justify-between gap-2 pl-5">
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
-            <Checkbox
-              size="sm"
-              checked={milestone.client_approved}
-              onChange={(e) =>
-                onToggleApproved(milestone, e.target.checked)
-              }
-            />
-            Approved
-          </label>
+        <div className="flex items-center justify-end gap-0.5 pl-5">
           <button
             type="button"
             className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
@@ -162,6 +152,29 @@ function SortableMilestoneRow({
             title="Edit"
           >
             <Pencil size={14} />
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex cursor-pointer rounded p-1 hover:bg-[var(--row-hover)]",
+              milestone.client_approved
+                ? "text-[var(--status-healthy)]"
+                : "text-[var(--text-muted)] hover:text-[var(--status-healthy)]",
+            )}
+            onClick={() =>
+              onToggleApproved(milestone, !milestone.client_approved)
+            }
+            aria-label={
+              milestone.client_approved
+                ? "Mark milestone unapproved"
+                : "Mark milestone approved"
+            }
+            aria-pressed={milestone.client_approved}
+            title={
+              milestone.client_approved ? "Approved" : "Mark approved"
+            }
+          >
+            <Check size={14} strokeWidth={2.5} />
           </button>
         </div>
       ) : null}

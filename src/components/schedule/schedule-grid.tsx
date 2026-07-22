@@ -1726,7 +1726,7 @@ export function ScheduleGrid() {
                   value={projectFilter}
                   onChange={setProjectFilter}
                   searchable
-                  className="mt-0 h-8 w-auto max-w-[220px] shrink-0"
+                  className="mt-0 h-8 w-auto min-w-[13rem] max-w-[22rem] shrink-0"
                   aria-label="Filter by project"
                   options={[
                     { value: "all", label: "All projects" },
@@ -1741,7 +1741,7 @@ export function ScheduleGrid() {
                   onChange={setPersonFilter}
                   searchable
                   disabled={Boolean(viewAsPersonId)}
-                  className="mt-0 h-8 w-auto max-w-[200px] shrink-0"
+                  className="mt-0 h-8 w-auto min-w-[10rem] max-w-[16rem] shrink-0"
                   aria-label="Filter by person"
                   options={[
                     { value: "all", label: "All people" },
