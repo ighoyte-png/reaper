@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { addWeeks, format } from "date-fns";
 import {
   ClipboardList,
@@ -15,6 +16,7 @@ import { PageHeader } from "@/components/nav/page-header";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useViewAs } from "@/lib/view-as";
 import {
   budgetBurn,
   budgetHealth,
@@ -79,10 +81,17 @@ type WeekUtilPoint = {
 };
 
 export default function ReportsPage() {
-  const { state } = useData();
+  const { state, isPublicShare } = useData();
+  const { effectiveCanManage } = useViewAs();
+  const canManage = effectiveCanManage;
   const appHref = useAppHref();
+  const router = useRouter();
   const now = useMemo(() => new Date(), []);
   const todayKey = toDateKey(now);
+
+  useEffect(() => {
+    if (!canManage && !isPublicShare) router.replace("/dashboard");
+  }, [canManage, isPublicShare, router]);
 
   const utilization = useMemo(() => {
     const weekAnchors = Array.from({ length: 8 }, (_, i) =>
@@ -211,6 +220,14 @@ export default function ReportsPage() {
     () => orgForecast(state.projects, state.assignments, state.people),
     [state.projects, state.assignments, state.people],
   );
+
+  if (!canManage && !isPublicShare) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-[var(--text-muted)]">
+        Redirecting…
+      </div>
+    );
+  }
 
   return (
     <PageContainer className="overflow-y-auto">

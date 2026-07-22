@@ -32,19 +32,25 @@ function navLinkClass(active: boolean) {
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { canManage, logout, state, myPerson, profile } = useData();
-  const { effectivePersonId } = useViewAs();
+  const { logout, state, myPerson, profile } = useData();
+  const {
+    effectivePersonId,
+    effectiveCanManage,
+    clearViewAs,
+    viewAsPersonId,
+  } = useViewAs();
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
-  const manageWithoutPerson = canManage && !mentionPersonId;
+  const manageWithoutPerson = effectiveCanManage && !mentionPersonId;
   const bulletinSubject = bulletinDismissSubject(
     mentionPersonId,
     profile?.id ?? null,
-    canManage,
+    effectiveCanManage,
   );
   const { dismissed: dismissedMentions } = useDismissedMentions(mentionPersonId);
   const { dismissed: dismissedBulletins } = useDismissedBulletins(bulletinSubject);
   const { open, setOpen, toggle } = useMobileNav();
-  const links = primaryNavLinks.filter((l) => canManage || !l.manageOnly);
+  const links = primaryNavLinks.filter((l) => effectiveCanManage || !l.manageOnly);
+  const showSettings = !viewAsPersonId;
   const settingsActive =
     pathname === "/settings" || pathname.startsWith("/settings/");
 
@@ -129,20 +135,23 @@ export function AppNavbar() {
               "hidden h-auto w-auto border-0 bg-transparent sm:inline-flex",
             )}
           />
-          <Link
-            href="/settings"
-            className={cn(navLinkClass(settingsActive), "hidden sm:inline-flex")}
-            aria-label="Settings"
-            title="Settings"
-          >
-            <Settings size={15} strokeWidth={1.75} />
-          </Link>
+          {showSettings ? (
+            <Link
+              href="/settings"
+              className={cn(navLinkClass(settingsActive), "hidden sm:inline-flex")}
+              aria-label="Settings"
+              title="Settings"
+            >
+              <Settings size={15} strokeWidth={1.75} />
+            </Link>
+          ) : null}
           <button
             type="button"
             className={cn(navLinkClass(false), "hidden sm:inline-flex")}
             aria-label="Sign out"
             title="Sign out"
             onClick={async () => {
+              clearViewAs();
               await logout();
               router.push("/login");
             }}
@@ -215,24 +224,27 @@ export function AppNavbar() {
               <span className="text-sm text-[var(--text-muted)]">Theme</span>
               <ThemeToggle />
             </div>
-            <Link
-              href="/settings"
-              onClick={() => setOpen(false)}
-              className={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
-                settingsActive
-                  ? "bg-[var(--bg-elevated)] text-[var(--text)]"
-                  : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
-              )}
-            >
-              <Settings size={16} strokeWidth={1.75} />
-              Settings
-            </Link>
+            {showSettings ? (
+              <Link
+                href="/settings"
+                onClick={() => setOpen(false)}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
+                  settingsActive
+                    ? "bg-[var(--bg-elevated)] text-[var(--text)]"
+                    : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                )}
+              >
+                <Settings size={16} strokeWidth={1.75} />
+                Settings
+              </Link>
+            ) : null}
             <button
               type="button"
               className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
               onClick={async () => {
                 setOpen(false);
+                clearViewAs();
                 await logout();
                 router.push("/login");
               }}

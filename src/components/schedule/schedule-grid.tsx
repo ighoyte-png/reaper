@@ -149,13 +149,14 @@ export function ScheduleGrid() {
     applyLeaveUndo,
     setLeaveBlock,
     newId,
-    canManage,
+    canManage: roleCanManage,
     isPublicShare,
     myPerson,
     authError,
   } = useData();
   const viewAs = useViewAsOptional();
   const viewAsPersonId = viewAs?.viewAsPersonId ?? null;
+  const canManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
   const { push } = useToast();
   const appHref = useAppHref();
   const isNarrow = useMediaQuery("(max-width: 1023px)");

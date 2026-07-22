@@ -103,6 +103,7 @@ export default function DashboardPage() {
     viewedPerson: viewAsPerson,
     showingAsManager,
     effectivePersonId,
+    effectiveCanManage,
   } = useViewAs();
   const now = useMemo(() => new Date(), []);
   const todayKey = toDateKey(now);
@@ -501,11 +502,11 @@ export default function DashboardPage() {
   );
 
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
-  const manageWithoutPerson = canManage && !mentionPersonId;
+  const manageWithoutPerson = effectiveCanManage && !mentionPersonId;
   const bulletinSubject = bulletinDismissSubject(
     mentionPersonId,
     profile?.id ?? null,
-    canManage,
+    effectiveCanManage,
   );
   const { dismiss: dismissMention, dismissed: dismissedMentions } =
     useDismissedMentions(mentionPersonId);
@@ -618,7 +619,7 @@ export default function DashboardPage() {
               bulletins={bulletins}
               profiles={state.profiles}
               people={sortedPeople}
-              canEdit={canManage && !isPublicShare}
+              canEdit={effectiveCanManage && !isPublicShare}
               profileId={profile?.id ?? null}
               isUnread={(b) =>
                 isUnreadBulletin(
@@ -1100,11 +1101,13 @@ function DashboardIdentityCard({
     profile?.full_name ??
     profile?.email ??
     "Signed in";
-  const displayTitle = identityPerson?.role_title
-    ? identityPerson.role_title
-    : profile?.role
-      ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
-      : null;
+  const displayTitle = viewAsPerson
+    ? identityPerson?.role_title || null
+    : identityPerson?.role_title
+      ? identityPerson.role_title
+      : profile?.role
+        ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
+        : null;
   const showIdentity =
     !hideIdentity && Boolean(identityPerson || profile || viewAsControl);
   if (!showIdentity) return null;

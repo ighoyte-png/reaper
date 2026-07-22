@@ -15,6 +15,7 @@ import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { projectDateProgress } from "@/lib/domain/progress";
@@ -63,10 +64,11 @@ export default function ProjectsPage() {
     upsertProject,
     setProjectMembers,
     newId,
-    canManage,
     isPublicShare,
     myPerson,
   } = useData();
+  const { effectiveCanManage, effectivePersonId } = useViewAs();
+  const canManage = effectiveCanManage;
   const appHref = useAppHref();
   const { push } = useToast();
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
@@ -78,11 +80,13 @@ export default function ProjectsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [managerFilter, setManagerFilter] = useState<ManagerFilter>("all");
 
+  const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
+
   const visibleProjects = useMemo(() => {
     if (canManage || isPublicShare) return state.projects;
-    if (!myPerson) return [];
+    if (!scopePersonId) return [];
     const ids = projectIdsForPerson(
-      myPerson.id,
+      scopePersonId,
       state.assignments,
       state.tasks,
       state.project_members,
@@ -91,7 +95,7 @@ export default function ProjectsPage() {
   }, [
     canManage,
     isPublicShare,
-    myPerson,
+    scopePersonId,
     state.projects,
     state.assignments,
     state.tasks,

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
@@ -8,6 +9,7 @@ import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useViewAs } from "@/lib/view-as";
 import { sortClientsByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Client, ClientStatus } from "@/lib/types";
@@ -15,8 +17,11 @@ import type { Client, ClientStatus } from "@/lib/types";
 type StatusFilter = "active" | "archived" | "all";
 
 export default function ClientsPage() {
-  const { state, upsertClient, deleteClient, newId, canManage } = useData();
+  const { state, upsertClient, deleteClient, newId, isPublicShare } = useData();
+  const { effectiveCanManage } = useViewAs();
+  const canManage = effectiveCanManage;
   const { push } = useToast();
+  const router = useRouter();
   const [editing, setEditing] = useState<Omit<Client, "organization_id"> | null>(
     null,
   );
@@ -30,6 +35,18 @@ export default function ClientsPage() {
   }, [clients, statusFilter]);
 
   const archivedCount = clients.filter((c) => c.status === "archived").length;
+
+  useEffect(() => {
+    if (!canManage && !isPublicShare) router.replace("/dashboard");
+  }, [canManage, isPublicShare, router]);
+
+  if (!canManage && !isPublicShare) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-[var(--text-muted)]">
+        Redirecting…
+      </div>
+    );
+  }
 
   function emptyClient(): Omit<Client, "organization_id"> {
     return {

@@ -9,6 +9,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useViewAs } from "@/lib/view-as";
 import { formatHours } from "@/lib/domain/budget";
 import {
   availableHoursInRange,
@@ -72,12 +73,13 @@ export default function PeoplePage() {
     upsertLeave,
     updateProfileRole,
     newId,
-    canManage,
     isPublicShare,
     mode,
     inviteDemoMember,
     refresh,
   } = useData();
+  const { effectiveCanManage } = useViewAs();
+  const canManage = effectiveCanManage;
   const { push } = useToast();
   const router = useRouter();
   const admin = isAdmin(profile?.role);

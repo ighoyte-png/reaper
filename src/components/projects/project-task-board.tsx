@@ -178,11 +178,15 @@ export function ProjectTaskBoard({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
 
-  const manageLists = canManage && !readOnly && !isPublicShare;
+  const viewerCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
+  const viewerPersonId =
+    viewAs?.effectivePersonId ?? myPerson?.id ?? null;
+
+  const manageLists = viewerCanManage && !readOnly && !isPublicShare;
   const allowSelect =
     allowSelectProp !== undefined
       ? allowSelectProp
-      : !isPublicShare && (canManage || !readOnly);
+      : !isPublicShare && (viewerCanManage || !readOnly);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -194,11 +198,6 @@ export function ProjectTaskBoard({
       sortTaskLists(state.task_lists.filter((l) => l.project_id === projectId)),
     [state.task_lists, projectId],
   );
-
-  const viewerCanManage = viewAs?.viewAsPersonId ? false : canManage;
-  const viewerPersonId = viewAs?.viewAsPersonId
-    ? viewAs.viewAsPersonId
-    : myPerson?.id ?? null;
 
   const visibleTasks = useMemo(() => {
     const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
@@ -278,16 +277,16 @@ export function ProjectTaskBoard({
       let next = { ...task };
       let changed = false;
       if (bulkDraft.status !== undefined) {
-        if (canManage || task.assignee_person_id === myPerson?.id) {
+        if (viewerCanManage || task.assignee_person_id === viewerPersonId) {
           next = { ...next, status: bulkDraft.status };
           changed = true;
         }
       }
-      if (canManage && bulkDraft.assigneeId !== undefined) {
+      if (viewerCanManage && bulkDraft.assigneeId !== undefined) {
         next = { ...next, assignee_person_id: bulkDraft.assigneeId };
         changed = true;
       }
-      if (canManage && bulkDraft.dueDate !== undefined) {
+      if (viewerCanManage && bulkDraft.dueDate !== undefined) {
         next = { ...next, due_date: bulkDraft.dueDate || null };
         changed = true;
       }
@@ -321,7 +320,7 @@ export function ProjectTaskBoard({
       project_id: projectId,
       list_id: listId,
       parent_id: parentId,
-      assignee_person_id: myPerson?.id ?? state.people[0]?.id ?? null,
+      assignee_person_id: viewerPersonId ?? state.people[0]?.id ?? null,
       title: parentId ? "New subtask" : "New task",
       status: "upcoming",
       start_date: null,
@@ -334,7 +333,8 @@ export function ProjectTaskBoard({
   }
 
   function cycleStatus(task: Task) {
-    const canEdit = canManage || task.assignee_person_id === myPerson?.id;
+    const canEdit =
+      viewerCanManage || task.assignee_person_id === viewerPersonId;
     if (!canEdit) return;
     const next =
       task.status === "upcoming"
@@ -643,8 +643,8 @@ export function ProjectTaskBoard({
     profiles: state.profiles,
     comments: state.task_comments,
     profileId: profile?.id ?? null,
-    canManage,
-    myPersonId: myPerson?.id ?? null,
+    canManage: viewerCanManage,
+    myPersonId: viewerPersonId,
     manageLists,
     allowSelect,
     listsEditMode,
@@ -687,7 +687,12 @@ export function ProjectTaskBoard({
         {editing && !readOnly && !isPublicShare ? (
           <TaskEditModal
             task={editing}
-            readOnly={!(canManage || editing.assignee_person_id === myPerson?.id)}
+            readOnly={
+              !(
+                viewerCanManage ||
+                editing.assignee_person_id === viewerPersonId
+              )
+            }
             onClose={() => setEditing(null)}
           />
         ) : null}
@@ -757,7 +762,7 @@ export function ProjectTaskBoard({
               <option value="complete">{taskStatusLabel("complete")}</option>
             </select>
           </label>
-          {canManage ? (
+          {viewerCanManage ? (
             <>
               <label className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-[var(--text-muted)]">
@@ -900,7 +905,12 @@ export function ProjectTaskBoard({
       {editing && !readOnly && !isPublicShare ? (
         <TaskEditModal
           task={editing}
-          readOnly={!(canManage || editing.assignee_person_id === myPerson?.id)}
+          readOnly={
+            !(
+              viewerCanManage ||
+              editing.assignee_person_id === viewerPersonId
+            )
+          }
           onClose={() => setEditing(null)}
         />
       ) : null}
@@ -1714,10 +1724,17 @@ function TaskEditModal({
   readOnly: boolean;
   onClose: () => void;
 }) {
-  const { canManage, myPerson, upsertTask, deleteTask, state } = useData();
+  const { canManage: roleCanManage, myPerson, upsertTask, deleteTask, state } =
+    useData();
+  const viewAs = useViewAsOptional();
+  const canManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
+  const viewerPersonId =
+    viewAs?.effectivePersonId ?? myPerson?.id ?? null;
   const [draft, setDraft] = useState(task);
 
-  const canSave = canManage || (!readOnly && draft.assignee_person_id === myPerson?.id);
+  const canSave =
+    canManage ||
+    (!readOnly && draft.assignee_person_id === viewerPersonId);
 
   return (
     <Modal title={canManage ? "Edit task" : "Task"} onClose={onClose}>

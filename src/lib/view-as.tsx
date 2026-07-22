@@ -4,14 +4,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 import { useData } from "@/lib/data/store";
+import {
+  VIEW_AS_STORAGE_KEY,
+  clearViewAsStorage,
+} from "@/lib/view-as-storage";
 import type { Person } from "@/lib/types";
 
-const STORAGE_KEY = "reaper-view-as-person-id";
+export { VIEW_AS_STORAGE_KEY, clearViewAsStorage } from "@/lib/view-as-storage";
 
 type ViewAsContextValue = {
   viewAsPersonId: string | null;
@@ -22,6 +27,11 @@ type ViewAsContextValue = {
   effectivePersonId: string | null;
   /** When true, managers see all tasks (no view-as). */
   showingAsManager: boolean;
+  /**
+   * Manage capability for UI/data scoping. False while Viewing As so the app
+   * matches a member experience. Raw canManage stays true for Exit / picker.
+   */
+  effectiveCanManage: boolean;
 };
 
 const ViewAsContext = createContext<ViewAsContextValue | null>(null);
@@ -29,7 +39,7 @@ const ViewAsContext = createContext<ViewAsContextValue | null>(null);
 function readStoredId(): string | null {
   if (typeof window === "undefined") return null;
   try {
-    return sessionStorage.getItem(STORAGE_KEY);
+    return sessionStorage.getItem(VIEW_AS_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -44,8 +54,8 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
   const setViewAsPersonId = useCallback((id: string | null) => {
     setViewAsPersonIdState(id);
     try {
-      if (id) sessionStorage.setItem(STORAGE_KEY, id);
-      else sessionStorage.removeItem(STORAGE_KEY);
+      if (id) sessionStorage.setItem(VIEW_AS_STORAGE_KEY, id);
+      else sessionStorage.removeItem(VIEW_AS_STORAGE_KEY);
     } catch {
       /* ignore */
     }
@@ -55,6 +65,13 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     setViewAsPersonId(null);
   }, [setViewAsPersonId]);
 
+  // Members cannot use View As — drop stale sessionStorage after demo switch.
+  useEffect(() => {
+    if (!canManage && viewAsPersonId) {
+      setViewAsPersonId(null);
+    }
+  }, [canManage, viewAsPersonId, setViewAsPersonId]);
+
   const viewedPerson = useMemo(() => {
     if (!viewAsPersonId) return null;
     return state.people.find((p) => p.id === viewAsPersonId) ?? null;
@@ -62,7 +79,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
 
   // Invalid stored id (person deleted)
   const resolvedViewAsId =
-    viewAsPersonId && viewedPerson ? viewAsPersonId : null;
+    canManage && viewAsPersonId && viewedPerson ? viewAsPersonId : null;
 
   const value = useMemo<ViewAsContextValue>(() => {
     // Public org share uses the same org-wide scope as managers (read-only).
@@ -71,6 +88,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     const effectivePersonId = orgWide
       ? resolvedViewAsId
       : myPerson?.id ?? null;
+    const effectiveCanManage = canManage && !resolvedViewAsId;
     return {
       viewAsPersonId: resolvedViewAsId,
       setViewAsPersonId,
@@ -78,6 +96,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
       viewedPerson: resolvedViewAsId ? viewedPerson : null,
       effectivePersonId,
       showingAsManager,
+      effectiveCanManage,
     };
   }, [
     canManage,

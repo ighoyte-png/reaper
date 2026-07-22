@@ -18,6 +18,7 @@ import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { ProjectForm } from "@/components/projects/project-form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useViewAs } from "@/lib/view-as";
 import {
   projectDateProgress,
 } from "@/lib/domain/progress";
@@ -62,10 +63,11 @@ export default function ProjectDetailPage() {
     exportProjectAsTemplate,
     updateProjectShare,
     newId,
-    canManage,
     isPublicShare,
     myPerson,
   } = useData();
+  const { effectiveCanManage, effectivePersonId } = useViewAs();
+  const canManage = effectiveCanManage;
   const { push } = useToast();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Omit<Project, "organization_id"> | null>(
@@ -83,11 +85,13 @@ export default function ProjectDetailPage() {
 
   const project = state.projects.find((p) => p.id === params.id);
 
+  const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
+
   const memberCanAccess = useMemo(() => {
     if (canManage || isPublicShare || !project) return true;
-    if (!myPerson) return false;
+    if (!scopePersonId) return false;
     return projectIdsForPerson(
-      myPerson.id,
+      scopePersonId,
       state.assignments,
       state.tasks,
       state.project_members,
@@ -96,7 +100,7 @@ export default function ProjectDetailPage() {
     canManage,
     isPublicShare,
     project,
-    myPerson,
+    scopePersonId,
     state.assignments,
     state.tasks,
     state.project_members,
@@ -200,12 +204,14 @@ export default function ProjectDetailPage() {
         onBack={goBack}
         actions={
           <>
-            <Link
-              href={budgetHref}
-              className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-            >
-              Budget
-            </Link>
+            {canManage ? (
+              <Link
+                href={budgetHref}
+                className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+              >
+                Budget
+              </Link>
+            ) : null}
             <Link
               href={appHref("/schedule")}
               className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"

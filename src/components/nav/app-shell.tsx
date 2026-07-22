@@ -9,6 +9,22 @@ import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 
+/** Paths members cannot access — redirect here while Viewing As. */
+function isManageOnlyPath(pathname: string): boolean {
+  return (
+    pathname === "/reports" ||
+    pathname.startsWith("/reports/") ||
+    pathname === "/clients" ||
+    pathname.startsWith("/clients/") ||
+    pathname === "/people" ||
+    pathname.startsWith("/people/") ||
+    pathname === "/templates" ||
+    pathname.startsWith("/templates/") ||
+    pathname === "/settings" ||
+    pathname.startsWith("/settings/")
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <MobileNavProvider>
@@ -50,12 +66,28 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
         <AppNavbar />
         <ViewAsBanner />
+        <ViewAsRouteGuard />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {children}
         </div>
       </div>
     </ViewAsProvider>
   );
+}
+
+function ViewAsRouteGuard() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { viewAsPersonId } = useViewAs();
+
+  useEffect(() => {
+    if (!viewAsPersonId) return;
+    if (isManageOnlyPath(pathname)) {
+      router.replace("/dashboard");
+    }
+  }, [viewAsPersonId, pathname, router]);
+
+  return null;
 }
 
 function ViewAsBanner() {

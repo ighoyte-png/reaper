@@ -22,6 +22,7 @@ import { Eye, EyeOff, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "luc
 import { Field, inputClass } from "@/components/ui/form";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { useData } from "@/lib/data/store";
+import { useViewAsOptional } from "@/lib/view-as";
 import {
   ASSET_KIND_LABELS,
   inferAssetKind,
@@ -32,8 +33,10 @@ import type { ProjectAsset, ProjectAssetKind } from "@/lib/types";
 type FormMode = "link" | "note" | null;
 
 export function ProjectNotebook({ projectId }: { projectId: string }) {
-  const { state, canManage, upsertProjectAsset, deleteProjectAsset, newId } =
+  const { state, canManage: roleCanManage, upsertProjectAsset, deleteProjectAsset, newId } =
     useData();
+  const viewAs = useViewAsOptional();
+  const canManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
   const assets = useMemo(
     () =>
       state.project_assets

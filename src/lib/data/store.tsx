@@ -69,6 +69,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { canManage, isAdmin, personForProfile } from "@/lib/auth/roles";
+import { clearViewAsStorage } from "@/lib/view-as-storage";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { workingDaysBetween } from "@/lib/domain/dates";
@@ -813,6 +814,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       switchDemoProfile: (profileId) => {
         if (mode !== "demo") return;
+        clearViewAsStorage();
         patch((prev) => ({ ...prev, sessionProfileId: profileId }));
       },
       updateDemoShare: (action) => {
@@ -977,6 +979,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       logout: async () => {
         setAuthError(null);
+        clearViewAsStorage();
         if (mode === "demo") {
           patch((prev) => ({ ...prev, sessionProfileId: null }));
           return;

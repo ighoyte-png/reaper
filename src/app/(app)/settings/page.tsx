@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
+import { useViewAs } from "@/lib/view-as";
 import { publicShareUrl } from "@/lib/share/token";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -42,6 +43,7 @@ export default function SettingsPage() {
     newId,
     updateDemoShare,
   } = useData();
+  const { clearViewAs } = useViewAs();
   const { push } = useToast();
   const router = useRouter();
   const admin = isAdmin(profile?.role);
@@ -723,6 +725,7 @@ export default function SettingsPage() {
                   type="button"
                   className="h-8 rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
                   onClick={() => {
+                    clearViewAs();
                     switchDemoProfile(p.id);
                     push(`Switched to ${p.full_name} (${p.role})`, "success");
                     router.push("/schedule");

@@ -8,18 +8,20 @@ import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useViewAs } from "@/lib/view-as";
 import { cn } from "@/lib/cn";
 import type { ProjectTemplate, TemplateTask } from "@/lib/types";
 
 export default function TemplatesPage() {
   const {
     state,
-    canManage,
     isPublicShare,
     newId,
     upsertProjectTemplate,
     deleteProjectTemplate,
   } = useData();
+  const { effectiveCanManage } = useViewAs();
+  const canManage = effectiveCanManage;
   const { push } = useToast();
   const router = useRouter();
   const [selectedId, setSelectedId] = useState<string | null>(
