@@ -445,26 +445,47 @@ function UtilizationOverview({
           This week · people by load
         </p>
         <div className="flex h-2.5 overflow-hidden rounded-full bg-[var(--border)]">
-          <div
-            className="bg-[var(--status-healthy)]"
-            style={{ width: `${(data.healthy / headcount) * 100}%` }}
-            title={`Healthy: ${data.healthy}`}
-          />
-          <div
-            className="bg-[var(--status-near)]"
-            style={{ width: `${(data.near / headcount) * 100}%` }}
-            title={`Near: ${data.near}`}
-          />
-          <div
-            className="bg-[var(--status-over)]"
-            style={{ width: `${(data.over / headcount) * 100}%` }}
-            title={`Over: ${data.over}`}
-          />
-          <div
-            className="bg-[var(--status-unavailable)]"
-            style={{ width: `${(data.unavailable / headcount) * 100}%` }}
-            title={`Unavailable: ${data.unavailable}`}
-          />
+          {(
+            [
+              {
+                value: data.healthy,
+                className: "bg-[var(--status-healthy)]",
+                title: `Healthy: ${data.healthy}`,
+              },
+              {
+                value: data.near,
+                className: "bg-[var(--status-near)]",
+                title: `Near: ${data.near}`,
+              },
+              {
+                value: data.over,
+                className: "bg-[var(--status-over)]",
+                title: `Over: ${data.over}`,
+              },
+              {
+                value: data.unavailable,
+                className: "bg-[var(--status-unavailable)]",
+                title: `Unavailable: ${data.unavailable}`,
+              },
+            ] as const
+          )
+            .map((s, i) => ({ ...s, i }))
+            .filter((s) => s.value > 0)
+            .map((s, idx, visible) => (
+              <div
+                key={s.i}
+                className={cn(
+                  s.className,
+                  visible.length === 1 && "rounded-full",
+                  visible.length > 1 && idx === 0 && "rounded-l-full",
+                  visible.length > 1 &&
+                    idx === visible.length - 1 &&
+                    "rounded-r-full",
+                )}
+                style={{ width: `${(s.value / headcount) * 100}%` }}
+                title={s.title}
+              />
+            ))}
         </div>
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-muted)]">
           <span>
@@ -556,21 +577,42 @@ function TasksOverview({
       <MetricRow label="No due date" value={String(data.noDue)} />
       <MetricRow label="Open" value={String(data.open)} />
       <div className="flex h-3 overflow-hidden rounded-full bg-[var(--border)]">
-        <div
-          className="bg-[var(--status-over)]"
-          style={{ width: `${(data.overdue / total) * 100}%` }}
-          title={`Overdue: ${data.overdue}`}
-        />
-        <div
-          className="bg-[var(--text-muted)]/40"
-          style={{ width: `${(data.noDue / total) * 100}%` }}
-          title={`No due date: ${data.noDue}`}
-        />
-        <div
-          className="bg-[var(--accent)]"
-          style={{ width: `${(data.upcoming / total) * 100}%` }}
-          title={`Upcoming: ${data.upcoming}`}
-        />
+        {(
+          [
+            {
+              value: data.overdue,
+              className: "bg-[var(--status-over)]",
+              title: `Overdue: ${data.overdue}`,
+            },
+            {
+              value: data.noDue,
+              className: "bg-[var(--text-muted)]/40",
+              title: `No due date: ${data.noDue}`,
+            },
+            {
+              value: data.upcoming,
+              className: "bg-[var(--accent)]",
+              title: `Upcoming: ${data.upcoming}`,
+            },
+          ] as const
+        )
+          .map((s, i) => ({ ...s, i }))
+          .filter((s) => s.value > 0)
+          .map((s, idx, visible) => (
+            <div
+              key={s.i}
+              className={cn(
+                s.className,
+                visible.length === 1 && "rounded-full",
+                visible.length > 1 && idx === 0 && "rounded-l-full",
+                visible.length > 1 &&
+                  idx === visible.length - 1 &&
+                  "rounded-r-full",
+              )}
+              style={{ width: `${(s.value / total) * 100}%` }}
+              title={s.title}
+            />
+          ))}
       </div>
       <p className="text-[11px] text-[var(--text-muted)]">
         {data.complete} completed · open mix above

@@ -36,6 +36,9 @@ export function BurnBar({
     (health === "healthy" || health === "none") && "bg-[var(--accent)]",
   );
 
+  const hasUsed = usedPct > 0;
+  const hasFuture = futurePct > 0;
+
   return (
     <div className="min-w-0">
       {!compact && (
@@ -76,19 +79,32 @@ export function BurnBar({
             : undefined
         }
       >
-        {usedPct > 0 ? (
+        {hasUsed ? (
           <div
-            className={clsx("h-full shrink-0", fillClass)}
+            className={clsx(
+              "h-full shrink-0",
+              fillClass,
+              hasFuture ? "rounded-l-full" : "rounded-full",
+            )}
             style={{ width: `${usedPct}%` }}
           />
         ) : null}
-        {futurePct > 0 ? (
+        {hasFuture ? (
           <div
-            className={clsx("relative h-full min-w-0 shrink-0", fillClass)}
+            className={clsx(
+              "relative h-full min-w-0 shrink-0 overflow-hidden",
+              fillClass,
+              hasUsed
+                ? "rounded-r-full border-l border-[var(--progress-approved-hatch)]"
+                : "rounded-full",
+            )}
             style={{ width: `${futurePct}%` }}
           >
             <div
-              className="absolute inset-0"
+              className={clsx(
+                "absolute inset-0",
+                hasUsed ? "rounded-r-full" : "rounded-full",
+              )}
               style={hatchStyle}
               aria-hidden
             />

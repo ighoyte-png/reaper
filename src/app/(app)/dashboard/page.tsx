@@ -855,17 +855,24 @@ function SegmentBar({
       <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]" />
     );
   }
+  const visible = segments
+    .map((s, i) => ({ ...s, i }))
+    .filter((s) => s.value > 0);
   return (
     <div className="flex h-1.5 overflow-hidden rounded-full bg-[var(--border)]">
-      {segments.map((s, i) =>
-        s.value > 0 ? (
-          <div
-            key={i}
-            className={cn("h-full", s.className)}
-            style={{ width: `${(s.value / total) * 100}%` }}
-          />
-        ) : null,
-      )}
+      {visible.map((s, idx) => (
+        <div
+          key={s.i}
+          className={cn(
+            "h-full",
+            s.className,
+            visible.length === 1 && "rounded-full",
+            visible.length > 1 && idx === 0 && "rounded-l-full",
+            visible.length > 1 && idx === visible.length - 1 && "rounded-r-full",
+          )}
+          style={{ width: `${(s.value / total) * 100}%` }}
+        />
+      ))}
     </div>
   );
 }
