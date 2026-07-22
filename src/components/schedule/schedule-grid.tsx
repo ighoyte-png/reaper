@@ -3545,7 +3545,7 @@ export function ScheduleGrid() {
                 href={appHref(`/projects/${editForm.project_id}`)}
                 className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
               >
-                Open Full Project
+                Open Project Hub
               </Link>
             </div>
             {sidebarPanelTab === "tasks" ? (
@@ -3809,7 +3809,7 @@ export function ScheduleGrid() {
                 href={appHref(`/projects/${selected.project_id}`)}
                 className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
               >
-                Open Full Project
+                Open Project Hub
               </Link>
             </div>
             {sidebarPanelTab === "tasks" ? (
