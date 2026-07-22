@@ -24,17 +24,17 @@ export function ProjectManagerPerson({
         size={size}
         fallback="initials"
       />
-      <div className="min-w-0">
+      <div className="min-w-0 text-left">
         <div
           className={cn(
-            "truncate text-sm font-medium leading-tight",
+            "truncate text-left text-sm font-medium leading-tight",
             nameClassName,
           )}
         >
           {person.name}
         </div>
         {person.role_title ? (
-          <div className="truncate text-xs text-[var(--text-muted)]">
+          <div className="truncate text-left text-xs text-[var(--text-muted)]">
             {person.role_title}
           </div>
         ) : null}

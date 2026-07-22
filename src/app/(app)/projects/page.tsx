@@ -402,7 +402,7 @@ export default function ProjectsPage() {
                           )
                         }
                         className={cn(
-                          "rounded-md px-1.5 py-1 transition-colors",
+                          "rounded-md px-1.5 py-1 text-left transition-colors",
                           managerFilter === person.id
                             ? "bg-[var(--bg-elevated)]"
                             : "hover:bg-[var(--row-hover)]",
