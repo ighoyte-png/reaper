@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
-import { ExternalLink, Search } from "lucide-react";
+import { Archive, ArchiveRestore, ExternalLink, Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
@@ -490,7 +490,6 @@ export default function ProjectsPage() {
                           project={project}
                           href={appHref(`/projects/${project.id}`)}
                           showManager={showManagers}
-                          showClientPortal={isPublicShare}
                           canArchive={canManage}
                           onToggleArchive={() => {
                             upsertProject({
@@ -676,14 +675,12 @@ function ProjectCard({
   project,
   href,
   showManager,
-  showClientPortal,
   canArchive,
   onToggleArchive,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
-  showClientPortal?: boolean;
   canArchive?: boolean;
   onToggleArchive?: () => void;
 }) {
@@ -697,7 +694,7 @@ function ProjectCard({
       ? state.people.find((p) => p.id === project.manager_person_id)
       : null;
   const portalUrl =
-    showClientPortal && project.share_enabled && project.share_token
+    project.share_enabled && project.share_token
       ? publicProjectShareUrl(
           typeof window !== "undefined" ? window.location.origin : "",
           project.share_token,
@@ -751,30 +748,41 @@ function ProjectCard({
           </div>
         ) : null}
       </div>
-      {portalUrl ? (
-        <a
-          href={portalUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="relative z-[1] mt-3 inline-flex h-7 items-center gap-1 self-start rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--accent)] hover:bg-[var(--bg-elevated)]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ExternalLink size={11} />
-          Client portal
-        </a>
-      ) : null}
-      {canArchive && onToggleArchive ? (
-        <button
-          type="button"
-          className="relative z-[1] mt-3 h-7 cursor-pointer self-start rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onToggleArchive();
-          }}
-        >
-          {project.status === "archived" ? "Unarchive" : "Archive"}
-        </button>
+      {portalUrl || (canArchive && onToggleArchive) ? (
+        <div className="relative z-[1] mt-3 flex flex-wrap items-center justify-end gap-1.5">
+          {portalUrl ? (
+            <button
+              type="button"
+              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(portalUrl, "_blank", "noopener,noreferrer");
+              }}
+            >
+              <ExternalLink size={11} />
+              Client portal
+            </button>
+          ) : null}
+          {canArchive && onToggleArchive ? (
+            <button
+              type="button"
+              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onToggleArchive();
+              }}
+            >
+              {project.status === "archived" ? (
+                <ArchiveRestore size={11} />
+              ) : (
+                <Archive size={11} />
+              )}
+              {project.status === "archived" ? "Unarchive" : "Archive"}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

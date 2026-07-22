@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
-import { ChevronDown, ChevronRight, Copy, Link2, Pencil, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, ExternalLink, Link2, Pencil, Plus, RefreshCw, Unlink } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -15,6 +15,7 @@ import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { SortableMilestoneList } from "@/components/projects/sortable-milestone-list";
 import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
+import { buttonClass } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
   ApplyTemplateDialog,
@@ -56,6 +57,9 @@ function overallProgressLabel(
   if (endDate) return `Overall Progress · through ${formatDisplayDate(endDate)}`;
   return "Overall Progress";
 }
+
+const portalActionClass =
+  "inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -534,9 +538,13 @@ export default function ProjectDetailPage() {
               />
               <Link
                 href={budgetHref}
-                className="mt-2 inline-block text-sm text-[var(--accent)] hover:underline"
+                className={buttonClass({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "mt-2",
+                })}
               >
-                Open this project&apos;s budget →
+                Open this project&apos;s budget
               </Link>
             </section>
 
@@ -555,32 +563,49 @@ export default function ProjectDetailPage() {
                       <div className="flex flex-wrap gap-1.5">
                         <button
                           type="button"
-                          className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                          className={portalActionClass}
+                          onClick={() => {
+                            window.open(
+                              shareResult,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                          }}
+                        >
+                          <ExternalLink size={11} />
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          className={portalActionClass}
                           onClick={async () => {
                             await navigator.clipboard.writeText(shareResult);
                             push("Portal link copied");
                           }}
                         >
-                          <Copy size={12} /> Copy
+                          <Copy size={11} />
+                          Copy
                         </button>
                         <button
                           type="button"
-                          className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                          className={portalActionClass}
                           onClick={() => {
                             updateProjectShare(project.id, "rotate");
                             push("Portal link rotated");
                           }}
                         >
+                          <RefreshCw size={11} />
                           Rotate
                         </button>
                         <button
                           type="button"
-                          className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                          className={portalActionClass}
                           onClick={() => {
                             updateProjectShare(project.id, "disable");
                             push("Portal disabled");
                           }}
                         >
+                          <Unlink size={11} />
                           Disable
                         </button>
                       </div>
@@ -588,12 +613,13 @@ export default function ProjectDetailPage() {
                   ) : (
                     <button
                       type="button"
-                      className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                      className={portalActionClass}
                       onClick={() => {
                         updateProjectShare(project.id, "enable");
                         push("Client portal enabled");
                       }}
                     >
+                      <Link2 size={11} />
                       Enable public link
                     </button>
                   )
@@ -603,23 +629,30 @@ export default function ProjectDetailPage() {
                       {shareResult}
                     </code>
                     <div className="flex flex-wrap gap-1.5">
-                      <a
-                        href={shareResult}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex h-7 items-center rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-                      >
-                        Open portal
-                      </a>
                       <button
                         type="button"
-                        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                        className={portalActionClass}
+                        onClick={() => {
+                          window.open(
+                            shareResult,
+                            "_blank",
+                            "noopener,noreferrer",
+                          );
+                        }}
+                      >
+                        <ExternalLink size={11} />
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        className={portalActionClass}
                         onClick={async () => {
                           await navigator.clipboard.writeText(shareResult);
                           push("Portal link copied");
                         }}
                       >
-                        <Copy size={12} /> Copy
+                        <Copy size={11} />
+                        Copy
                       </button>
                     </div>
                   </div>

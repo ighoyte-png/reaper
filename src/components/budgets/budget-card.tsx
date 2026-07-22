@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ExternalLink } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { panelClass } from "@/components/ui/panel";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
@@ -14,6 +15,7 @@ import {
   normalizeBudgetMode,
   projectHoursForecast,
 } from "@/lib/domain/budget";
+import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
 import type { Project } from "@/lib/types";
 
@@ -50,6 +52,13 @@ export function BudgetCard({
         new Date(year, 0, 1),
       )
     : [];
+  const portalUrl =
+    project.share_enabled && project.share_token
+      ? publicProjectShareUrl(
+          typeof window !== "undefined" ? window.location.origin : "",
+          project.share_token,
+        )
+      : null;
 
   const summary =
     burn.mode === "none"
@@ -65,6 +74,7 @@ export function BudgetCard({
       <div
         className={cn(
           "mb-3 flex min-w-0 items-center gap-2",
+          href ? "pointer-events-none" : null,
           !showName && "justify-end",
         )}
       >
@@ -83,7 +93,12 @@ export function BudgetCard({
                 : "Hours"}
         </span>
       </div>
-      <div className="mt-auto space-y-3">
+      <div
+        className={cn(
+          "mt-auto space-y-3",
+          href ? "pointer-events-none" : null,
+        )}
+      >
         <div>
           <div
             className={cn(
@@ -142,22 +157,36 @@ export function BudgetCard({
           </dl>
         </div>
       </div>
+      {portalUrl ? (
+        <button
+          type="button"
+          className="relative z-[1] mt-3 inline-flex h-7 cursor-pointer items-center gap-1 self-start rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.open(portalUrl, "_blank", "noopener,noreferrer");
+          }}
+        >
+          <ExternalLink size={11} />
+          Client portal
+        </button>
+      ) : null}
     </>
   );
 
   const className = panelClass({
-    className: "flex flex-col transition-colors",
+    className: "relative flex flex-col transition-colors",
   });
 
   if (href) {
     return (
-      <Link
+      <div
         id={`project-card-${project.id}`}
-        href={href}
         className={cn(className, "hover:bg-[var(--row-hover)]")}
       >
+        <Link href={href} className="absolute inset-0 z-0" aria-label={project.name} />
         {body}
-      </Link>
+      </div>
     );
   }
 
