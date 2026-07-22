@@ -274,6 +274,18 @@ export default function ProjectSharePage() {
     (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
   );
   const teamSorted = [...portal.team];
+  const manager = portal.showProjectManagers ? portal.manager : null;
+  const teamWithoutManager = manager
+    ? teamSorted.filter(
+        (m) =>
+          !(
+            m.email &&
+            manager.email &&
+            m.email.toLowerCase() === manager.email.toLowerCase()
+          ) && m.name !== manager.name,
+      )
+    : teamSorted;
+  const showTeamSection = Boolean(manager) || teamSorted.length > 0;
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
@@ -289,11 +301,42 @@ export default function ProjectSharePage() {
         </p>
       </div>
 
-      {teamSorted.length > 0 ? (
+      {showTeamSection ? (
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <h2 className="mb-3 text-sm font-semibold">Team</h2>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {teamSorted.map((member) => (
+            {manager ? (
+              <li className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-center">
+                <PersonAvatar
+                  avatarUrl={manager.avatar_url}
+                  name={manager.name}
+                  size="lg"
+                />
+                <div className="min-w-0 w-full">
+                  <div className="truncate text-base font-semibold tracking-tight">
+                    {manager.name}
+                  </div>
+                  <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                    Project Manager
+                  </div>
+                  {manager.title ? (
+                    <div className="truncate text-xs text-[var(--text-muted)]">
+                      {manager.title}
+                    </div>
+                  ) : null}
+                  {manager.email ? (
+                    <a
+                      href={`mailto:${manager.email}`}
+                      className="mt-1 inline-flex items-center justify-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                    >
+                      <Mail size={11} />
+                      {manager.email}
+                    </a>
+                  ) : null}
+                </div>
+              </li>
+            ) : null}
+            {teamWithoutManager.map((member) => (
               <li
                 key={member.email || member.name}
                 className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-center"

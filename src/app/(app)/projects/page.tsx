@@ -7,6 +7,7 @@ import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
+import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
@@ -19,7 +20,10 @@ import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
-import { projectIdsForPerson } from "@/lib/domain/project-access";
+import {
+  projectIdsForPerson,
+  showProjectManagerUi,
+} from "@/lib/domain/project-access";
 import { projectDateProgress } from "@/lib/domain/progress";
 import {
   projectStatusPillClass,
@@ -113,22 +117,23 @@ export default function ProjectsPage() {
   }, [visibleProjects, statusFilter]);
 
   const managerTabs = useMemo(() => {
+    if (!showProjectManagerUi(statusScopedProjects)) return [];
     const ids = new Set<string>();
     for (const p of statusScopedProjects) {
       if (p.manager_person_id) ids.add(p.manager_person_id);
     }
-    if (ids.size < 2) return [];
     return state.people
       .filter((person) => ids.has(person.id))
       .sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-      )
-      .map((person) => ({ id: person.id, label: person.name }));
+      );
   }, [statusScopedProjects, state.people]);
+
+  const showManagers = managerTabs.length >= 2;
 
   useEffect(() => {
     if (managerFilter === "all") return;
-    if (!managerTabs.some((tab) => tab.id === managerFilter)) {
+    if (!managerTabs.some((person) => person.id === managerFilter)) {
       setManagerFilter("all");
     }
   }, [managerFilter, managerTabs]);
@@ -362,44 +367,53 @@ export default function ProjectsPage() {
               ))}
             </div>
 
-            {managerTabs.length >= 2 ? (
-              <div
-                className="mb-4 flex flex-wrap gap-1"
-                role="tablist"
+            {showManagers ? (
+              <section
+                className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
                 aria-label="Project managers"
               >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={managerFilter === "all"}
-                  onClick={() => setManagerFilter("all")}
-                  className={cn(
-                    "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
-                    managerFilter === "all"
-                      ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
-                      : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
-                  )}
-                >
-                  All
-                </button>
-                {managerTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={managerFilter === tab.id}
-                    onClick={() => setManagerFilter(tab.id)}
-                    className={cn(
-                      "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
-                      managerFilter === tab.id
-                        ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
-                        : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-              </div>
+                <h2 className="mb-3 text-sm font-semibold">Project Manager</h2>
+                <ul className="flex flex-wrap gap-x-4 gap-y-2">
+                  <li>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={managerFilter === "all"}
+                      onClick={() => setManagerFilter("all")}
+                      className={cn(
+                        "flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm transition-colors",
+                        managerFilter === "all"
+                          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                      )}
+                    >
+                      All
+                    </button>
+                  </li>
+                  {managerTabs.map((person) => (
+                    <li key={person.id}>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={managerFilter === person.id}
+                        onClick={() =>
+                          setManagerFilter(
+                            managerFilter === person.id ? "all" : person.id,
+                          )
+                        }
+                        className={cn(
+                          "rounded-md px-1.5 py-1 transition-colors",
+                          managerFilter === person.id
+                            ? "bg-[var(--bg-elevated)]"
+                            : "hover:bg-[var(--row-hover)]",
+                        )}
+                      >
+                        <ProjectManagerPerson person={person} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ) : null}
 
             <label className="relative mb-4 block md:hidden">
@@ -472,6 +486,7 @@ export default function ProjectsPage() {
                           key={project.id}
                           project={project}
                           href={appHref(`/projects/${project.id}`)}
+                          showManager={showManagers}
                           canArchive={canManage}
                           onToggleArchive={() => {
                             upsertProject({
@@ -656,11 +671,13 @@ function MobileClientChip({
 function ProjectCard({
   project,
   href,
+  showManager,
   canArchive,
   onToggleArchive,
 }: {
   project: Project;
   href: string;
+  showManager?: boolean;
   canArchive?: boolean;
   onToggleArchive?: () => void;
 }) {
@@ -669,6 +686,10 @@ function ProjectCard({
   const health = budgetHealth(burn);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const overallPct = projectDateProgress(project, today);
+  const manager =
+    showManager && project.manager_person_id
+      ? state.people.find((p) => p.id === project.manager_person_id)
+      : null;
 
   return (
     <div
@@ -711,6 +732,11 @@ function ProjectCard({
           </div>
           <BurnBar burn={burn} compact />
         </div>
+        {manager ? (
+          <div className="border-t border-[var(--border)] pt-3">
+            <ProjectManagerPerson person={manager} />
+          </div>
+        ) : null}
       </div>
       {canArchive && onToggleArchive ? (
         <button

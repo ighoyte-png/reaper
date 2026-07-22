@@ -66,7 +66,7 @@ export default function TemplatesPage() {
           </Button>
         }
       />
-      <p className="border-b border-[var(--border)] px-3 pb-3 text-sm text-[var(--text-muted)] sm:px-5">
+      <p className="border-b border-[var(--border)] px-3 pb-3 pt-3 text-sm text-[var(--text-muted)] sm:px-5 sm:pt-4">
         Reusable milestone and task structures. Edit a template like a project
         hub — only milestones and tasks are saved. Apply from a project or when
         creating one; applied work starts undated and unassigned.

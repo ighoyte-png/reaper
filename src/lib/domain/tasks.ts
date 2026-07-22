@@ -14,6 +14,47 @@ export function parentTasks(tasks: Task[]): Task[] {
   return tasks.filter((t) => !t.parent_id);
 }
 
+/**
+ * Order tasks so parents appear before children (stable within each level).
+ * Required for FK-safe inserts into tables with parent_id self-references.
+ */
+export function orderTasksParentsFirst<
+  T extends { id: string; parent_id: string | null; sort_order?: number },
+>(tasks: T[]): T[] {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const children = new Map<string | null, T[]>();
+  for (const t of tasks) {
+    const parentKey =
+      t.parent_id && byId.has(t.parent_id) ? t.parent_id : null;
+    const arr = children.get(parentKey) ?? [];
+    arr.push(t);
+    children.set(parentKey, arr);
+  }
+  for (const arr of children.values()) {
+    arr.sort(
+      (a, b) =>
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id.localeCompare(b.id),
+    );
+  }
+  const out: T[] = [];
+  function visit(parentId: string | null) {
+    for (const t of children.get(parentId) ?? []) {
+      out.push(t);
+      visit(t.id);
+    }
+  }
+  visit(null);
+  // Orphans whose parent was missing from the set but parent_id was set —
+  // already treated as roots above. Any leftover (cycles) appended last.
+  if (out.length < tasks.length) {
+    const seen = new Set(out.map((t) => t.id));
+    for (const t of tasks) {
+      if (!seen.has(t.id)) out.push(t);
+    }
+  }
+  return out;
+}
+
 export function childTasks(tasks: Task[], parentId: string): Task[] {
   return tasks
     .filter((t) => t.parent_id === parentId)

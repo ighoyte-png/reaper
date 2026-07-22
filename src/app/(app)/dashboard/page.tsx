@@ -1509,13 +1509,21 @@ function SchedulePie({
   totalHours: number;
 }) {
   const total = slices.reduce((s, x) => s + x.hours, 0);
+  const gapDeg = slices.length > 1 ? 3 : 0;
+  const usable = Math.max(0, 360 - gapDeg * slices.length);
   let cursor = 0;
   const stops: string[] = [];
+  const gapColor = "var(--bg)";
   for (const slice of slices) {
-    const start = (cursor / total) * 360;
-    cursor += slice.hours;
-    const end = (cursor / total) * 360;
+    const sliceDeg = total > 0 ? (slice.hours / total) * usable : 0;
+    const start = cursor;
+    const end = cursor + sliceDeg;
     stops.push(`${slice.color} ${start}deg ${end}deg`);
+    cursor = end;
+    if (gapDeg > 0) {
+      stops.push(`${gapColor} ${cursor}deg ${cursor + gapDeg}deg`);
+      cursor += gapDeg;
+    }
   }
 
   return (
@@ -1526,7 +1534,12 @@ function SchedulePie({
     >
       <div
         className="size-full rounded-full"
-        style={{ background: `conic-gradient(${stops.join(", ")})` }}
+        style={{
+          background:
+            stops.length > 0
+              ? `conic-gradient(${stops.join(", ")})`
+              : "var(--border)",
+        }}
       />
       <div className="absolute inset-[26%] flex flex-col items-center justify-center rounded-full bg-[var(--bg)] text-center shadow-[0_0_0_1px_var(--border)]">
         <span className="text-sm font-semibold tabular-nums tracking-tight">

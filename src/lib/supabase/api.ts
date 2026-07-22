@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createDemoSeed } from "@/lib/demo/seed";
+import { orderTasksParentsFirst } from "@/lib/domain/tasks";
 import type {
   Assignment,
   Bulletin,
@@ -1566,20 +1567,22 @@ export async function applyProjectTemplateRows(
     color: l.color ?? null,
     sort_order: l.sort_order,
   }));
-  const taskRows = args.tasks.map((t) => ({
-    id: t.id,
-    organization_id: args.organizationId,
-    project_id: args.projectId,
-    list_id: t.list_id,
-    parent_id: t.parent_id,
-    assignee_person_id: null as string | null,
-    title: t.title,
-    status: "upcoming" as const,
-    start_date: null as string | null,
-    due_date: t.due_date,
-    notes: t.notes,
-    sort_order: t.sort_order,
-  }));
+  const taskRows = orderTasksParentsFirst(
+    args.tasks.map((t) => ({
+      id: t.id,
+      organization_id: args.organizationId,
+      project_id: args.projectId,
+      list_id: t.list_id,
+      parent_id: t.parent_id,
+      assignee_person_id: null as string | null,
+      title: t.title,
+      status: "upcoming" as const,
+      start_date: null as string | null,
+      due_date: t.due_date,
+      notes: t.notes,
+      sort_order: t.sort_order,
+    })),
+  );
 
   if (milestoneRows.length > 0) {
     const { error } = await supabase.from("milestones").insert(milestoneRows);

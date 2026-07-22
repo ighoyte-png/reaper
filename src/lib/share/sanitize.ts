@@ -1,5 +1,8 @@
 import { normalizeBudgetMode } from "@/lib/domain/budget";
-import { projectTeamPersonIds } from "@/lib/domain/project-access";
+import {
+  projectTeamPersonIds,
+  showProjectManagerUi,
+} from "@/lib/domain/project-access";
 import type {
   AssignmentStatus,
   DemoState,
@@ -51,6 +54,14 @@ export interface ProjectPortalPayload {
     notes: string;
   };
   clientName: string | null;
+  /** When true (2+ org managers), portal should highlight the project manager. */
+  showProjectManagers: boolean;
+  manager: {
+    name: string;
+    email: string;
+    title: string;
+    avatar_url: string | null;
+  } | null;
   /** Team members with contact emails — shown to the client, unlike the org-wide share. */
   team: {
     name: string;
@@ -110,6 +121,19 @@ export function sanitizeProjectPortal(
     state.assignments,
     state.tasks,
   );
+  const showProjectManagers = showProjectManagerUi(state.projects);
+  const managerPerson =
+    showProjectManagers && project.manager_person_id
+      ? state.people.find((p) => p.id === project.manager_person_id)
+      : null;
+  const manager = managerPerson
+    ? {
+        name: managerPerson.name,
+        email: managerPerson.email,
+        title: managerPerson.role_title,
+        avatar_url: managerPerson.avatar_url ?? null,
+      }
+    : null;
   const team = state.people
     .filter((p) => teamIds.has(p.id))
     .map((p) => ({
@@ -154,6 +178,8 @@ export function sanitizeProjectPortal(
       notes: project.notes,
     },
     clientName: client?.name ?? null,
+    showProjectManagers,
+    manager,
     team,
     milestones: state.milestones
       .filter((m) => m.project_id === projectId)

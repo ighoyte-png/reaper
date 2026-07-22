@@ -8,6 +8,7 @@ import { BurnBar } from "@/components/ui/burn-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass, Modal, DateInput } from "@/components/ui/form";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import {
@@ -78,6 +79,10 @@ import {
   sortPeopleByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
+import {
+  projectManagerPerson,
+  showProjectManagerUi,
+} from "@/lib/domain/project-access";
 import {
   isFullDayLeave,
   leaveBlockLabel,
@@ -465,6 +470,17 @@ export function ScheduleGrid() {
   );
 
   const selected = state.assignments.find((a) => a.id === selectedId) ?? null;
+
+  const showManagers = showProjectManagerUi(state.projects);
+  const sidebarProjectId =
+    editForm?.project_id ?? selected?.project_id ?? null;
+  const sidebarProject = sidebarProjectId
+    ? (projectsById.get(sidebarProjectId) ?? null)
+    : null;
+  const sidebarManager =
+    showManagers && sidebarProject
+      ? projectManagerPerson(sidebarProject, state.people)
+      : null;
 
   // Local form draft — only persisted on Save; grid move/resize updates dates
   useEffect(() => {
@@ -3472,6 +3488,11 @@ export function ScheduleGrid() {
           </div>
         ) : canManage && editForm ? (
           <div className="flex flex-col">
+            {sidebarManager ? (
+              <div className="border-b border-[var(--border)] px-4 py-2.5">
+                <ProjectManagerPerson person={sidebarManager} />
+              </div>
+            ) : null}
             <div className="flex border-b border-[var(--border)] px-4">
               <button
                 type="button"
@@ -3733,6 +3754,11 @@ export function ScheduleGrid() {
           </div>
         ) : selected ? (
           <div className="flex flex-col">
+            {sidebarManager ? (
+              <div className="border-b border-[var(--border)] px-4 py-2.5">
+                <ProjectManagerPerson person={sidebarManager} />
+              </div>
+            ) : null}
             <div className="flex border-b border-[var(--border)] px-4">
               <button
                 type="button"

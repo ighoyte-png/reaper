@@ -8,6 +8,7 @@ import { ChevronDown, ChevronRight, Copy, Link2, Pencil, Plus } from "lucide-rea
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { BudgetCard } from "@/components/budgets/budget-card";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
@@ -26,7 +27,12 @@ import { useViewAs } from "@/lib/view-as";
 import {
   projectDateProgress,
 } from "@/lib/domain/progress";
-import { projectIdsForPerson, projectTeamPersonIds } from "@/lib/domain/project-access";
+import {
+  projectIdsForPerson,
+  projectManagerPerson,
+  projectTeamPersonIds,
+  showProjectManagerUi,
+} from "@/lib/domain/project-access";
 import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
@@ -140,6 +146,17 @@ export default function ProjectDetailPage() {
     state.tasks,
     state.people,
   ]);
+
+  const showManagers = showProjectManagerUi(state.projects);
+  const manager = project
+    ? projectManagerPerson(project, state.people)
+    : null;
+  const teamWithoutManager = useMemo(() => {
+    if (!manager) return team;
+    return team.filter((p) => p.id !== manager.id);
+  }, [team, manager]);
+  const showTeamBar =
+    team.length > 0 || (showManagers && Boolean(manager));
 
   if (!project) {
     return (
@@ -272,30 +289,53 @@ export default function ProjectDetailPage() {
           ) : null}
         </div>
 
-        {team.length > 0 ? (
+        {showTeamBar ? (
           <section className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Team</h2>
-            <ul className="flex flex-wrap gap-x-4 gap-y-2">
-              {team.map((p) => (
-                <li key={p.id} className="flex min-w-0 items-center gap-2 text-sm">
-                  <PersonAvatar
-                    avatarUrl={p.avatar_url}
-                    name={p.name}
-                    size="team"
-                    fallback="initials"
-                  />
-                  <span className="min-w-0 truncate">
-                    {p.name}
-                    {p.role_title ? (
-                      <span className="text-[var(--text-muted)]">
-                        {" "}
-                        · {p.role_title}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              {showManagers && manager ? (
+                <>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <ProjectManagerPerson person={manager} />
+                    <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                      Project Manager
+                    </span>
+                  </div>
+                  {teamWithoutManager.length > 0 ? (
+                    <div
+                      className="hidden h-8 w-px shrink-0 bg-[var(--border)] sm:block"
+                      aria-hidden
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              <ul className="flex flex-wrap gap-x-4 gap-y-2">
+                {(showManagers && manager ? teamWithoutManager : team).map(
+                  (p) => (
+                    <li
+                      key={p.id}
+                      className="flex min-w-0 items-center gap-2 text-sm"
+                    >
+                      <PersonAvatar
+                        avatarUrl={p.avatar_url}
+                        name={p.name}
+                        size="team"
+                        fallback="initials"
+                      />
+                      <span className="min-w-0 truncate">
+                        {p.name}
+                        {p.role_title ? (
+                          <span className="text-[var(--text-muted)]">
+                            {" "}
+                            · {p.role_title}
+                          </span>
+                        ) : null}
                       </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
           </section>
         ) : null}
 

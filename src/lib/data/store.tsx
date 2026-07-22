@@ -21,6 +21,7 @@ import {
   applyRealtimeTableEvent,
   realtimeEchoId,
 } from "@/lib/data/realtime-patch";
+import { orderTasksParentsFirst } from "@/lib/domain/tasks";
 import {
   applyProjectTemplateRows,
   bootstrapOrganization,
@@ -2074,20 +2075,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         const taskIdMap = new Map<string, string>();
         for (const t of tTasks) taskIdMap.set(t.id, uid("task"));
-        const newTasks: Task[] = tTasks.map((t) => ({
-          id: taskIdMap.get(t.id)!,
-          organization_id: organizationId,
-          project_id: projectId,
-          list_id: listIdMap.get(t.list_id) ?? "",
-          parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
-          assignee_person_id: null,
-          title: t.title,
-          status: "upcoming",
-          start_date: null,
-          due_date: null,
-          notes: t.notes,
-          sort_order: t.sort_order,
-        }));
+        const newTasks: Task[] = orderTasksParentsFirst(
+          tTasks.map((t) => ({
+            id: taskIdMap.get(t.id)!,
+            organization_id: organizationId,
+            project_id: projectId,
+            list_id: listIdMap.get(t.list_id) ?? "",
+            parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
+            assignee_person_id: null,
+            title: t.title,
+            status: "upcoming" as const,
+            start_date: null,
+            due_date: null,
+            notes: t.notes,
+            sort_order: t.sort_order,
+          })),
+        );
 
         patch((prev) => ({
           ...prev,
@@ -2187,17 +2190,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         const taskIdMap = new Map<string, string>();
         for (const t of projectTasks) taskIdMap.set(t.id, uid("ttask"));
-        const newTemplateTasks: TemplateTask[] = projectTasks.map((t) => ({
-          id: taskIdMap.get(t.id)!,
-          organization_id: organizationId,
-          template_id: templateId,
-          list_id: listIdMap.get(t.list_id) ?? "",
-          parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
-          title: t.title,
-          notes: t.notes,
-          offset_days: null,
-          sort_order: t.sort_order,
-        }));
+        const newTemplateTasks: TemplateTask[] = orderTasksParentsFirst(
+          projectTasks.map((t) => ({
+            id: taskIdMap.get(t.id)!,
+            organization_id: organizationId,
+            template_id: templateId,
+            list_id: listIdMap.get(t.list_id) ?? "",
+            parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
+            title: t.title,
+            notes: t.notes,
+            offset_days: null,
+            sort_order: t.sort_order,
+          })),
+        );
 
         patch((prev) => ({
           ...prev,
