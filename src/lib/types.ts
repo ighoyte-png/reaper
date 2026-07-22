@@ -69,6 +69,8 @@ export interface Project {
   /** When true, hourly budget resets each calendar month (retainer). */
   budget_monthly_reset: boolean;
   notes: string;
+  /** Optional project manager (person in the org directory). */
+  manager_person_id: string | null;
   /** Per-project client portal (separate from org schedule share). */
   share_enabled?: boolean;
   share_token?: string | null;

@@ -71,6 +71,9 @@ function mapProject(row: Record<string, unknown>): Project {
     budget_mode,
     budget_monthly_reset: Boolean(row.budget_monthly_reset),
     notes: String(row.notes ?? ""),
+    manager_person_id: row.manager_person_id
+      ? String(row.manager_person_id)
+      : null,
     share_enabled: Boolean(row.share_enabled),
     share_token: row.share_token ? String(row.share_token) : null,
   };
@@ -681,6 +684,7 @@ export async function upsertProjectRow(
     budget_mode: mode,
     budget_monthly_reset: mode === "hours" && Boolean(project.budget_monthly_reset),
     notes: project.notes,
+    manager_person_id: project.manager_person_id ?? null,
     share_enabled: Boolean(project.share_enabled),
     share_token: project.share_token ?? null,
   };
@@ -693,6 +697,10 @@ export async function upsertProjectRow(
     /Could not find the 'share_(enabled|token)' column/i.test(message) ||
     (code === "PGRST204" && /share_(enabled|token)/i.test(message));
 
+  const missingManager = (message: string, code?: string) =>
+    /Could not find the 'manager_person_id' column/i.test(message) ||
+    (code === "PGRST204" && /manager_person_id/i.test(message));
+
   const invalidNoneEnum = (message: string, code?: string) =>
     (code === "22P02" || /invalid input value for enum/i.test(message)) &&
     /budget_mode/i.test(message) &&
@@ -703,6 +711,19 @@ export async function upsertProjectRow(
     (/null value/i.test(message) || /not-null|not null/i.test(message));
 
   let { error } = await supabase.from("projects").upsert(payload);
+
+  // Retry without manager_person_id if migration 034 is not applied yet.
+  if (error && missingManager(error.message, error.code)) {
+    const { manager_person_id: _m, ...rest } = payload;
+    const retry = await supabase.from("projects").upsert(rest);
+    if (!retry.error) {
+      console.warn(
+        "projects.manager_person_id missing — apply supabase/migrations/034_project_manager.sql",
+      );
+      return;
+    }
+    error = retry.error;
+  }
 
   // Retry without share_enabled/share_token if migration 015 is not applied yet.
   if (error && missingShare(error.message, error.code)) {
@@ -1607,6 +1628,9 @@ export async function seedDemoWorkspace(
     budget_mode: p.budget_mode,
     budget_monthly_reset: p.budget_monthly_reset,
     notes: p.notes,
+    manager_person_id: p.manager_person_id
+      ? remapId(ids, p.manager_person_id)
+      : null,
     share_enabled: false,
     share_token: null as string | null,
   }));
@@ -1793,7 +1817,6 @@ export async function seedDemoWorkspace(
 
   const inserts = [
     supabase.from("clients").insert(clients),
-    supabase.from("projects").insert(projects),
     supabase.from("people").insert(
       calInsert.error
         ? people.map(({ holiday_calendar_id: _h, ...rest }) => rest)
@@ -1804,6 +1827,24 @@ export async function seedDemoWorkspace(
     const { error } = await req;
     if (error) throw error;
   }
+
+  let projectsInsert = await supabase.from("projects").insert(projects);
+  if (
+    projectsInsert.error &&
+    (/manager_person_id/i.test(projectsInsert.error.message) ||
+      projectsInsert.error.code === "PGRST204")
+  ) {
+    const withoutManager = projects.map(
+      ({ manager_person_id: _m, ...rest }) => rest,
+    );
+    projectsInsert = await supabase.from("projects").insert(withoutManager);
+    if (!projectsInsert.error) {
+      console.warn(
+        "projects.manager_person_id missing — apply supabase/migrations/034_project_manager.sql",
+      );
+    }
+  }
+  if (projectsInsert.error) throw projectsInsert.error;
 
   const second = [
     supabase.from("milestones").insert(milestones),

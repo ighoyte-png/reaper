@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
@@ -41,11 +41,13 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
     budget_mode: "hours",
     budget_monthly_reset: false,
     notes: "",
+    manager_person_id: null,
   };
 }
 
 type ClientFilter = "all" | "none" | string;
 type StatusFilter = ProjectStatus | "all";
+type ManagerFilter = "all" | string;
 
 const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "active", label: "Active" },
@@ -74,6 +76,7 @@ export default function ProjectsPage() {
   const [query, setQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [managerFilter, setManagerFilter] = useState<ManagerFilter>("all");
 
   const visibleProjects = useMemo(() => {
     if (canManage || isPublicShare) return state.projects;
@@ -99,6 +102,27 @@ export default function ProjectsPage() {
     if (statusFilter === "all") return visibleProjects;
     return visibleProjects.filter((p) => p.status === statusFilter);
   }, [visibleProjects, statusFilter]);
+
+  const managerTabs = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of statusScopedProjects) {
+      if (p.manager_person_id) ids.add(p.manager_person_id);
+    }
+    if (ids.size < 2) return [];
+    return state.people
+      .filter((person) => ids.has(person.id))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      )
+      .map((person) => ({ id: person.id, label: person.name }));
+  }, [statusScopedProjects, state.people]);
+
+  useEffect(() => {
+    if (managerFilter === "all") return;
+    if (!managerTabs.some((tab) => tab.id === managerFilter)) {
+      setManagerFilter("all");
+    }
+  }, [managerFilter, managerTabs]);
 
   const projects = sortProjectsByClientThenName(
     statusScopedProjects,
@@ -128,6 +152,12 @@ export default function ProjectsPage() {
       ) {
         return false;
       }
+      if (
+        managerFilter !== "all" &&
+        project.manager_person_id !== managerFilter
+      ) {
+        return false;
+      }
       if (!q) return true;
       const client = state.clients.find((c) => c.id === project.client_id);
       const haystack = [
@@ -141,7 +171,7 @@ export default function ProjectsPage() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [projects, query, state.clients, clientFilter]);
+  }, [projects, query, state.clients, clientFilter, managerFilter]);
 
   const groups = useMemo(() => {
     const byClient = new Map<string | null, Project[]>();
@@ -286,6 +316,46 @@ export default function ProjectsPage() {
                 </button>
               ))}
             </div>
+
+            {managerTabs.length >= 2 ? (
+              <div
+                className="mb-4 flex flex-wrap gap-1"
+                role="tablist"
+                aria-label="Project managers"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={managerFilter === "all"}
+                  onClick={() => setManagerFilter("all")}
+                  className={cn(
+                    "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
+                    managerFilter === "all"
+                      ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                      : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
+                  )}
+                >
+                  All
+                </button>
+                {managerTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={managerFilter === tab.id}
+                    onClick={() => setManagerFilter(tab.id)}
+                    className={cn(
+                      "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
+                      managerFilter === tab.id
+                        ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                        : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             <label className="relative mb-4 block md:hidden">
               <Search

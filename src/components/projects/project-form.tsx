@@ -122,6 +122,26 @@ export function ProjectForm({
           )}
         </div>
       </Field>
+      <Field label="Project manager">
+        <select
+          className={inputClass}
+          value={project.manager_person_id ?? ""}
+          onChange={(e) =>
+            onChange({
+              ...project,
+              manager_person_id: e.target.value || null,
+            })
+          }
+        >
+          <option value="">None</option>
+          {peopleSorted.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+              {p.role_title ? ` · ${p.role_title}` : ""}
+            </option>
+          ))}
+        </select>
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start date">
           <DateInput

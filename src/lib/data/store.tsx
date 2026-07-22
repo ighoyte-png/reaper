@@ -147,6 +147,7 @@ function loadDemoState(): DemoState {
         budget_monthly_reset: Boolean(p.budget_monthly_reset),
         budget_hours: p.budget_hours ?? null,
         budget_amount: p.budget_amount ?? null,
+        manager_person_id: p.manager_person_id ?? null,
         share_enabled: Boolean(p.share_enabled),
         share_token: p.share_token ?? null,
       })),

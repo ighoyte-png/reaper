@@ -42,6 +42,7 @@ function portalChartProject(
     budget_mode: "hours",
     budget_monthly_reset: true,
     notes: "",
+    manager_person_id: null,
   };
 }
 
