@@ -30,6 +30,7 @@ import {
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Modal, inputClass } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import type { TemplateTask, TemplateTaskList } from "@/lib/types";
@@ -567,22 +568,21 @@ function ListSection({
           aria-label="List name"
         />
         {listsEditMode ? (
-          <select
-            className="h-7 max-w-[9rem] rounded-md border border-[var(--border)] bg-[var(--bg)] px-1.5 text-[10px] text-[var(--text-muted)]"
+          <Select
+            searchable
+            className="mt-0 h-7 max-w-[9rem] py-0 text-[10px] text-[var(--text-muted)]"
             value={list.template_milestone_id ?? ""}
-            onChange={(e) =>
-              onMilestoneChange(e.target.value ? e.target.value : null)
-            }
+            onChange={(v) => onMilestoneChange(v ? v : null)}
             aria-label="Assign list to milestone"
-            title="Assign to milestone"
-          >
-            <option value="">No milestone</option>
-            {milestones.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+            placeholder="No milestone"
+            options={[
+              { value: "", label: "No milestone" },
+              ...milestones.map((m) => ({
+                value: m.id,
+                label: m.name,
+              })),
+            ]}
+          />
         ) : milestoneName ? (
           <span className="text-[10px] text-[var(--text-muted)]">
             {milestoneName}

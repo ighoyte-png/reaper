@@ -20,6 +20,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Eye, EyeOff, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
 import { Field, inputClass } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { useData } from "@/lib/data/store";
 import { useViewAsOptional } from "@/lib/view-as";
@@ -229,19 +230,16 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
       {editable && mode === "link" ? (
         <div className="mb-3 grid gap-2 rounded-md border border-[var(--border)] p-3 sm:grid-cols-3">
           <Field label="Type">
-            <select
-              className={inputClass}
+            <Select
               value={kind}
-              onChange={(e) => setKind(e.target.value as ProjectAssetKind)}
-            >
-              {(Object.keys(ASSET_KIND_LABELS) as ProjectAssetKind[]).map(
-                (k) => (
-                  <option key={k} value={k}>
-                    {ASSET_KIND_LABELS[k]}
-                  </option>
-                ),
-              )}
-            </select>
+              onChange={(v) => setKind(v as ProjectAssetKind)}
+              options={(
+                Object.keys(ASSET_KIND_LABELS) as ProjectAssetKind[]
+              ).map((k) => ({
+                value: k,
+                label: ASSET_KIND_LABELS[k],
+              }))}
+            />
           </Field>
           <Field label="Label">
             <input

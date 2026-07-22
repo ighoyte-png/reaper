@@ -7,6 +7,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRig
 import { BurnBar } from "@/components/ui/burn-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass, Modal, DateInput } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
@@ -1688,45 +1689,48 @@ export function ScheduleGrid() {
             {rangeLabel}
           </p>
           <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
-            <select
+            <Select
               value={zoom}
-              onChange={(e) => setZoom(e.target.value as ScheduleZoom)}
-              className="h-8 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+              onChange={(v) => setZoom(v as ScheduleZoom)}
+              className="mt-0 h-8 w-[7.25rem] shrink-0"
               aria-label="Schedule zoom"
-            >
-              <option value="day">By day</option>
-              <option value="week">By week</option>
-              <option value="month">By month</option>
-            </select>
+              options={[
+                { value: "day", label: "By day" },
+                { value: "week", label: "By week" },
+                { value: "month", label: "By month" },
+              ]}
+            />
             {(canManage || isPublicShare) && (
               <>
-                <select
+                <Select
                   value={projectFilter}
-                  onChange={(e) => setProjectFilter(e.target.value)}
-                  className="h-8 max-w-[220px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+                  onChange={setProjectFilter}
+                  searchable
+                  className="mt-0 h-8 w-auto max-w-[220px] shrink-0"
                   aria-label="Filter by project"
-                >
-                  <option value="all">All projects</option>
-                  {sortedProjects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {projectLabelWithClient(p, state.clients)}
-                    </option>
-                  ))}
-                </select>
-                <select
+                  options={[
+                    { value: "all", label: "All projects" },
+                    ...sortedProjects.map((p) => ({
+                      value: p.id,
+                      label: projectLabelWithClient(p, state.clients),
+                    })),
+                  ]}
+                />
+                <Select
                   value={viewAsPersonId ?? personFilter}
-                  onChange={(e) => setPersonFilter(e.target.value)}
+                  onChange={setPersonFilter}
+                  searchable
                   disabled={Boolean(viewAsPersonId)}
-                  className="h-8 max-w-[200px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-sm disabled:opacity-60"
+                  className="mt-0 h-8 w-auto max-w-[200px] shrink-0"
                   aria-label="Filter by person"
-                >
-                  <option value="all">All people</option>
-                  {peopleForFilter.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "all", label: "All people" },
+                    ...peopleForFilter.map((p) => ({
+                      value: p.id,
+                      label: p.name,
+                    })),
+                  ]}
+                />
                 {canManage ? (
                   <>
                     <button
@@ -3365,15 +3369,14 @@ export function ScheduleGrid() {
         {canManage && leaveEditForm ? (
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
             <Field label="Type">
-              <select
-                className={inputClass}
+              <Select
                 value={leaveTypeFromLeave(
                   leaveEditForm.kind,
                   leaveEditForm.hours_per_day,
                 )}
-                onChange={(e) => {
+                onChange={(v) => {
                   const next = leaveFromTypeOption(
-                    e.target.value as LeaveTypeOption,
+                    v as LeaveTypeOption,
                     leaveEditForm.hours_per_day,
                   );
                   setLeaveEditForm({
@@ -3382,13 +3385,14 @@ export function ScheduleGrid() {
                     hours_per_day: next.hours_per_day,
                   });
                 }}
-              >
-                <option value="partial">Partial Day</option>
-                <option value="full">Full Day</option>
-                <option value="holiday">Statutory holiday</option>
-                <option value="sick">Sick</option>
-                <option value="training">Training</option>
-              </select>
+                options={[
+                  { value: "partial", label: "Partial Day" },
+                  { value: "full", label: "Full Day" },
+                  { value: "holiday", label: "Statutory holiday" },
+                  { value: "sick", label: "Sick" },
+                  { value: "training", label: "Training" },
+                ]}
+              />
             </Field>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Start">
@@ -3536,33 +3540,29 @@ export function ScheduleGrid() {
             ) : (
           <div className="space-y-3 p-4">
             <Field label="Project">
-              <select
-                className={inputClass}
+              <Select
+                searchable
                 value={editForm.project_id}
-                onChange={(e) =>
-                  patchEditForm({ project_id: e.target.value })
-                }
-              >
-                {sortedProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {projectLabelWithClient(p, state.clients)}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => patchEditForm({ project_id: v })}
+                options={sortedProjects.map((p) => ({
+                  value: p.id,
+                  label: projectLabelWithClient(p, state.clients),
+                }))}
+              />
             </Field>
             <Field label="Status">
-              <select
-                className={inputClass}
+              <Select
                 value={editForm.status}
-                onChange={(e) =>
+                onChange={(v) =>
                   patchEditForm({
-                    status: e.target.value as AssignmentStatus,
+                    status: v as AssignmentStatus,
                   })
                 }
-              >
-                <option value="confirmed">Confirmed</option>
-                <option value="tentative">Tentative</option>
-              </select>
+                options={[
+                  { value: "confirmed", label: "Confirmed" },
+                  { value: "tentative", label: "Tentative" },
+                ]}
+              />
             </Field>
             <label className="flex items-start gap-2 text-sm">
               <input
@@ -3876,21 +3876,23 @@ export function ScheduleGrid() {
             </p>
             <label className="mt-3 block text-xs text-[var(--text-muted)]">
               Client
-              <select
+              <Select
+                searchable
                 className={inputClass}
                 value={addProjectClientId}
-                onChange={(e) => {
-                  setAddProjectClientId(e.target.value);
+                onChange={(v) => {
+                  setAddProjectClientId(v);
                   setAddProjectId("");
                 }}
-              >
-                <option value="">Select a client…</option>
-                {addProjectClientOptions.withClient.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select a client…"
+                options={[
+                  { value: "", label: "Select a client…" },
+                  ...addProjectClientOptions.withClient.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                  })),
+                ]}
+              />
             </label>
             {addProjectClientOptions.addableCount === 0 ? (
               <p className="mt-3 text-xs text-[var(--text-muted)]">
@@ -3900,22 +3902,30 @@ export function ScheduleGrid() {
             {addProjectClientId ? (
               <label className="mt-3 block text-xs text-[var(--text-muted)]">
                 Project
-                <select
+                <Select
+                  searchable
                   className={inputClass}
                   value={addProjectId}
-                  onChange={(e) => setAddProjectId(e.target.value)}
-                >
-                  <option value="">
-                    {addableProjectsForSelectedClient.length === 0
+                  onChange={setAddProjectId}
+                  placeholder={
+                    addableProjectsForSelectedClient.length === 0
                       ? "No projects left for this client"
-                      : "Select a project…"}
-                  </option>
-                  {addableProjectsForSelectedClient.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                      : "Select a project…"
+                  }
+                  options={[
+                    {
+                      value: "",
+                      label:
+                        addableProjectsForSelectedClient.length === 0
+                          ? "No projects left for this client"
+                          : "Select a project…",
+                    },
+                    ...addableProjectsForSelectedClient.map((p) => ({
+                      value: p.id,
+                      label: p.name,
+                    })),
+                  ]}
+                />
               </label>
             ) : null}
             <div className="mt-3 flex gap-2">

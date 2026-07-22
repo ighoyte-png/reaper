@@ -30,6 +30,7 @@ import {
   Modal,
   inputClass,
 } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -569,19 +570,18 @@ export default function DashboardPage() {
         <label className="sr-only" htmlFor="view-as-person">
           View as
         </label>
-        <select
+        <Select
           id="view-as-person"
-          className={cn(inputClass, "mt-0 h-8 w-[10.5rem] py-0 text-xs")}
+          searchable
+          className="mt-0 h-8 w-[10.5rem] py-0 text-xs"
           value={viewAsPersonId ?? ""}
-          onChange={(e) => setViewAsPersonId(e.target.value || null)}
-        >
-          <option value="">View as…</option>
-          {sortedPeople.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => setViewAsPersonId(v || null)}
+          placeholder="View as…"
+          options={[
+            { value: "", label: "View as…" },
+            ...sortedPeople.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
         {viewAsPersonId ? (
           <button
             type="button"
@@ -1430,17 +1430,13 @@ function TodaySchedule({
         {orgMode && people.length > 0 ? (
           <label className="flex min-w-0 items-center gap-2 text-xs text-[var(--text-muted)]">
             <span className="shrink-0">Person</span>
-            <select
-              className={cn(inputClass, "h-8 w-auto min-w-[9rem] max-w-[14rem] py-0 text-xs")}
+            <Select
+              searchable
+              className="mt-0 h-8 w-auto min-w-[9rem] max-w-[14rem] py-0 text-xs"
               value={selectedPersonId}
-              onChange={(e) => setPersonFilter(e.target.value)}
-            >
-              {people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onChange={setPersonFilter}
+              options={people.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </label>
         ) : null}
       </div>
@@ -1821,9 +1817,9 @@ function BulletinBoard({
                 className={cn(
                   "rounded-md border px-3 py-2 text-sm",
                   unread
-                    ? "border-[var(--status-attention)]/50 bg-[var(--status-attention-wash)]"
+                    ? "border-transparent bg-[var(--status-attention-wash)]"
                     : b.pinned
-                      ? "border-[var(--accent)]/40 bg-[var(--accent)]/5"
+                      ? "border-transparent bg-[var(--accent)]/5"
                       : "border-[var(--border)]",
                 )}
               >
@@ -1945,11 +1941,10 @@ function BulletinBoard({
               Pin to top
             </label>
             <Field label="Audience">
-              <select
-                className={inputClass}
+              <Select
                 value={editing.audience}
-                onChange={(e) => {
-                  const audience = e.target.value === "people" ? "people" : "all";
+                onChange={(v) => {
+                  const audience = v === "people" ? "people" : "all";
                   setEditing({
                     ...editing,
                     audience,
@@ -1957,10 +1952,11 @@ function BulletinBoard({
                       audience === "all" ? [] : editing.audience_person_ids,
                   });
                 }}
-              >
-                <option value="all">All users</option>
-                <option value="people">Selected people</option>
-              </select>
+                options={[
+                  { value: "all", label: "All users" },
+                  { value: "people", label: "Selected people" },
+                ]}
+              />
             </Field>
             {editing.audience === "people" ? (
               <Field label="People">

@@ -15,6 +15,7 @@ import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { SortableMilestoneList } from "@/components/projects/sortable-milestone-list";
 import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import {
   ApplyTemplateDialog,
   SaveAsTemplateDialog,
@@ -370,19 +371,21 @@ export default function ProjectDetailPage() {
                 {templatesExpanded ? (
                   <div className="mt-3 space-y-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <select
+                      <Select
+                        searchable
                         className={`${inputClass} mt-0 h-8 max-w-[200px]`}
                         value={templateId}
-                        onChange={(e) => setTemplateId(e.target.value)}
+                        onChange={setTemplateId}
                         aria-label="Apply template"
-                      >
-                        <option value="">Apply template…</option>
-                        {state.project_templates.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
+                        placeholder="Apply template…"
+                        options={[
+                          { value: "", label: "Apply template…" },
+                          ...state.project_templates.map((t) => ({
+                            value: t.id,
+                            label: t.name,
+                          })),
+                        ]}
+                      />
                       <button
                         type="button"
                         className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
@@ -701,20 +704,20 @@ export default function ProjectDetailPage() {
               />
             </Field>
             <Field label="Status">
-              <select
-                className={inputClass}
+              <Select
                 value={editingMilestone.status}
-                onChange={(e) =>
+                onChange={(v) =>
                   setEditingMilestone({
                     ...editingMilestone,
-                    status: e.target.value as MilestoneStatus,
+                    status: v as MilestoneStatus,
                   })
                 }
-              >
-                <option value="upcoming">Upcoming</option>
-                <option value="done">Done</option>
-                <option value="missed">Missed</option>
-              </select>
+                options={[
+                  { value: "upcoming", label: "Upcoming" },
+                  { value: "done", label: "Done" },
+                  { value: "missed", label: "Missed" },
+                ]}
+              />
             </Field>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input

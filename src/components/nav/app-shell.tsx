@@ -7,7 +7,7 @@ import { MobileNavProvider } from "@/components/nav/mobile-nav";
 import { useData } from "@/lib/data/store";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 import { sortPeopleByName } from "@/lib/domain/sorting";
-import { cn } from "@/lib/cn";
+import { Select } from "@/components/ui/select";
 
 /** Paths members cannot access — redirect here while Viewing As. */
 function isManageOnlyPath(pathname: string): boolean {
@@ -101,20 +101,14 @@ function ViewAsBanner() {
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-1.5 text-sm">
       <span className="font-medium text-[var(--accent)]">Viewing as</span>
-      <select
-        className={cn(
-          "h-7 max-w-[200px] rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-xs",
-        )}
+      <Select
+        searchable
+        className="mt-0 h-7 max-w-[200px] py-0 text-xs"
         value={viewAsPersonId}
-        onChange={(e) => setViewAsPersonId(e.target.value || null)}
+        onChange={(v) => setViewAsPersonId(v || null)}
         aria-label="View as user"
-      >
-        {people.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+        options={people.map((p) => ({ value: p.id, label: p.name }))}
+      />
       <button
         type="button"
         className="ml-auto cursor-pointer text-xs font-medium text-[var(--accent)] hover:underline"

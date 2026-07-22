@@ -1,6 +1,7 @@
 "use client";
 
 import { Field, inputClass, DateInput } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import type {
   BudgetMode,
   Person,
@@ -72,12 +73,10 @@ export function ProjectForm({
         />
       </Field>
       <Field label="Client">
-        <select
-          className={inputClass}
-          required
+        <Select
+          searchable
           value={project.client_id ?? ""}
-          onChange={(e) => {
-            const clientId = e.target.value;
+          onChange={(clientId) => {
             if (!clientId) return;
             const client = clientsSorted.find((c) => c.id === clientId);
             if (!client) return;
@@ -87,33 +86,35 @@ export function ProjectForm({
               color: client.color ?? DEFAULT_PROJECT_COLOR,
             });
           }}
-        >
-          <option value="" disabled>
-            {clientsSorted.length === 0
+          placeholder={
+            clientsSorted.length === 0
               ? "Create a client first…"
-              : "Select a client…"}
-          </option>
-          {clientsSorted.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+              : "Select a client…"
+          }
+          options={[
+            {
+              value: "",
+              label:
+                clientsSorted.length === 0
+                  ? "Create a client first…"
+                  : "Select a client…",
+              disabled: true,
+            },
+            ...clientsSorted.map((c) => ({ value: c.id, label: c.name })),
+          ]}
+        />
       </Field>
       {showTemplateSelect && onTemplateIdChange ? (
         <Field label="Template">
-          <select
-            className={inputClass}
+          <Select
+            searchable
             value={templateId}
-            onChange={(e) => onTemplateIdChange(e.target.value)}
-          >
-            <option value="">None</option>
-            {templatesSorted.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+            onChange={onTemplateIdChange}
+            options={[
+              { value: "", label: "None" },
+              ...templatesSorted.map((t) => ({ value: t.id, label: t.name })),
+            ]}
+          />
           <p className="mt-1 text-[11px] text-[var(--text-muted)]">
             Applies milestones and tasks undated and unassigned after create.
           </p>
@@ -160,24 +161,23 @@ export function ProjectForm({
         </div>
       </Field>
       <Field label="Project manager">
-        <select
-          className={inputClass}
+        <Select
+          searchable
           value={project.manager_person_id ?? ""}
-          onChange={(e) =>
+          onChange={(v) =>
             onChange({
               ...project,
-              manager_person_id: e.target.value || null,
+              manager_person_id: v || null,
             })
           }
-        >
-          <option value="">None</option>
-          {peopleSorted.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-              {p.role_title ? ` · ${p.role_title}` : ""}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "None" },
+            ...peopleSorted.map((p) => ({
+              value: p.id,
+              label: p.role_title ? `${p.name} · ${p.role_title}` : p.name,
+            })),
+          ]}
+        />
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Start date">
@@ -200,15 +200,24 @@ export function ProjectForm({
         </Field>
       </div>
       <Field label="Budget type">
-        <select
-          className={inputClass}
+        <Select
           value={project.budget_mode}
-          onChange={(e) => setMode(e.target.value as BudgetMode)}
-        >
-          <option value="none">None (internal / time-off tracking)</option>
-          <option value="hours">Hourly (total hours bucket)</option>
-          <option value="amount">Dollar amount (hours × bill rates)</option>
-        </select>
+          onChange={(v) => setMode(v as BudgetMode)}
+          options={[
+            {
+              value: "none",
+              label: "None (internal / time-off tracking)",
+            },
+            {
+              value: "hours",
+              label: "Hourly (total hours bucket)",
+            },
+            {
+              value: "amount",
+              label: "Dollar amount (hours × bill rates)",
+            },
+          ]}
+        />
       </Field>
       {project.budget_mode === "hours" && (
         <>
@@ -265,21 +274,21 @@ export function ProjectForm({
         </Field>
       )}
       <Field label="Status">
-        <select
-          className={inputClass}
+        <Select
           value={project.status}
-          onChange={(e) =>
+          onChange={(v) =>
             onChange({
               ...project,
-              status: e.target.value as ProjectStatus,
+              status: v as ProjectStatus,
             })
           }
-        >
-          <option value="active">Active</option>
-          <option value="on_hold">On hold</option>
-          <option value="completed">Completed</option>
-          <option value="archived">Archived</option>
-        </select>
+          options={[
+            { value: "active", label: "Active" },
+            { value: "on_hold", label: "On hold" },
+            { value: "completed", label: "Completed" },
+            { value: "archived", label: "Archived" },
+          ]}
+        />
       </Field>
       <Field label="Notes">
         <textarea

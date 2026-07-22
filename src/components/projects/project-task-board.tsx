@@ -33,6 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
@@ -741,26 +742,33 @@ export function ProjectTaskBoard({
             <span className="text-[10px] font-medium text-[var(--text-muted)]">
               Status
             </span>
-            <select
-              className={cn(
-                inputClass,
-                "mt-0 h-7 w-auto min-w-[7.5rem] py-0 text-xs",
-              )}
+            <Select
+              className="mt-0 h-7 w-auto min-w-[7.5rem] py-0 text-xs"
               value={bulkDraft.status ?? ""}
-              onChange={(e) => {
-                const value = e.target.value as TaskStatus | "";
+              onChange={(value) => {
                 setBulkDraft((prev) => ({
                   ...prev,
-                  status: value || undefined,
+                  status: (value || undefined) as TaskStatus | undefined,
                 }));
               }}
               aria-label="Set status for selected tasks"
-            >
-              <option value="">Choose…</option>
-              <option value="upcoming">{taskStatusLabel("upcoming")}</option>
-              <option value="active">{taskStatusLabel("active")}</option>
-              <option value="complete">{taskStatusLabel("complete")}</option>
-            </select>
+              placeholder="Choose…"
+              options={[
+                { value: "", label: "Choose…" },
+                {
+                  value: "upcoming",
+                  label: taskStatusLabel("upcoming"),
+                },
+                {
+                  value: "active",
+                  label: taskStatusLabel("active"),
+                },
+                {
+                  value: "complete",
+                  label: taskStatusLabel("complete"),
+                },
+              ]}
+            />
           </label>
           {viewerCanManage ? (
             <>
@@ -768,11 +776,9 @@ export function ProjectTaskBoard({
                 <span className="text-[10px] font-medium text-[var(--text-muted)]">
                   Assign
                 </span>
-                <select
-                  className={cn(
-                    inputClass,
-                    "mt-0 h-7 w-auto max-w-[10rem] py-0 text-xs",
-                  )}
+                <Select
+                  searchable
+                  className="mt-0 h-7 w-auto max-w-[10rem] py-0 text-xs"
                   value={
                     bulkDraft.assigneeId === undefined
                       ? ""
@@ -780,8 +786,7 @@ export function ProjectTaskBoard({
                         ? "__none__"
                         : bulkDraft.assigneeId
                   }
-                  onChange={(e) => {
-                    const value = e.target.value;
+                  onChange={(value) => {
                     setBulkDraft((prev) => ({
                       ...prev,
                       assigneeId:
@@ -793,15 +798,16 @@ export function ProjectTaskBoard({
                     }));
                   }}
                   aria-label="Assign selected tasks"
-                >
-                  <option value="">Choose…</option>
-                  <option value="__none__">Unassigned</option>
-                  {sortPeopleByName(state.people).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Choose…"
+                  options={[
+                    { value: "", label: "Choose…" },
+                    { value: "__none__", label: "Unassigned" },
+                    ...sortPeopleByName(state.people).map((p) => ({
+                      value: p.id,
+                      label: p.name,
+                    })),
+                  ]}
+                />
               </label>
               <label className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-[var(--text-muted)]">
@@ -1749,41 +1755,41 @@ function TaskEditModal({
         </Field>
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Status">
-            <select
-              className={inputClass}
+            <Select
               value={draft.status}
               disabled={!canSave}
-              onChange={(e) =>
+              onChange={(v) =>
                 setDraft({
                   ...draft,
-                  status: e.target.value as TaskStatus,
+                  status: v as TaskStatus,
                 })
               }
-            >
-              <option value="upcoming">Upcoming</option>
-              <option value="active">Active</option>
-              <option value="complete">Complete</option>
-            </select>
+              options={[
+                { value: "upcoming", label: "Upcoming" },
+                { value: "active", label: "Active" },
+                { value: "complete", label: "Complete" },
+              ]}
+            />
           </Field>
           <Field label="Assignee">
-            <select
-              className={inputClass}
+            <Select
+              searchable
               value={draft.assignee_person_id ?? ""}
               disabled={!canManage}
-              onChange={(e) =>
+              onChange={(v) =>
                 setDraft({
                   ...draft,
-                  assignee_person_id: e.target.value || null,
+                  assignee_person_id: v || null,
                 })
               }
-            >
-              <option value="">Unassigned</option>
-              {state.people.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "Unassigned" },
+                ...state.people.map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                })),
+              ]}
+            />
           </Field>
           <Field label="Start">
             <DateInput

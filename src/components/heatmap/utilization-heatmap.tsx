@@ -29,33 +29,33 @@ function levelTone(level: CapacityLevel) {
   switch (level) {
     case "over":
       return {
-        border: "border-[var(--status-over)]/40",
+        border: "border-transparent",
         fill: "bg-[var(--status-over)]/25",
         text: "text-[var(--status-over)]",
-        chip: "border-[var(--status-over)]/40 text-[var(--status-over)]",
+        chip: "border-transparent text-[var(--status-over)]",
       };
     case "near":
       return {
-        border: "border-[var(--status-near)]/40",
+        border: "border-transparent",
         fill: "bg-[var(--status-near)]/25",
         text: "text-[var(--status-near)]",
-        chip: "border-[var(--status-near)]/40 text-[var(--status-near)]",
+        chip: "border-transparent text-[var(--status-near)]",
       };
     case "healthy":
       return {
-        border: "border-[var(--status-healthy)]/40",
+        border: "border-transparent",
         fill: "bg-[var(--status-healthy)]/25",
         text: "text-[var(--status-healthy)]",
-        chip: "border-[var(--status-healthy)]/40 text-[var(--status-healthy)]",
+        chip: "border-transparent text-[var(--status-healthy)]",
       };
     case "low":
     case "unavailable":
     default:
       return {
-        border: "border-[var(--status-unavailable)]/40",
+        border: "border-transparent",
         fill: "bg-[var(--status-unavailable)]/20",
         text: "text-[var(--text-muted)]",
-        chip: "border-[var(--status-unavailable)]/40 text-[var(--text-muted)]",
+        chip: "border-transparent text-[var(--text-muted)]",
       };
   }
 }

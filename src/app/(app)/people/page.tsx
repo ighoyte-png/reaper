@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
@@ -605,18 +606,16 @@ export default function PeoplePage() {
               <Field label="Access">
                 {admin ? (
                   <>
-                    <select
-                      className={inputClass}
+                    <Select
                       value={editAccessRole}
                       disabled={editingIsLastAdmin}
-                      onChange={(e) =>
-                        setEditAccessRole(e.target.value as Role)
-                      }
-                    >
-                      <option value="member">Member</option>
-                      <option value="manager">Manager</option>
-                      <option value="admin">Admin</option>
-                    </select>
+                      onChange={(v) => setEditAccessRole(v as Role)}
+                      options={[
+                        { value: "member", label: "Member" },
+                        { value: "manager", label: "Manager" },
+                        { value: "admin", label: "Admin" },
+                      ]}
+                    />
                     {editingIsLastAdmin ? (
                       <p className="mt-1 text-xs text-[var(--text-muted)]">
                         Keep at least one admin on the workspace.
@@ -662,24 +661,25 @@ export default function PeoplePage() {
               </Field>
             </div>
             <Field label="Holiday calendar">
-              <select
-                className={inputClass}
+              <Select
+                searchable
                 value={editing.holiday_calendar_id ?? ""}
-                onChange={(e) =>
+                onChange={(v) =>
                   setEditing({
                     ...editing,
-                    holiday_calendar_id: e.target.value || null,
+                    holiday_calendar_id: v || null,
                   })
                 }
-              >
-                <option value="">None</option>
-                {state.holiday_calendars.map((cal) => (
-                  <option key={cal.id} value={cal.id}>
-                    {cal.name}
-                    {cal.region ? ` (${cal.region})` : ""}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "None" },
+                  ...state.holiday_calendars.map((cal) => ({
+                    value: cal.id,
+                    label: cal.region
+                      ? `${cal.name} (${cal.region})`
+                      : cal.name,
+                  })),
+                ]}
+              />
             </Field>
             <div className="grid grid-cols-3 gap-3">
               <Field label="Capacity hrs/week">
@@ -812,19 +812,14 @@ export default function PeoplePage() {
               />
             </Field>
             <Field label="Type">
-              <select
-                className={inputClass}
+              <Select
                 value={leaveKind}
-                onChange={(e) =>
-                  setLeaveKind(normalizeLeaveKind(e.target.value))
-                }
-              >
-                {LEAVE_KINDS.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {leaveKindLabel(kind)}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setLeaveKind(normalizeLeaveKind(v))}
+                options={LEAVE_KINDS.map((kind) => ({
+                  value: kind,
+                  label: leaveKindLabel(kind),
+                }))}
+              />
             </Field>
             <div className="flex justify-end gap-2 pt-2">
               <Button

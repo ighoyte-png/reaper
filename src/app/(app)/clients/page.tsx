@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
@@ -204,19 +205,19 @@ export default function ClientsPage() {
               />
             </Field>
             <Field label="Status">
-              <select
-                className={inputClass}
+              <Select
                 value={editing.status}
-                onChange={(e) =>
+                onChange={(v) =>
                   setEditing({
                     ...editing,
-                    status: e.target.value as ClientStatus,
+                    status: v as ClientStatus,
                   })
                 }
-              >
-                <option value="active">Active</option>
-                <option value="archived">Archived</option>
-              </select>
+                options={[
+                  { value: "active", label: "Active" },
+                  { value: "archived", label: "Archived" },
+                ]}
+              />
             </Field>
             <Field label="Color" className="w-full">
               <ColorPicker
