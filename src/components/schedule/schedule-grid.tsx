@@ -3325,14 +3325,14 @@ export function ScheduleGrid() {
 
       <aside
         className={cn(
-          "border-[var(--border)] bg-[var(--bg)]",
+          "flex flex-col border-[var(--border)] bg-[var(--bg)]",
           isNarrow
             ? cn(
-                "fixed inset-x-0 bottom-0 z-50 max-h-[75dvh] overflow-y-auto rounded-t-xl border-t shadow-2xl transition-transform duration-200",
+                "fixed inset-x-0 bottom-0 z-50 max-h-[75dvh] rounded-t-xl border-t shadow-2xl transition-transform duration-200",
                 mobilePanelOpen ? "translate-y-0" : "translate-y-full pointer-events-none",
               )
             : cn(
-                "absolute inset-y-0 right-0 z-30 w-80 overflow-y-auto border-l shadow-[-8px_0_24px_rgba(0,0,0,0.06)] transition-transform duration-200 ease-out",
+                "absolute inset-y-0 right-0 z-30 w-80 border-l shadow-[-8px_0_24px_rgba(0,0,0,0.06)] transition-transform duration-200 ease-out",
                 sidebarMinimized
                   ? "pointer-events-none translate-x-full"
                   : "translate-x-0",
@@ -3361,8 +3361,9 @@ export function ScheduleGrid() {
           </button>
         </div>
 
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {canManage && leaveEditForm ? (
-          <div className="space-y-3 p-4">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
             <Field label="Type">
               <select
                 className={inputClass}
@@ -3487,7 +3488,8 @@ export function ScheduleGrid() {
             </button>
           </div>
         ) : canManage && editForm ? (
-          <div className="flex min-h-full flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex border-b border-[var(--border)] px-4">
               <button
                 type="button"
@@ -3746,14 +3748,16 @@ export function ScheduleGrid() {
             </div>
             </div>
             )}
+            </div>
             {sidebarManager ? (
-              <div className="mt-auto border-t border-[var(--border)] px-4 py-3">
-                <ProjectManagerPerson person={sidebarManager} />
+              <div className="shrink-0 border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3">
+                <ProjectManagerPerson person={sidebarManager} showTag />
               </div>
             ) : null}
           </div>
         ) : selected ? (
-          <div className="flex min-h-full flex-col">
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="flex border-b border-[var(--border)] px-4">
               <button
                 type="button"
@@ -3811,14 +3815,15 @@ export function ScheduleGrid() {
             }
           />
             )}
+            </div>
             {sidebarManager ? (
-              <div className="mt-auto border-t border-[var(--border)] px-4 py-3">
-                <ProjectManagerPerson person={sidebarManager} />
+              <div className="shrink-0 border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3">
+                <ProjectManagerPerson person={sidebarManager} showTag />
               </div>
             ) : null}
           </div>
         ) : (
-          <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm text-[var(--text-muted)]">
             {canManage ? (
               sidebarProjectBurns.map(({ project, client, burn }) => {
                   return (
@@ -3859,6 +3864,7 @@ export function ScheduleGrid() {
             )}
           </div>
         )}
+        </div>
       </aside>
 
       {addProjectForPerson && (

@@ -4,20 +4,36 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { cn } from "@/lib/cn";
 import type { Person } from "@/lib/types";
 
+export function ProjectManagerTag({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]",
+        className,
+      )}
+    >
+      Project Manager
+    </span>
+  );
+}
+
 /** Compact avatar + name + role_title row used for Project Manager callouts. */
 export function ProjectManagerPerson({
   person,
   size = "team",
+  showTag = false,
   className,
   nameClassName,
 }: {
   person: Pick<Person, "name" | "role_title" | "avatar_url">;
   size?: "team" | "row" | "sm" | "lg";
+  /** Show the shared “Project Manager” pill beside the person. */
+  showTag?: boolean;
   className?: string;
   nameClassName?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 items-center gap-2", className)}>
+    <div className={cn("flex min-w-0 flex-wrap items-center gap-2", className)}>
       <PersonAvatar
         avatarUrl={person.avatar_url}
         name={person.name}
@@ -39,6 +55,7 @@ export function ProjectManagerPerson({
           </div>
         ) : null}
       </div>
+      {showTag ? <ProjectManagerTag /> : null}
     </div>
   );
 }

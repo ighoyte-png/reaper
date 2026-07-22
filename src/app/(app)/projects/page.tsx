@@ -734,7 +734,7 @@ function ProjectCard({
         </div>
         {manager ? (
           <div className="border-t border-[var(--border)] pt-3">
-            <ProjectManagerPerson person={manager} />
+            <ProjectManagerPerson person={manager} showTag />
           </div>
         ) : null}
       </div>

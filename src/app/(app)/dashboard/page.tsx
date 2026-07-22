@@ -1560,7 +1560,7 @@ function SchedulePie({
   const cy = 50;
   const rOuter = 48;
   const rInner = 26;
-  const gapDeg = slices.length > 1 ? 2.5 : 0;
+  const gapDeg = slices.length > 1 ? 1.5 : 0;
   const usable = Math.max(0, 360 - gapDeg * slices.length);
 
   const paths: { d: string; color: string; key: string }[] = [];

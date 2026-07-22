@@ -295,12 +295,7 @@ export default function ProjectDetailPage() {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               {showManagers && manager ? (
                 <>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <ProjectManagerPerson person={manager} />
-                    <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                      Project Manager
-                    </span>
-                  </div>
+                  <ProjectManagerPerson person={manager} showTag />
                   {teamWithoutManager.length > 0 ? (
                     <div
                       className="hidden h-8 w-px shrink-0 bg-[var(--border)] sm:block"
