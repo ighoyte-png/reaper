@@ -962,11 +962,9 @@ export function ScheduleGrid() {
     } = pending.after;
 
     if (scope === "future") {
-      // Revert any live template mutation before splitting.
-      upsertAssignment(pending.before);
-      assignmentsRef.current = assignmentsRef.current.map((a) =>
-        a.id === pending.before.id ? pending.before : a,
-      );
+      // Do not remote-upsert `before` first — that races the exception/split
+      // writes and can wipe recurrence_exceptions for other clients (looks like
+      // a copy). Series is still at `before` in the DB when the prompt opens.
       const split = splitWeeklySeriesForFuture({
         series: pending.before,
         occurrenceStart: pending.occurrenceStart,
@@ -990,12 +988,7 @@ export function ScheduleGrid() {
       return;
     }
 
-    // Just this one: revert live edits, then detach week + one-off instance.
-    upsertAssignment(pending.before);
-    assignmentsRef.current = assignmentsRef.current.map((a) =>
-      a.id === pending.before.id ? pending.before : a,
-    );
-
+    // Just this one: detach week (exception) + one-off instance.
     const split = splitWeeklySeriesForInstance({
       series: pending.before,
       occurrenceStart: pending.occurrenceStart,

@@ -731,7 +731,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           : err instanceof Error
             ? err.message
             : "Save failed";
-      const message = raw.includes("recurrence")
+      const message = raw.includes("recurrence_exceptions")
+        ? "Missing DB column `recurrence_exceptions`. In Supabase SQL Editor run supabase/migrations/032_recurrence_exceptions.sql, then try again."
+        : raw.includes("recurrence")
         ? "Missing DB column `recurrence`. In Supabase SQL Editor run supabase/migrations/003_recurrence.sql, then try again."
         : /'email' column of 'people'|people\.email|email.*people/i.test(raw)
           ? "Missing DB column `email` on people. In Supabase SQL Editor run supabase/migrations/004_people_email.sql, then try again."
