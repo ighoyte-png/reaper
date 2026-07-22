@@ -52,6 +52,8 @@
   --task-active-fg: #16a34a;
   --task-complete-bg: color-mix(in srgb, #6b7280 18%, var(--bg));
   --task-complete-fg: #6b7280;
+  /* Task comment bubbles — distinct from card --bg for readability */
+  --comment-bg: #eef0f4;
   --progress-approved-hatch: rgba(0, 0, 0, 0.22);
   /* Diagonal hash over tentative schedule blocks (reads on project colors) */
   --assignment-tentative-hatch: rgba(255, 255, 255, 0.38);
@@ -94,6 +96,8 @@
   --task-active-fg: #22c55e;
   --task-complete-bg: color-mix(in srgb, #9ca3af 22%, var(--bg));
   --task-complete-fg: #9ca3af;
+  /* Slightly lighter than --bg so comments lift off the task list */
+  --comment-bg: #171b24;
   --progress-approved-hatch: rgba(255, 255, 255, 0.28);
   --assignment-tentative-hatch: rgba(255, 255, 255, 0.28);
 }

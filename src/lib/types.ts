@@ -141,6 +141,13 @@ export interface TaskComment {
   updated_at: string | null;
   /** People tagged in this comment (dashboard notifications). */
   mentioned_person_ids: string[];
+  /** Emoji reactions from org members. */
+  reactions: TaskCommentReaction[];
+}
+
+export interface TaskCommentReaction {
+  emoji: string;
+  profile_id: string;
 }
 
 export interface Bulletin {

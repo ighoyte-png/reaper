@@ -735,6 +735,10 @@ export function createDemoSeed(): DemoState {
         created_at: dt(1, week),
         updated_at: null,
       mentioned_person_ids: [],
+      reactions: [
+        { emoji: "👍", profile_id: "profile-admin" },
+        { emoji: "🔥", profile_id: "profile-member" },
+      ],
       },
       {
         id: "comment-2",
@@ -745,6 +749,7 @@ export function createDemoSeed(): DemoState {
         created_at: dt(2, week),
         updated_at: null,
       mentioned_person_ids: [],
+      reactions: [],
       },
     ],
     bulletins: [

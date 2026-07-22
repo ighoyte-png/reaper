@@ -161,6 +161,7 @@ export function mapTaskComment(row: Record<string, unknown>): TaskComment {
     created_at: String(row.created_at ?? ""),
     updated_at: row.updated_at ? String(row.updated_at) : null,
     mentioned_person_ids: [],
+    reactions: [],
   };
 }
 
@@ -387,6 +388,7 @@ export async function loadOrgWorkspace(
     tasksRes,
     taskCommentsRes,
     taskCommentMentionsRes,
+    taskCommentReactionsRes,
     bulletinsRes,
     projectTemplatesRes,
     templateMilestonesRes,
@@ -413,6 +415,10 @@ export async function loadOrgWorkspace(
     supabase.from("task_comments").select("*").eq("organization_id", orgId),
     supabase
       .from("task_comment_mentions")
+      .select("*")
+      .eq("organization_id", orgId),
+    supabase
+      .from("task_comment_reactions")
       .select("*")
       .eq("organization_id", orgId),
     supabase.from("bulletins").select("*").eq("organization_id", orgId),
@@ -504,9 +510,34 @@ export async function loadOrgWorkspace(
       mentionByComment.set(cid, list);
     }
   }
+  const reactionsByComment = new Map<
+    string,
+    { emoji: string; profile_id: string }[]
+  >();
+  if (!taskCommentReactionsRes.error) {
+    for (const row of taskCommentReactionsRes.data ?? []) {
+      const cid = String((row as { comment_id: unknown }).comment_id);
+      const emoji = String((row as { emoji: unknown }).emoji ?? "");
+      const profile_id = String((row as { profile_id: unknown }).profile_id);
+      if (!emoji || !profile_id) continue;
+      const list = reactionsByComment.get(cid) ?? [];
+      list.push({ emoji, profile_id });
+      reactionsByComment.set(cid, list);
+    }
+  } else if (
+    /relation .*task_comment_reactions.* does not exist/i.test(
+      taskCommentReactionsRes.error.message,
+    ) ||
+    taskCommentReactionsRes.error.code === "42P01"
+  ) {
+    console.warn(
+      "task_comment_reactions missing — apply supabase/migrations/036_task_comment_reactions.sql",
+    );
+  }
   const task_comments: TaskComment[] = task_commentsRaw.map((c) => ({
     ...c,
     mentioned_person_ids: mentionByComment.get(c.id) ?? [],
+    reactions: reactionsByComment.get(c.id) ?? [],
   }));
   const bulletins: Bulletin[] = bulletinsRes.error
     ? []
@@ -1360,6 +1391,57 @@ export async function deleteTaskCommentRow(
 ) {
   const { error } = await supabase.from("task_comments").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function toggleTaskCommentReactionRow(
+  supabase: SupabaseClient,
+  input: {
+    comment_id: string;
+    organization_id: string;
+    profile_id: string;
+    emoji: string;
+    active: boolean;
+  },
+) {
+  if (input.active) {
+    const { error } = await supabase.from("task_comment_reactions").upsert({
+      comment_id: input.comment_id,
+      organization_id: input.organization_id,
+      profile_id: input.profile_id,
+      emoji: input.emoji,
+    });
+    if (error) {
+      if (
+        /relation .*task_comment_reactions.* does not exist/i.test(error.message) ||
+        error.code === "42P01"
+      ) {
+        console.warn(
+          "task_comment_reactions missing — apply supabase/migrations/036_task_comment_reactions.sql",
+        );
+        return;
+      }
+      throw error;
+    }
+    return;
+  }
+  const { error } = await supabase
+    .from("task_comment_reactions")
+    .delete()
+    .eq("comment_id", input.comment_id)
+    .eq("profile_id", input.profile_id)
+    .eq("emoji", input.emoji);
+  if (error) {
+    if (
+      /relation .*task_comment_reactions.* does not exist/i.test(error.message) ||
+      error.code === "42P01"
+    ) {
+      console.warn(
+        "task_comment_reactions missing — apply supabase/migrations/036_task_comment_reactions.sql",
+      );
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function upsertBulletinRow(

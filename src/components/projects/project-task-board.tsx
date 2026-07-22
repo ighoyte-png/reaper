@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import {
   DndContext,
   DragOverlay,
@@ -29,6 +30,8 @@ import {
   MessageSquare,
   Pencil,
   Plus,
+  Reply,
+  SmilePlus,
   StickyNote,
   Trash2,
 } from "lucide-react";
@@ -41,6 +44,7 @@ import {
   SimpleRichTextEditor,
 } from "@/components/ui/simple-rich-text";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
 import { notesHasContent } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
@@ -109,6 +113,11 @@ type BoardCtx = {
   compact: boolean;
   /** Status changes only — no edit modal or comments (e.g. schedule sidebar). */
   readOnly: boolean;
+  /**
+   * When set (schedule sidebar), task titles link to the project hub with
+   * comments open — same deep-link as dashboard tagged comments.
+   */
+  hubTaskHref: ((taskId: string) => string) | null;
   selected: Set<string>;
   toggleSelect: (id: string) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
@@ -125,6 +134,7 @@ type BoardCtx = {
     mentionedPersonIds: string[],
   ) => void;
   deleteComment: (id: string) => void;
+  toggleReaction: (commentId: string, emoji: string) => void;
   /** Project team available for @mentions. */
   mentionPeople: Person[];
 };
@@ -160,10 +170,12 @@ export function ProjectTaskBoard({
     upsertTaskList,
     upsertTaskComment,
     deleteTaskComment,
+    toggleTaskCommentReaction,
     deleteTask,
     deleteTaskList,
     newId,
   } = useData();
+  const appHref = useAppHref();
   const viewAs = useViewAsOptional();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDraft, setBulkDraft] = useState<{
@@ -361,6 +373,7 @@ export function ProjectTaskBoard({
       created_at: new Date().toISOString(),
       updated_at: null,
       mentioned_person_ids: [...new Set(mentionedPersonIds)],
+      reactions: [],
     });
   }
 
@@ -651,6 +664,11 @@ export function ProjectTaskBoard({
     listsEditMode,
     compact,
     readOnly: readOnly || isPublicShare,
+    hubTaskHref:
+      compact && (readOnly || isPublicShare)
+        ? (taskId: string) =>
+            appHref(`/projects/${projectId}?task=${taskId}&comments=1`)
+        : null,
     selected,
     toggleSelect,
     setParentsSelected,
@@ -663,6 +681,7 @@ export function ProjectTaskBoard({
     addComment,
     editComment,
     deleteComment: deleteTaskComment,
+    toggleReaction: toggleTaskCommentReaction,
     mentionPeople,
   };
 
@@ -1216,7 +1235,17 @@ function TaskRow({
           onClick={() => ctx.cycleStatus(task)}
         />
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {ctx.readOnly ? (
+          {ctx.hubTaskHref ? (
+            <Link
+              href={ctx.hubTaskHref(task.id)}
+              className={cn(
+                "min-w-0 truncate hover:underline",
+                task.status === "complete" && "line-through",
+              )}
+            >
+              {task.title}
+            </Link>
+          ) : ctx.readOnly ? (
             <span
               className={cn(
                 "min-w-0 truncate",
@@ -1319,11 +1348,26 @@ function CommentThread({
   ctx: BoardCtx;
 }) {
   const [draft, setDraft] = useState("");
-  const sorted = [...comments].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const [replying, setReplying] = useState(false);
+  const sorted = [...comments].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  );
+
+  function cancelReply() {
+    setDraft("");
+    setReplying(false);
+  }
+
+  function submitReply() {
+    if (!notesHasContent(draft)) return;
+    ctx.addComment(task.id, draft, extractMentionPersonIds(draft));
+    setDraft("");
+    setReplying(false);
+  }
 
   return (
     <div
-      className="space-y-2 border-b border-[var(--divider)] bg-[var(--bg-elevated)]/30 px-2 py-2"
+      className="space-y-3 border-b border-[var(--divider)] px-2 py-3"
       style={{ paddingLeft: 28 + depth * 16 }}
     >
       {sorted.length === 0 ? (
@@ -1334,29 +1378,41 @@ function CommentThread({
         ))
       )}
       {ctx.profileId ? (
-        <div className="space-y-2">
-          <SimpleRichTextEditor
-            value={draft}
-            onChange={setDraft}
-            placeholder="Add a comment… Use @ to mention"
-            mentionPeople={ctx.mentionPeople}
-          />
+        replying ? (
+          <div className="space-y-2.5">
+            <SimpleRichTextEditor
+              value={draft}
+              onChange={setDraft}
+              placeholder="Add a comment… Use @ to mention"
+              mentionPeople={ctx.mentionPeople}
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
+                onClick={submitReply}
+              >
+                Add comment
+              </button>
+              <button
+                type="button"
+                className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                onClick={cancelReply}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
           <button
             type="button"
-            className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
-            onClick={() => {
-              if (!notesHasContent(draft)) return;
-              ctx.addComment(
-                task.id,
-                draft,
-                extractMentionPersonIds(draft),
-              );
-              setDraft("");
-            }}
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            onClick={() => setReplying(true)}
           >
-            Add comment
+            <Reply size={13} strokeWidth={1.75} />
+            Reply
           </button>
-        </div>
+        )
       ) : null}
     </div>
   );
@@ -1372,6 +1428,11 @@ function CommentItem({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
   const author = ctx.profiles.find((p) => p.id === comment.author_profile_id);
+  const authorPerson = ctx.people.find(
+    (p) => p.profile_id === comment.author_profile_id,
+  );
+  const displayName =
+    author?.full_name || authorPerson?.name || "Someone";
   const isAuthor = Boolean(
     ctx.profileId && comment.author_profile_id === ctx.profileId,
   );
@@ -1379,6 +1440,7 @@ function CommentItem({
   const wasEdited = Boolean(
     comment.updated_at && comment.updated_at !== comment.created_at,
   );
+  const showActions = isAuthor || canDelete;
 
   function startEdit() {
     setDraft(comment.body);
@@ -1397,70 +1459,209 @@ function CommentItem({
   }
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-2 text-sm">
-      <div className="mb-1 flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
-        <span>{author?.full_name ?? "Someone"}</span>
-        <span className="shrink-0 tabular-nums">
-          {comment.created_at.slice(0, 10)}
-          {wasEdited ? (
-            <span className="ml-1 italic" title={comment.updated_at ?? undefined}>
-              · edited
-            </span>
-          ) : null}
-        </span>
-      </div>
-      {editing ? (
-        <div className="space-y-2">
-          <SimpleRichTextEditor
-            value={draft}
-            onChange={setDraft}
-            placeholder="Edit comment… Use @ to mention"
-            mentionPeople={ctx.mentionPeople}
-          />
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
-              onClick={saveEdit}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
-              onClick={cancelEdit}
-            >
-              Cancel
-            </button>
-          </div>
+    <div className="group flex items-start gap-2.5">
+      <PersonAvatar
+        avatarUrl={authorPerson?.avatar_url}
+        name={displayName}
+        size="row"
+        fallback="initials"
+        className="mt-0.5 shrink-0"
+      />
+      <div className="relative min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--comment-bg)] p-5 text-sm">
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <span className="min-w-0 truncate text-xs font-semibold text-[var(--text)]">
+            {displayName}
+          </span>
+          <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
+            {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
+            {wasEdited ? (
+              <span
+                className="ml-1 italic"
+                title={
+                  comment.updated_at
+                    ? format(
+                        parseISO(comment.updated_at),
+                        "MMM d, yyyy · h:mm a",
+                      )
+                    : undefined
+                }
+              >
+                · edited
+              </span>
+            ) : null}
+          </span>
         </div>
-      ) : (
-        <>
-          <RichNotesHtml html={comment.body} />
-          {isAuthor || canDelete ? (
-            <div className="mt-1 flex flex-wrap gap-2">
-              {isAuthor ? (
-                <button
-                  type="button"
-                  className="cursor-pointer text-xs text-[var(--accent)] hover:underline"
-                  onClick={startEdit}
-                >
-                  Edit
-                </button>
-              ) : null}
-              {canDelete ? (
-                <button
-                  type="button"
-                  className="cursor-pointer text-xs text-[var(--status-over)] hover:underline"
-                  onClick={() => ctx.deleteComment(comment.id)}
-                >
-                  Delete
-                </button>
-              ) : null}
+        {editing ? (
+          <div className="space-y-2.5">
+            <SimpleRichTextEditor
+              value={draft}
+              onChange={setDraft}
+              placeholder="Edit comment… Use @ to mention"
+              mentionPeople={ctx.mentionPeople}
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
+                onClick={saveEdit}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                onClick={cancelEdit}
+              >
+                Cancel
+              </button>
             </div>
+          </div>
+        ) : (
+          <>
+            <div className="leading-relaxed pr-14">
+              <RichNotesHtml html={comment.body} />
+            </div>
+            <CommentReactions comment={comment} ctx={ctx} />
+            {showActions ? (
+              <div className="absolute bottom-3 right-3 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                {isAuthor ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                    aria-label="Edit comment"
+                    title="Edit"
+                    onClick={startEdit}
+                  >
+                    <Pencil size={13} strokeWidth={1.75} />
+                  </button>
+                ) : null}
+                {canDelete ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
+                    aria-label="Delete comment"
+                    title="Delete"
+                    onClick={() => ctx.deleteComment(comment.id)}
+                  >
+                    <Trash2 size={13} strokeWidth={1.75} />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const COMMENT_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👀", "🔥"] as const;
+
+function CommentReactions({
+  comment,
+  ctx,
+}: {
+  comment: TaskComment;
+  ctx: BoardCtx;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const canReact = Boolean(ctx.profileId) && !ctx.readOnly;
+  const reactions = comment.reactions ?? [];
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, { emoji: string; profileIds: string[] }>();
+    for (const reaction of reactions) {
+      const entry = map.get(reaction.emoji) ?? {
+        emoji: reaction.emoji,
+        profileIds: [],
+      };
+      entry.profileIds.push(reaction.profile_id);
+      map.set(reaction.emoji, entry);
+    }
+    return [...map.values()].sort((a, b) => a.emoji.localeCompare(b.emoji));
+  }, [reactions]);
+
+  if (!canReact && grouped.length === 0) return null;
+
+  return (
+    <div className="relative mt-3 flex flex-wrap items-center gap-1.5 pr-14">
+      {grouped.map(({ emoji, profileIds }) => {
+        const mine = Boolean(
+          ctx.profileId && profileIds.includes(ctx.profileId),
+        );
+        const names = profileIds
+          .map((id) => {
+            const profile = ctx.profiles.find((p) => p.id === id);
+            const person = ctx.people.find((p) => p.profile_id === id);
+            return profile?.full_name || person?.name || "Someone";
+          })
+          .join(", ");
+        return (
+          <button
+            key={emoji}
+            type="button"
+            disabled={!canReact}
+            title={names}
+            aria-label={`${emoji} reaction, ${profileIds.length} ${profileIds.length === 1 ? "person" : "people"}`}
+            aria-pressed={mine}
+            className={cn(
+              "inline-flex h-7 items-center gap-1 rounded-full border px-2 text-xs tabular-nums transition-colors",
+              mine
+                ? "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--text)]"
+                : "border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)]",
+              canReact && "cursor-pointer hover:bg-[var(--row-hover)]",
+              !canReact && "cursor-default",
+            )}
+            onClick={() => {
+              if (!canReact) return;
+              ctx.toggleReaction(comment.id, emoji);
+            }}
+          >
+            <span className="text-sm leading-none">{emoji}</span>
+            <span>{profileIds.length}</span>
+          </button>
+        );
+      })}
+      {canReact ? (
+        <div className="relative">
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            aria-label="Add reaction"
+            aria-expanded={pickerOpen}
+            title="Add reaction"
+            onClick={() => setPickerOpen((open) => !open)}
+          >
+            <SmilePlus size={14} strokeWidth={1.75} />
+          </button>
+          {pickerOpen ? (
+            <>
+              <button
+                type="button"
+                className="fixed inset-0 z-20 cursor-default"
+                aria-label="Close reaction picker"
+                onClick={() => setPickerOpen(false)}
+              />
+              <div className="absolute bottom-full left-0 z-30 mb-1 flex gap-0.5 rounded-md border border-[var(--border)] bg-[var(--bg)] p-1 shadow-md">
+                {COMMENT_REACTION_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded text-base hover:bg-[var(--row-hover)]"
+                    aria-label={`React with ${emoji}`}
+                    onClick={() => {
+                      ctx.toggleReaction(comment.id, emoji);
+                      setPickerOpen(false);
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </>
           ) : null}
-        </>
-      )}
+        </div>
+      ) : null}
     </div>
   );
 }

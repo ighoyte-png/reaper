@@ -61,6 +61,7 @@ import {
   setProjectMembersRows,
   upsertProjectTemplateRow,
   upsertTaskCommentRow,
+  toggleTaskCommentReactionRow,
   upsertTaskListRow,
   upsertTaskRow,
   upsertTemplateMilestoneRow,
@@ -191,6 +192,7 @@ function loadDemoState(): DemoState {
         mentioned_person_ids: Array.isArray(c.mentioned_person_ids)
           ? c.mentioned_person_ids
           : [],
+        reactions: Array.isArray(c.reactions) ? c.reactions : [],
       })),
       bulletins: (parsed.bulletins ?? seed.bulletins).map((b) => ({
         ...b,
@@ -388,6 +390,8 @@ interface DataContextValue {
     },
   ) => void;
   deleteTaskComment: (id: string) => void;
+  /** Toggle the current user's emoji reaction on a comment. */
+  toggleTaskCommentReaction: (commentId: string, emoji: string) => void;
   upsertBulletin: (
     bulletin: Omit<Bulletin, "organization_id"> & {
       organization_id?: string;
@@ -673,6 +677,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         onChange("task_comment_mentions"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_comment_reactions",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("task_comment_reactions"),
       )
       .on(
         "postgres_changes",
@@ -1815,14 +1829,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           mentioned_person_ids: Array.isArray(comment.mentioned_person_ids)
             ? comment.mentioned_person_ids
             : [],
+          reactions: Array.isArray(comment.reactions) ? comment.reactions : [],
         } as TaskComment;
         patch((prev) => {
-          const exists = prev.task_comments.some((c) => c.id === row.id);
+          const existing = prev.task_comments.find((c) => c.id === row.id);
+          const next: TaskComment = {
+            ...row,
+            reactions: Array.isArray(comment.reactions)
+              ? comment.reactions
+              : (existing?.reactions ?? []),
+          };
+          const exists = Boolean(existing);
           return {
             ...prev,
             task_comments: exists
-              ? prev.task_comments.map((c) => (c.id === row.id ? row : c))
-              : [...prev.task_comments, row],
+              ? prev.task_comments.map((c) => (c.id === next.id ? next : c))
+              : [...prev.task_comments, next],
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
@@ -1843,6 +1865,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
           noteLocalWrite("task_comment_mentions", id);
           runRemoteSoft(() =>
             deleteTaskCommentRow(supabaseRef.current!, id),
+          );
+        }
+      },
+      toggleTaskCommentReaction: (commentId, emoji) => {
+        const profileId = profile?.id;
+        if (!profileId) return;
+        const trimmed = emoji.trim();
+        if (!trimmed) return;
+        let nextActive = false;
+        let organizationId = "";
+        patch((prev) => {
+          const comment = prev.task_comments.find((c) => c.id === commentId);
+          if (!comment) return prev;
+          organizationId = comment.organization_id;
+          const hasMine = comment.reactions.some(
+            (r) => r.profile_id === profileId && r.emoji === trimmed,
+          );
+          nextActive = !hasMine;
+          const reactions = hasMine
+            ? comment.reactions.filter(
+                (r) =>
+                  !(r.profile_id === profileId && r.emoji === trimmed),
+              )
+            : [...comment.reactions, { emoji: trimmed, profile_id: profileId }];
+          return {
+            ...prev,
+            task_comments: prev.task_comments.map((c) =>
+              c.id === commentId ? { ...c, reactions } : c,
+            ),
+          };
+        });
+        if (!organizationId) return;
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("task_comment_reactions", `${commentId}:${trimmed}`);
+          runRemoteSoft(() =>
+            toggleTaskCommentReactionRow(supabaseRef.current!, {
+              comment_id: commentId,
+              organization_id: organizationId,
+              profile_id: profileId,
+              emoji: trimmed,
+              active: nextActive,
+            }),
           );
         }
       },

@@ -27,6 +27,11 @@ export function realtimeEchoId(
     const cid = row.comment_id;
     return cid != null ? String(cid) : null;
   }
+  if (table === "task_comment_reactions") {
+    const cid = row.comment_id;
+    const emoji = row.emoji;
+    return cid != null && emoji != null ? `${String(cid)}:${String(emoji)}` : null;
+  }
   return row.id != null ? String(row.id) : null;
 }
 
@@ -108,6 +113,7 @@ export function applyRealtimeTableEvent(
         ...mapped,
         mentioned_person_ids:
           existing?.mentioned_person_ids ?? mapped.mentioned_person_ids,
+        reactions: existing?.reactions ?? mapped.reactions,
       };
       return {
         ...state,
@@ -131,6 +137,36 @@ export function applyRealtimeTableEvent(
         }
         changed = true;
         return { ...c, mentioned_person_ids: [...set] };
+      });
+      return changed ? { ...state, task_comments } : state;
+    }
+    case "task_comment_reactions": {
+      const commentId = String(source.comment_id ?? "");
+      const profileId = String(source.profile_id ?? "");
+      const emoji = String(source.emoji ?? "");
+      if (!commentId || !profileId || !emoji) return state;
+      let changed = false;
+      const task_comments = state.task_comments.map((c) => {
+        if (c.id !== commentId) return c;
+        const has = c.reactions.some(
+          (r) => r.profile_id === profileId && r.emoji === emoji,
+        );
+        if (isDelete) {
+          if (!has) return c;
+          changed = true;
+          return {
+            ...c,
+            reactions: c.reactions.filter(
+              (r) => !(r.profile_id === profileId && r.emoji === emoji),
+            ),
+          };
+        }
+        if (has) return c;
+        changed = true;
+        return {
+          ...c,
+          reactions: [...c.reactions, { emoji, profile_id: profileId }],
+        };
       });
       return changed ? { ...state, task_comments } : state;
     }

@@ -180,6 +180,7 @@ export function PublicShareProvider({
       deleteTask: () => {},
       upsertTaskComment: () => {},
       deleteTaskComment: () => {},
+      toggleTaskCommentReaction: () => {},
       upsertBulletin: () => {},
       deleteBulletin: () => {},
       upsertProjectTemplate: () => {},
