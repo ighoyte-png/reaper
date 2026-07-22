@@ -9,6 +9,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { useData } from "@/lib/data/store";
@@ -21,6 +22,13 @@ import {
 } from "@/lib/supabase/avatar";
 import { isAdmin } from "@/lib/auth/roles";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
+import {
+  SCHEDULE_VIEW_OFFSET_OPTIONS,
+  startPageOptions,
+  useUserViewPrefs,
+  type DefaultStartPage,
+  type ScheduleViewOffset,
+} from "@/lib/user-view-prefs";
 
 export default function SettingsPage() {
   const {
@@ -49,6 +57,7 @@ export default function SettingsPage() {
   const { push } = useToast();
   const router = useRouter();
   const admin = isAdmin(profile?.role);
+  const { prefs, setPrefs } = useUserViewPrefs(profile?.id);
   const [busy, setBusy] = useState(false);
   const [orgModalOpen, setOrgModalOpen] = useState(false);
   const [orgName, setOrgName] = useState(state.organization.name);
@@ -508,6 +517,44 @@ export default function SettingsPage() {
             </div>
             <ThemeToggle />
           </div>
+        </Panel>
+
+        <Panel>
+          <h2 className="text-sm font-semibold">Default Views</h2>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
+            Saved on this device for your account.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Default Start Page">
+              <Select
+                value={prefs.defaultStartPage}
+                onChange={(v) =>
+                  setPrefs((prev) => ({
+                    ...prev,
+                    defaultStartPage: v as DefaultStartPage,
+                  }))
+                }
+                options={startPageOptions(canManage)}
+              />
+            </Field>
+            <Field label="Schedule View Offset">
+              <Select
+                value={prefs.scheduleViewOffset}
+                onChange={(v) =>
+                  setPrefs((prev) => ({
+                    ...prev,
+                    scheduleViewOffset: v as ScheduleViewOffset,
+                  }))
+                }
+                options={SCHEDULE_VIEW_OFFSET_OPTIONS}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+            Start page is used after login and when opening the app root.
+            Schedule offset shifts the first visible week earlier when you open
+            the schedule.
+          </p>
         </Panel>
 
         {canManage && (

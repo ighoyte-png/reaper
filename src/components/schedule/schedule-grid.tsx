@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { format, isWeekend, parseISO } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2 } from "lucide-react";
@@ -47,6 +47,10 @@ import {
   weekStart,
   workingDaysBetween,
 } from "@/lib/domain/dates";
+import {
+  readUserViewPrefs,
+  scheduleAnchorForOffset,
+} from "@/lib/user-view-prefs";
 import { expandAssignmentsInRange, occurrenceCoversDay, type AssignmentOccurrence } from "@/lib/domain/recurrence";
 import {
   endWeeklySeriesBeforeOccurrence,
@@ -158,6 +162,7 @@ export function ScheduleGrid() {
     canManage: roleCanManage,
     isPublicShare,
     myPerson,
+    profile,
     authError,
   } = useData();
   const viewAs = useViewAsOptional();
@@ -170,7 +175,22 @@ export function ScheduleGrid() {
   const DAY_W = isNarrow ? DAY_W_MOBILE : DAY_W_DESKTOP;
   const LABEL_PX = isNarrow ? LABEL_MOBILE : LABEL_DESKTOP;
   const [zoom, setZoom] = useState<ScheduleZoom>("day");
-  const [anchor, setAnchor] = useState(() => weekStart(new Date()));
+  const [anchor, setAnchor] = useState(() =>
+    scheduleAnchorForOffset(readUserViewPrefs(null).scheduleViewOffset),
+  );
+  const scheduleOffsetAppliedRef = useRef(false);
+
+  useLayoutEffect(() => {
+    if (scheduleOffsetAppliedRef.current) return;
+    if (!profile?.id) return;
+    setAnchor(
+      scheduleAnchorForOffset(
+        readUserViewPrefs(profile.id).scheduleViewOffset,
+      ),
+    );
+    scheduleOffsetAppliedRef.current = true;
+  }, [profile?.id]);
+
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [personFilter, setPersonFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);

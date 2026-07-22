@@ -10,9 +10,13 @@ import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { ReaperLogo } from "@/components/brand/reaper-logo";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
+import {
+  readUserViewPrefs,
+  resolveDefaultStartPage,
+} from "@/lib/user-view-prefs";
 
 export default function SetPasswordPage() {
-  const { mode, updatePassword, refresh } = useData();
+  const { mode, updatePassword, refresh, profile, canManage } = useData();
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -132,7 +136,10 @@ export default function SetPasswordPage() {
       await updatePassword(password);
       await refresh();
       setDone(true);
-      router.replace("/dashboard");
+      const prefs = readUserViewPrefs(profile?.id);
+      router.replace(
+        resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not set password");
     } finally {

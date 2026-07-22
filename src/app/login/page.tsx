@@ -8,6 +8,10 @@ import { inputClass } from "@/components/ui/form";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { APP_VERSION } from "@/lib/version";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
+import {
+  readUserViewPrefs,
+  resolveDefaultStartPage,
+} from "@/lib/user-view-prefs";
 
 function LoginForm() {
   const {
@@ -19,6 +23,8 @@ function LoginForm() {
     ready,
     mode,
     authError,
+    profile,
+    canManage,
   } = useData();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -51,8 +57,12 @@ function LoginForm() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (ready && isAuthenticated) router.replace("/dashboard");
-  }, [ready, isAuthenticated, router]);
+    if (!ready || !isAuthenticated) return;
+    const prefs = readUserViewPrefs(profile?.id);
+    router.replace(
+      resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+    );
+  }, [ready, isAuthenticated, profile?.id, canManage, router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -114,7 +124,6 @@ function LoginForm() {
             type="button"
             onClick={() => {
               loginDemo();
-              router.push("/dashboard");
             }}
             className="mt-8 h-10 w-full rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)] hover:opacity-90"
           >
