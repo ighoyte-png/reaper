@@ -6,6 +6,7 @@ import { format, parseISO } from "date-fns";
 import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProgressBar } from "@/components/projects/progress-bar";
+import { ProjectManagerTag } from "@/components/projects/project-manager-person";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { createDemoSeed, DEMO_STORAGE_KEY } from "@/lib/demo/seed";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -302,11 +303,11 @@ export default function ProjectSharePage() {
       </div>
 
       {showTeamSection ? (
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <section>
           <h2 className="mb-3 text-sm font-semibold">Team</h2>
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {manager ? (
-              <li className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-center">
+              <li className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center">
                 <PersonAvatar
                   avatarUrl={manager.avatar_url}
                   name={manager.name}
@@ -316,11 +317,11 @@ export default function ProjectSharePage() {
                   <div className="truncate text-base font-semibold tracking-tight">
                     {manager.name}
                   </div>
-                  <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                    Project Manager
+                  <div className="mt-1 flex justify-center">
+                    <ProjectManagerTag />
                   </div>
                   {manager.title ? (
-                    <div className="truncate text-xs text-[var(--text-muted)]">
+                    <div className="mt-0.5 truncate text-xs text-[var(--text-muted)]">
                       {manager.title}
                     </div>
                   ) : null}
@@ -339,7 +340,7 @@ export default function ProjectSharePage() {
             {teamWithoutManager.map((member) => (
               <li
                 key={member.email || member.name}
-                className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-center"
+                className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center"
               >
                 <PersonAvatar
                   avatarUrl={member.avatar_url}
