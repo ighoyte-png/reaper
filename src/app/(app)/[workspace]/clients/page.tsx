@@ -11,6 +11,7 @@ import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { sortClientsByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
@@ -24,6 +25,7 @@ export default function ClientsPage() {
   const canManage = effectiveCanManage;
   const { push } = useToast();
   const router = useRouter();
+  const appHref = useAppHref();
   const [editing, setEditing] = useState<Omit<Client, "organization_id"> | null>(
     null,
   );
@@ -39,7 +41,7 @@ export default function ClientsPage() {
   const archivedCount = clients.filter((c) => c.status === "archived").length;
 
   useEffect(() => {
-    if (!canManage && !isPublicShare) router.replace("/dashboard");
+    if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
   }, [canManage, isPublicShare, router]);
 
   if (!canManage && !isPublicShare) {
@@ -54,6 +56,7 @@ export default function ClientsPage() {
     return {
       id: newId("client"),
       name: "",
+      slug: "",
       notes: "",
       color: "#3498DB",
       status: "active",

@@ -1,17 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
+import { BudgetCard } from "@/components/budgets/budget-card";
+import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
-import { useAppHref } from "@/lib/hooks/use-app-href";
-import { formatHours, formatMoney } from "@/lib/domain/budget";
-import { orgForecast, projectForecast } from "@/lib/domain/forecast";
+import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
 import {
   sortClientsByName,
   sortProjectsByClientThenName,
@@ -21,9 +21,21 @@ import type { Client, Project } from "@/lib/types";
 
 type ClientFilter = "all" | "none" | string;
 
-export default function ForecastReportPage() {
-  const { state } = useData();
+export default function BudgetsReportPage() {
+  return (
+    <Suspense fallback={null}>
+      <BudgetsReportContent />
+    </Suspense>
+  );
+}
+
+function BudgetsReportContent() {
+  const { state, canManage } = useData();
   const appHref = useAppHref();
+  const budgetHref = useBudgetHref();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectParam = searchParams.get("project");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [query, setQuery] = useState("");
 
@@ -33,7 +45,13 @@ export default function ForecastReportPage() {
   );
   const clients = sortClientsByName(state.clients);
 
-  const org = orgForecast(state.projects, state.assignments, state.people);
+  // Legacy deep link (?project=) → dedicated budget detail page.
+  useEffect(() => {
+    if (!projectParam) return;
+    const project = state.projects.find((p) => p.id === projectParam);
+    if (!project) return;
+    router.replace(budgetHref(project));
+  }, [projectParam, state.projects, router, budgetHref]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -53,6 +71,7 @@ export default function ForecastReportPage() {
         client?.name ?? "",
         project.status.replace("_", " "),
         project.notes,
+        project.budget_monthly_reset ? "monthly retainer" : "",
       ]
         .join(" ")
         .toLowerCase();
@@ -89,14 +108,14 @@ export default function ForecastReportPage() {
 
   return (
     <PageContainer>
-      <PageHeader title={<ReportBreadcrumb current="Financial Forecast" />} />
+      <PageHeader title={<ReportBreadcrumb current="Budgets" />} />
       {state.projects.length === 0 ? (
         <div className="p-5">
           <p className="text-sm text-[var(--text-muted)]">No projects yet.</p>
         </div>
       ) : (
         <div className="flex flex-col md:flex-row">
-          <aside className="sticky top-3 mt-3 hidden max-h-[calc(100dvh-5.5rem)] w-52 shrink-0 flex-col self-start overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] sm:top-5 sm:mt-5 md:flex">
+          <aside className="sticky top-3 mt-3 ml-3 hidden max-h-[calc(100dvh-5.5rem)] w-64 shrink-0 flex-col self-start overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 sm:ml-5 md:flex">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search
@@ -118,7 +137,7 @@ export default function ForecastReportPage() {
               <ClientNavButton
                 active={clientFilter === "all"}
                 onClick={() => setClientFilter("all")}
-                label="All clients"
+                label="All Clients"
                 count={projects.length}
               />
               {clients.map((client) => (
@@ -135,7 +154,7 @@ export default function ForecastReportPage() {
                 <ClientNavButton
                   active={clientFilter === "none"}
                   onClick={() => setClientFilter("none")}
-                  label="No client"
+                  label="No Client"
                   count={clientCounts.get("none") ?? 0}
                 />
               ) : null}
@@ -143,16 +162,6 @@ export default function ForecastReportPage() {
           </aside>
 
           <div className="min-w-0 flex-1 p-3 sm:p-5">
-            <div className="mb-5 grid gap-3 sm:grid-cols-4">
-              <Stat label="Planned Hours" value={formatHours(org.plannedHours)} />
-              <Stat label="Revenue" value={formatMoney(org.revenue)} />
-              <Stat label="Cost" value={formatMoney(org.cost)} />
-              <Stat
-                label="Margin"
-                value={`${formatMoney(org.margin)} (${org.marginPct.toFixed(0)}%)`}
-              />
-            </div>
-
             <label className="relative mb-4 block md:hidden">
               <Search
                 size={16}
@@ -188,7 +197,7 @@ export default function ForecastReportPage() {
                 <MobileClientChip
                   active={clientFilter === "none"}
                   onClick={() => setClientFilter("none")}
-                  label="No client"
+                  label="No Client"
                 />
               ) : null}
             </div>
@@ -207,7 +216,7 @@ export default function ForecastReportPage() {
                         <ProjectColorBar color={client.color} />
                       ) : null}
                       <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
-                        {client?.name ?? "No client"}
+                        {client?.name ?? "No Client"}
                       </h2>
                       <span className="text-xs text-[var(--text-muted)]">
                         {groupProjects.length} project
@@ -216,13 +225,20 @@ export default function ForecastReportPage() {
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                       {groupProjects.map((project) => (
-                        <ForecastCard
+                        <BudgetCard
                           key={project.id}
                           project={project}
-                          clientName={client?.name ?? "No client"}
-                          href={appHref(`/reports/budgets/${project.id}`)}
+                          href={budgetHref(project)}
                         />
                       ))}
+                      <CardGridPlaceholders
+                        count={groupProjects.length}
+                        onAdd={
+                          canManage
+                            ? () => router.push(appHref("/projects"))
+                            : undefined
+                        }
+                      />
                     </div>
                   </section>
                 ))}
@@ -232,15 +248,6 @@ export default function ForecastReportPage() {
         </div>
       )}
     </PageContainer>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-[var(--border)] p-3">
-      <div className="text-xs text-[var(--text-muted)]">{label}</div>
-      <div className="mt-1 text-lg font-semibold tracking-tight">{value}</div>
-    </div>
   );
 }
 
@@ -306,60 +313,5 @@ function MobileClientChip({
       {color ? <ProjectColorBar color={color} size="sm" /> : null}
       {label}
     </button>
-  );
-}
-
-function ForecastCard({
-  project,
-  clientName,
-  href,
-}: {
-  project: Project;
-  clientName: string;
-  href: string;
-}) {
-  const { state } = useData();
-  const forecast = projectForecast(project, state.assignments, state.people);
-
-  return (
-    <Link
-      href={href}
-      className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]"
-    >
-      <div className="mb-3 min-w-0">
-        <div className="truncate text-sm font-semibold leading-tight">
-          {project.name}
-        </div>
-        <div className="truncate text-xs text-[var(--text-muted)]">
-          {clientName}
-        </div>
-      </div>
-      <div className="mt-auto space-y-1.5 text-xs">
-        <div className="flex justify-between gap-2">
-          <span className="text-[var(--text-muted)]">Hours</span>
-          <span className="tabular-nums font-medium">
-            {formatHours(forecast.plannedHours)}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span className="text-[var(--text-muted)]">Revenue</span>
-          <span className="tabular-nums font-medium">
-            {formatMoney(forecast.revenue)}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span className="text-[var(--text-muted)]">Cost</span>
-          <span className="tabular-nums font-medium">
-            {formatMoney(forecast.cost)}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-1.5">
-          <span className="text-[var(--text-muted)]">Margin</span>
-          <span className="tabular-nums font-medium">
-            {formatMoney(forecast.margin)} ({forecast.marginPct.toFixed(0)}%)
-          </span>
-        </div>
-      </div>
-    </Link>
   );
 }

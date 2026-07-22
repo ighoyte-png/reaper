@@ -1,1 +1,1 @@
-export { default } from "@/app/(app)/schedule/page";
+export { default } from "@/app/(app)/[workspace]/schedule/page";

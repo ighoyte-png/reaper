@@ -11,7 +11,7 @@ import { Select } from "@/components/ui/select";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
-import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
@@ -170,6 +170,7 @@ export function ScheduleGrid() {
   const canManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
   const { push } = useToast();
   const appHref = useAppHref();
+  const projectHref = useProjectHref();
   const isNarrow = useMediaQuery("(max-width: 1023px)");
   const isCoarse = useMediaQuery("(pointer: coarse)");
   const DAY_W = isNarrow ? DAY_W_MOBILE : DAY_W_DESKTOP;
@@ -2499,7 +2500,7 @@ export function ScheduleGrid() {
                             ) : null}
                             {canManage ? (
                               <Link
-                                href={`/projects/${project.id}`}
+                                href={projectHref(project)}
                                 className={cn(
                                   "block min-w-0 truncate text-[11px] leading-none text-[var(--text-muted)] hover:text-[var(--accent)] hover:underline",
                                   clientName && "mt-0.5",
@@ -3542,7 +3543,11 @@ export function ScheduleGrid() {
             </div>
             <div className="border-b border-[var(--border)] px-4 py-2">
               <Link
-                href={appHref(`/projects/${editForm.project_id}`)}
+                href={
+                  projectsById.get(editForm.project_id)
+                    ? projectHref(projectsById.get(editForm.project_id)!)
+                    : appHref("/projects")
+                }
                 className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
               >
                 Open Project Hub
@@ -3678,7 +3683,7 @@ export function ScheduleGrid() {
                 <div>
                   <div className="mb-1 flex justify-between text-xs">
                     <Link
-                      href={`/projects/${project.id}`}
+                      href={projectHref(project)}
                       className="font-medium hover:text-[var(--accent)] hover:underline"
                     >
                       {project.name}
@@ -3806,7 +3811,11 @@ export function ScheduleGrid() {
             </div>
             <div className="border-b border-[var(--border)] px-4 py-2">
               <Link
-                href={appHref(`/projects/${selected.project_id}`)}
+                href={
+                  projectsById.get(selected.project_id)
+                    ? projectHref(projectsById.get(selected.project_id)!)
+                    : appHref("/projects")
+                }
                 className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
               >
                 Open Project Hub

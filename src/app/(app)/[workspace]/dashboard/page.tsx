@@ -33,7 +33,7 @@ import {
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
-import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useDismissedMentions, useDismissedBulletins } from "@/lib/hooks/use-dismissed-mentions";
 import {
   bulletinDismissSubject,
@@ -100,6 +100,7 @@ export default function DashboardPage() {
   } = useData();
   const { push } = useToast();
   const appHref = useAppHref();
+  const projectHref = useProjectHref();
   const {
     viewAsPersonId,
     setViewAsPersonId,
@@ -646,6 +647,7 @@ export default function DashboardPage() {
               upcoming={upcomingDueTasks}
               projectById={projectById}
               appHref={appHref}
+              projectHref={projectHref}
               clients={state.clients}
             />
             <DashboardCapacityLeave
@@ -663,7 +665,7 @@ export default function DashboardPage() {
           <div className="order-2 grid gap-4 sm:grid-cols-2 lg:order-none">
             <TaggedCommentsPanel
               taggedComments={taggedComments}
-              appHref={appHref}
+              projectHref={projectHref}
               onDismiss={dismissMention}
               compact
             />
@@ -676,7 +678,7 @@ export default function DashboardPage() {
               clientById={clientById}
               peopleById={peopleById}
               showAssignee={isPublicShare}
-              appHref={appHref}
+              projectHref={projectHref}
               compact
             />
           </div>
@@ -780,6 +782,7 @@ export default function DashboardPage() {
               fallbackPerson={focusPerson}
               defaultPersonId={personalPersonId}
               appHref={appHref}
+              projectHref={projectHref}
             />
 
             <section className={panelClass()}>
@@ -905,7 +908,7 @@ function Sparkline({ values }: { values: number[] }) {
 
 function TaggedCommentsPanel({
   taggedComments,
-  appHref,
+  projectHref,
   onDismiss,
   compact = false,
 }: {
@@ -915,7 +918,7 @@ function TaggedCommentsPanel({
     project: Project | undefined;
     author: Profile | undefined;
   }[];
-  appHref: (path: string) => string;
+  projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   onDismiss: (commentId: string) => void;
   compact?: boolean;
 }) {
@@ -946,9 +949,7 @@ function TaggedCommentsPanel({
           {taggedComments.map(({ comment, task, project, author }) => (
             <li key={comment.id} className="relative">
               <Link
-                href={appHref(
-                  `/projects/${project!.id}?task=${task!.id}&comments=1`,
-                )}
+                href={projectHref(project!, `task=${task!.id}&comments=1`)}
                 className="block rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
               >
                 <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
@@ -991,6 +992,7 @@ function ProjectHealthBudget({
   upcoming,
   projectById,
   appHref,
+  projectHref,
   clients,
 }: {
   canManage: boolean;
@@ -1002,6 +1004,7 @@ function ProjectHealthBudget({
   upcoming: Task[];
   projectById: Map<string, Project>;
   appHref: (path: string) => string;
+  projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   clients: { id: string; name: string; color: string }[];
 }) {
   return (
@@ -1027,7 +1030,7 @@ function ProjectHealthBudget({
             {atRisk.slice(0, 5).map(({ project, burn, client }) => (
               <Link
                 key={project.id}
-                href={appHref(`/projects/${project.id}`)}
+                href={projectHref(project)}
                 className="block rounded-md border border-[var(--border)] p-3 hover:bg-[var(--row-hover)]"
               >
                 <div className="mb-2 flex items-center gap-2">
@@ -1073,7 +1076,7 @@ function ProjectHealthBudget({
               task={t}
               project={projectById.get(t.project_id)}
               overdue={false}
-              appHref={appHref}
+              projectHref={projectHref}
             />
           ))}
         </div>
@@ -1261,7 +1264,7 @@ function TaskRow({
   overdue,
   assignee,
   showAssignee,
-  appHref,
+  projectHref,
 }: {
   task: Task;
   project: Project | undefined;
@@ -1269,11 +1272,15 @@ function TaskRow({
   overdue: boolean;
   assignee?: Person | null;
   showAssignee?: boolean;
-  appHref: (path: string) => string;
+  projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
 }) {
   return (
     <Link
-      href={appHref(`/projects/${task.project_id}`)}
+      href={
+        project
+          ? projectHref(project)
+          : "#"
+      }
       className="flex gap-2 rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"
     >
       <ProjectColorBar
@@ -1326,6 +1333,7 @@ function TodaySchedule({
   fallbackPerson,
   defaultPersonId,
   appHref,
+  projectHref,
 }: {
   assignments: {
     id: string;
@@ -1341,6 +1349,7 @@ function TodaySchedule({
   fallbackPerson?: Person | null;
   defaultPersonId?: string | null;
   appHref: (path: string) => string;
+  projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
 }) {
   const [personFilter, setPersonFilter] = useState<string>(
     () => defaultPersonId ?? people[0]?.id ?? "",
@@ -1491,7 +1500,13 @@ function TodaySchedule({
                     <div className="rounded-md px-2 py-1.5">{row}</div>
                   ) : (
                     <Link
-                      href={appHref(`/projects/${slice.projectId}`)}
+                      href={
+                        projects.find((p) => p.id === slice.projectId)
+                          ? projectHref(
+                              projects.find((p) => p.id === slice.projectId)!,
+                            )
+                          : appHref("/projects")
+                      }
                       className="block rounded-md px-2 py-1.5 hover:bg-[var(--row-hover)]"
                     >
                       {row}
@@ -1636,7 +1651,7 @@ function TaskPulse({
   clientById,
   peopleById,
   showAssignee,
-  appHref,
+  projectHref,
   compact = false,
 }: {
   overdue: Task[];
@@ -1647,7 +1662,7 @@ function TaskPulse({
   clientById: Map<string, Client>;
   peopleById: Map<string, Person>;
   showAssignee?: boolean;
-  appHref: (path: string) => string;
+  projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   compact?: boolean;
 }) {
   function row(task: Task, overdueRow: boolean) {
@@ -1667,7 +1682,7 @@ function TaskPulse({
         overdue={overdueRow}
         assignee={assignee}
         showAssignee={showAssignee}
-        appHref={appHref}
+        projectHref={projectHref}
       />
     );
   }

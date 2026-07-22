@@ -1,1 +1,1 @@
-export { default } from "@/app/(app)/reports/forecast/page";
+export { default } from "@/app/(app)/[workspace]/reports/forecast/page";

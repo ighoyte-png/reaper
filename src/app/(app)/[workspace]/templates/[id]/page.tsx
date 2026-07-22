@@ -38,7 +38,7 @@ export default function TemplateDetailPage() {
   const template = state.project_templates.find((t) => t.id === params.id);
 
   useEffect(() => {
-    if (!canManage && !isPublicShare) router.replace("/dashboard");
+    if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
   }, [canManage, isPublicShare, router]);
 
   if (!canManage && !isPublicShare) {

@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { formatHours } from "@/lib/domain/budget";
 import {
@@ -84,6 +85,7 @@ export default function PeoplePage() {
   const canManage = effectiveCanManage;
   const { push } = useToast();
   const router = useRouter();
+  const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
   const [editing, setEditing] = useState<Omit<Person, "organization_id"> | null>(
     null,
@@ -118,7 +120,7 @@ export default function PeoplePage() {
     adminCount <= 1;
 
   useEffect(() => {
-    if (!canManage && !isPublicShare) router.replace("/schedule");
+    if (!canManage && !isPublicShare) router.replace(appHref("/schedule"));
   }, [canManage, isPublicShare, router]);
 
   if (!canManage && !isPublicShare) {

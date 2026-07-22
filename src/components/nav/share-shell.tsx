@@ -12,7 +12,7 @@ export function ShareShell({ children }: { children: React.ReactNode }) {
         <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
           <ShareNavbar />
           <ViewAsBanner />
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
             {children}
           </div>
         </div>

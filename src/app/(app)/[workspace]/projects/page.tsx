@@ -17,7 +17,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { ApplyTemplateDialog } from "@/components/templates/apply-template-dialog";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
-import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import {
@@ -38,6 +38,7 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
     id,
     client_id: null,
     name: "",
+    slug: "",
     status: "active",
     priority: 3,
     color: "#3498DB",
@@ -78,6 +79,7 @@ export default function ProjectsPage() {
     useViewAs();
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
+  const projectHref = useProjectHref();
   const { push } = useToast();
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
     null,
@@ -484,7 +486,7 @@ export default function ProjectsPage() {
                         <ProjectCard
                           key={project.id}
                           project={project}
-                          href={appHref(`/projects/${project.id}`)}
+                          href={projectHref(project)}
                           showManager={showManagers}
                         />
                       ))}

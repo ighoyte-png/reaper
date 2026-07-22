@@ -44,7 +44,7 @@ import {
   SimpleRichTextEditor,
 } from "@/components/ui/simple-rich-text";
 import { useData } from "@/lib/data/store";
-import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
 import { notesHasContent } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
@@ -175,7 +175,8 @@ export function ProjectTaskBoard({
     deleteTaskList,
     newId,
   } = useData();
-  const appHref = useAppHref();
+  const projectHref = useProjectHref();
+  const project = state.projects.find((p) => p.id === projectId);
   const viewAs = useViewAsOptional();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDraft, setBulkDraft] = useState<{
@@ -665,9 +666,9 @@ export function ProjectTaskBoard({
     compact,
     readOnly: readOnly || isPublicShare,
     hubTaskHref:
-      compact && (readOnly || isPublicShare)
+      compact && (readOnly || isPublicShare) && project
         ? (taskId: string) =>
-            appHref(`/projects/${projectId}?task=${taskId}&comments=1`)
+            projectHref(project, `task=${taskId}&comments=1`)
         : null,
     selected,
     toggleSelect,

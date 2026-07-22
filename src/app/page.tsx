@@ -7,9 +7,10 @@ import {
   readUserViewPrefs,
   resolveDefaultStartPage,
 } from "@/lib/user-view-prefs";
+import { workspacePath } from "@/lib/paths";
 
 export default function Home() {
-  const { ready, isAuthenticated, profile, canManage } = useData();
+  const { ready, isAuthenticated, profile, canManage, state } = useData();
   const router = useRouter();
 
   useEffect(() => {
@@ -18,10 +19,21 @@ export default function Home() {
       router.replace("/login");
       return;
     }
+    if (!state.organization.slug) return;
     const prefs = readUserViewPrefs(profile?.id);
-    const href = resolveDefaultStartPage(prefs.defaultStartPage, canManage);
+    const href = workspacePath(
+      state.organization.slug,
+      resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+    );
     router.replace(href);
-  }, [ready, isAuthenticated, profile?.id, canManage, router]);
+  }, [
+    ready,
+    isAuthenticated,
+    profile?.id,
+    canManage,
+    router,
+    state.organization.slug,
+  ]);
 
   return (
     <div className="flex h-dvh items-center justify-center text-sm text-[var(--text-muted)]">

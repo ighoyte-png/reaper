@@ -10,6 +10,8 @@ import { primaryNavLinks } from "@/components/nav/nav-links";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
+import { stripWorkspacePrefix } from "@/lib/paths";
 import {
   isUnreadBulletin,
   bulletinDismissSubject,
@@ -32,7 +34,13 @@ function navLinkClass(active: boolean) {
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { logout, state, myPerson, profile } = useData();
+  const { logout, state, myPerson, profile, shareBasePath } = useData();
+  const appHref = useAppHref();
+  const pathForNav = shareBasePath
+    ? pathname.startsWith(shareBasePath)
+      ? pathname.slice(shareBasePath.length) || "/"
+      : pathname
+    : stripWorkspacePrefix(pathname, state.organization.slug);
   const {
     effectivePersonId,
     effectiveCanManage,
@@ -52,7 +60,7 @@ export function AppNavbar() {
   const links = primaryNavLinks.filter((l) => effectiveCanManage || !l.manageOnly);
   const showSettings = !viewAsPersonId;
   const settingsActive =
-    pathname === "/settings" || pathname.startsWith("/settings/");
+    pathForNav === "/settings" || pathForNav.startsWith("/settings/");
 
   const hasDashboardDot = useMemo(() => {
     if (mentionPersonId) {
@@ -96,7 +104,7 @@ export function AppNavbar() {
           <Menu size={17} strokeWidth={1.75} />
         </button>
         <Link
-          href="/dashboard"
+          href={appHref("/dashboard")}
           className="inline-flex shrink-0 items-center py-1"
           aria-label="Reaper"
         >
@@ -107,13 +115,14 @@ export function AppNavbar() {
           aria-label="Main"
         >
           {links.map(({ href, label, icon: Icon }) => {
+            const fullHref = appHref(href);
             const active =
-              pathname === href || pathname.startsWith(`${href}/`);
+              pathForNav === href || pathForNav.startsWith(`${href}/`);
             const showDot = href === "/dashboard" && hasDashboardDot;
             return (
               <Link
                 key={href}
-                href={href}
+                href={fullHref}
                 className={navLinkClass(active)}
               >
                 <Icon size={15} strokeWidth={1.75} />
@@ -137,7 +146,7 @@ export function AppNavbar() {
           />
           {showSettings ? (
             <Link
-              href="/settings"
+              href={appHref("/settings")}
               className={cn(navLinkClass(settingsActive), "hidden sm:inline-flex")}
               aria-label="Settings"
               title="Settings"
@@ -192,13 +201,14 @@ export function AppNavbar() {
           </div>
           <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
             {links.map(({ href, label, icon: Icon }) => {
+              const fullHref = appHref(href);
               const active =
-                pathname === href || pathname.startsWith(`${href}/`);
+                pathForNav === href || pathForNav.startsWith(`${href}/`);
               const showDot = href === "/dashboard" && hasDashboardDot;
               return (
                 <Link
                   key={href}
-                  href={href}
+                  href={fullHref}
                   onClick={() => setOpen(false)}
                   className={cn(
                     "relative flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
@@ -226,7 +236,7 @@ export function AppNavbar() {
             </div>
             {showSettings ? (
               <Link
-                href="/settings"
+                href={appHref("/settings")}
                 onClick={() => setOpen(false)}
                 className={cn(
                   "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",

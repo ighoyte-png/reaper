@@ -35,9 +35,10 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "min-h-0 w-full flex-1 overflow-y-auto",
+        "min-h-0 w-full flex-1 overflow-y-auto outline-none",
         withoutOverflow,
       )}
+      tabIndex={-1}
     >
       {chrome}
       {body.length > 0 ? (

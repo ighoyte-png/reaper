@@ -33,6 +33,7 @@ function portalChartProject(
     organization_id: "portal",
     client_id: null,
     name: "",
+    slug: "portal",
     status: "active",
     priority: 0,
     color: "",

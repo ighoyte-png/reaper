@@ -29,6 +29,8 @@ export type ProjectAssetKind =
 export interface Organization {
   id: string;
   name: string;
+  /** URL segment for /{workspace}/… */
+  slug: string;
   /** When true, /share/[token] serves a read-only view. Token is not always loaded client-side. */
   share_enabled?: boolean;
   /** Present in demo local state; supabase managers load token via /api/share. */
@@ -47,6 +49,8 @@ export interface Client {
   id: string;
   organization_id: string;
   name: string;
+  /** URL segment under /{workspace}/projects/{client}/… */
+  slug: string;
   notes: string;
   color: string;
   status: ClientStatus;
@@ -57,6 +61,8 @@ export interface Project {
   organization_id: string;
   client_id: string | null;
   name: string;
+  /** URL segment under /{workspace}/projects/{client}/{project} */
+  slug: string;
   status: ProjectStatus;
   priority: number;
   color: string;

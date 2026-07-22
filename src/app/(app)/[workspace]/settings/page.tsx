@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { publicShareUrl } from "@/lib/share/token";
 import { createClient } from "@/lib/supabase/client";
@@ -50,18 +51,25 @@ export default function SettingsPage() {
     upsertPerson,
     updatePersonAvatar,
     updateOrganizationName,
+    updateOrganizationSlug,
     newId,
     updateDemoShare,
   } = useData();
   const { clearViewAs } = useViewAs();
   const { push } = useToast();
   const router = useRouter();
+  const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
   const { prefs, setPrefs } = useUserViewPrefs(profile?.id);
   const [busy, setBusy] = useState(false);
   const [orgModalOpen, setOrgModalOpen] = useState(false);
   const [orgName, setOrgName] = useState(state.organization.name);
   const [orgBusy, setOrgBusy] = useState(false);
+  const [slugModalOpen, setSlugModalOpen] = useState(false);
+  const [workspaceSlugDraft, setWorkspaceSlugDraft] = useState(
+    state.organization.slug,
+  );
+  const [slugBusy, setSlugBusy] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -82,6 +90,10 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!orgModalOpen) setOrgName(state.organization.name);
   }, [state.organization.name, orgModalOpen]);
+
+  useEffect(() => {
+    if (!slugModalOpen) setWorkspaceSlugDraft(state.organization.slug);
+  }, [state.organization.slug, slugModalOpen]);
 
   useEffect(() => {
     if (!canManage) return;
@@ -331,6 +343,34 @@ export default function SettingsPage() {
                 <Pencil size={14} strokeWidth={1.75} />
               </button>
             ) : null}
+          </div>
+          <div className="mt-3">
+            <p className="text-xs font-medium text-[var(--text-muted)]">
+              Workspace URL
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <p className="font-mono text-sm text-[var(--text)]">
+                /{state.organization.slug || "—"}
+              </p>
+              {admin ? (
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                  title="Edit workspace URL"
+                  aria-label="Edit workspace URL"
+                  onClick={() => {
+                    setWorkspaceSlugDraft(state.organization.slug);
+                    setSlugModalOpen(true);
+                  }}
+                >
+                  <Pencil size={14} strokeWidth={1.75} />
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Changing this updates all signed-in app links. Organization name
+              renames do not change the URL.
+            </p>
           </div>
           <p className="mt-2 text-xs text-[var(--text-muted)]">
             Signed in as {profile?.full_name} ({profile?.role})
@@ -770,7 +810,7 @@ export default function SettingsPage() {
                     clearViewAs();
                     switchDemoProfile(p.id);
                     push(`Switched to ${p.full_name} (${p.role})`, "success");
-                    router.push("/schedule");
+                    router.push(appHref("/schedule"));
                   }}
                 >
                   {p.full_name} · {p.role}
@@ -895,6 +935,87 @@ export default function SettingsPage() {
                 }}
               >
                 {orgBusy ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {slugModalOpen ? (
+        <Modal
+          title="Edit Workspace URL"
+          onClose={() => {
+            if (slugBusy) return;
+            setSlugModalOpen(false);
+            setWorkspaceSlugDraft(state.organization.slug);
+          }}
+        >
+          <div className="space-y-3">
+            <Field label="URL slug">
+              <div className="flex items-center gap-1">
+                <span className="text-sm text-[var(--text-muted)]">/</span>
+                <input
+                  className={inputClass}
+                  value={workspaceSlugDraft}
+                  onChange={(e) =>
+                    setWorkspaceSlugDraft(
+                      e.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9-]+/g, "-")
+                        .replace(/-{2,}/g, "-"),
+                    )
+                  }
+                  maxLength={64}
+                  autoFocus
+                  spellCheck={false}
+                />
+              </div>
+            </Field>
+            <p className="text-xs text-[var(--text-muted)]">
+              Letters, numbers, and hyphens. This must be unique across all
+              workspaces.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={slugBusy}
+                onClick={() => {
+                  setSlugModalOpen(false);
+                  setWorkspaceSlugDraft(state.organization.slug);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={
+                  slugBusy ||
+                  !workspaceSlugDraft.trim() ||
+                  workspaceSlugDraft.trim() === state.organization.slug
+                }
+                onClick={() => {
+                  void (async () => {
+                    setSlugBusy(true);
+                    try {
+                      const next = workspaceSlugDraft.trim();
+                      await updateOrganizationSlug(next);
+                      push("Workspace URL saved");
+                      setSlugModalOpen(false);
+                      router.replace(`/${next}/settings`);
+                    } catch (err) {
+                      push(
+                        err instanceof Error
+                          ? err.message
+                          : "Could not save workspace URL — it may already be taken",
+                        "warning",
+                      );
+                    } finally {
+                      setSlugBusy(false);
+                    }
+                  })();
+                }}
+              >
+                {slugBusy ? "Saving…" : "Save"}
               </Button>
             </div>
           </div>

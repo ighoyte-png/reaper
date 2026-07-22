@@ -55,6 +55,7 @@ import {
   upsertPersonRow,
   updatePersonAvatarRow,
   updateOrganizationNameRow,
+  updateOrganizationSlugRow,
   updateProfileRoleRow,
   upsertProjectAssetRow,
   upsertProjectRow,
@@ -75,6 +76,7 @@ import { clearViewAsStorage } from "@/lib/view-as-storage";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { workingDaysBetween } from "@/lib/domain/dates";
+import { uniqueSlug } from "@/lib/slug";
 import {
   generateShareToken,
   publicProjectShareUrl,
@@ -137,6 +139,7 @@ function loadDemoState(): DemoState {
       })),
       projects: (parsed.projects ?? seed.projects).map((p) => ({
         ...p,
+        slug: p.slug || uniqueSlug(p.name, [], { preferred: p.slug }),
         budget_mode:
           p.budget_mode === "none" ||
           p.budget_mode === "hours" ||
@@ -156,6 +159,7 @@ function loadDemoState(): DemoState {
       })),
       clients: (parsed.clients ?? seed.clients).map((c) => ({
         ...c,
+        slug: c.slug || uniqueSlug(c.name, [], { preferred: c.slug }),
         color: c.color ?? "#64748B",
         status: c.status ?? "active",
       })),
@@ -170,6 +174,10 @@ function loadDemoState(): DemoState {
       organization: {
         ...seed.organization,
         ...parsed.organization,
+        slug:
+          parsed.organization?.slug ||
+          seed.organization.slug ||
+          uniqueSlug(parsed.organization?.name || seed.organization.name, []),
         share_enabled: Boolean(parsed.organization?.share_enabled),
         share_token: parsed.organization?.share_token ?? null,
       },
@@ -216,7 +224,7 @@ function loadDemoState(): DemoState {
 
 function emptySupabaseState(): DemoState {
   return {
-    organization: { id: "", name: "" },
+    organization: { id: "", name: "", slug: "" },
     profiles: [],
     clients: [],
     projects: [],
@@ -290,11 +298,13 @@ interface DataContextValue {
   deleteClient: (id: string) => void;
   /** Admin-only: rename the current organization. */
   updateOrganizationName: (name: string) => Promise<void>;
+  /** Admin-only: change the workspace URL slug (does not follow name renames). */
+  updateOrganizationSlug: (slug: string) => Promise<void>;
   /** Admin-only: change a profile's role (member / manager / admin). */
   updateProfileRole: (profileId: string, role: Role) => Promise<void>;
   upsertProject: (
     project: Omit<Project, "organization_id"> & { organization_id?: string },
-  ) => Promise<void>;
+  ) => Promise<Project>;
   /** Replace explicit team members for a project. */
   setProjectMembers: (
     projectId: string,
@@ -1034,6 +1044,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
           );
         }
       },
+      updateOrganizationSlug: async (slug) => {
+        const trimmed = slug.trim().toLowerCase();
+        if (!admin || !trimmed) return;
+        const next = uniqueSlug(trimmed, [], { preferred: trimmed });
+        patch((prev) => ({
+          ...prev,
+          organization: { ...prev.organization, slug: next },
+        }));
+        if (mode === "supabase" && supabaseRef.current && state.organization.id) {
+          await runRemote(() =>
+            updateOrganizationSlugRow(
+              supabaseRef.current!,
+              state.organization.id,
+              next,
+            ),
+          );
+        }
+      },
       updateProfileRole: async (profileId, role) => {
         if (!admin) return;
         const target = state.profiles.find((p) => p.id === profileId);
@@ -1057,10 +1085,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertClient: (client) => {
-        const row = withOrg(client) as Client;
+        let row = withOrg(client) as Client;
         let projectsToSync: Project[] = [];
         patch((prev) => {
-          const exists = prev.clients.some((c) => c.id === row.id);
+          const existing = prev.clients.find((c) => c.id === row.id);
+          const nameChanged = Boolean(
+            existing && existing.name !== row.name,
+          );
+          const siblingSlugs = prev.clients
+            .filter((c) => c.id !== row.id)
+            .map((c) => c.slug)
+            .filter(Boolean);
+          const slug = uniqueSlug(row.name || "client", siblingSlugs, {
+            preferred:
+              existing && !nameChanged
+                ? row.slug || existing.slug
+                : null,
+            exclude: existing?.slug,
+          });
+          row = { ...row, slug };
           const projects = prev.projects.map((p) => {
             if (p.client_id !== row.id || p.color === row.color) return p;
             return { ...p, color: row.color };
@@ -1072,7 +1115,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           );
           return {
             ...prev,
-            clients: exists
+            clients: existing
               ? prev.clients.map((c) => (c.id === row.id ? row : c))
               : [...prev.clients, row],
             projects,
@@ -1106,7 +1149,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const client = state.clients.find((c) => c.id === project.client_id);
           return client?.color ?? project.color;
         })();
-        const row = withOrg({ ...project, color: inherited }) as Project;
+        const existing = state.projects.find((p) => p.id === project.id);
+        const nameChanged = Boolean(
+          existing && existing.name !== project.name,
+        );
+        const clientChanged = Boolean(
+          existing &&
+            (existing.client_id ?? null) !== (project.client_id ?? null),
+        );
+        const siblingSlugs = state.projects
+          .filter(
+            (p) =>
+              p.id !== project.id &&
+              (p.client_id ?? null) === (project.client_id ?? null),
+          )
+          .map((p) => p.slug)
+          .filter(Boolean);
+        const slug = uniqueSlug(project.name || "project", siblingSlugs, {
+          preferred:
+            existing && !nameChanged && !clientChanged
+              ? project.slug || existing.slug
+              : null,
+          exclude: existing?.slug,
+        });
+        const row = withOrg({
+          ...project,
+          color: inherited,
+          slug,
+        }) as Project;
         // Persist remotely first so a failed "none" budget type does not
         // briefly show as saved then snap back after refresh.
         if (mode === "supabase" && supabaseRef.current) {
@@ -1123,6 +1193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               : [...prev.projects, row],
           };
         });
+        return row;
       },
       setProjectMembers: async (projectId, personIds) => {
         const orgId = state.organization.id;

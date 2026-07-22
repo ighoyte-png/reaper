@@ -92,7 +92,7 @@ export default function ReportsPage() {
   const todayKey = toDateKey(now);
 
   useEffect(() => {
-    if (!canManage && !isPublicShare) router.replace("/dashboard");
+    if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
   }, [canManage, isPublicShare, router]);
 
   const utilization = useMemo(() => {

@@ -28,7 +28,7 @@ export default function TemplatesPage() {
   const appHref = useAppHref();
 
   useEffect(() => {
-    if (!canManage && !isPublicShare) router.replace("/dashboard");
+    if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
   }, [canManage, isPublicShare, router]);
 
   if (!canManage && !isPublicShare) {

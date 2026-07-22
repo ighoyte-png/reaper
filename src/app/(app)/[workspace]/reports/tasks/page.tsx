@@ -7,7 +7,7 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { useData } from "@/lib/data/store";
-import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { toDateKey } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { Client, Project, Task } from "@/lib/types";
@@ -16,14 +16,14 @@ function TaskTable({
   tasks,
   projectById,
   clientById,
-  appHref,
+  projectHref,
   emptyLabel,
   showDue,
 }: {
   tasks: Task[];
   projectById: Map<string, Project>;
   clientById: Map<string, Client>;
-  appHref: (path: string) => string;
+  projectHref: (project: Project, search?: string) => string;
   emptyLabel: string;
   showDue: boolean;
 }) {
@@ -61,7 +61,7 @@ function TaskTable({
                 <td className="px-3 py-2.5">
                   {project ? (
                     <Link
-                      href={appHref(`/projects/${project.id}`)}
+                      href={projectHref(project)}
                       className="text-[var(--accent)] hover:underline"
                     >
                       {project.name}
@@ -104,6 +104,7 @@ function TaskTable({
 export default function TasksReportPage() {
   const { state } = useData();
   const appHref = useAppHref();
+  const projectHref = useProjectHref();
   const todayKey = toDateKey(new Date());
 
   const projectById = useMemo(
@@ -159,7 +160,7 @@ export default function TasksReportPage() {
             tasks={overdueTasks}
             projectById={projectById}
             clientById={clientById}
-            appHref={appHref}
+            projectHref={projectHref}
             emptyLabel="Nothing overdue — nice work."
             showDue
           />
@@ -177,7 +178,7 @@ export default function TasksReportPage() {
             tasks={noDueDateTasks}
             projectById={projectById}
             clientById={clientById}
-            appHref={appHref}
+            projectHref={projectHref}
             emptyLabel="Every open task has a due date."
             showDue={false}
           />
@@ -195,7 +196,7 @@ export default function TasksReportPage() {
             tasks={recentlyCompleted}
             projectById={projectById}
             clientById={clientById}
-            appHref={appHref}
+            projectHref={projectHref}
             emptyLabel="No completed tasks yet."
             showDue
           />

@@ -62,6 +62,13 @@ function mapProject(row: Record<string, unknown>): Project {
     organization_id: String(row.organization_id),
     client_id: row.client_id ? String(row.client_id) : null,
     name: String(row.name ?? ""),
+    slug:
+      (row.slug ? String(row.slug) : "") ||
+      String(row.name ?? "project")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") ||
+      String(row.id).slice(0, 8),
     status: row.status as Project["status"],
     priority: num(row.priority, 3),
     color: String(row.color ?? "#3B82F6"),
@@ -86,6 +93,13 @@ function mapClient(row: Record<string, unknown>): Client {
     id: String(row.id),
     organization_id: String(row.organization_id),
     name: String(row.name ?? ""),
+    slug:
+      (row.slug ? String(row.slug) : "") ||
+      String(row.name ?? "client")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") ||
+      String(row.id).slice(0, 8),
     notes: String(row.notes ?? ""),
     color: String(row.color ?? "#64748B"),
     status,
@@ -297,7 +311,7 @@ export function mapLeaveDay(row: Record<string, unknown>): LeaveDay {
 
 function emptyWorkspace(): DemoState {
   return {
-    organization: { id: "", name: "" },
+    organization: { id: "", name: "", slug: "" },
     profiles: [],
     clients: [],
     projects: [],
@@ -571,6 +585,13 @@ export async function loadOrgWorkspace(
     organization: {
       id: organization.id,
       name: organization.name,
+      slug:
+        String((organization as { slug?: string }).slug ?? "") ||
+        String(organization.name ?? "workspace")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") ||
+        String(organization.id).slice(0, 8),
       share_enabled: Boolean(
         (organization as { share_enabled?: boolean }).share_enabled,
       ),
@@ -640,6 +661,18 @@ export async function updateOrganizationNameRow(
   if (error) throw error;
 }
 
+export async function updateOrganizationSlugRow(
+  supabase: SupabaseClient,
+  orgId: string,
+  slug: string,
+) {
+  const { error } = await supabase
+    .from("organizations")
+    .update({ slug })
+    .eq("id", orgId);
+  if (error) throw error;
+}
+
 export async function updateProfileRoleRow(
   supabase: SupabaseClient,
   profileId: string,
@@ -656,30 +689,39 @@ export async function upsertClientRow(
   supabase: SupabaseClient,
   client: Client,
 ) {
-  const payload = {
+  const base = {
     id: client.id,
     organization_id: client.organization_id,
     name: client.name,
     notes: client.notes,
     color: client.color,
-    status: client.status ?? "active",
   };
-  const { error } = await supabase.from("clients").upsert(payload);
+  const withSlug = { ...base, slug: client.slug };
+  const withStatus = { ...withSlug, status: client.status ?? "active" };
+
+  let { error } = await supabase.from("clients").upsert(withStatus);
   if (!error) return;
 
+  const missingSlug =
+    /Could not find the 'slug' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /slug/i.test(error.message));
   const missingStatus =
     /Could not find the 'status' column/i.test(error.message) ||
     (error.code === "PGRST204" && /status/i.test(error.message));
-  if (missingStatus) {
-    const { status: _s, ...rest } = payload;
-    const retry = await supabase.from("clients").upsert(rest);
-    if (!retry.error) {
-      console.warn(
-        "clients.status missing — apply supabase/migrations/015_pm_execution.sql",
-      );
-      return;
-    }
-    throw retry.error;
+
+  if (missingSlug || missingStatus) {
+    console.warn(
+      missingSlug
+        ? "clients.slug missing — apply supabase/migrations/037_slugs.sql"
+        : "clients.status missing — apply supabase/migrations/015_pm_execution.sql",
+    );
+    const payload = missingSlug
+      ? missingStatus
+        ? base
+        : { ...base, status: client.status ?? "active" }
+      : withSlug;
+    ({ error } = await supabase.from("clients").upsert(payload));
+    if (!error) return;
   }
   throw error;
 }
@@ -705,6 +747,7 @@ export async function upsertProjectRow(
     organization_id: project.organization_id,
     client_id: project.client_id,
     name: project.name,
+    slug: project.slug,
     status: project.status,
     priority: project.priority,
     color: project.color,
@@ -729,6 +772,10 @@ export async function upsertProjectRow(
     /Could not find the 'share_(enabled|token)' column/i.test(message) ||
     (code === "PGRST204" && /share_(enabled|token)/i.test(message));
 
+  const missingSlug = (message: string, code?: string) =>
+    /Could not find the 'slug' column/i.test(message) ||
+    (code === "PGRST204" && /slug/i.test(message));
+
   const missingManager = (message: string, code?: string) =>
     /Could not find the 'manager_person_id' column/i.test(message) ||
     (code === "PGRST204" && /manager_person_id/i.test(message));
@@ -743,6 +790,19 @@ export async function upsertProjectRow(
     (/null value/i.test(message) || /not-null|not null/i.test(message));
 
   let { error } = await supabase.from("projects").upsert(payload);
+
+  // Retry without slug if migration 037 is not applied yet.
+  if (error && missingSlug(error.message, error.code)) {
+    const { slug: _s, ...rest } = payload;
+    const retry = await supabase.from("projects").upsert(rest);
+    if (!retry.error) {
+      console.warn(
+        "projects.slug missing — apply supabase/migrations/037_slugs.sql",
+      );
+      return;
+    }
+    error = retry.error;
+  }
 
   // Retry without manager_person_id if migration 034 is not applied yet.
   if (error && missingManager(error.message, error.code)) {

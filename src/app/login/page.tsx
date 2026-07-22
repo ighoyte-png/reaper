@@ -12,6 +12,7 @@ import {
   readUserViewPrefs,
   resolveDefaultStartPage,
 } from "@/lib/user-view-prefs";
+import { workspacePath } from "@/lib/paths";
 
 function LoginForm() {
   const {
@@ -25,6 +26,7 @@ function LoginForm() {
     authError,
     profile,
     canManage,
+    state,
   } = useData();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -57,12 +59,22 @@ function LoginForm() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!ready || !isAuthenticated) return;
+    if (!ready || !isAuthenticated || !state.organization.slug) return;
     const prefs = readUserViewPrefs(profile?.id);
     router.replace(
-      resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+      workspacePath(
+        state.organization.slug,
+        resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+      ),
     );
-  }, [ready, isAuthenticated, profile?.id, canManage, router]);
+  }, [
+    ready,
+    isAuthenticated,
+    profile?.id,
+    canManage,
+    router,
+    state.organization.slug,
+  ]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
