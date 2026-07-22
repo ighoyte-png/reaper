@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
@@ -355,44 +355,41 @@ export default function ProjectsPage() {
               >
                 <h2 className="mb-3 text-sm font-semibold">Project Manager</h2>
                 <ul className="flex flex-wrap gap-x-4 gap-y-2">
-                  <li>
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={managerFilter === "all"}
-                      onClick={() => setManagerFilter("all")}
-                      className={cn(
-                        "flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm transition-colors",
-                        managerFilter === "all"
-                          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
-                          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
-                      )}
-                    >
-                      All
-                    </button>
-                  </li>
-                  {managerTabs.map((person) => (
-                    <li key={person.id}>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={managerFilter === person.id}
-                        onClick={() =>
-                          setManagerFilter(
-                            managerFilter === person.id ? "all" : person.id,
-                          )
-                        }
-                        className={cn(
-                          "rounded-md px-1.5 py-1 text-left transition-colors",
-                          managerFilter === person.id
-                            ? "bg-[var(--bg-elevated)]"
-                            : "hover:bg-[var(--row-hover)]",
-                        )}
-                      >
-                        <ProjectManagerPerson person={person} />
-                      </button>
-                    </li>
-                  ))}
+                  {managerTabs.map((person) => {
+                    const selected = managerFilter === person.id;
+                    return (
+                      <li key={person.id}>
+                        <div
+                          className={cn(
+                            "flex items-center gap-1 rounded-md px-1.5 py-1 transition-colors",
+                            selected
+                              ? "bg-[var(--bg-elevated)]"
+                              : "hover:bg-[var(--row-hover)]",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            role="tab"
+                            aria-selected={selected}
+                            onClick={() => setManagerFilter(person.id)}
+                            className="min-w-0 cursor-pointer text-left"
+                          >
+                            <ProjectManagerPerson person={person} />
+                          </button>
+                          {selected ? (
+                            <button
+                              type="button"
+                              className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                              aria-label={`Clear ${person.name} filter`}
+                              onClick={() => setManagerFilter("all")}
+                            >
+                              <X size={14} strokeWidth={2} />
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             ) : null}
