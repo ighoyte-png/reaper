@@ -2,6 +2,7 @@
 
 import { ShareNavbar } from "@/components/nav/share-navbar";
 import { MobileNavProvider } from "@/components/nav/mobile-nav";
+import { ViewAsBanner } from "@/components/nav/view-as-banner";
 import { ViewAsProvider } from "@/lib/view-as";
 
 export function ShareShell({ children }: { children: React.ReactNode }) {
@@ -10,6 +11,7 @@ export function ShareShell({ children }: { children: React.ReactNode }) {
       <ViewAsProvider>
         <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
           <ShareNavbar />
+          <ViewAsBanner />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             {children}
           </div>

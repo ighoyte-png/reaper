@@ -74,7 +74,8 @@ export default function ProjectsPage() {
     isPublicShare,
     myPerson,
   } = useData();
-  const { effectiveCanManage, effectivePersonId } = useViewAs();
+  const { effectiveCanManage, effectivePersonId, showingAsManager } =
+    useViewAs();
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
   const { push } = useToast();
@@ -92,7 +93,7 @@ export default function ProjectsPage() {
   const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
 
   const visibleProjects = useMemo(() => {
-    if (canManage || isPublicShare) return state.projects;
+    if (showingAsManager) return state.projects;
     if (!scopePersonId) return [];
     const ids = projectIdsForPerson(
       scopePersonId,
@@ -102,8 +103,7 @@ export default function ProjectsPage() {
     );
     return state.projects.filter((p) => ids.has(p.id));
   }, [
-    canManage,
-    isPublicShare,
+    showingAsManager,
     scopePersonId,
     state.projects,
     state.assignments,

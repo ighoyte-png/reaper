@@ -148,17 +148,11 @@ export default function DashboardPage() {
         project_id: o.project_id,
         hours_per_day: o.hours_per_day,
       }));
-    // Org dashboard / public share: all people. Members: self (or View As).
-    if (isPublicShare || showingAsManager) return today;
+    // Org dashboard / public share: all people. Members / View As: one person.
+    if (showingAsManager) return today;
     if (!personalPersonId) return [];
     return today.filter((a) => a.person_id === personalPersonId);
-  }, [
-    state.assignments,
-    todayKey,
-    isPublicShare,
-    showingAsManager,
-    personalPersonId,
-  ]);
+  }, [state.assignments, todayKey, showingAsManager, personalPersonId]);
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
@@ -173,10 +167,11 @@ export default function DashboardPage() {
 
   /** Tasks for Task Pulse — personal even when the rest of the dash is org-wide. */
   const pulseTasks = useMemo(() => {
-    if (isPublicShare) return state.tasks;
+    // Public org view has no signed-in person; show all until View As is set.
+    if (isPublicShare && showingAsManager) return state.tasks;
     if (!personalPersonId) return [];
     return state.tasks.filter((t) => t.assignee_person_id === personalPersonId);
-  }, [state.tasks, isPublicShare, personalPersonId]);
+  }, [state.tasks, isPublicShare, showingAsManager, personalPersonId]);
 
   const overdueTasks = useMemo(
     () =>
@@ -287,22 +282,16 @@ export default function DashboardPage() {
     pulseHighPriorityTasks.length;
 
   const bulletins = useMemo(() => {
-    const filtered =
-      showingAsManager || isPublicShare
-        ? state.bulletins
-        : state.bulletins.filter((b) =>
-            bulletinVisibleToPerson(b, personalPersonId),
-          );
+    const filtered = showingAsManager
+      ? state.bulletins
+      : state.bulletins.filter((b) =>
+          bulletinVisibleToPerson(b, personalPersonId),
+        );
     return [...filtered].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.created_at.localeCompare(a.created_at);
     });
-  }, [
-    state.bulletins,
-    showingAsManager,
-    isPublicShare,
-    personalPersonId,
-  ]);
+  }, [state.bulletins, showingAsManager, personalPersonId]);
 
   const atRisk = showOrgDashboard
     ? state.projects
@@ -565,7 +554,7 @@ export default function DashboardPage() {
   ]);
 
   const viewAsControl =
-    canManage ? (
+    canManage || isPublicShare ? (
       <div className="flex items-center gap-2">
         <label className="sr-only" htmlFor="view-as-person">
           View as
@@ -610,9 +599,12 @@ export default function DashboardPage() {
               identityPerson={identityPerson}
               viewAsPerson={viewAsPerson}
               profile={profile}
-              hideIdentity={isPublicShare}
+              publicView={isPublicShare}
+              organizationName={state.organization.name}
               viewAsControl={viewAsControl}
-              showViewingAsHint={Boolean(viewAsPerson) && canManage}
+              showViewingAsHint={
+                Boolean(viewAsPerson) && (canManage || isPublicShare)
+              }
             />
           </div>
 
@@ -784,7 +776,7 @@ export default function DashboardPage() {
               projects={state.projects}
               clients={state.clients}
               people={sortedPeople}
-              orgMode={showingAsManager || isPublicShare}
+              orgMode={showingAsManager}
               fallbackPerson={focusPerson}
               defaultPersonId={personalPersonId}
               appHref={appHref}
@@ -1094,38 +1086,45 @@ function DashboardIdentityCard({
   identityPerson,
   viewAsPerson,
   profile,
-  hideIdentity = false,
+  publicView = false,
+  organizationName,
   viewAsControl,
   showViewingAsHint,
 }: {
   identityPerson: Person | null | undefined;
   viewAsPerson: Person | null | undefined;
   profile: Profile | null;
-  hideIdentity?: boolean;
+  publicView?: boolean;
+  organizationName?: string;
   viewAsControl: ReactNode;
   showViewingAsHint?: boolean;
 }) {
-  const displayName =
-    identityPerson?.name ??
-    profile?.full_name ??
-    profile?.email ??
-    "Signed in";
-  const displayTitle = viewAsPerson
-    ? identityPerson?.role_title || null
-    : identityPerson?.role_title
-      ? identityPerson.role_title
-      : profile?.role
-        ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
-        : null;
-  const showIdentity =
-    !hideIdentity && Boolean(identityPerson || profile || viewAsControl);
+  const isPublicIdentity = publicView && !viewAsPerson;
+  const displayName = isPublicIdentity
+    ? "Public view"
+    : (identityPerson?.name ??
+      profile?.full_name ??
+      profile?.email ??
+      "Signed in");
+  const displayTitle = isPublicIdentity
+    ? (organizationName || "Read only")
+    : viewAsPerson
+      ? identityPerson?.role_title || null
+      : identityPerson?.role_title
+        ? identityPerson.role_title
+        : profile?.role
+          ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
+          : null;
+  const showIdentity = Boolean(
+    identityPerson || profile || viewAsControl || isPublicIdentity,
+  );
   if (!showIdentity) return null;
 
   return (
     <section className={panelClass()}>
       <div className="flex flex-col items-start gap-3">
         <PersonAvatar
-          avatarUrl={identityPerson?.avatar_url}
+          avatarUrl={isPublicIdentity ? null : identityPerson?.avatar_url}
           name={displayName}
           size="xl"
         />
@@ -1136,7 +1135,11 @@ function DashboardIdentityCard({
               {displayTitle}
             </div>
           ) : null}
-          {!identityPerson && profile ? (
+          {isPublicIdentity ? (
+            <div className="mt-1 text-[11px] text-[var(--text-muted)]">
+              Read only · not signed in
+            </div>
+          ) : !identityPerson && profile ? (
             <div className="mt-1 text-[11px] text-[var(--text-muted)]">
               Account only · not linked to a team member
             </div>

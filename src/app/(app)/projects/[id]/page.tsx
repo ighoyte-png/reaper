@@ -75,10 +75,10 @@ export default function ProjectDetailPage() {
     exportProjectAsTemplate,
     updateProjectShare,
     newId,
-    isPublicShare,
     myPerson,
   } = useData();
-  const { effectiveCanManage, effectivePersonId } = useViewAs();
+  const { effectiveCanManage, effectivePersonId, showingAsManager } =
+    useViewAs();
   const canManage = effectiveCanManage;
   const { push } = useToast();
   const [editing, setEditing] = useState(false);
@@ -104,7 +104,8 @@ export default function ProjectDetailPage() {
   const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
 
   const memberCanAccess = useMemo(() => {
-    if (canManage || isPublicShare || !project) return true;
+    if (!project) return true;
+    if (showingAsManager) return true;
     if (!scopePersonId) return false;
     return projectIdsForPerson(
       scopePersonId,
@@ -113,8 +114,7 @@ export default function ProjectDetailPage() {
       state.project_members,
     ).has(project.id);
   }, [
-    canManage,
-    isPublicShare,
+    showingAsManager,
     project,
     scopePersonId,
     state.assignments,

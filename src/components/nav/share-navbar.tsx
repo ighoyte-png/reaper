@@ -6,6 +6,7 @@ import { Menu } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { shareNavLinks } from "@/components/nav/nav-links";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 
@@ -58,11 +59,19 @@ export function ShareNavbar() {
             );
           })}
         </nav>
-        <div className="ml-auto hidden truncate text-right text-xs text-[var(--text-muted)] sm:block">
-          <div className="truncate font-medium text-[var(--text)]">
-            {state.organization.name}
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className="hidden min-w-0 truncate text-right text-xs text-[var(--text-muted)] sm:block">
+            <div className="truncate font-medium text-[var(--text)]">
+              {state.organization.name}
+            </div>
+            Public view · read only
           </div>
-          Public view · read only
+          <ThemeToggle
+            className={cn(
+              navLinkClass(false),
+              "h-auto w-auto border-0 bg-transparent",
+            )}
+          />
         </div>
       </header>
 
@@ -118,11 +127,17 @@ export function ShareNavbar() {
               );
             })}
           </nav>
-          <div className="border-t border-[var(--border)] px-4 py-3 text-xs text-[var(--text-muted)]">
-            <div className="truncate font-medium text-[var(--text)]">
-              {state.organization.name}
+          <div className="space-y-2 border-t border-[var(--border)] p-2">
+            <div className="flex items-center justify-between gap-2 rounded-md px-2.5 py-2">
+              <span className="text-sm text-[var(--text-muted)]">Theme</span>
+              <ThemeToggle />
             </div>
-            Public view · read only
+            <div className="px-2.5 pb-1 text-xs text-[var(--text-muted)]">
+              <div className="truncate font-medium text-[var(--text)]">
+                {state.organization.name}
+              </div>
+              Public view · read only
+            </div>
           </div>
         </div>
       </div>

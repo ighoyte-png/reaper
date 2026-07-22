@@ -4,10 +4,9 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AppNavbar } from "@/components/nav/app-navbar";
 import { MobileNavProvider } from "@/components/nav/mobile-nav";
+import { ViewAsBanner } from "@/components/nav/view-as-banner";
 import { useData } from "@/lib/data/store";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
-import { sortPeopleByName } from "@/lib/domain/sorting";
-import { Select } from "@/components/ui/select";
 
 /** Paths members cannot access — redirect here while Viewing As. */
 function isManageOnlyPath(pathname: string): boolean {
@@ -88,34 +87,4 @@ function ViewAsRouteGuard() {
   }, [viewAsPersonId, pathname, router]);
 
   return null;
-}
-
-function ViewAsBanner() {
-  const { canManage, state } = useData();
-  const { viewAsPersonId, setViewAsPersonId, clearViewAs } = useViewAs();
-
-  if (!canManage || !viewAsPersonId) return null;
-
-  const people = sortPeopleByName(state.people);
-
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-1.5 text-sm">
-      <span className="font-medium text-[var(--accent)]">Viewing as</span>
-      <Select
-        searchable
-        className="mt-0 h-7 max-w-[200px] py-0 text-xs"
-        value={viewAsPersonId}
-        onChange={(v) => setViewAsPersonId(v || null)}
-        aria-label="View as user"
-        options={people.map((p) => ({ value: p.id, label: p.name }))}
-      />
-      <button
-        type="button"
-        className="ml-auto cursor-pointer text-xs font-medium text-[var(--accent)] hover:underline"
-        onClick={clearViewAs}
-      >
-        Exit
-      </button>
-    </div>
-  );
 }
