@@ -117,9 +117,11 @@ export default function ProjectsPage() {
   }, [visibleProjects, statusFilter]);
 
   const managerTabs = useMemo(() => {
-    if (!showProjectManagerUi(statusScopedProjects)) return [];
+    // Build from all visible projects (not status-scoped) so the filter
+    // stays available when a status tab has no PM-assigned projects.
+    if (!showProjectManagerUi(visibleProjects)) return [];
     const ids = new Set<string>();
-    for (const p of statusScopedProjects) {
+    for (const p of visibleProjects) {
       if (p.manager_person_id) ids.add(p.manager_person_id);
     }
     return state.people
@@ -127,7 +129,7 @@ export default function ProjectsPage() {
       .sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
       );
-  }, [statusScopedProjects, state.people]);
+  }, [visibleProjects, state.people]);
 
   const showManagers = managerTabs.length >= 2;
 
