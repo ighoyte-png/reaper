@@ -7,6 +7,7 @@ import { LogOut, Menu, Settings } from "lucide-react";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
+import { PlatformAdminNavLink } from "@/components/nav/platform-admin-link";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -144,6 +145,9 @@ export function AppNavbar() {
               "hidden h-auto w-auto border-0 bg-transparent sm:inline-flex",
             )}
           />
+          <PlatformAdminNavLink
+            className={cn(navLinkClass(false), "hidden sm:inline-flex")}
+          />
           {showSettings ? (
             <Link
               href={appHref("/settings")}
@@ -234,6 +238,10 @@ export function AppNavbar() {
               <span className="text-sm text-[var(--text-muted)]">Theme</span>
               <ThemeToggle />
             </div>
+            <PlatformAdminNavLink
+              onNavigate={() => setOpen(false)}
+              className="flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            />
             {showSettings ? (
               <Link
                 href={appHref("/settings")}

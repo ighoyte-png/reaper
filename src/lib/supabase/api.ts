@@ -592,6 +592,8 @@ export async function loadOrgWorkspace(
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "") ||
         String(organization.id).slice(0, 8),
+      disabled_at:
+        (organization as { disabled_at?: string | null }).disabled_at ?? null,
       share_enabled: Boolean(
         (organization as { share_enabled?: boolean }).share_enabled,
       ),

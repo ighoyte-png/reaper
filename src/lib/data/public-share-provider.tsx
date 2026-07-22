@@ -135,6 +135,7 @@ export function PublicShareProvider({
       myPerson: null,
       canManage: false,
       isAuthenticated: true,
+      isPlatformOnly: false,
       isPublicShare: true,
       shareBasePath,
       authError: null,

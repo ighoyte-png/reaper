@@ -21,6 +21,7 @@ function LoginForm() {
     signup,
     requestPasswordReset,
     isAuthenticated,
+    isPlatformOnly,
     ready,
     mode,
     authError,
@@ -38,8 +39,31 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+  const [allowWorkspaceSignup, setAllowWorkspaceSignup] = useState(true);
 
   useDocumentTitle(tab === "signup" ? "Sign up" : "Log in");
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/platform/settings");
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          allow_workspace_signup?: boolean;
+        };
+        if (cancelled) return;
+        const allow = body.allow_workspace_signup !== false;
+        setAllowWorkspaceSignup(allow);
+        if (!allow) setTab("login");
+      } catch {
+        /* default allow */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -59,7 +83,11 @@ function LoginForm() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (!ready || !isAuthenticated || !state.organization.slug) return;
+    if (!ready || !isAuthenticated) return;
+    if (isPlatformOnly || !state.organization.slug) {
+      if (isPlatformOnly) router.replace("/admin");
+      return;
+    }
     const prefs = readUserViewPrefs(profile?.id);
     router.replace(
       workspacePath(
@@ -70,6 +98,7 @@ function LoginForm() {
   }, [
     ready,
     isAuthenticated,
+    isPlatformOnly,
     profile?.id,
     canManage,
     router,
@@ -84,6 +113,9 @@ function LoginForm() {
       if (tab === "login") {
         await login(email.trim(), password);
       } else {
+        if (!allowWorkspaceSignup) {
+          throw new Error("Workspace creation is disabled");
+        }
         const result = await signup(
           email.trim(),
           password,
@@ -155,14 +187,22 @@ function LoginForm() {
             >
               Sign in
             </button>
-            <button
-              type="button"
-              className={`h-8 flex-1 rounded ${tab === "signup" ? "bg-[var(--bg-elevated)] font-medium" : "text-[var(--text-muted)]"}`}
-              onClick={() => setTab("signup")}
-            >
-              Create workspace
-            </button>
+            {allowWorkspaceSignup ? (
+              <button
+                type="button"
+                className={`h-8 flex-1 rounded ${tab === "signup" ? "bg-[var(--bg-elevated)] font-medium" : "text-[var(--text-muted)]"}`}
+                onClick={() => setTab("signup")}
+              >
+                Create workspace
+              </button>
+            ) : null}
           </div>
+          {!allowWorkspaceSignup ? (
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              New workspace creation is currently closed. Sign in to an existing
+              account.
+            </p>
+          ) : null}
 
           <form onSubmit={onSubmit} className="mt-4 space-y-3">
             {tab === "signup" && (

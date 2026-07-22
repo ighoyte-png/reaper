@@ -103,6 +103,8 @@ export function ConfirmDialog({
   tone = "danger",
   onConfirm,
   onCancel,
+  children,
+  confirmDisabled = false,
 }: {
   title: string;
   message: string;
@@ -111,6 +113,8 @@ export function ConfirmDialog({
   tone?: "danger" | "accent";
   onConfirm: () => void;
   onCancel: () => void;
+  children?: ReactNode;
+  confirmDisabled?: boolean;
 }) {
   const mounted = useMounted();
   if (!mounted) return null;
@@ -120,6 +124,7 @@ export function ConfirmDialog({
       <div className="w-full max-w-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl">
         <h2 className="text-sm font-semibold">{title}</h2>
         <p className="mt-2 text-sm text-[var(--text-muted)]">{message}</p>
+        {children}
         <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" size="lg" onClick={onCancel}>
             Cancel
@@ -127,6 +132,7 @@ export function ConfirmDialog({
           <Button
             variant={tone === "accent" ? "primary" : "destructive"}
             size="lg"
+            disabled={confirmDisabled}
             onClick={onConfirm}
           >
             {confirmLabel}

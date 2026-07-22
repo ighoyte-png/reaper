@@ -10,7 +10,14 @@ import {
 import { workspacePath } from "@/lib/paths";
 
 export default function Home() {
-  const { ready, isAuthenticated, profile, canManage, state } = useData();
+  const {
+    ready,
+    isAuthenticated,
+    isPlatformOnly,
+    profile,
+    canManage,
+    state,
+  } = useData();
   const router = useRouter();
 
   useEffect(() => {
@@ -19,7 +26,10 @@ export default function Home() {
       router.replace("/login");
       return;
     }
-    if (!state.organization.slug) return;
+    if (isPlatformOnly || !state.organization.slug) {
+      if (isPlatformOnly) router.replace("/admin");
+      return;
+    }
     const prefs = readUserViewPrefs(profile?.id);
     const href = workspacePath(
       state.organization.slug,
@@ -29,6 +39,7 @@ export default function Home() {
   }, [
     ready,
     isAuthenticated,
+    isPlatformOnly,
     profile?.id,
     canManage,
     router,

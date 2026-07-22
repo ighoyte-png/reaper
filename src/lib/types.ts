@@ -31,6 +31,8 @@ export interface Organization {
   name: string;
   /** URL segment for /{workspace}/… */
   slug: string;
+  /** Soft-disable: members cannot use the workspace when set. */
+  disabled_at?: string | null;
   /** When true, /share/[token] serves a read-only view. Token is not always loaded client-side. */
   share_enabled?: boolean;
   /** Present in demo local state; supabase managers load token via /api/share. */

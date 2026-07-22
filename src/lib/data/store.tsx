@@ -178,6 +178,7 @@ function loadDemoState(): DemoState {
           parsed.organization?.slug ||
           seed.organization.slug ||
           uniqueSlug(parsed.organization?.name || seed.organization.name, []),
+        disabled_at: parsed.organization?.disabled_at ?? null,
         share_enabled: Boolean(parsed.organization?.share_enabled),
         share_token: parsed.organization?.share_token ?? null,
       },
@@ -256,6 +257,11 @@ interface DataContextValue {
   myPerson: Person | null;
   canManage: boolean;
   isAuthenticated: boolean;
+  /**
+   * Signed-in platform admin with no org profile (manage via /admin only).
+   * False for normal workspace members, including platform admins who Entered a workspace.
+   */
+  isPlatformOnly: boolean;
   /** True when viewing /share/[token] (read-only public board). */
   isPublicShare: boolean;
   /** Prefix for in-app links when isPublicShare, e.g. /share/abc. */
@@ -464,6 +470,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
   const [ready, setReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  /** Auth session is a platform admin with no workspace profile. */
+  const [platformOnly, setPlatformOnly] = useState(false);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const orgId = state.organization.id || ORG_ID;
   /** Recently written row ids — ignore realtime echoes of our own optimistic writes. */
@@ -503,11 +511,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
       data: { user },
     } = await client.auth.getUser();
     if (!user) {
+      setPlatformOnly(false);
       setState(emptySupabaseState());
       return;
     }
-    // Signup with email confirmation never bootstraps until first login.
+
+    // Existing profile → normal workspace load (may also be a platform admin).
+    const { data: existingProfile, error: profileLookupError } = await client
+      .from("profiles")
+      .select("id")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profileLookupError) throw profileLookupError;
+
+    if (existingProfile) {
+      setPlatformOnly(false);
+      const workspace = await fetchWorkspace(client, user.id);
+      setState(workspace);
+      return;
+    }
+
+    // No profile: allowlisted platform admins stay workspace-free.
+    let isPlatformAdmin = false;
+    try {
+      const meRes = await fetch("/api/platform/me");
+      if (meRes.ok) {
+        const body = (await meRes.json()) as { isPlatformAdmin?: boolean };
+        isPlatformAdmin = Boolean(body.isPlatformAdmin);
+      }
+    } catch {
+      /* treat as non-admin */
+    }
+
+    if (isPlatformAdmin) {
+      setPlatformOnly(true);
+      setState({ ...emptySupabaseState(), sessionProfileId: null });
+      return;
+    }
+
+    // First login for a normal user — create their workspace.
     await ensureProfileForUser(client, user);
+    setPlatformOnly(false);
     const workspace = await fetchWorkspace(client, user.id);
     setState(workspace);
   }, []);
@@ -545,6 +589,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } = client.auth.onAuthStateChange(async (event, nextSession) => {
           if (cancelled) return;
           if (event === "SIGNED_OUT" || !nextSession?.user) {
+            setPlatformOnly(false);
             setState(emptySupabaseState());
             return;
           }
@@ -803,7 +848,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       profile,
       myPerson,
       canManage: manage,
-      isAuthenticated: Boolean(profile),
+      isAuthenticated: Boolean(profile) || platformOnly,
+      isPlatformOnly: platformOnly,
       isPublicShare: false,
       shareBasePath: null,
       authError,
@@ -1012,6 +1058,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         const client = supabaseRef.current ?? createClient();
         await client.auth.signOut();
+        setPlatformOnly(false);
         setState(emptySupabaseState());
       },
       resetDemo: async () => {
@@ -2425,6 +2472,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       myPerson,
       manage,
       admin,
+      platformOnly,
       authError,
       patch,
       withOrg,
