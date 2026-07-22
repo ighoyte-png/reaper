@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
-import { Search } from "lucide-react";
+import { ExternalLink, Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
@@ -30,6 +30,7 @@ import {
   sortClientsByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
+import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
 import type { Client, Project, ProjectStatus } from "@/lib/types";
 
@@ -489,6 +490,7 @@ export default function ProjectsPage() {
                           project={project}
                           href={appHref(`/projects/${project.id}`)}
                           showManager={showManagers}
+                          showClientPortal={isPublicShare}
                           canArchive={canManage}
                           onToggleArchive={() => {
                             upsertProject({
@@ -674,12 +676,14 @@ function ProjectCard({
   project,
   href,
   showManager,
+  showClientPortal,
   canArchive,
   onToggleArchive,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
+  showClientPortal?: boolean;
   canArchive?: boolean;
   onToggleArchive?: () => void;
 }) {
@@ -691,6 +695,13 @@ function ProjectCard({
   const manager =
     showManager && project.manager_person_id
       ? state.people.find((p) => p.id === project.manager_person_id)
+      : null;
+  const portalUrl =
+    showClientPortal && project.share_enabled && project.share_token
+      ? publicProjectShareUrl(
+          typeof window !== "undefined" ? window.location.origin : "",
+          project.share_token,
+        )
       : null;
 
   return (
@@ -740,6 +751,18 @@ function ProjectCard({
           </div>
         ) : null}
       </div>
+      {portalUrl ? (
+        <a
+          href={portalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="relative z-[1] mt-3 inline-flex h-7 items-center gap-1 self-start rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--accent)] hover:bg-[var(--bg-elevated)]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <ExternalLink size={11} />
+          Client portal
+        </a>
+      ) : null}
       {canArchive && onToggleArchive ? (
         <button
           type="button"

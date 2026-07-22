@@ -75,6 +75,7 @@ export default function ProjectDetailPage() {
     exportProjectAsTemplate,
     updateProjectShare,
     newId,
+    isPublicShare,
     myPerson,
   } = useData();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
@@ -539,18 +540,77 @@ export default function ProjectDetailPage() {
               </Link>
             </section>
 
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <Link2 size={14} className="text-[var(--text-muted)]" />
-                <h2 className="text-sm font-semibold">Client Portal</h2>
-              </div>
-              {canManage ? (
-                shareResult ? (
+            {canManage || (isPublicShare && shareResult) ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <Link2 size={14} className="text-[var(--text-muted)]" />
+                  <h2 className="text-sm font-semibold">Client Portal</h2>
+                </div>
+                {canManage ? (
+                  shareResult ? (
+                    <div className="space-y-2">
+                      <code className="block truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
+                        {shareResult}
+                      </code>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(shareResult);
+                            push("Portal link copied");
+                          }}
+                        >
+                          <Copy size={12} /> Copy
+                        </button>
+                        <button
+                          type="button"
+                          className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                          onClick={() => {
+                            updateProjectShare(project.id, "rotate");
+                            push("Portal link rotated");
+                          }}
+                        >
+                          Rotate
+                        </button>
+                        <button
+                          type="button"
+                          className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                          onClick={() => {
+                            updateProjectShare(project.id, "disable");
+                            push("Portal disabled");
+                          }}
+                        >
+                          Disable
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                      onClick={() => {
+                        updateProjectShare(project.id, "enable");
+                        push("Client portal enabled");
+                      }}
+                    >
+                      Enable public link
+                    </button>
+                  )
+                ) : shareResult ? (
                   <div className="space-y-2">
                     <code className="block truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
                       {shareResult}
                     </code>
                     <div className="flex flex-wrap gap-1.5">
+                      <a
+                        href={shareResult}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex h-7 items-center rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                      >
+                        Open portal
+                      </a>
                       <button
                         type="button"
                         className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
@@ -561,46 +621,11 @@ export default function ProjectDetailPage() {
                       >
                         <Copy size={12} /> Copy
                       </button>
-                      <button
-                        type="button"
-                        className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-                        onClick={() => {
-                          updateProjectShare(project.id, "rotate");
-                          push("Portal link rotated");
-                        }}
-                      >
-                        Rotate
-                      </button>
-                      <button
-                        type="button"
-                        className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-                        onClick={() => {
-                          updateProjectShare(project.id, "disable");
-                          push("Portal disabled");
-                        }}
-                      >
-                        Disable
-                      </button>
                     </div>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
-                    onClick={() => {
-                      updateProjectShare(project.id, "enable");
-                      push("Client portal enabled");
-                    }}
-                  >
-                    Enable public link
-                  </button>
-                )
-              ) : (
-                <p className="text-xs text-[var(--text-muted)]">
-                  Portal managed by admins.
-                </p>
-              )}
-            </section>
+                ) : null}
+              </section>
+            ) : null}
           </div>
         </div>
       </div>
