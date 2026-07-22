@@ -27,35 +27,37 @@ export function ProjectManagerPerson({
 }: {
   person: Pick<Person, "name" | "role_title" | "avatar_url">;
   size?: "team" | "row" | "sm" | "lg";
-  /** Show the shared “Project Manager” pill beside the person. */
+  /** Show the shared “Project Manager” pill below the person. */
   showTag?: boolean;
   className?: string;
   nameClassName?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 flex-wrap items-center gap-2", className)}>
-      <PersonAvatar
-        avatarUrl={person.avatar_url}
-        name={person.name}
-        size={size}
-        fallback="initials"
-      />
-      <div className="min-w-0 text-left">
-        <div
-          className={cn(
-            "truncate text-left text-sm font-medium leading-tight",
-            nameClassName,
-          )}
-        >
-          {person.name}
-        </div>
-        {person.role_title ? (
-          <div className="truncate text-left text-xs text-[var(--text-muted)]">
-            {person.role_title}
+    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
+      <div className="flex min-w-0 items-center gap-2">
+        <PersonAvatar
+          avatarUrl={person.avatar_url}
+          name={person.name}
+          size={size}
+          fallback="initials"
+        />
+        <div className="min-w-0 text-left">
+          <div
+            className={cn(
+              "truncate text-left text-sm font-medium leading-tight",
+              nameClassName,
+            )}
+          >
+            {person.name}
           </div>
-        ) : null}
+          {person.role_title ? (
+            <div className="truncate text-left text-xs text-[var(--text-muted)]">
+              {person.role_title}
+            </div>
+          ) : null}
+        </div>
       </div>
-      {showTag ? <ProjectManagerTag /> : null}
+      {showTag ? <ProjectManagerTag className="self-start" /> : null}
     </div>
   );
 }

@@ -361,10 +361,10 @@ export default function ProjectsPage() {
                       <li key={person.id}>
                         <div
                           className={cn(
-                            "flex items-center gap-1 rounded-md px-1.5 py-1 transition-colors",
+                            "flex items-center gap-1 rounded-md border px-1.5 py-1 transition-colors",
                             selected
-                              ? "bg-[var(--bg-elevated)]"
-                              : "hover:bg-[var(--row-hover)]",
+                              ? "border-[var(--text)] bg-[var(--bg-elevated)]"
+                              : "border-transparent hover:bg-[var(--row-hover)]",
                           )}
                         >
                           <button
