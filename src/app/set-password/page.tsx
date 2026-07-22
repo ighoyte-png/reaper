@@ -132,7 +132,7 @@ export default function SetPasswordPage() {
       await updatePassword(password);
       await refresh();
       setDone(true);
-      router.replace("/schedule");
+      router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not set password");
     } finally {

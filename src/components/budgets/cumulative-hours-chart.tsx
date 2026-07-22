@@ -90,12 +90,13 @@ function ProgressLineChart({
   points: WeeklyProgressPoint[];
   budgetHours: number | null;
 }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const w = 720;
-  const h = 260;
+  const h = 174;
   const padL = 44;
   const padR = 16;
-  const padT = 28;
-  const padB = 32;
+  const padT = 22;
+  const padB = 28;
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
@@ -145,7 +146,7 @@ function ProgressLineChart({
   }
 
   const yTicks = useMemo(() => {
-    const steps = 5;
+    const steps = 4;
     return Array.from({ length: steps + 1 }, (_, i) => (maxY * i) / steps);
   }, [maxY]);
 
@@ -183,9 +184,11 @@ function ProgressLineChart({
 
   const lineColor = "#4b5563";
   const mutedLine = "#9ca3af";
+  const hover = hoverIdx != null ? points[hoverIdx] : null;
+  const hoverVal = hoverIdx != null ? valueAt(hoverIdx) : 0;
 
   return (
-    <div className="overflow-hidden">
+    <div className="relative overflow-hidden">
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="h-auto w-full"
@@ -217,7 +220,6 @@ function ProgressLineChart({
           );
         })}
 
-        {/* Month separators + labels */}
         {monthLabels.map((m) => {
           const x0 = xAt(m.start);
           const x1 = xAt(m.end);
@@ -236,7 +238,7 @@ function ProgressLineChart({
               ) : null}
               <text
                 x={mid}
-                y={h - 10}
+                y={h - 8}
                 textAnchor="middle"
                 className="fill-[var(--text-muted)]"
                 style={{ fontSize: 7 }}
@@ -247,7 +249,6 @@ function ProgressLineChart({
           );
         })}
 
-        {/* This week band */}
         {thisWeekX != null ? (
           <g>
             <rect
@@ -268,7 +269,7 @@ function ProgressLineChart({
             />
             <text
               x={thisWeekX}
-              y={padT - 8}
+              y={padT - 6}
               textAnchor="middle"
               fill="var(--accent)"
               style={{ fontSize: 8, fontWeight: 600 }}
@@ -278,7 +279,6 @@ function ProgressLineChart({
           </g>
         ) : null}
 
-        {/* Budget ceiling */}
         {budgetY != null ? (
           <line
             x1={padL}
@@ -292,7 +292,6 @@ function ProgressLineChart({
           />
         ) : null}
 
-        {/* Planned (dashed) from handoff → end */}
         {handoffIdx < points.length - 1 ? (
           <path
             d={pathSegment(handoffIdx, points.length - 1)}
@@ -305,7 +304,6 @@ function ProgressLineChart({
           />
         ) : null}
 
-        {/* Used (solid) 0 → handoff */}
         {handoffIdx >= 0 ? (
           <path
             d={pathSegment(0, handoffIdx)}
@@ -317,25 +315,58 @@ function ProgressLineChart({
           />
         ) : null}
 
-        {/* Point markers */}
         {points.map((p, i) => {
           const future = i > handoffIdx;
+          const cx = xAt(i);
+          const cy = yAt(valueAt(i));
           return (
-            <circle
+            <g
               key={p.key}
-              cx={xAt(i)}
-              cy={yAt(valueAt(i))}
-              r={2}
-              fill={future ? mutedLine : lineColor}
-            />
+              onMouseEnter={() => setHoverIdx(i)}
+              onMouseLeave={() => setHoverIdx(null)}
+              className="cursor-pointer"
+            >
+              <circle cx={cx} cy={cy} r={10} fill="transparent" />
+              <circle
+                cx={cx}
+                cy={cy}
+                r={hoverIdx === i ? 3.5 : 2}
+                fill={future ? mutedLine : lineColor}
+              />
+            </g>
           );
         })}
       </svg>
+
+      {hover && hoverIdx != null ? (
+        <div
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[11px] shadow-md"
+          style={{
+            left: `${(xAt(hoverIdx) / w) * 100}%`,
+            top: `${(yAt(hoverVal) / h) * 100}%`,
+            marginTop: -8,
+          }}
+        >
+          <div className="font-medium text-[var(--text)]">{hover.label}</div>
+          <div className="mt-0.5 tabular-nums text-[var(--text-muted)]">
+            Cumulative: {formatHours(hoverVal)}
+          </div>
+          <div className="tabular-nums text-[var(--text-muted)]">
+            Week: {formatHours(hover.weekHours)}
+          </div>
+          {hasBudget ? (
+            <div className="tabular-nums text-[var(--text-muted)]">
+              Budget: {formatHours(budgetHours!)} · Remaining:{" "}
+              {formatHours(Math.max(0, budgetHours! - hoverVal))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function HoursPerWeekChart({ points }: { points: WeeklyProgressPoint[] }) {
+export function HoursPerWeekChart({ points }: { points: WeeklyProgressPoint[] }) {
   const maxH = Math.max(...points.map((p) => p.weekHours), 1);
   const monthLabels = useMemo(() => {
     const seen = new Map<string, number>();

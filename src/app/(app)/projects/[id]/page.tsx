@@ -22,7 +22,7 @@ import {
   projectDateProgress,
 } from "@/lib/domain/progress";
 import { projectIdsForPerson, projectTeamPersonIds } from "@/lib/domain/project-access";
-import { projectDisplayColor } from "@/lib/domain/sorting";
+import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sorting";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
@@ -244,7 +244,9 @@ export default function ProjectDetailPage() {
           />
           <span className="text-xs text-[var(--text-muted)]">
             {client?.name ?? "No client"} ·{" "}
-            {isRetainer ? "Retainer" : "Project"} ·{" "}
+            {isRetainer ? "Retainer" : "Project"}
+          </span>
+          <span className={projectStatusPillClass(project.status)}>
             {project.status.replace("_", " ")}
           </span>
           {project.notes ? (
@@ -366,7 +368,7 @@ export default function ProjectDetailPage() {
             ) : null}
           </div>
 
-          {/* Sidebar: Progress → Assets → Budget → Client portal */}
+          {/* Sidebar: Progress → Essentials → Budget → Client portal */}
           <div className="space-y-4">
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">

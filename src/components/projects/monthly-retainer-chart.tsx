@@ -88,7 +88,7 @@ export function ProjectYearBurnChart({
       <div
         className={cn(
           "relative flex gap-1.5 sm:gap-2",
-          compact ? "h-16" : "h-24",
+          compact ? "h-16" : "h-44",
         )}
       >
         {showCapLine ? (

@@ -19,11 +19,12 @@ import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { projectDateProgress } from "@/lib/domain/progress";
 import {
+  projectStatusPillClass,
   sortClientsByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
-import type { Client, Project } from "@/lib/types";
+import type { Client, Project, ProjectStatus } from "@/lib/types";
 
 function emptyProject(id: string): Omit<Project, "organization_id"> {
   return {
@@ -44,6 +45,15 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
 }
 
 type ClientFilter = "all" | "none" | string;
+type StatusFilter = ProjectStatus | "all";
+
+const STATUS_TABS: { id: StatusFilter; label: string }[] = [
+  { id: "active", label: "Active" },
+  { id: "on_hold", label: "On Hold" },
+  { id: "completed", label: "Completed" },
+  { id: "archived", label: "Archived" },
+  { id: "all", label: "Show All" },
+];
 
 export default function ProjectsPage() {
   const {
@@ -63,6 +73,7 @@ export default function ProjectsPage() {
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
 
   const visibleProjects = useMemo(() => {
     if (canManage || isPublicShare) return state.projects;
@@ -84,13 +95,26 @@ export default function ProjectsPage() {
     state.project_members,
   ]);
 
-  const projects = sortProjectsByClientThenName(visibleProjects, state.clients);
+  const statusScopedProjects = useMemo(() => {
+    if (statusFilter === "all") return visibleProjects;
+    return visibleProjects.filter((p) => p.status === statusFilter);
+  }, [visibleProjects, statusFilter]);
+
+  const projects = sortProjectsByClientThenName(
+    statusScopedProjects,
+    state.clients,
+  );
   const clients = sortClientsByName(state.clients);
   // Archived clients keep their projects visible in the grouped list, but
   // don't clutter the sidebar's quick-filter navigation by default.
   const sidebarClients = useMemo(
     () => clients.filter((c) => (c.status ?? "active") !== "archived"),
     [clients],
+  );
+
+  const archivedCount = useMemo(
+    () => visibleProjects.filter((p) => p.status === "archived").length,
+    [visibleProjects],
   );
 
   const filtered = useMemo(() => {
@@ -242,6 +266,27 @@ export default function ProjectsPage() {
           </aside>
 
           <div className="min-w-0 p-3 sm:p-5 md:flex-1">
+            <div className="mb-4 flex flex-wrap gap-1">
+              {STATUS_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStatusFilter(tab.id)}
+                  className={cn(
+                    "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
+                    statusFilter === tab.id
+                      ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                      : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
+                  )}
+                >
+                  {tab.label}
+                  {tab.id === "archived" && archivedCount > 0
+                    ? ` (${archivedCount})`
+                    : ""}
+                </button>
+              ))}
+            </div>
+
             <label className="relative mb-4 block md:hidden">
               <Search
                 size={16}
@@ -284,8 +329,11 @@ export default function ProjectsPage() {
 
             {groups.length === 0 ? (
               <p className="py-8 text-center text-sm text-[var(--text-muted)]">
-                No projects match
-                {query.trim() ? ` “${query.trim()}”` : ""}.
+                No{" "}
+                {statusFilter === "all"
+                  ? "projects"
+                  : `${statusFilter.replace("_", " ")} projects`}
+                {query.trim() ? ` match “${query.trim()}”` : ""}.
               </p>
             ) : (
               <div className="space-y-6">
@@ -309,6 +357,21 @@ export default function ProjectsPage() {
                           key={project.id}
                           project={project}
                           href={appHref(`/projects/${project.id}`)}
+                          canArchive={canManage}
+                          onToggleArchive={() => {
+                            upsertProject({
+                              ...project,
+                              status:
+                                project.status === "archived"
+                                  ? "active"
+                                  : "archived",
+                            });
+                            push(
+                              project.status === "archived"
+                                ? "Project restored"
+                                : "Project archived",
+                            );
+                          }}
                         />
                       ))}
                       <CardGridPlaceholders
@@ -473,9 +536,13 @@ function MobileClientChip({
 function ProjectCard({
   project,
   href,
+  canArchive,
+  onToggleArchive,
 }: {
   project: Project;
   href: string;
+  canArchive?: boolean;
+  onToggleArchive?: () => void;
 }) {
   const { state } = useData();
   const burn = budgetBurn(project, state.assignments, state.people);
@@ -484,16 +551,19 @@ function ProjectCard({
   const overallPct = projectDateProgress(project, today);
 
   return (
-    <Link
-      href={href}
-      className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]"
+    <div
+      className={cn(
+        "relative flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]",
+        project.status === "archived" && "opacity-60",
+      )}
     >
-      <div className="mb-3 flex min-w-0 items-center gap-2">
+      <Link href={href} className="absolute inset-0 z-0" aria-label={project.name} />
+      <div className="relative z-[1] mb-3 flex min-w-0 items-center gap-2 pointer-events-none">
         <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
           {project.name}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+          <span className={projectStatusPillClass(project.status)}>
             {project.status.replace("_", " ")}
           </span>
           {project.budget_monthly_reset ? (
@@ -503,7 +573,7 @@ function ProjectCard({
           ) : null}
         </div>
       </div>
-      <div className="mt-auto space-y-3">
+      <div className="relative z-[1] mt-auto space-y-3 pointer-events-none">
         {overallPct != null ? (
           <ProgressBar pct={overallPct} label="Overall Progress" />
         ) : null}
@@ -522,6 +592,19 @@ function ProjectCard({
           <BurnBar burn={burn} compact />
         </div>
       </div>
-    </Link>
+      {canArchive && onToggleArchive ? (
+        <button
+          type="button"
+          className="relative z-[1] mt-3 h-7 cursor-pointer self-start rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleArchive();
+          }}
+        >
+          {project.status === "archived" ? "Unarchive" : "Archive"}
+        </button>
+      ) : null}
+    </div>
   );
 }

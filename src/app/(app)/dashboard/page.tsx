@@ -33,6 +33,7 @@ import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useDismissedMentions, useDismissedBulletins } from "@/lib/hooks/use-dismissed-mentions";
 import {
+  bulletinDismissSubject,
   bulletinVisibleToPerson,
   isUnreadBulletin,
 } from "@/lib/domain/bulletins";
@@ -109,8 +110,10 @@ export default function DashboardPage() {
   const end = toDateKey(weekEnd(now));
   const monthEndKey = toDateKey(endOfMonth(now));
 
-  /** Org-wide read layout (managers + public org share). */
-  const showOrgDashboard = canManage || isPublicShare;
+  /** Org-wide read layout (managers + public org share), unless View As. */
+  const showOrgDashboard = (canManage || isPublicShare) && showingAsManager;
+  /** Show team KPI strip only in true org-wide mode (not View As). */
+  const showOrgKpis = showOrgDashboard;
 
   const showingAllTasks = showingAsManager;
   const viewedPersonId = effectivePersonId;
@@ -280,16 +283,22 @@ export default function DashboardPage() {
     pulseHighPriorityTasks.length;
 
   const bulletins = useMemo(() => {
-    const filtered = showOrgDashboard
-      ? state.bulletins
-      : state.bulletins.filter((b) =>
-          bulletinVisibleToPerson(b, myPerson?.id ?? null),
-        );
+    const filtered =
+      showingAsManager || isPublicShare
+        ? state.bulletins
+        : state.bulletins.filter((b) =>
+            bulletinVisibleToPerson(b, personalPersonId),
+          );
     return [...filtered].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.created_at.localeCompare(a.created_at);
     });
-  }, [state.bulletins, showOrgDashboard, myPerson?.id]);
+  }, [
+    state.bulletins,
+    showingAsManager,
+    isPublicShare,
+    personalPersonId,
+  ]);
 
   const atRisk = showOrgDashboard
     ? state.projects
@@ -425,9 +434,11 @@ export default function DashboardPage() {
   const teamUtilization = useMemo(() => {
     const people = showOrgDashboard
       ? state.people
-      : myPerson
-        ? [myPerson]
-        : [];
+      : focusPerson
+        ? [focusPerson]
+        : myPerson
+          ? [myPerson]
+          : [];
     if (people.length === 0) return { avg: 0, series: [] as number[] };
 
     const weekAvgs: number[] = [];
@@ -461,6 +472,7 @@ export default function DashboardPage() {
     return { avg, series: weekAvgs };
   }, [
     showOrgDashboard,
+    focusPerson,
     myPerson,
     state.people,
     state.assignments,
@@ -489,23 +501,31 @@ export default function DashboardPage() {
   );
 
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
+  const manageWithoutPerson = canManage && !mentionPersonId;
+  const bulletinSubject = bulletinDismissSubject(
+    mentionPersonId,
+    profile?.id ?? null,
+    canManage,
+  );
   const { dismiss: dismissMention, dismissed: dismissedMentions } =
     useDismissedMentions(mentionPersonId);
   const { dismiss: dismissBulletin, dismissed: dismissedBulletins } =
-    useDismissedBulletins(mentionPersonId);
+    useDismissedBulletins(bulletinSubject);
 
   const unreadBulletinCount = useMemo(() => {
-    if (!mentionPersonId) return 0;
+    if (!mentionPersonId && !manageWithoutPerson) return 0;
     return state.bulletins.filter((b) =>
       isUnreadBulletin(
         b,
         mentionPersonId,
         profile?.id ?? null,
         dismissedBulletins,
+        { manageWithoutPerson },
       ),
     ).length;
   }, [
     mentionPersonId,
+    manageWithoutPerson,
     state.bulletins,
     profile?.id,
     dismissedBulletins,
@@ -575,9 +595,77 @@ export default function DashboardPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Dashboard" />
 
-      <div className="grid gap-4 p-3 sm:p-5 lg:grid-cols-3">
-        <div className="min-w-0 space-y-4 lg:col-span-2">
-          <div className="grid gap-4 sm:grid-cols-2">
+      <div className="flex flex-col gap-4 p-3 sm:p-5 lg:grid lg:grid-cols-3 lg:items-start">
+        {/*
+          Mobile: `contents` flattens children into the parent flex so order-*
+          can interleave identity / notifications / bulletin / rest.
+          Desktop: real columns — main (2) + sidebar stack (1), no row stretch.
+        */}
+        <aside className="contents lg:col-start-3 lg:row-start-1 lg:flex lg:flex-col lg:gap-4 lg:self-start">
+          <div className="order-1 lg:order-none">
+            <DashboardIdentityCard
+              identityPerson={identityPerson}
+              viewAsPerson={viewAsPerson}
+              profile={profile}
+              hideIdentity={isPublicShare}
+              viewAsControl={viewAsControl}
+              showViewingAsHint={Boolean(viewAsPerson) && canManage}
+            />
+          </div>
+
+          <div className="order-3 lg:order-none">
+            <BulletinBoard
+              bulletins={bulletins}
+              profiles={state.profiles}
+              people={sortedPeople}
+              canEdit={canManage && !isPublicShare}
+              profileId={profile?.id ?? null}
+              isUnread={(b) =>
+                isUnreadBulletin(
+                  b,
+                  mentionPersonId,
+                  profile?.id ?? null,
+                  dismissedBulletins,
+                  { manageWithoutPerson },
+                )
+              }
+              unreadCount={unreadBulletinCount}
+              onDismissUnread={dismissBulletin}
+              onSave={(row) => {
+                upsertBulletin(row);
+                push("Bulletin saved");
+              }}
+              onDelete={(id) => {
+                deleteBulletin(id);
+                push("Bulletin deleted");
+              }}
+              newId={newId}
+              compact
+            />
+          </div>
+
+          <div className="order-5 space-y-4 lg:order-none">
+            <ProjectHealthBudget
+              canManage={showOrgDashboard}
+              atRisk={atRisk}
+              upcoming={upcomingDueTasks}
+              projectById={projectById}
+              appHref={appHref}
+              clients={state.clients}
+            />
+            <DashboardCapacityLeave
+              canManage={showOrgDashboard}
+              peopleLoad={peopleLoad}
+              approvedLeave={approvedLeave}
+              upcomingLeaveBlocks={upcomingLeaveBlocks}
+              people={leaveCalendarPeople}
+              appHref={appHref}
+            />
+          </div>
+        </aside>
+
+        <div className="contents lg:col-span-2 lg:row-start-1 lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
+          <div className="order-2 grid gap-4 sm:grid-cols-2 lg:order-none">
             <TaggedCommentsPanel
               taggedComments={taggedComments}
               appHref={appHref}
@@ -598,174 +686,132 @@ export default function DashboardPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            <KpiCard title="Active Projects / Health">
-              <div className="text-sm font-semibold tabular-nums">
-                {projectHealthStats.total} Active
-                {projectHealthStats.total > 0 ? (
-                  <span className="font-normal text-[var(--text-muted)]">
-                    {" "}
-                    | {projectHealthStats.onTrackPct}% On Track
-                  </span>
+          <div className="order-4 min-w-0 space-y-4 lg:order-none">
+            <div
+              className={cn(
+                "grid grid-cols-2 gap-3",
+                showOrgKpis ? "xl:grid-cols-4" : "xl:grid-cols-2",
+              )}
+            >
+              {showOrgKpis ? (
+                <>
+                  <KpiCard title="Active Projects / Health">
+                    <div className="text-sm font-semibold tabular-nums">
+                      {projectHealthStats.total} Active
+                      {projectHealthStats.total > 0 ? (
+                        <span className="font-normal text-[var(--text-muted)]">
+                          {" "}
+                          | {projectHealthStats.onTrackPct}% On Track
+                        </span>
+                      ) : null}
+                    </div>
+                    <SegmentBar
+                      segments={[
+                        {
+                          value: projectHealthStats.healthy,
+                          className: "bg-[var(--status-healthy)]",
+                        },
+                        {
+                          value: projectHealthStats.near,
+                          className: "bg-[var(--status-near)]",
+                        },
+                        {
+                          value: projectHealthStats.over,
+                          className: "bg-[var(--status-over)]",
+                        },
+                        {
+                          value: projectHealthStats.none,
+                          className: "bg-[var(--status-unavailable)]",
+                        },
+                      ]}
+                    />
+                  </KpiCard>
+
+                  <KpiCard title="Team Utilization Rate">
+                    <div className="flex items-end justify-between gap-2">
+                      <div className="text-sm font-semibold tabular-nums">
+                        {Math.round(teamUtilization.avg)}% Avg
+                      </div>
+                      <Sparkline values={teamUtilization.series} />
+                    </div>
+                  </KpiCard>
+                </>
+              ) : null}
+
+              <KpiCard
+                title="Tagged Comments"
+                className={
+                  taggedComments.length > 0
+                    ? "!border-0 bg-orange-500/15"
+                    : undefined
+                }
+              >
+                <div
+                  className={cn(
+                    "text-sm font-semibold tabular-nums",
+                    taggedComments.length > 0 &&
+                      "text-orange-600 dark:text-orange-400",
+                  )}
+                >
+                  {taggedComments.length} to review
+                </div>
+              </KpiCard>
+
+              <KpiCard
+                title="Overdue / Critical Tasks"
+                className={
+                  pulseOverdueTasks.length > 0
+                    ? "!border-0 bg-[var(--status-over)]/20"
+                    : undefined
+                }
+              >
+                <div
+                  className={cn(
+                    "text-sm font-semibold tabular-nums",
+                    pulseOverdueTasks.length > 0 && "text-[var(--status-over)]",
+                  )}
+                >
+                  {pulseOverdueTasks.length} Overdue
+                </div>
+              </KpiCard>
+            </div>
+
+            <TodaySchedule
+              assignments={todaysAssignments}
+              projects={state.projects}
+              clients={state.clients}
+              people={sortedPeople}
+              orgMode={showingAsManager || isPublicShare}
+              fallbackPerson={focusPerson}
+              defaultPersonId={personalPersonId}
+              appHref={appHref}
+            />
+
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">People Utilization</h2>
+                {showOrgKpis ? (
+                  <Link
+                    href={appHref("/reports/utilization")}
+                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                  >
+                    Full Report
+                  </Link>
                 ) : null}
               </div>
-              <SegmentBar
-                segments={[
-                  {
-                    value: projectHealthStats.healthy,
-                    className: "bg-[var(--status-healthy)]",
-                  },
-                  {
-                    value: projectHealthStats.near,
-                    className: "bg-[var(--status-near)]",
-                  },
-                  {
-                    value: projectHealthStats.over,
-                    className: "bg-[var(--status-over)]",
-                  },
-                  {
-                    value: projectHealthStats.none,
-                    className: "bg-[var(--status-unavailable)]",
-                  },
-                ]}
+              <UtilizationHeatmap
+                weeks={4}
+                personIds={
+                  showingAsManager
+                    ? null
+                    : focusPerson
+                      ? [focusPerson.id]
+                      : []
+                }
               />
-            </KpiCard>
-
-            <KpiCard title="Team Utilization Rate">
-              <div className="flex items-end justify-between gap-2">
-                <div className="text-sm font-semibold tabular-nums">
-                  {Math.round(teamUtilization.avg)}% Avg
-                </div>
-                <Sparkline values={teamUtilization.series} />
-              </div>
-            </KpiCard>
-
-            <KpiCard
-              title="Tagged Comments"
-              className={
-                taggedComments.length > 0
-                  ? "!border-0 bg-orange-500/15"
-                  : undefined
-              }
-            >
-              <div
-                className={cn(
-                  "text-sm font-semibold tabular-nums",
-                  taggedComments.length > 0 &&
-                    "text-orange-600 dark:text-orange-400",
-                )}
-              >
-                {taggedComments.length} to review
-              </div>
-            </KpiCard>
-
-            <KpiCard
-              title="Overdue / Critical Tasks"
-              className={
-                pulseOverdueTasks.length > 0
-                  ? "!border-0 bg-[var(--status-over)]/20"
-                  : undefined
-              }
-            >
-              <div
-                className={cn(
-                  "text-sm font-semibold tabular-nums",
-                  pulseOverdueTasks.length > 0 && "text-[var(--status-over)]",
-                )}
-              >
-                {pulseOverdueTasks.length} Overdue
-              </div>
-            </KpiCard>
+            </section>
           </div>
-
-          <TodaySchedule
-            assignments={todaysAssignments}
-            projects={state.projects}
-            clients={state.clients}
-            people={sortedPeople}
-            orgMode={showingAsManager || isPublicShare}
-            fallbackPerson={focusPerson}
-            defaultPersonId={personalPersonId}
-            appHref={appHref}
-          />
-
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">People Utilization</h2>
-              {showOrgDashboard ? (
-                <Link
-                  href={appHref("/reports/utilization")}
-                  className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-                >
-                  Full Report
-                </Link>
-              ) : null}
-            </div>
-            <UtilizationHeatmap
-              weeks={4}
-              personIds={
-                showingAsManager
-                  ? null
-                  : focusPerson
-                    ? [focusPerson.id]
-                    : []
-              }
-            />
-          </section>
         </div>
-
-        <DashboardSidebar
-          identityPerson={identityPerson}
-          viewAsPerson={viewAsPerson}
-          profile={profile}
-          canManage={showOrgDashboard}
-          hideIdentity={isPublicShare}
-          viewAsControl={viewAsControl}
-          peopleLoad={peopleLoad}
-          approvedLeave={approvedLeave}
-          upcomingLeaveBlocks={upcomingLeaveBlocks}
-          people={leaveCalendarPeople}
-          appHref={appHref}
-          bulletin={
-            <BulletinBoard
-              bulletins={bulletins}
-              profiles={state.profiles}
-              people={sortedPeople}
-              canEdit={canManage && !isPublicShare}
-              profileId={profile?.id ?? null}
-              isUnread={(b) =>
-                isUnreadBulletin(
-                  b,
-                  mentionPersonId,
-                  profile?.id ?? null,
-                  dismissedBulletins,
-                )
-              }
-              unreadCount={unreadBulletinCount}
-              onDismissUnread={dismissBulletin}
-              onSave={(row) => {
-                upsertBulletin(row);
-                push("Bulletin saved");
-              }}
-              onDelete={(id) => {
-                deleteBulletin(id);
-                push("Bulletin deleted");
-              }}
-              newId={newId}
-              compact
-            />
-          }
-          projectHealth={
-            <ProjectHealthBudget
-              canManage={showOrgDashboard}
-              atRisk={atRisk}
-              upcoming={upcomingDueTasks}
-              projectById={projectById}
-              appHref={appHref}
-              clients={state.clients}
-            />
-          }
-        />
       </div>
     </PageContainer>
   );
@@ -1034,27 +1080,82 @@ function ProjectHealthBudget({
   );
 }
 
-function DashboardSidebar({
+function DashboardIdentityCard({
   identityPerson,
   viewAsPerson,
   profile,
-  canManage,
   hideIdentity = false,
   viewAsControl,
+  showViewingAsHint,
+}: {
+  identityPerson: Person | null | undefined;
+  viewAsPerson: Person | null | undefined;
+  profile: Profile | null;
+  hideIdentity?: boolean;
+  viewAsControl: ReactNode;
+  showViewingAsHint?: boolean;
+}) {
+  const displayName =
+    identityPerson?.name ??
+    profile?.full_name ??
+    profile?.email ??
+    "Signed in";
+  const displayTitle = identityPerson?.role_title
+    ? identityPerson.role_title
+    : profile?.role
+      ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
+      : null;
+  const showIdentity =
+    !hideIdentity && Boolean(identityPerson || profile || viewAsControl);
+  if (!showIdentity) return null;
+
+  return (
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <div className="flex flex-col items-start gap-3">
+        <PersonAvatar
+          avatarUrl={identityPerson?.avatar_url}
+          name={displayName}
+          size="xl"
+        />
+        <div className="w-full min-w-0">
+          <div className="text-sm font-semibold">{displayName}</div>
+          {displayTitle ? (
+            <div className="text-xs text-[var(--text-muted)]">
+              {displayTitle}
+            </div>
+          ) : null}
+          {!identityPerson && profile ? (
+            <div className="mt-1 text-[11px] text-[var(--text-muted)]">
+              Account only · not linked to a team member
+            </div>
+          ) : null}
+          {viewAsControl ? (
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <div className="shrink-0 text-[11px] text-[var(--text-muted)]">
+                Viewing as
+              </div>
+              {viewAsControl}
+            </div>
+          ) : showViewingAsHint && viewAsPerson ? (
+            <div className="mt-1 text-[11px] text-[var(--accent)]">
+              Viewing as
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DashboardCapacityLeave({
+  canManage,
   peopleLoad,
   approvedLeave,
   upcomingLeaveBlocks,
   people,
   appHref,
-  bulletin,
-  projectHealth,
 }: {
-  identityPerson: Person | null | undefined;
-  viewAsPerson: Person | null | undefined;
-  profile: Profile | null;
   canManage: boolean;
-  hideIdentity?: boolean;
-  viewAsControl: ReactNode;
   peopleLoad: {
     person: Person;
     booked: number;
@@ -1072,65 +1173,9 @@ function DashboardSidebar({
   }[];
   people: Person[];
   appHref: (path: string) => string;
-  bulletin?: ReactNode;
-  projectHealth: ReactNode;
 }) {
-  const displayName =
-    identityPerson?.name ??
-    profile?.full_name ??
-    profile?.email ??
-    "Signed in";
-  const displayTitle = identityPerson?.role_title
-    ? identityPerson.role_title
-    : profile?.role
-      ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
-      : null;
-  const showIdentity =
-    !hideIdentity && Boolean(identityPerson || profile || viewAsControl);
-
   return (
-    <div className="space-y-4 lg:col-span-1">
-      {showIdentity ? (
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-          <div className="flex flex-col items-start gap-3">
-            <PersonAvatar
-              avatarUrl={identityPerson?.avatar_url}
-              name={displayName}
-              size="xl"
-            />
-            <div className="w-full min-w-0">
-              <div className="text-sm font-semibold">{displayName}</div>
-              {displayTitle ? (
-                <div className="text-xs text-[var(--text-muted)]">
-                  {displayTitle}
-                </div>
-              ) : null}
-              {!identityPerson && profile ? (
-                <div className="mt-1 text-[11px] text-[var(--text-muted)]">
-                  Account only · not linked to a team member
-                </div>
-              ) : null}
-              {viewAsControl ? (
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <div className="shrink-0 text-[11px] text-[var(--text-muted)]">
-                    Viewing as
-                  </div>
-                  {viewAsControl}
-                </div>
-              ) : viewAsPerson && canManage ? (
-                <div className="mt-1 text-[11px] text-[var(--accent)]">
-                  Viewing as
-                </div>
-              ) : null}
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      {bulletin}
-
-      {projectHealth}
-
+    <>
       <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Capacity &amp; Load</h2>
@@ -1190,7 +1235,7 @@ function DashboardSidebar({
           ) : null}
         </div>
       </section>
-    </div>
+    </>
   );
 }
 
@@ -1412,7 +1457,7 @@ function TodaySchedule({
           {orgMode && selectedPerson ? ` for ${selectedPerson.name}` : ""}.
         </p>
       ) : (
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+        <div className="flex flex-col items-center gap-4 pt-5 sm:flex-row sm:items-start sm:pt-6">
           <SchedulePie slices={slices} totalHours={dayBooked} />
           <ul className="min-w-0 flex-1 space-y-1.5 self-stretch">
             {slices.map((slice) => {
@@ -1470,7 +1515,7 @@ function SchedulePie({
 
   return (
     <div
-      className="relative size-36 shrink-0 sm:size-40"
+      className="relative size-[13rem] shrink-0 sm:size-[14.5rem]"
       role="img"
       aria-label={`Schedule pie: ${formatHours(totalHours)} booked`}
     >

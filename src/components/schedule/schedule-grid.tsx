@@ -3500,9 +3500,9 @@ export function ScheduleGrid() {
             <div className="border-b border-[var(--border)] px-4 py-2">
               <Link
                 href={appHref(`/projects/${editForm.project_id}`)}
-                className="text-xs font-medium text-[var(--accent)] hover:underline"
+                className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
               >
-                Open full project →
+                Open Full Project
               </Link>
             </div>
             {sidebarPanelTab === "tasks" ? (
@@ -3761,9 +3761,9 @@ export function ScheduleGrid() {
             <div className="border-b border-[var(--border)] px-4 py-2">
               <Link
                 href={appHref(`/projects/${selected.project_id}`)}
-                className="text-xs font-medium text-[var(--accent)] hover:underline"
+                className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
               >
-                Open full project →
+                Open Full Project
               </Link>
             </div>
             {sidebarPanelTab === "tasks" ? (

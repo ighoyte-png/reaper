@@ -4,8 +4,11 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { ProjectProgressCharts } from "@/components/budgets/cumulative-hours-chart";
+import { ChartColumn, ChartLine, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  HoursPerWeekChart,
+  ProjectProgressCharts,
+} from "@/components/budgets/cumulative-hours-chart";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -38,11 +41,13 @@ export default function ProjectBudgetDetailPage() {
   const appHref = useAppHref();
   const { state } = useData();
   const project = state.projects.find((p) => p.id === params.id);
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [retainerTab, setRetainerTab] = useState<"calendar" | "weekly">(
+    "calendar",
+  );
   const client = project
     ? state.clients.find((c) => c.id === project.client_id)
     : undefined;
-
-  const [year, setYear] = useState(() => new Date().getFullYear());
 
   const isRetainer = Boolean(project?.budget_monthly_reset);
 
@@ -85,10 +90,8 @@ export default function ProjectBudgetDetailPage() {
 
   const weeklyPoints = useMemo(
     () =>
-      project && !isRetainer
-        ? weeklyProgressSeries(project, state.assignments)
-        : [],
-    [project, state.assignments, isRetainer],
+      project ? weeklyProgressSeries(project, state.assignments) : [],
+    [project, state.assignments],
   );
 
   const yearTotals = useMemo(() => {
@@ -266,7 +269,7 @@ export default function ProjectBudgetDetailPage() {
             href={appHref(`/projects/${project.id}`)}
             className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
           >
-            Project hub
+            Project Hub
           </Link>
         }
       />
@@ -393,33 +396,70 @@ export default function ProjectBudgetDetailPage() {
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           {isRetainer ? (
             <>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">{year} Calendar</h2>
-                <div className="flex items-center gap-1">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
-                    onClick={() => setYear((y) => y - 1)}
-                    aria-label="Previous year"
+                    onClick={() => setRetainerTab("calendar")}
+                    className={cn(
+                      "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
+                      retainerTab === "calendar"
+                        ? "border-[var(--text-muted)] bg-[var(--bg)] text-[var(--text)]"
+                        : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                    )}
                   >
-                    <ChevronLeft size={16} />
+                    <ChartLine size={14} strokeWidth={2} />
+                    {year} Calendar
                   </button>
                   <button
                     type="button"
-                    className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
-                    onClick={() => setYear((y) => y + 1)}
-                    aria-label="Next year"
+                    onClick={() => setRetainerTab("weekly")}
+                    className={cn(
+                      "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
+                      retainerTab === "weekly"
+                        ? "border-[var(--text-muted)] bg-[var(--bg)] text-[var(--text)]"
+                        : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                    )}
                   >
-                    <ChevronRight size={16} />
+                    <ChartColumn size={14} strokeWidth={2} />
+                    Hours per week
                   </button>
                 </div>
+                {retainerTab === "calendar" ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                      onClick={() => setYear((y) => y - 1)}
+                      aria-label="Previous year"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                      onClick={() => setYear((y) => y + 1)}
+                      aria-label="Next year"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                ) : null}
               </div>
-              <ProjectYearBurnChart
-                bars={yearBars}
-                unit={chartUnit}
-                monthlyCap={monthlyCap}
-                year={year}
-              />
+              {retainerTab === "calendar" ? (
+                <ProjectYearBurnChart
+                  bars={yearBars}
+                  unit={chartUnit}
+                  monthlyCap={monthlyCap}
+                  year={year}
+                />
+              ) : weeklyPoints.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">
+                  No schedule dates to chart yet.
+                </p>
+              ) : (
+                <HoursPerWeekChart points={weeklyPoints} />
+              )}
             </>
           ) : (
             <ProjectProgressCharts

@@ -18,7 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
+import { Eye, EyeOff, GripVertical, Pencil, Plus, StickyNote, Trash2 } from "lucide-react";
 import { Field, inputClass } from "@/components/ui/form";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { useData } from "@/lib/data/store";
@@ -169,7 +169,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
   return (
     <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Assets</h2>
+        <h2 className="text-sm font-semibold">Essentials</h2>
         {canManage ? (
           <div className="flex items-center gap-1">
             {editMode ? (
@@ -386,18 +386,27 @@ function SortableAssetRow({
   const isNote = Boolean(asset.body.trim());
 
   const actions = canManage ? (
-    <div className="flex shrink-0 items-center gap-2">
-      <label
-        className="flex cursor-pointer items-center gap-1 text-[10px] text-[var(--text-muted)]"
-        title="Hide from client portal"
+    <div className="flex shrink-0 items-center gap-0.5">
+      <button
+        type="button"
+        className={cn(
+          "inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+          asset.hide_from_client && "text-[var(--accent)]",
+        )}
+        onClick={onToggleHide}
+        aria-label={
+          asset.hide_from_client
+            ? "Show on client portal"
+            : "Hide from client portal"
+        }
+        title={
+          asset.hide_from_client
+            ? "Hidden from client portal — click to show"
+            : "Hide from client portal"
+        }
       >
-        <input
-          type="checkbox"
-          checked={Boolean(asset.hide_from_client)}
-          onChange={onToggleHide}
-        />
-        Hide
-      </label>
+        {asset.hide_from_client ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
       <button
         type="button"
         className={cn(

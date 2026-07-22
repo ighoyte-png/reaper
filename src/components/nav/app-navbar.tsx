@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import {
   isUnreadBulletin,
+  bulletinDismissSubject,
 } from "@/lib/domain/bulletins";
 import {
   useDismissedBulletins,
@@ -34,31 +35,42 @@ export function AppNavbar() {
   const { canManage, logout, state, myPerson, profile } = useData();
   const { effectivePersonId } = useViewAs();
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
+  const manageWithoutPerson = canManage && !mentionPersonId;
+  const bulletinSubject = bulletinDismissSubject(
+    mentionPersonId,
+    profile?.id ?? null,
+    canManage,
+  );
   const { dismissed: dismissedMentions } = useDismissedMentions(mentionPersonId);
-  const { dismissed: dismissedBulletins } = useDismissedBulletins(mentionPersonId);
+  const { dismissed: dismissedBulletins } = useDismissedBulletins(bulletinSubject);
   const { open, setOpen, toggle } = useMobileNav();
   const links = primaryNavLinks.filter((l) => canManage || !l.manageOnly);
   const settingsActive =
     pathname === "/settings" || pathname.startsWith("/settings/");
 
   const hasDashboardDot = useMemo(() => {
-    if (!mentionPersonId) return false;
-    const hasMention = state.task_comments.some(
-      (c) =>
-        (c.mentioned_person_ids ?? []).includes(mentionPersonId) &&
-        !dismissedMentions.has(c.id),
-    );
-    if (hasMention) return true;
+    if (mentionPersonId) {
+      const hasMention = state.task_comments.some(
+        (c) =>
+          (c.mentioned_person_ids ?? []).includes(mentionPersonId) &&
+          !dismissedMentions.has(c.id),
+      );
+      if (hasMention) return true;
+    }
+    if (!bulletinSubject && !manageWithoutPerson) return false;
     return state.bulletins.some((b) =>
       isUnreadBulletin(
         b,
         mentionPersonId,
         profile?.id ?? null,
         dismissedBulletins,
+        { manageWithoutPerson },
       ),
     );
   }, [
     mentionPersonId,
+    bulletinSubject,
+    manageWithoutPerson,
     state.task_comments,
     state.bulletins,
     dismissedMentions,
@@ -78,7 +90,7 @@ export function AppNavbar() {
           <Menu size={17} strokeWidth={1.75} />
         </button>
         <Link
-          href="/schedule"
+          href="/dashboard"
           className="inline-flex shrink-0 items-center py-1"
           aria-label="Reaper"
         >

@@ -51,7 +51,7 @@ function LoginForm() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (ready && isAuthenticated) router.replace("/schedule");
+    if (ready && isAuthenticated) router.replace("/dashboard");
   }, [ready, isAuthenticated, router]);
 
   async function onSubmit(e: React.FormEvent) {
@@ -114,7 +114,7 @@ function LoginForm() {
             type="button"
             onClick={() => {
               loginDemo();
-              router.push("/schedule");
+              router.push("/dashboard");
             }}
             className="mt-8 h-10 w-full rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)] hover:opacity-90"
           >

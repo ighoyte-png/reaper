@@ -2,13 +2,16 @@
 
 import {
   BookOpen,
+  File,
   FileText,
   Globe,
   HardDrive,
   KeyRound,
   Layers,
   Link,
+  MessageCircle,
   Server,
+  Sheet,
   type LucideIcon,
 } from "lucide-react";
 import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
@@ -23,6 +26,9 @@ const ASSET_KIND_ICONS: Record<ProjectAssetKind, LucideIcon> = {
   staging: Server,
   passwords: KeyRound,
   drive: HardDrive,
+  chat: MessageCircle,
+  spreadsheet: Sheet,
+  document: File,
   custom: Link,
 };
 

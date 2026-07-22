@@ -21,6 +21,9 @@ export type ProjectAssetKind =
   | "staging"
   | "passwords"
   | "drive"
+  | "chat"
+  | "spreadsheet"
+  | "document"
   | "custom";
 
 export interface Organization {

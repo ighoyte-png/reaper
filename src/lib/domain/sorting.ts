@@ -1,4 +1,5 @@
-import type { Client, Project } from "@/lib/types";
+import type { Client, Project, ProjectStatus } from "@/lib/types";
+import { cn } from "@/lib/cn";
 
 export function clientNameOf(
   project: Project,
@@ -24,6 +25,33 @@ export function projectDisplayColor(
     clients.find((c) => c.id === project.client_id)?.color ??
     project.color ??
     "#64748B"
+  );
+}
+
+export function projectStatusLabel(status: ProjectStatus | string): string {
+  return String(status).replace("_", " ");
+}
+
+/** Color-coded lifecycle pill classes for project status tags. */
+export function projectStatusClass(status: ProjectStatus | string): string {
+  switch (status) {
+    case "active":
+      return "bg-[var(--accent)]/15 text-[var(--accent)]";
+    case "on_hold":
+      return "bg-[var(--status-near)]/15 text-[var(--status-near)]";
+    case "completed":
+      return "bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]";
+    case "archived":
+      return "bg-[var(--bg-elevated)] text-[var(--text-muted)]";
+    default:
+      return "bg-[var(--bg-elevated)] text-[var(--text-muted)]";
+  }
+}
+
+export function projectStatusPillClass(status: ProjectStatus | string): string {
+  return cn(
+    "rounded px-1.5 py-0.5 text-[11px] capitalize tracking-wide",
+    projectStatusClass(status),
   );
 }
 

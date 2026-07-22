@@ -410,7 +410,7 @@ export default function ProjectSharePage() {
 
       {assetsSorted.length > 0 ? (
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-          <h2 className="mb-3 text-sm font-semibold">Links & Assets</h2>
+          <h2 className="mb-3 text-sm font-semibold">Links & Essentials</h2>
           <ul className="space-y-1.5">
             {assetsSorted.map((a) => {
               const isNote = Boolean(a.body.trim());
