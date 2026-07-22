@@ -83,6 +83,26 @@ function ChartTabButton({
   );
 }
 
+/** Whole-hour Y ticks stepping by 5s (or 1s for tiny ranges). */
+function niceHourAxis(
+  dataMax: number,
+  preferredSteps = 4,
+): { maxY: number; ticks: number[] } {
+  const target = Math.max(1, dataMax);
+  let step: number;
+  if (target <= 5) {
+    step = 1;
+  } else {
+    step = Math.max(5, Math.ceil(target / preferredSteps / 5) * 5);
+  }
+  const maxY = Math.ceil(target / step) * step;
+  const ticks: number[] = [];
+  for (let v = 0; v <= maxY + 1e-9; v += step) {
+    ticks.push(Math.round(v));
+  }
+  return { maxY, ticks };
+}
+
 function ProgressLineChart({
   points,
   budgetHours,
@@ -107,7 +127,13 @@ function ProgressLineChart({
     ),
     1,
   );
-  const maxY = Math.max(dataMax, hasBudget ? budgetHours : 0) * 1.08;
+  const { maxY, ticks: yTicks } = useMemo(
+    () =>
+      niceHourAxis(
+        Math.max(dataMax, hasBudget ? budgetHours! : 0) * 1.08,
+      ),
+    [dataMax, hasBudget, budgetHours],
+  );
 
   const currentIdx = points.findIndex((p) => p.isCurrentWeek);
   const handoffIdx =
@@ -144,11 +170,6 @@ function ProgressLineChart({
     }
     return parts.join(" ");
   }
-
-  const yTicks = useMemo(() => {
-    const steps = 4;
-    return Array.from({ length: steps + 1 }, (_, i) => (maxY * i) / steps);
-  }, [maxY]);
 
   const monthLabels = useMemo(() => {
     const groups: { key: string; label: string; start: number; end: number }[] =
@@ -214,7 +235,7 @@ function ProgressLineChart({
                 className="fill-[var(--text-muted)]"
                 style={{ fontSize: 7 }}
               >
-                {formatHours(v)}
+                {`${v}h`}
               </text>
             </g>
           );
