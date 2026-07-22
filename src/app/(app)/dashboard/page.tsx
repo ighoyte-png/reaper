@@ -963,9 +963,9 @@ function ProjectHealthBudget({
         {canManage ? (
           <Link
             href={appHref("/reports/budgets")}
-            className="text-xs text-[var(--accent)]"
+            className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
           >
-            View budgets
+            View Budgets
           </Link>
         ) : null}
       </div>
@@ -1136,9 +1136,9 @@ function DashboardSidebar({
           <h2 className="text-sm font-semibold">Capacity &amp; Load</h2>
           <Link
             href={appHref("/schedule")}
-            className="text-xs text-[var(--accent)]"
+            className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
           >
-            Open schedule
+            Open Schedule
           </Link>
         </div>
         <p className="mb-2 text-xs text-[var(--text-muted)]">
