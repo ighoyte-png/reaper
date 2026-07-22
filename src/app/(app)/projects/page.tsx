@@ -13,6 +13,7 @@ import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { Button, buttonClass } from "@/components/ui/button";
+import { ApplyTemplateDialog } from "@/components/templates/apply-template-dialog";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -78,6 +79,7 @@ export default function ProjectsPage() {
   );
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [createTemplateId, setCreateTemplateId] = useState("");
+  const [pendingCreateApply, setPendingCreateApply] = useState(false);
   const [query, setQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -207,6 +209,41 @@ export default function ProjectsPage() {
     }
     return counts;
   }, [projects]);
+
+  async function saveProject(
+    project: Omit<Project, "organization_id">,
+    members: string[],
+    templateToApply: string,
+  ) {
+    try {
+      await upsertProject({
+        ...project,
+        budget_hours:
+          project.budget_mode === "hours" ? project.budget_hours : null,
+        budget_amount:
+          project.budget_mode === "amount" ? project.budget_amount : null,
+        budget_monthly_reset:
+          project.budget_mode === "hours"
+            ? project.budget_monthly_reset
+            : false,
+      });
+      await setProjectMembers(project.id, members);
+      if (templateToApply) {
+        await applyProjectTemplate(project.id, templateToApply);
+      }
+      setEditing(null);
+      setMemberIds([]);
+      setCreateTemplateId("");
+      push(
+        templateToApply ? "Project created from template" : "Project saved",
+      );
+    } catch (err) {
+      push(
+        err instanceof Error ? err.message : "Could not save project",
+        "warning",
+      );
+    }
+  }
 
   return (
     <PageContainer>
@@ -519,50 +556,34 @@ export default function ProjectsPage() {
                 return;
               }
               const isNew = !state.projects.some((p) => p.id === editing.id);
-              const templateToApply = isNew ? createTemplateId : "";
-              try {
-                await upsertProject({
-                  ...editing,
-                  budget_hours:
-                    editing.budget_mode === "hours"
-                      ? editing.budget_hours
-                      : null,
-                  budget_amount:
-                    editing.budget_mode === "amount"
-                      ? editing.budget_amount
-                      : null,
-                  budget_monthly_reset:
-                    editing.budget_mode === "hours"
-                      ? editing.budget_monthly_reset
-                      : false,
-                });
-                await setProjectMembers(editing.id, memberIds);
-                if (templateToApply) {
-                  await applyProjectTemplate(editing.id, templateToApply);
-                }
-                setEditing(null);
-                setMemberIds([]);
-                setCreateTemplateId("");
-                push(
-                  templateToApply
-                    ? "Project created from template"
-                    : "Project saved",
-                );
-              } catch (err) {
-                push(
-                  err instanceof Error ? err.message : "Could not save project",
-                  "warning",
-                );
+              if (isNew && createTemplateId) {
+                setPendingCreateApply(true);
+                return;
               }
+              await saveProject(editing, memberIds, "");
             }}
             onCancel={() => {
               setEditing(null);
               setMemberIds([]);
               setCreateTemplateId("");
+              setPendingCreateApply(false);
             }}
           />
         </Modal>
       )}
+
+      {pendingCreateApply && editing && createTemplateId ? (
+        <ApplyTemplateDialog
+          templateId={createTemplateId}
+          projectName={editing.name}
+          onCancel={() => setPendingCreateApply(false)}
+          onConfirm={async () => {
+            const templateToApply = createTemplateId;
+            setPendingCreateApply(false);
+            await saveProject(editing, memberIds, templateToApply);
+          }}
+        />
+      ) : null}
     </PageContainer>
   );
 }

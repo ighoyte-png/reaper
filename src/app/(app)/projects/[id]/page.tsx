@@ -14,6 +14,10 @@ import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { SortableMilestoneList } from "@/components/projects/sortable-milestone-list";
 import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
+import {
+  ApplyTemplateDialog,
+  SaveAsTemplateDialog,
+} from "@/components/templates/apply-template-dialog";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { ProjectForm } from "@/components/projects/project-form";
 import { useToast } from "@/components/toast/toast-provider";
@@ -78,6 +82,10 @@ export default function ProjectDetailPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [templateId, setTemplateId] = useState("");
   const [exportName, setExportName] = useState("");
+  const [confirmApplyTemplateId, setConfirmApplyTemplateId] = useState<
+    string | null
+  >(null);
+  const [confirmSaveAsTemplate, setConfirmSaveAsTemplate] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(
     null,
   );
@@ -344,11 +352,9 @@ export default function ProjectDetailPage() {
                         type="button"
                         className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
                         disabled={!templateId}
-                        onClick={async () => {
+                        onClick={() => {
                           if (!templateId) return;
-                          await applyProjectTemplate(project.id, templateId);
-                          setTemplateId("");
-                          push("Template applied — set milestone dates as needed");
+                          setConfirmApplyTemplateId(templateId);
                         }}
                       >
                         Apply
@@ -365,20 +371,15 @@ export default function ProjectDetailPage() {
                       <button
                         type="button"
                         className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
-                        onClick={async () => {
-                          const name =
-                            exportName.trim() || `${project.name} template`;
-                          await exportProjectAsTemplate(project.id, name);
-                          setExportName("");
-                          push("Saved as template");
-                        }}
+                        onClick={() => setConfirmSaveAsTemplate(true)}
                       >
                         Save as Template
                       </button>
                     </div>
                     <p className="text-[11px] text-[var(--text-muted)]">
                       Apply appends undated milestones and unassigned tasks.
-                      Save strips dates, assignees, and comments.
+                      Save includes milestones and tasks only (no dates,
+                      assignees, or comments).
                     </p>
                   </div>
                 ) : null}
@@ -745,6 +746,33 @@ export default function ProjectDetailPage() {
           }}
         />
       )}
+
+      {confirmApplyTemplateId ? (
+        <ApplyTemplateDialog
+          templateId={confirmApplyTemplateId}
+          projectName={project.name}
+          onCancel={() => setConfirmApplyTemplateId(null)}
+          onConfirm={async () => {
+            await applyProjectTemplate(project.id, confirmApplyTemplateId);
+            setConfirmApplyTemplateId(null);
+            setTemplateId("");
+            push("Template applied — set milestone dates as needed");
+          }}
+        />
+      ) : null}
+
+      {confirmSaveAsTemplate ? (
+        <SaveAsTemplateDialog
+          defaultName={exportName.trim() || `${project.name} Template`}
+          onCancel={() => setConfirmSaveAsTemplate(false)}
+          onConfirm={async (name) => {
+            await exportProjectAsTemplate(project.id, name);
+            setConfirmSaveAsTemplate(false);
+            setExportName("");
+            push("Saved as template");
+          }}
+        />
+      ) : null}
     </PageContainer>
   );
 }
