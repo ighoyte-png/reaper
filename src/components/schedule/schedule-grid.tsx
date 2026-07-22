@@ -3487,12 +3487,7 @@ export function ScheduleGrid() {
             </button>
           </div>
         ) : canManage && editForm ? (
-          <div className="flex flex-col">
-            {sidebarManager ? (
-              <div className="border-b border-[var(--border)] px-4 py-2.5">
-                <ProjectManagerPerson person={sidebarManager} />
-              </div>
-            ) : null}
+          <div className="flex min-h-full flex-col">
             <div className="flex border-b border-[var(--border)] px-4">
               <button
                 type="button"
@@ -3749,16 +3744,16 @@ export function ScheduleGrid() {
                 <Trash2 size={14} /> Delete
               </button>
             </div>
-          </div>
+            </div>
             )}
-          </div>
-        ) : selected ? (
-          <div className="flex flex-col">
             {sidebarManager ? (
-              <div className="border-b border-[var(--border)] px-4 py-2.5">
+              <div className="mt-auto border-t border-[var(--border)] px-4 py-3">
                 <ProjectManagerPerson person={sidebarManager} />
               </div>
             ) : null}
+          </div>
+        ) : selected ? (
+          <div className="flex min-h-full flex-col">
             <div className="flex border-b border-[var(--border)] px-4">
               <button
                 type="button"
@@ -3816,6 +3811,11 @@ export function ScheduleGrid() {
             }
           />
             )}
+            {sidebarManager ? (
+              <div className="mt-auto border-t border-[var(--border)] px-4 py-3">
+                <ProjectManagerPerson person={sidebarManager} />
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-3 p-4 text-sm text-[var(--text-muted)]">

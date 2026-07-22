@@ -346,27 +346,6 @@ export default function ProjectsPage() {
           </aside>
 
           <div className="min-w-0 p-3 sm:p-5 md:flex-1">
-            <div className="mb-4 flex flex-wrap gap-1">
-              {STATUS_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setStatusFilter(tab.id)}
-                  className={cn(
-                    "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
-                    statusFilter === tab.id
-                      ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
-                      : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
-                  )}
-                >
-                  {tab.label}
-                  {tab.id === "archived" && archivedCount > 0
-                    ? ` (${archivedCount})`
-                    : ""}
-                </button>
-              ))}
-            </div>
-
             {showManagers ? (
               <section
                 className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
@@ -415,6 +394,27 @@ export default function ProjectsPage() {
                 </ul>
               </section>
             ) : null}
+
+            <div className="mb-4 flex flex-wrap gap-1">
+              {STATUS_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setStatusFilter(tab.id)}
+                  className={cn(
+                    "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
+                    statusFilter === tab.id
+                      ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                      : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
+                  )}
+                >
+                  {tab.label}
+                  {tab.id === "archived" && archivedCount > 0
+                    ? ` (${archivedCount})`
+                    : ""}
+                </button>
+              ))}
+            </div>
 
             <label className="relative mb-4 block md:hidden">
               <Search
