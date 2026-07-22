@@ -126,6 +126,11 @@ type UndoEntry =
   | { kind: "restore"; assignment: Assignment }
   | { kind: "remove"; id: string }
   | {
+      kind: "assignments";
+      restoreAssignments: Assignment[];
+      removeAssignmentIds: string[];
+    }
+  | {
       kind: "leave";
       restoreLeaves: LeaveDay[];
       removeLeaveIds: string[];
@@ -729,6 +734,34 @@ export function ScheduleGrid() {
     } else if (entry.kind === "restore") {
       upsertAssignment(entry.assignment);
       setSelectedId(entry.assignment.id);
+    } else if (entry.kind === "assignments") {
+      for (const id of entry.removeAssignmentIds) {
+        deleteAssignment(id);
+      }
+      for (const assignment of entry.restoreAssignments) {
+        upsertAssignment(assignment);
+      }
+      assignmentsRef.current = (() => {
+        let next = assignmentsRef.current.filter(
+          (a) => !entry.removeAssignmentIds.includes(a.id),
+        );
+        for (const assignment of entry.restoreAssignments) {
+          const exists = next.some((a) => a.id === assignment.id);
+          next = exists
+            ? next.map((a) => (a.id === assignment.id ? assignment : a))
+            : [...next, assignment];
+        }
+        return next;
+      })();
+      const focus = entry.restoreAssignments[0];
+      if (focus) {
+        selectAssignment(focus.id, {
+          start: focus.start_date,
+          end: focus.end_date,
+        });
+      } else {
+        selectAssignment(null);
+      }
     } else {
       applyLeaveUndo({
         restoreLeaves: entry.restoreLeaves,
@@ -776,6 +809,47 @@ export function ScheduleGrid() {
     })();
     if (next.status === "confirmed") {
       warnBudget(next.project_id, assignmentsRef.current);
+    }
+  }
+
+  /** Multi-row assignment change as a single undo step. */
+  function trackedAssignmentBatch(args: {
+    upserts: Assignment[];
+    deletes?: string[];
+    /** Pre-change rows to put back on undo. */
+    undoRestore: Assignment[];
+    /** Rows created by this batch — removed on undo. */
+    undoRemoveIds?: string[];
+    toast?: string;
+  }) {
+    const deletes = args.deletes ?? [];
+    const undoRemoveIds = args.undoRemoveIds ?? [];
+    pushUndo({
+      kind: "assignments",
+      restoreAssignments: args.undoRestore.map((a) => ({ ...a })),
+      removeAssignmentIds: [...undoRemoveIds],
+    });
+    for (const id of deletes) {
+      deleteAssignment(id);
+    }
+    for (const next of args.upserts) {
+      upsertAssignment(next);
+    }
+    assignmentsRef.current = (() => {
+      let next = assignmentsRef.current.filter((a) => !deletes.includes(a.id));
+      for (const row of args.upserts) {
+        const exists = next.some((a) => a.id === row.id);
+        next = exists
+          ? next.map((a) => (a.id === row.id ? row : a))
+          : [...next, row];
+      }
+      return next;
+    })();
+    if (args.toast) push(args.toast);
+    for (const row of args.upserts) {
+      if (row.status === "confirmed") {
+        warnBudget(row.project_id, assignmentsRef.current);
+      }
     }
   }
 
@@ -977,10 +1051,19 @@ export function ScheduleGrid() {
         newId,
         organizationId: state.organization.id,
       });
-      if (split.keepSeries) {
-        commitAssignment(split.keepSeries);
-      }
-      commitAssignment(split.futureSeries, "Updated this and all future");
+      const upserts = split.keepSeries
+        ? [split.keepSeries, split.futureSeries]
+        : [split.futureSeries];
+      const undoRemoveIds =
+        split.futureSeries.id === pending.before.id
+          ? []
+          : [split.futureSeries.id];
+      trackedAssignmentBatch({
+        upserts,
+        undoRestore: [pending.before],
+        undoRemoveIds,
+        toast: "Updated this and all future",
+      });
       selectAssignment(split.futureSeries.id, {
         start: split.futureSeries.start_date,
         end: split.futureSeries.end_date,
@@ -1008,14 +1091,34 @@ export function ScheduleGrid() {
       organizationId: state.organization.id,
     });
     if (split.keepSeries) {
-      commitAssignment(split.keepSeries);
+      trackedAssignmentBatch({
+        upserts: [
+          split.keepSeries,
+          ...(split.continuation ? [split.continuation] : []),
+          split.instance,
+        ],
+        undoRestore: [pending.before],
+        undoRemoveIds: [
+          ...(split.continuation ? [split.continuation.id] : []),
+          split.instance.id,
+        ],
+        toast: "Updated this instance only",
+      });
     } else {
-      trackedDelete(pending.before.id);
+      trackedAssignmentBatch({
+        upserts: [
+          ...(split.continuation ? [split.continuation] : []),
+          split.instance,
+        ],
+        deletes: [pending.before.id],
+        undoRestore: [pending.before],
+        undoRemoveIds: [
+          ...(split.continuation ? [split.continuation.id] : []),
+          split.instance.id,
+        ],
+        toast: "Updated this instance only",
+      });
     }
-    if (split.continuation) {
-      commitAssignment(split.continuation);
-    }
-    commitAssignment(split.instance, "Updated this instance only");
     selectAssignment(split.instance.id, {
       start: split.instance.start_date,
       end: split.instance.end_date,
