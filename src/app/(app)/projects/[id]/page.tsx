@@ -29,7 +29,8 @@ import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
 import type { Milestone, MilestoneStatus, Project } from "@/lib/types";
 
-function formatDisplayDate(dateKey: string): string {
+function formatDisplayDate(dateKey: string | null | undefined): string {
+  if (!dateKey) return "No date";
   return format(parseISO(dateKey), "MMM d, yyyy");
 }
 
@@ -177,7 +178,8 @@ export default function ProjectDetailPage() {
     .filter((m) => m.project_id === project.id)
     .sort(
       (a, b) =>
-        a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
+        a.sort_order - b.sort_order ||
+        (a.due_date ?? "").localeCompare(b.due_date ?? ""),
     );
   const overallPct = projectDateProgress(project, today) ?? 0;
 
@@ -323,51 +325,61 @@ export default function ProjectDetailPage() {
                   <h2 className="text-sm font-semibold">Templates</h2>
                 </button>
                 {templatesExpanded ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <select
-                      className={`${inputClass} mt-0 h-8 max-w-[200px]`}
-                      value={templateId}
-                      onChange={(e) => setTemplateId(e.target.value)}
-                    >
-                      <option value="">Load template…</option>
-                      {state.project_templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
-                      disabled={!templateId}
-                      onClick={async () => {
-                        if (!templateId) return;
-                        await applyProjectTemplate(project.id, templateId);
-                        setTemplateId("");
-                        push("Template applied");
-                      }}
-                    >
-                      Apply
-                    </button>
-                    <input
-                      className={`${inputClass} mt-0 h-8 max-w-[160px]`}
-                      placeholder="Template name"
-                      value={exportName}
-                      onChange={(e) => setExportName(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
-                      onClick={async () => {
-                        const name =
-                          exportName.trim() || `${project.name} template`;
-                        await exportProjectAsTemplate(project.id, name);
-                        setExportName("");
-                        push("Exported as template");
-                      }}
-                    >
-                      Export as template
-                    </button>
+                  <div className="mt-3 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        className={`${inputClass} mt-0 h-8 max-w-[200px]`}
+                        value={templateId}
+                        onChange={(e) => setTemplateId(e.target.value)}
+                        aria-label="Apply template"
+                      >
+                        <option value="">Apply template…</option>
+                        {state.project_templates.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
+                        disabled={!templateId}
+                        onClick={async () => {
+                          if (!templateId) return;
+                          await applyProjectTemplate(project.id, templateId);
+                          setTemplateId("");
+                          push("Template applied — set milestone dates as needed");
+                        }}
+                      >
+                        Apply
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        className={`${inputClass} mt-0 h-8 max-w-[200px]`}
+                        placeholder="New template name"
+                        value={exportName}
+                        onChange={(e) => setExportName(e.target.value)}
+                        aria-label="Template name"
+                      />
+                      <button
+                        type="button"
+                        className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                        onClick={async () => {
+                          const name =
+                            exportName.trim() || `${project.name} template`;
+                          await exportProjectAsTemplate(project.id, name);
+                          setExportName("");
+                          push("Saved as template");
+                        }}
+                      >
+                        Save as Template
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-[var(--text-muted)]">
+                      Apply appends undated milestones and unassigned tasks.
+                      Save strips dates, assignees, and comments.
+                    </p>
                   </div>
                 ) : null}
               </section>
@@ -643,11 +655,11 @@ export default function ProjectDetailPage() {
             <Field label="Due date">
               <DateInput
                 className={inputClass}
-                value={editingMilestone.due_date}
+                value={editingMilestone.due_date ?? ""}
                 onChange={(e) =>
                   setEditingMilestone({
                     ...editingMilestone,
-                    due_date: e.target.value,
+                    due_date: e.target.value || null,
                   })
                 }
               />

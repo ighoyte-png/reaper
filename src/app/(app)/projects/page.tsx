@@ -63,6 +63,7 @@ export default function ProjectsPage() {
     state,
     upsertProject,
     setProjectMembers,
+    applyProjectTemplate,
     newId,
     isPublicShare,
     myPerson,
@@ -75,6 +76,7 @@ export default function ProjectsPage() {
     null,
   );
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [createTemplateId, setCreateTemplateId] = useState("");
   const [query, setQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -223,6 +225,7 @@ export default function ProjectsPage() {
                 className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
                 onClick={() => {
                   setMemberIds([]);
+                  setCreateTemplateId("");
                   setEditing(emptyProject(newId("proj")));
                 }}
               >
@@ -240,6 +243,7 @@ export default function ProjectsPage() {
               cta="Create your first project"
               onClick={() => {
                 setMemberIds([]);
+                setCreateTemplateId("");
                 setEditing(emptyProject(newId("proj")));
               }}
             />
@@ -454,6 +458,7 @@ export default function ProjectsPage() {
                           canManage
                             ? () => {
                                 setMemberIds([]);
+                                setCreateTemplateId("");
                                 setEditing({
                                   ...emptyProject(newId("proj")),
                                   client_id: client?.id ?? null,
@@ -473,10 +478,15 @@ export default function ProjectsPage() {
 
       {canManage && editing && (
         <Modal
-          title={editing.name ? "Edit project" : "Add Project"}
+          title={
+            state.projects.some((p) => p.id === editing.id)
+              ? "Edit project"
+              : "Add Project"
+          }
           onClose={() => {
             setEditing(null);
             setMemberIds([]);
+            setCreateTemplateId("");
           }}
         >
           <ProjectForm
@@ -486,6 +496,10 @@ export default function ProjectsPage() {
             memberIds={memberIds}
             onMemberIdsChange={setMemberIds}
             onChange={setEditing}
+            showTemplateSelect={!state.projects.some((p) => p.id === editing.id)}
+            templates={state.project_templates}
+            templateId={createTemplateId}
+            onTemplateIdChange={setCreateTemplateId}
             onSave={async () => {
               if (!editing.name.trim()) return;
               if (!editing.client_id) {
@@ -504,6 +518,8 @@ export default function ProjectsPage() {
               ) {
                 return;
               }
+              const isNew = !state.projects.some((p) => p.id === editing.id);
+              const templateToApply = isNew ? createTemplateId : "";
               try {
                 await upsertProject({
                   ...editing,
@@ -521,9 +537,17 @@ export default function ProjectsPage() {
                       : false,
                 });
                 await setProjectMembers(editing.id, memberIds);
+                if (templateToApply) {
+                  await applyProjectTemplate(editing.id, templateToApply);
+                }
                 setEditing(null);
                 setMemberIds([]);
-                push("Project saved");
+                setCreateTemplateId("");
+                push(
+                  templateToApply
+                    ? "Project created from template"
+                    : "Project saved",
+                );
               } catch (err) {
                 push(
                   err instanceof Error ? err.message : "Could not save project",
@@ -534,6 +558,7 @@ export default function ProjectsPage() {
             onCancel={() => {
               setEditing(null);
               setMemberIds([]);
+              setCreateTemplateId("");
             }}
           />
         </Modal>

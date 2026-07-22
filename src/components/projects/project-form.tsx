@@ -1,7 +1,13 @@
 "use client";
 
 import { Field, inputClass, DateInput } from "@/components/ui/form";
-import type { BudgetMode, Person, Project, ProjectStatus } from "@/lib/types";
+import type {
+  BudgetMode,
+  Person,
+  Project,
+  ProjectStatus,
+  ProjectTemplate,
+} from "@/lib/types";
 
 const DEFAULT_PROJECT_COLOR = "#3498DB";
 
@@ -15,6 +21,10 @@ export function ProjectForm({
   onSave,
   onCancel,
   onDelete,
+  templates = [],
+  templateId = "",
+  onTemplateIdChange,
+  showTemplateSelect = false,
 }: {
   project: Omit<Project, "organization_id">;
   clients: { id: string; name: string; color?: string }[];
@@ -25,11 +35,19 @@ export function ProjectForm({
   onSave: () => void;
   onCancel: () => void;
   onDelete?: () => void;
+  templates?: ProjectTemplate[];
+  templateId?: string;
+  onTemplateIdChange?: (id: string) => void;
+  /** When true, show optional template picker (new projects only). */
+  showTemplateSelect?: boolean;
 }) {
   const clientsSorted = [...clients].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
   const peopleSorted = [...people].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  const templatesSorted = [...templates].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 
@@ -82,6 +100,25 @@ export function ProjectForm({
           ))}
         </select>
       </Field>
+      {showTemplateSelect && onTemplateIdChange ? (
+        <Field label="Template">
+          <select
+            className={inputClass}
+            value={templateId}
+            onChange={(e) => onTemplateIdChange(e.target.value)}
+          >
+            <option value="">None</option>
+            {templatesSorted.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+            Applies milestones and tasks undated and unassigned after create.
+          </p>
+        </Field>
+      ) : null}
       <Field label="Team members">
         <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-[var(--border)] p-2">
           {peopleSorted.length === 0 ? (

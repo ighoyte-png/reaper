@@ -98,7 +98,7 @@ function mapMilestone(row: Record<string, unknown>): Milestone {
     project_id: String(row.project_id),
     name: String(row.name ?? ""),
     start_date: row.start_date ? String(row.start_date) : null,
-    due_date: String(row.due_date),
+    due_date: row.due_date ? String(row.due_date) : null,
     status: row.status as Milestone["status"],
     client_approved: Boolean(row.client_approved),
     sort_order: num(row.sort_order),
@@ -1512,16 +1512,22 @@ export async function deleteTemplateTaskRow(
 }
 
 /**
- * Apply a project template: create milestones/task lists/tasks on a project
- * from a template's children, offsetting dates from `startDate`.
+ * Apply a project template: create undated milestones/task lists/tasks on a project.
+ * Dates stay null so the user sets the schedule after initialization.
  */
 export async function applyProjectTemplateRows(
   supabase: SupabaseClient,
   args: {
     organizationId: string;
     projectId: string;
-    startDate: string;
-    milestones: { id: string; name: string; due_date: string; status: "upcoming"; sort_order: number }[];
+    milestones: {
+      id: string;
+      name: string;
+      due_date: string | null;
+      start_date: string | null;
+      status: "upcoming";
+      sort_order: number;
+    }[];
     taskLists: {
       id: string;
       milestone_id: string | null;
@@ -1545,6 +1551,7 @@ export async function applyProjectTemplateRows(
     organization_id: args.organizationId,
     project_id: args.projectId,
     name: m.name,
+    start_date: m.start_date,
     due_date: m.due_date,
     status: m.status,
     client_approved: false,

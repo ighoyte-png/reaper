@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
@@ -8,6 +6,7 @@ import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, inputClass } from "@/components/ui/form";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { cn } from "@/lib/cn";
 import type { ProjectTemplate, TemplateTask } from "@/lib/types";
@@ -24,6 +23,7 @@ export default function TemplatesPage() {
   const canManage = effectiveCanManage;
   const { push } = useToast();
   const router = useRouter();
+  const appHref = useAppHref();
   const [selectedId, setSelectedId] = useState<string | null>(
     state.project_templates[0]?.id ?? null,
   );
@@ -66,7 +66,8 @@ export default function TemplatesPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Templates"
+        title="Project templates"
+        onBack={() => router.push(appHref("/projects"))}
         actions={
           <button
             type="button"
@@ -77,6 +78,10 @@ export default function TemplatesPage() {
           </button>
         }
       />
+      <p className="border-b border-[var(--border)] px-3 pb-3 text-sm text-[var(--text-muted)] sm:px-5">
+        Reusable milestone and task structures. Apply when creating a project or
+        from a project hub. Applied work starts undated and unassigned.
+      </p>
       {templates.length === 0 ? (
         <div className="p-5">
           <EmptyState
@@ -307,29 +312,16 @@ function TemplateEditor({
                 >
                   <div className="mb-2 flex flex-wrap items-center gap-2">
                     <input
-                      className={cn(inputClass, "mt-0 h-8 max-w-[220px]")}
+                      className={cn(inputClass, "mt-0 h-8 min-w-0 flex-1 max-w-md")}
                       value={m.name}
                       onChange={(e) =>
                         upsertTemplateMilestone({ ...m, name: e.target.value })
                       }
+                      aria-label="Milestone name"
                     />
-                    <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-                      Offset (days)
-                      <input
-                        type="number"
-                        className={cn(inputClass, "mt-0 h-8 w-20")}
-                        value={m.offset_days}
-                        onChange={(e) =>
-                          upsertTemplateMilestone({
-                            ...m,
-                            offset_days: Number(e.target.value) || 0,
-                          })
-                        }
-                      />
-                    </label>
                     <button
                       type="button"
-                      className="ml-auto cursor-pointer text-xs text-[var(--accent)] hover:underline"
+                      className="cursor-pointer text-xs text-[var(--accent)] hover:underline"
                       onClick={() => addTaskList(m.id)}
                     >
                       + List
@@ -443,20 +435,7 @@ function TaskListEditor({
             onChange={(e) =>
               upsertTemplateTask({ ...task, title: e.target.value })
             }
-          />
-          <input
-            type="number"
-            title="Offset days from project start"
-            placeholder="offset"
-            className={cn(inputClass, "mt-0 h-7 w-16 text-xs")}
-            value={task.offset_days ?? ""}
-            onChange={(e) =>
-              upsertTemplateTask({
-                ...task,
-                offset_days:
-                  e.target.value === "" ? null : Number(e.target.value) || 0,
-              })
-            }
+            aria-label="Task title"
           />
           {!depth ? (
             <button

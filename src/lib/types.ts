@@ -83,7 +83,7 @@ export interface Milestone {
   name: string;
   /** Optional start of milestone window; falls back to project start for progress. */
   start_date: string | null;
-  due_date: string;
+  due_date: string | null;
   status: MilestoneStatus;
   /** Admin-checked after formal client sign-off. */
   client_approved: boolean;

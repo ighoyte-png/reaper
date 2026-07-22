@@ -37,7 +37,7 @@ export function SortableMilestoneList({
   project: Project;
   today: string;
   canManage: boolean;
-  formatDisplayDate: (dateKey: string) => string;
+  formatDisplayDate: (dateKey: string | null) => string;
   onReorder: (reordered: Milestone[]) => void;
   onToggleApproved: (milestone: Milestone, approved: boolean) => void;
   onEdit: (milestone: Milestone) => void;
@@ -100,13 +100,17 @@ function SortableMilestoneRow({
   project: Project;
   today: string;
   canManage: boolean;
-  formatDisplayDate: (dateKey: string) => string;
+  formatDisplayDate: (dateKey: string | null) => string;
   onToggleApproved: (milestone: Milestone, approved: boolean) => void;
   onEdit: (milestone: Milestone) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: milestone.id, disabled: !canManage });
-  const pct = milestoneDateProgress(milestone, project, today) ?? 0;
+  const pct = milestoneDateProgress(milestone, project, today);
+  const dateLabel = milestone.due_date
+    ? formatDisplayDate(milestone.due_date)
+    : "No date";
+  const label = `${milestone.name} · ${dateLabel}`;
 
   return (
     <div
@@ -132,8 +136,8 @@ function SortableMilestoneRow({
         ) : null}
         <div className="min-w-0 flex-1">
           <ProgressBar
-            pct={pct}
-            label={`${milestone.name} · ${formatDisplayDate(milestone.due_date)}`}
+            pct={pct ?? 0}
+            label={label}
             approved={milestone.client_approved}
           />
         </div>

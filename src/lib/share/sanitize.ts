@@ -61,7 +61,7 @@ export interface ProjectPortalPayload {
   milestones: {
     id: string;
     name: string;
-    due_date: string;
+    due_date: string | null;
     status: string;
     client_approved: boolean;
     sort_order: number;
@@ -159,7 +159,8 @@ export function sanitizeProjectPortal(
       .filter((m) => m.project_id === projectId)
       .sort(
         (a, b) =>
-          a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
+          a.sort_order - b.sort_order ||
+          (a.due_date ?? "").localeCompare(b.due_date ?? ""),
       )
       .map((m) => ({
         id: m.id,

@@ -160,6 +160,7 @@ function loadDemoState(): DemoState {
       milestones: (parsed.milestones ?? seed.milestones).map((m, idx) => ({
         ...m,
         start_date: m.start_date ?? null,
+        due_date: m.due_date ?? null,
         client_approved: Boolean(m.client_approved),
         sort_order:
           typeof m.sort_order === "number" ? m.sort_order : idx,
@@ -1940,6 +1941,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           template_milestones: prev.template_milestones.filter(
             (m) => m.id !== id,
           ),
+          template_task_lists: prev.template_task_lists.map((l) =>
+            l.template_milestone_id === id
+              ? { ...l, template_milestone_id: null }
+              : l,
+          ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() =>
@@ -1974,6 +1980,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           template_task_lists: prev.template_task_lists.filter(
             (l) => l.id !== id,
           ),
+          template_tasks: prev.template_tasks.filter((t) => t.list_id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() =>
@@ -1999,10 +2006,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteTemplateTask: (id) => {
-        patch((prev) => ({
-          ...prev,
-          template_tasks: prev.template_tasks.filter((t) => t.id !== id),
-        }));
+        patch((prev) => {
+          const childIds = new Set(
+            prev.template_tasks
+              .filter((t) => t.parent_id === id)
+              .map((t) => t.id),
+          );
+          return {
+            ...prev,
+            template_tasks: prev.template_tasks.filter(
+              (t) => t.id !== id && !childIds.has(t.id),
+            ),
+          };
+        });
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() =>
             deleteTemplateTaskRow(supabaseRef.current!, id),
@@ -2020,14 +2036,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           (t) => t.template_id === templateId,
         );
 
-        const anchor = new Date();
-        const offsetDate = (offset: number | null): string | null => {
-          if (offset == null) return null;
-          const next = new Date(anchor);
-          next.setDate(next.getDate() + offset);
-          return next.toISOString().slice(0, 10);
-        };
-        const anchorDate = anchor.toISOString().slice(0, 10);
         const organizationId = state.organization.id || orgId;
 
         const milestoneIdMap = new Map<string, string>();
@@ -2040,7 +2048,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             project_id: projectId,
             name: m.name,
             start_date: null,
-            due_date: offsetDate(m.offset_days) ?? anchorDate,
+            due_date: null,
             status: "upcoming",
             client_approved: false,
             sort_order: m.sort_order,
@@ -2076,7 +2084,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           title: t.title,
           status: "upcoming",
           start_date: null,
-          due_date: offsetDate(t.offset_days),
+          due_date: null,
           notes: t.notes,
           sort_order: t.sort_order,
         }));
@@ -2093,11 +2101,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
             applyProjectTemplateRows(supabaseRef.current!, {
               organizationId,
               projectId,
-              startDate: anchorDate,
               milestones: newMilestones.map((m) => ({
                 id: m.id,
                 name: m.name,
                 due_date: m.due_date,
+                start_date: m.start_date,
                 status: "upcoming" as const,
                 sort_order: m.sort_order,
               })),
@@ -2123,12 +2131,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       exportProjectAsTemplate: async (projectId, name) => {
         const organizationId = state.organization.id || orgId;
-        const project = state.projects.find((p) => p.id === projectId);
         const projectMilestones = state.milestones
           .filter((m) => m.project_id === projectId)
           .sort(
             (a, b) =>
-              a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
+              a.sort_order - b.sort_order ||
+              (a.due_date ?? "").localeCompare(b.due_date ?? ""),
           );
         const projectLists = state.task_lists.filter(
           (l) => l.project_id === projectId,
@@ -2136,24 +2144,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const projectTasks = state.tasks.filter(
           (t) => t.project_id === projectId,
         );
-
-        // Offsets are relative to the project start date so re-applying the
-        // template preserves the original milestone/task spacing.
-        const candidateDates = [
-          ...projectMilestones.map((m) => m.due_date),
-          ...projectTasks
-            .map((t) => t.due_date)
-            .filter((d): d is string => Boolean(d)),
-        ].sort();
-        const anchorDate =
-          project?.start_date ??
-          candidateDates[0] ??
-          new Date().toISOString().slice(0, 10);
-        const diffDays = (dateKey: string): number => {
-          const d = new Date(`${dateKey}T12:00:00`).getTime();
-          const a = new Date(`${anchorDate}T12:00:00`).getTime();
-          return Math.round((d - a) / (1000 * 60 * 60 * 24));
-        };
 
         const templateId = uid("tmpl");
         const newTemplate: ProjectTemplate = {
@@ -2173,7 +2163,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               organization_id: organizationId,
               template_id: templateId,
               name: m.name,
-              offset_days: diffDays(m.due_date),
+              offset_days: 0,
               sort_order: m.sort_order ?? idx,
             };
           },
@@ -2205,7 +2195,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
           title: t.title,
           notes: t.notes,
-          offset_days: t.due_date ? diffDays(t.due_date) : null,
+          offset_days: null,
           sort_order: t.sort_order,
         }));
 

@@ -118,7 +118,8 @@ function taskCompletionPct(
   return Math.round((done / parents.length) * 100);
 }
 
-function formatDisplayDate(dateKey: string): string {
+function formatDisplayDate(dateKey: string | null | undefined): string {
+  if (!dateKey) return "No date";
   return format(parseISO(dateKey), "MMM d, yyyy");
 }
 
@@ -266,7 +267,8 @@ export default function ProjectSharePage() {
 
   const milestonesSorted = [...portal.milestones].sort(
     (a, b) =>
-      a.sort_order - b.sort_order || a.due_date.localeCompare(b.due_date),
+      a.sort_order - b.sort_order ||
+      (a.due_date ?? "").localeCompare(b.due_date ?? ""),
   );
   const assetsSorted = [...portal.assets].sort(
     (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
