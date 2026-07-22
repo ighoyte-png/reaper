@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
-import { Archive, ArchiveRestore, ExternalLink, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
@@ -30,7 +30,6 @@ import {
   sortClientsByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
-import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
 import type { Client, Project, ProjectStatus } from "@/lib/types";
 
@@ -490,21 +489,6 @@ export default function ProjectsPage() {
                           project={project}
                           href={appHref(`/projects/${project.id}`)}
                           showManager={showManagers}
-                          canArchive={canManage}
-                          onToggleArchive={() => {
-                            upsertProject({
-                              ...project,
-                              status:
-                                project.status === "archived"
-                                  ? "active"
-                                  : "archived",
-                            });
-                            push(
-                              project.status === "archived"
-                                ? "Project restored"
-                                : "Project archived",
-                            );
-                          }}
                         />
                       ))}
                       <CardGridPlaceholders
@@ -675,14 +659,10 @@ function ProjectCard({
   project,
   href,
   showManager,
-  canArchive,
-  onToggleArchive,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
-  canArchive?: boolean;
-  onToggleArchive?: () => void;
 }) {
   const { state } = useData();
   const burn = budgetBurn(project, state.assignments, state.people);
@@ -693,23 +673,16 @@ function ProjectCard({
     showManager && project.manager_person_id
       ? state.people.find((p) => p.id === project.manager_person_id)
       : null;
-  const portalUrl =
-    project.share_enabled && project.share_token
-      ? publicProjectShareUrl(
-          typeof window !== "undefined" ? window.location.origin : "",
-          project.share_token,
-        )
-      : null;
 
   return (
-    <div
+    <Link
+      href={href}
       className={cn(
-        "relative flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]",
+        "flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]",
         project.status === "archived" && "opacity-60",
       )}
     >
-      <Link href={href} className="absolute inset-0 z-0" aria-label={project.name} />
-      <div className="relative z-[1] mb-3 flex min-w-0 items-center gap-2 pointer-events-none">
+      <div className="mb-3 flex min-w-0 items-center gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
           {project.name}
         </div>
@@ -724,7 +697,7 @@ function ProjectCard({
           ) : null}
         </div>
       </div>
-      <div className="relative z-[1] mt-auto space-y-3 pointer-events-none">
+      <div className="mt-auto space-y-3">
         {overallPct != null ? (
           <ProgressBar pct={overallPct} label="Overall Progress" />
         ) : null}
@@ -748,42 +721,6 @@ function ProjectCard({
           </div>
         ) : null}
       </div>
-      {portalUrl || (canArchive && onToggleArchive) ? (
-        <div className="relative z-[1] mt-3 flex flex-wrap items-center justify-end gap-1.5">
-          {portalUrl ? (
-            <button
-              type="button"
-              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                window.open(portalUrl, "_blank", "noopener,noreferrer");
-              }}
-            >
-              <ExternalLink size={11} />
-              Client portal
-            </button>
-          ) : null}
-          {canArchive && onToggleArchive ? (
-            <button
-              type="button"
-              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onToggleArchive();
-              }}
-            >
-              {project.status === "archived" ? (
-                <ArchiveRestore size={11} />
-              ) : (
-                <Archive size={11} />
-              )}
-              {project.status === "archived" ? "Unarchive" : "Archive"}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    </Link>
   );
 }
