@@ -7,6 +7,7 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useViewAs } from "@/lib/view-as";
@@ -304,31 +305,30 @@ export default function PeoplePage() {
         title="People"
         actions={
           canManage ? (
-            <button
-              type="button"
-              className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+            <Button
+              variant="primary"
               onClick={() => {
                 openEdit({ ...emptyPerson(), id: newId("person") }, true);
               }}
             >
-              Add person
-            </button>
+              Add Person
+            </Button>
           ) : undefined
         }
       />
-      <div className="p-5">
+      <div className="p-3 sm:p-5">
         {canManage ? (
           <p className="mb-4 text-sm text-[var(--text-muted)]">
-            Add people with their work email — <strong>Add & invite</strong>{" "}
-            emails them. <strong>Invite</strong> / Create invite link only gives
-            you a copyable link. Members only see My schedule.
+            Add people with their work email — <strong>Add & Invite</strong>{" "}
+            emails them. <strong>Invite</strong> / Create Invite Link only gives
+            you a copyable link. Members only see My Schedule.
           </p>
         ) : null}
         {state.people.length === 0 ? (
           canManage ? (
             <EmptyState
               title="No people yet"
-              cta="Add your first person"
+              cta="Add Your First Person"
               onClick={() => {
                 openEdit({ ...emptyPerson(), id: newId("person") }, true);
               }}
@@ -511,7 +511,7 @@ export default function PeoplePage() {
 
       {canManage && editing && (
         <Modal
-          title={isNewPerson ? "Add person" : "Edit person"}
+          title={isNewPerson ? "Add Person" : "Edit Person"}
           onClose={() => {
             setEditing(null);
             setIsNewPerson(false);
@@ -543,10 +543,10 @@ export default function PeoplePage() {
                   />
                   <button
                     type="button"
-                    className="h-8 w-fit rounded-md border border-[var(--border)] px-2.5 text-xs"
+                    className="h-8 w-fit rounded-[var(--radius-md)] border border-[var(--border)] px-2.5 text-xs"
                     onClick={() => avatarInputRef.current?.click()}
                   >
-                    {avatarPreview ? "Change photo" : "Upload photo"}
+                    {avatarPreview ? "Change Photo" : "Upload Photo"}
                   </button>
                   {avatarPreview ? (
                     <button
@@ -561,7 +561,7 @@ export default function PeoplePage() {
                         }
                       }}
                     >
-                      Remove photo
+                      Remove Photo
                     </button>
                   ) : null}
                 </div>
@@ -723,20 +723,20 @@ export default function PeoplePage() {
               </Field>
             </div>
             <div className="flex justify-between pt-2">
-              <button
-                type="button"
-                className="text-sm text-[var(--status-over)]"
+              <Button
+                variant="ghost"
+                className="text-[var(--status-over)] hover:text-[var(--status-over)]"
                 onClick={() => {
                   if (!editing.id || isNewPerson) return;
                   setConfirmDelete(true);
                 }}
               >
                 Delete
-              </button>
+              </Button>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
+                <Button
+                  variant="secondary"
+                  size="lg"
                   onClick={() => {
                     setEditing(null);
                     setIsNewPerson(false);
@@ -745,19 +745,19 @@ export default function PeoplePage() {
                   }}
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="primary"
+                  size="lg"
                   disabled={saveBusy}
-                  className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:opacity-60"
                   onClick={() => void savePerson()}
                 >
                   {saveBusy
                     ? "Saving…"
                     : isNewPerson
-                      ? "Add & invite"
+                      ? "Add & Invite"
                       : "Save"}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -766,9 +766,9 @@ export default function PeoplePage() {
 
       {canManage && confirmDelete && editing && (
         <ConfirmDialog
-          title="Delete person?"
+          title="Delete Person?"
           message={`Delete ${editing.name || "this person"}? Their assignments and leave will be removed. This can’t be undone.`}
-          confirmLabel="Delete person"
+          confirmLabel="Delete Person"
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
             if (editing.id) deletePerson(editing.id);
@@ -782,9 +782,9 @@ export default function PeoplePage() {
 
       {canManage && resendTarget && (
         <ConfirmDialog
-          title="Resend invite?"
+          title="Resend Invite?"
           message={`Send another invite email to ${resendTarget.name}${resendTarget.email ? ` (${resendTarget.email})` : ""}?`}
-          confirmLabel="Resend invite"
+          confirmLabel="Resend Invite"
           tone="accent"
           onCancel={() => setResendTarget(null)}
           onConfirm={() => {
@@ -827,16 +827,16 @@ export default function PeoplePage() {
               </select>
             </Field>
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                className="h-9 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+              <Button
+                variant="secondary"
+                size="lg"
                 onClick={() => setLeaveTarget(null)}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="h-9 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] hover:opacity-90"
+              </Button>
+              <Button
+                variant="primary"
+                size="lg"
                 onClick={() => {
                   if (!/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
                     push("Choose a valid leave date", "warning");
@@ -855,8 +855,8 @@ export default function PeoplePage() {
                   setLeaveTarget(null);
                 }}
               >
-                Add leave
-              </button>
+                Add Leave
+              </Button>
             </div>
           </div>
         </Modal>
@@ -898,9 +898,9 @@ export default function PeoplePage() {
                   value={inviteUrl}
                 />
                 <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
+                  <Button
+                    variant="secondary"
+                    size="lg"
                     onClick={() => {
                       setInviteTarget(null);
                       setInviteUrl(null);
@@ -909,17 +909,17 @@ export default function PeoplePage() {
                     }}
                   >
                     Done
-                  </button>
-                  <button
-                    type="button"
-                    className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="lg"
                     onClick={async () => {
                       await navigator.clipboard.writeText(inviteUrl);
                       push("Invite link copied", "success");
                     }}
                   >
-                    Copy link
-                  </button>
+                    Copy Link
+                  </Button>
                 </div>
               </>
             ) : (
@@ -940,7 +940,7 @@ export default function PeoplePage() {
                 {mode === "supabase" && (
                   <p className="text-xs text-[var(--text-muted)]">
                     Creates a copyable invite link only (no email). Use{" "}
-                    <strong>Add & invite</strong> when creating a person if you
+                    <strong>Add & Invite</strong> when creating a person if you
                     want Supabase to email them.
                   </p>
                 )}
@@ -951,17 +951,17 @@ export default function PeoplePage() {
                   </p>
                 )}
                 <div className="flex justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
+                  <Button
+                    variant="secondary"
+                    size="lg"
                     onClick={() => setInviteTarget(null)}
                   >
                     Cancel
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="lg"
                     disabled={inviteBusy || !inviteEmail.trim()}
-                    className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:opacity-60"
                     onClick={() => {
                       if (inviteTarget) {
                         void createInviteLink(inviteTarget, {
@@ -970,8 +970,8 @@ export default function PeoplePage() {
                       }
                     }}
                   >
-                    {inviteBusy ? "Creating…" : "Create invite link"}
-                  </button>
+                    {inviteBusy ? "Creating…" : "Create Invite Link"}
+                  </Button>
                 </div>
               </>
             )}

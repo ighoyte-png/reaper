@@ -12,6 +12,7 @@ import { BurnBar } from "@/components/ui/burn-bar";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
+import { Button, buttonClass } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -216,13 +217,12 @@ export default function ProjectsPage() {
             <div className="flex items-center gap-2">
               <Link
                 href={appHref("/templates")}
-                className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                className={buttonClass({ variant: "secondary" })}
               >
                 Templates
               </Link>
-              <button
-                type="button"
-                className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+              <Button
+                variant="primary"
                 onClick={() => {
                   setMemberIds([]);
                   setCreateTemplateId("");
@@ -230,17 +230,17 @@ export default function ProjectsPage() {
                 }}
               >
                 Add Project
-              </button>
+              </Button>
             </div>
           ) : undefined
         }
       />
       {visibleProjects.length === 0 ? (
-        <div className="p-5">
+        <div className="p-3 sm:p-5">
           {canManage ? (
             <EmptyState
               title="No projects yet"
-              cta="Create your first project"
+              cta="Create Your First Project"
               onClick={() => {
                 setMemberIds([]);
                 setCreateTemplateId("");

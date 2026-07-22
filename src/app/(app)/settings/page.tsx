@@ -9,6 +9,8 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
+import { Panel } from "@/components/ui/panel";
 import { useData } from "@/lib/data/store";
 import { useViewAs } from "@/lib/view-as";
 import { publicShareUrl } from "@/lib/share/token";
@@ -132,10 +134,10 @@ export default function SettingsPage() {
         setShareUrl(result.url);
         push(
           action === "disable"
-            ? "Public link turned off"
+            ? "Public Link turned off"
             : action === "rotate"
-              ? "Public link regenerated"
-              : "Public link turned on",
+              ? "Public Link regenerated"
+              : "Public Link turned on",
         );
         return;
       }
@@ -154,10 +156,10 @@ export default function SettingsPage() {
       setShareUrl(body.url ?? null);
       push(
         action === "disable"
-          ? "Public link turned off"
+          ? "Public Link turned off"
           : action === "rotate"
-            ? "Public link regenerated"
-            : "Public link turned on",
+            ? "Public Link regenerated"
+            : "Public Link turned on",
       );
     } catch (err) {
       push(
@@ -301,8 +303,8 @@ export default function SettingsPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Settings" />
-      <div className="mx-auto max-w-2xl space-y-4 p-5">
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <div className="mx-auto max-w-2xl space-y-4 p-3 sm:p-5">
+        <Panel>
           <h2 className="text-sm font-semibold">Organization</h2>
           <div className="mt-2 flex items-center gap-1.5">
             <p className="text-sm">{state.organization.name || "—"}</p>
@@ -317,7 +319,7 @@ export default function SettingsPage() {
                   setOrgModalOpen(true);
                 }}
               >
-                <Pencil size={14} />
+                <Pencil size={14} strokeWidth={1.75} />
               </button>
             ) : null}
           </div>
@@ -326,11 +328,11 @@ export default function SettingsPage() {
             {myPerson ? ` · linked to ${myPerson.name}` : ""} ·{" "}
             {mode === "supabase" ? "Supabase" : "Local demo"}
           </p>
-        </section>
+        </Panel>
 
         {myPerson ? (
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="text-sm font-semibold">Profile photo</h2>
+          <Panel>
+            <h2 className="text-sm font-semibold">Profile Photo</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Shown on your dashboard and client portals when you&apos;re on a
               project team.
@@ -353,18 +355,19 @@ export default function SettingsPage() {
                     if (file) void saveAvatarFile(file);
                   }}
                 />
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   disabled={avatarBusy}
-                  className="h-8 w-fit rounded-md border border-[var(--border)] px-2.5 text-xs disabled:opacity-60"
+                  className="w-fit"
                   onClick={() => avatarInputRef.current?.click()}
                 >
                   {avatarBusy
                     ? "Saving…"
                     : myPerson.avatar_url
-                      ? "Change photo"
-                      : "Upload photo"}
-                </button>
+                      ? "Change Photo"
+                      : "Upload Photo"}
+                </Button>
                 {myPerson.avatar_url ? (
                   <button
                     type="button"
@@ -372,26 +375,26 @@ export default function SettingsPage() {
                     className="w-fit text-xs text-[var(--text-muted)] disabled:opacity-60"
                     onClick={() => void clearAvatar()}
                   >
-                    Remove photo
+                    Remove Photo
                   </button>
                 ) : null}
               </div>
             </div>
-          </section>
+          </Panel>
         ) : null}
 
         {canManage && (
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="text-sm font-semibold">Public link</h2>
+          <Panel>
+            <h2 className="text-sm font-semibold">Public Link</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Share a read-only board with schedule, people, projects, clients,
               and reports. Anyone with the link can view — nothing is editable.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="lg"
                 disabled={shareBusy}
-                className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:opacity-60"
                 onClick={() =>
                   void setShare(shareEnabled ? "disable" : "enable")
                 }
@@ -399,18 +402,18 @@ export default function SettingsPage() {
                 {shareBusy
                   ? "Updating…"
                   : shareEnabled
-                    ? "Turn off public link"
-                    : "Turn on public link"}
-              </button>
+                    ? "Turn Off Public Link"
+                    : "Turn On Public Link"}
+              </Button>
               {shareEnabled ? (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="lg"
                   disabled={shareBusy}
-                  className="h-9 rounded-md border border-[var(--border)] px-3 text-sm disabled:opacity-60"
                   onClick={() => void setShare("rotate")}
                 >
-                  Regenerate link
-                </button>
+                  Regenerate Link
+                </Button>
               ) : null}
             </div>
             {shareEnabled && shareUrl ? (
@@ -430,21 +433,21 @@ export default function SettingsPage() {
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(shareUrl);
-                      push("Public link copied", "success");
+                      push("Public Link copied", "success");
                     } catch {
                       push("Could not copy — select the URL manually", "warning");
                     }
                   }}
                 >
-                  Copy link
+                  Copy Link
                 </button>
               </div>
             ) : null}
-          </section>
+          </Panel>
         )}
 
         {mode === "supabase" && (
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+          <Panel>
             <h2 className="text-sm font-semibold">Password</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Change the password for {profile?.email || "your account"}.
@@ -488,18 +491,14 @@ export default function SettingsPage() {
               {pwError && (
                 <p className="text-sm text-[var(--status-over)]">{pwError}</p>
               )}
-              <button
-                type="submit"
-                disabled={pwBusy}
-                className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:opacity-60"
-              >
-                {pwBusy ? "Updating…" : "Update password"}
-              </button>
+              <Button type="submit" variant="primary" size="lg" disabled={pwBusy}>
+                {pwBusy ? "Updating…" : "Update Password"}
+              </Button>
             </form>
-          </section>
+          </Panel>
         )}
 
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <Panel>
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold">Theme</h2>
@@ -509,11 +508,11 @@ export default function SettingsPage() {
             </div>
             <ThemeToggle />
           </div>
-        </section>
+        </Panel>
 
         {canManage && (
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="text-sm font-semibold">Holiday calendars</h2>
+          <Panel>
+            <h2 className="text-sm font-semibold">Holiday Calendars</h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Global calendars (e.g. US vs Canada). Assign on People, then apply
               to create statutory leave days and clear overlapping bookings.
@@ -564,13 +563,9 @@ export default function SettingsPage() {
                 value={newCalRegion}
                 onChange={(e) => setNewCalRegion(e.target.value)}
               />
-              <button
-                type="button"
-                className="h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-                onClick={addCalendar}
-              >
+              <Button variant="secondary" size="lg" onClick={addCalendar}>
                 Add
-              </button>
+              </Button>
             </div>
 
             {editingCal && (
@@ -578,17 +573,17 @@ export default function SettingsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-medium">{editingCal.name}</h3>
                   <div className="flex gap-2">
-                    <button
-                      type="button"
+                    <Button
+                      variant="primary"
+                      size="sm"
                       disabled={calBusy}
-                      className="h-8 rounded-md bg-[var(--accent)] px-3 text-xs text-[var(--accent-fg)] disabled:opacity-60"
                       onClick={() => void applyCalendar(editingCal.id)}
                     >
-                      {calBusy ? "Applying…" : "Apply to assigned people"}
-                    </button>
-                    <button
-                      type="button"
-                      className="h-8 rounded-md border border-[var(--border)] px-3 text-xs text-[var(--status-over)]"
+                      {calBusy ? "Applying…" : "Apply To Assigned People"}
+                    </Button>
+                    <Button
+                      variant="destructiveOutline"
+                      size="sm"
                       onClick={() => {
                         if (
                           !window.confirm(
@@ -603,7 +598,7 @@ export default function SettingsPage() {
                       }}
                     >
                       Delete
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -698,32 +693,32 @@ export default function SettingsPage() {
                     value={dayName}
                     onChange={(e) => setDayName(e.target.value)}
                   />
-                  <button
-                    type="button"
-                    className="h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                  <Button
+                    variant="secondary"
+                    size="lg"
                     onClick={() => addCalendarDay(editingCal.id)}
                   >
-                    Add date
-                  </button>
+                    Add Date
+                  </Button>
                 </div>
               </div>
             )}
-          </section>
+          </Panel>
         )}
 
         {mode === "demo" && state.profiles.length > 1 && (
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="text-sm font-semibold">Switch account (demo)</h2>
+          <Panel>
+            <h2 className="text-sm font-semibold">Switch Account (Demo)</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
-              After inviting a person, switch here to see My schedule as that
+              After inviting a person, switch here to see My Schedule as that
               member.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               {state.profiles.map((p) => (
-                <button
+                <Button
                   key={p.id}
-                  type="button"
-                  className="h-8 rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => {
                     clearViewAs();
                     switchDemoProfile(p.id);
@@ -732,29 +727,30 @@ export default function SettingsPage() {
                   }}
                 >
                   {p.full_name} · {p.role}
-                </button>
+                </Button>
               ))}
             </div>
-          </section>
+          </Panel>
         )}
 
         {canManage && (
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="text-sm font-semibold">Demo data</h2>
+          <Panel>
+            <h2 className="text-sm font-semibold">Demo Data</h2>
             <p className="mt-1 text-sm text-[var(--text-muted)]">
               {mode === "supabase"
                 ? "Clears this organization’s planning data in Supabase and loads the sample schedule narrative."
                 : "Reset the local workspace to the seeded schedule narrative."}
             </p>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="lg"
+              className="mt-3"
               disabled={busy}
-              className="mt-3 h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)] disabled:opacity-60"
               onClick={async () => {
                 setBusy(true);
                 try {
                   await resetDemo();
-                  push("Demo data restored", "success");
+                  push("Demo Data restored", "success");
                 } catch (err) {
                   push(
                     err instanceof Error ? err.message : "Failed to load demo",
@@ -765,12 +761,12 @@ export default function SettingsPage() {
                 }
               }}
             >
-              {busy ? "Loading…" : "Load demo data"}
-            </button>
-          </section>
+              {busy ? "Loading…" : "Load Demo Data"}
+            </Button>
+          </Panel>
         )}
 
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <Panel>
           <h2 className="text-sm font-semibold">Backend</h2>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
             {mode === "supabase"
@@ -780,23 +776,23 @@ export default function SettingsPage() {
           {authError && (
             <p className="mt-2 text-sm text-[var(--status-over)]">{authError}</p>
           )}
-        </section>
+        </Panel>
 
-        <button
-          type="button"
-          className="h-9 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+        <Button
+          variant="secondary"
+          size="lg"
           onClick={async () => {
             await logout();
             router.push("/login");
           }}
         >
-          Sign out
-        </button>
+          Sign Out
+        </Button>
       </div>
 
       {orgModalOpen ? (
         <Modal
-          title="Edit organization name"
+          title="Edit Organization Name"
           onClose={() => {
             if (orgBusy) return;
             setOrgModalOpen(false);
@@ -814,9 +810,8 @@ export default function SettingsPage() {
               />
             </Field>
             <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+              <Button
+                variant="secondary"
                 disabled={orgBusy}
                 onClick={() => {
                   setOrgModalOpen(false);
@@ -824,10 +819,9 @@ export default function SettingsPage() {
                 }}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+              </Button>
+              <Button
+                variant="primary"
                 disabled={
                   orgBusy ||
                   !orgName.trim() ||
@@ -854,7 +848,7 @@ export default function SettingsPage() {
                 }}
               >
                 {orgBusy ? "Saving…" : "Save"}
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>

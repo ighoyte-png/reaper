@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useToast } from "@/components/toast/toast-provider";
@@ -70,17 +71,13 @@ export default function ClientsPage() {
         title="Clients"
         actions={
           canManage ? (
-            <button
-              type="button"
-              className="h-8 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={() => setEditing(emptyClient())}
-            >
-              Add client
-            </button>
+            <Button variant="primary" onClick={() => setEditing(emptyClient())}>
+              Add Client
+            </Button>
           ) : undefined
         }
       />
-      <div className="p-5">
+      <div className="p-3 sm:p-5">
         <div className="mb-4 flex gap-1">
           {(["active", "archived", "all"] as StatusFilter[]).map((f) => (
             <button
@@ -104,7 +101,7 @@ export default function ClientsPage() {
           canManage ? (
             <EmptyState
               title="No clients yet"
-              cta="Create your first client"
+              cta="Create Your First Client"
               onClick={() => setEditing(emptyClient())}
             />
           ) : (
@@ -195,7 +192,7 @@ export default function ClientsPage() {
 
       {canManage && editing && (
         <Modal
-          title={editing.name ? "Edit client" : "Add client"}
+          title={editing.name ? "Edit Client" : "Add Client"}
           onClose={() => setEditing(null)}
         >
           <div className="grid gap-3">
@@ -237,24 +234,24 @@ export default function ClientsPage() {
               />
             </Field>
             <div className="flex justify-between pt-2">
-              <button
-                type="button"
-                className="text-sm text-[var(--status-over)]"
+              <Button
+                variant="ghost"
+                className="text-[var(--status-over)] hover:text-[var(--status-over)]"
                 onClick={() => setConfirmDelete(true)}
               >
                 Delete
-              </button>
+              </Button>
               <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
+                <Button
+                  variant="secondary"
+                  size="lg"
                   onClick={() => setEditing(null)}
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                </Button>
+                <Button
+                  variant="primary"
+                  size="lg"
                   onClick={() => {
                     if (!editing.name.trim()) return;
                     upsertClient(editing);
@@ -263,7 +260,7 @@ export default function ClientsPage() {
                   }}
                 >
                   Save
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -272,9 +269,9 @@ export default function ClientsPage() {
 
       {canManage && confirmDelete && editing && (
         <ConfirmDialog
-          title="Delete client?"
+          title="Delete Client?"
           message={`Delete ${editing.name || "this client"}? Linked projects will keep their work, but the client association is removed. This can’t be undone.`}
-          confirmLabel="Delete client"
+          confirmLabel="Delete Client"
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
             deleteClient(editing.id);

@@ -6,6 +6,8 @@ import { Plus, Trash2 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { EmptyState, Field, inputClass } from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
+import { Panel } from "@/components/ui/panel";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -51,7 +53,7 @@ export default function TemplatesPage() {
     const template: ProjectTemplate = {
       id: newId("template"),
       organization_id: state.organization.id,
-      name: "New template",
+      name: "New Template",
       description: "",
     };
     upsertProjectTemplate(template);
@@ -68,16 +70,12 @@ export default function TemplatesPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Project templates"
+        title="Project Templates"
         onBack={() => router.push(appHref("/projects"))}
         actions={
-          <button
-            type="button"
-            className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-            onClick={addTemplate}
-          >
-            Add template
-          </button>
+          <Button variant="primary" onClick={addTemplate}>
+            Add Template
+          </Button>
         }
       />
       <p className="border-b border-[var(--border)] px-3 pb-3 text-sm text-[var(--text-muted)] sm:px-5">
@@ -85,10 +83,10 @@ export default function TemplatesPage() {
         from a project hub. Applied work starts undated and unassigned.
       </p>
       {templates.length === 0 ? (
-        <div className="p-5">
+        <div className="p-3 sm:p-5">
           <EmptyState
-            title="No project templates yet"
-            cta="Create your first template"
+            title="No Project Templates Yet"
+            cta="Create Your First Template"
             onClick={addTemplate}
           />
         </div>
@@ -250,9 +248,9 @@ function TemplateEditor({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <Panel>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Template name">
+          <Field label="Template Name">
             <input
               className={inputClass}
               value={template.name}
@@ -275,26 +273,18 @@ function TemplateEditor({
           </Field>
         </div>
         <div className="mt-3 flex justify-end">
-          <button
-            type="button"
-            className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-md border border-[var(--status-over)]/40 px-2.5 text-xs text-[var(--status-over)] hover:bg-[var(--status-over)]/5"
-            onClick={onDelete}
-          >
-            <Trash2 size={12} /> Delete template
-          </button>
+          <Button variant="destructiveOutline" size="sm" onClick={onDelete}>
+            <Trash2 size={14} strokeWidth={1.75} /> Delete Template
+          </Button>
         </div>
-      </section>
+      </Panel>
 
-      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <Panel>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Milestones</h2>
-          <button
-            type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-            onClick={addMilestone}
-          >
-            <Plus size={12} /> Milestone
-          </button>
+          <Button variant="secondary" size="sm" onClick={addMilestone}>
+            <Plus size={14} strokeWidth={1.75} /> Milestone
+          </Button>
         </div>
         {milestones.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">
@@ -363,18 +353,18 @@ function TemplateEditor({
             })}
           </div>
         )}
-      </section>
+      </Panel>
 
-      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <Panel>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Backlog (no milestone)</h2>
-          <button
-            type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+          <h2 className="text-sm font-semibold">Backlog (No Milestone)</h2>
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={() => addTaskList(null)}
           >
-            <Plus size={12} /> List
-          </button>
+            <Plus size={14} strokeWidth={1.75} /> List
+          </Button>
         </div>
         {backlogLists.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)]">
@@ -397,7 +387,7 @@ function TemplateEditor({
             ))}
           </div>
         )}
-      </section>
+      </Panel>
     </div>
   );
 }

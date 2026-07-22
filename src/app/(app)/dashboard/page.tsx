@@ -19,6 +19,8 @@ import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { UtilizationHeatmap } from "@/components/heatmap/utilization-heatmap";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { Button, buttonClass } from "@/components/ui/button";
+import { panelClass } from "@/components/ui/panel";
 import { CapacityBar } from "@/components/ui/capacity-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { RichNotesHtml } from "@/components/ui/simple-rich-text";
@@ -743,7 +745,7 @@ export default function DashboardPage() {
                 title="Tagged Comments"
                 className={
                   taggedComments.length > 0
-                    ? "!border-0 bg-orange-500/15"
+                    ? "!border-0 bg-[var(--status-attention-wash)]"
                     : undefined
                 }
               >
@@ -751,7 +753,7 @@ export default function DashboardPage() {
                   className={cn(
                     "text-sm font-semibold tabular-nums",
                     taggedComments.length > 0 &&
-                      "text-orange-600 dark:text-orange-400",
+                      "text-[var(--status-attention)]",
                   )}
                 >
                   {taggedComments.length} to review
@@ -788,13 +790,13 @@ export default function DashboardPage() {
               appHref={appHref}
             />
 
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <section className={panelClass()}>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">People Utilization</h2>
                 {showOrgKpis ? (
                   <Link
                     href={appHref("/reports/utilization")}
-                    className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                    className={buttonClass({ variant: "secondary" })}
                   >
                     Full Report
                   </Link>
@@ -830,7 +832,7 @@ function KpiCard({
   return (
     <section
       className={cn(
-        "rounded-md border border-[var(--border)] bg-[var(--bg)] p-3",
+        panelClass({ padded: false, className: "p-3" }),
         className,
       )}
     >
@@ -920,12 +922,12 @@ function TaggedCommentsPanel({
 }) {
   const total = taggedComments.length;
   return (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+    <section className={panelClass()}>
       <div className="mb-3 flex items-center gap-2">
         <MessageSquare size={14} className="text-[var(--text-muted)]" />
         <h2 className="text-sm font-semibold">Tagged Comments</h2>
         {total > 0 ? (
-          <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
+          <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
             {total}
           </span>
         ) : null}
@@ -1004,13 +1006,13 @@ function ProjectHealthBudget({
   clients: { id: string; name: string; color: string }[];
 }) {
   return (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+    <section className={panelClass()}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Project Health &amp; Budget</h2>
         {canManage ? (
           <Link
             href={appHref("/reports/budgets")}
-            className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+            className={buttonClass({ variant: "secondary" })}
           >
             View Budgets
           </Link>
@@ -1113,7 +1115,7 @@ function DashboardIdentityCard({
   if (!showIdentity) return null;
 
   return (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+    <section className={panelClass()}>
       <div className="flex flex-col items-start gap-3">
         <PersonAvatar
           avatarUrl={identityPerson?.avatar_url}
@@ -1179,12 +1181,12 @@ function DashboardCapacityLeave({
 }) {
   return (
     <>
-      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <section className={panelClass()}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold">Capacity &amp; Load</h2>
           <Link
             href={appHref("/schedule")}
-            className="inline-flex h-8 shrink-0 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+            className={buttonClass({ variant: "secondary" })}
           >
             Open Schedule
           </Link>
@@ -1209,7 +1211,7 @@ function DashboardCapacityLeave({
         )}
       </section>
 
-      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <section className={panelClass()}>
         <h2 className="mb-3 text-sm font-semibold">Upcoming Leave</h2>
         <div className="space-y-4">
           <LeaveMonthCalendar leaveDays={approvedLeave} people={people} />
@@ -1417,7 +1419,7 @@ function TodaySchedule({
   const pieTotal = slices.reduce((s, x) => s + x.hours, 0);
 
   return (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+    <section className={panelClass()}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Schedules</h2>
@@ -1586,12 +1588,12 @@ function TaskPulse({
     : URGENCY_GROUPS;
 
   return (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+    <section className={panelClass()}>
       <div className="mb-3 flex items-center gap-2">
         <Pin size={14} className="text-[var(--text-muted)]" />
         <h2 className="text-sm font-semibold">Task Pulse</h2>
         {total > 0 ? (
-          <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
+          <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
             {total}
           </span>
         ) : null}
@@ -1697,13 +1699,13 @@ function BulletinBoard({
   const visible = compact ? bulletins.slice(0, 4) : bulletins.slice(0, 8);
 
   return (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+    <section className={panelClass()}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Megaphone size={14} className="text-[var(--text-muted)]" />
           <h2 className="text-sm font-semibold">Bulletin Board</h2>
           {unreadCount > 0 ? (
-            <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[11px] font-medium text-white">
+            <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
               {unreadCount}
             </span>
           ) : null}
@@ -1736,7 +1738,7 @@ function BulletinBoard({
                 className={cn(
                   "rounded-md border px-3 py-2 text-sm",
                   unread
-                    ? "border-orange-500/50 bg-orange-500/5"
+                    ? "border-[var(--status-attention)]/50 bg-[var(--status-attention-wash)]"
                     : b.pinned
                       ? "border-[var(--accent)]/40 bg-[var(--accent)]/5"
                       : "border-[var(--border)]",
@@ -1747,7 +1749,7 @@ function BulletinBoard({
                     <div className="flex items-center gap-1.5 font-medium">
                       {unread ? (
                         <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-attention)]"
                           aria-label="New"
                         />
                       ) : null}
@@ -1910,16 +1912,16 @@ function BulletinBoard({
               </Field>
             ) : null}
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
+              <Button
+                variant="secondary"
+                size="lg"
                 onClick={() => setEditing(null)}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+              </Button>
+              <Button
+                variant="primary"
+                size="lg"
                 onClick={() => {
                   if (!editing.title.trim()) return;
                   if (
@@ -1938,7 +1940,7 @@ function BulletinBoard({
                 }}
               >
                 Save
-              </button>
+              </Button>
             </div>
           </div>
         </Modal>

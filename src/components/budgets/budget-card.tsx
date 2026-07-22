@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { panelClass } from "@/components/ui/panel";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { useData } from "@/lib/data/store";
 import {
@@ -114,13 +115,13 @@ export function BudgetCard({
           </div>
           <dl className="space-y-1.5 text-xs">
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Hours used</dt>
+              <dt className="text-[var(--text-muted)]">Hours Used</dt>
               <dd className="tabular-nums font-medium">
                 {formatHours(hoursFx.hoursUsedToDate)}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Future planned</dt>
+              <dt className="text-[var(--text-muted)]">Future Planned</dt>
               <dd className="tabular-nums font-medium">
                 {formatHours(hoursFx.hoursFuturePlanned)}
               </dd>
@@ -144,8 +145,9 @@ export function BudgetCard({
     </>
   );
 
-  const className =
-    "flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors";
+  const className = panelClass({
+    className: "flex flex-col transition-colors",
+  });
 
   if (href) {
     return (

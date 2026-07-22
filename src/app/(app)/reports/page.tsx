@@ -14,6 +14,8 @@ import {
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { buttonClass } from "@/components/ui/button";
+import { Panel } from "@/components/ui/panel";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
@@ -236,14 +238,15 @@ export default function ReportsPage() {
         {reports.map((report) => {
           const Icon = report.icon;
           return (
-            <article
+            <Panel
               key={report.path}
-              className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)]"
+              padded={false}
+              className="flex flex-col"
             >
               <div className="flex flex-1 flex-col p-4 pb-3">
                 <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--accent)]">
-                    <Icon size={18} strokeWidth={1.75} />
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--accent)]">
+                    <Icon size={16} strokeWidth={1.75} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <h2 className="text-sm font-semibold text-[var(--text)]">
@@ -277,12 +280,16 @@ export default function ReportsPage() {
                 </p>
                 <Link
                   href={appHref(report.path)}
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 text-xs font-medium text-[var(--text)] hover:bg-[var(--row-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  className={buttonClass({
+                    variant: "secondary",
+                    size: "sm",
+                    className: "h-8 shrink-0 px-3 text-xs",
+                  })}
                 >
-                  View details
+                  View Details
                 </Link>
               </div>
-            </article>
+            </Panel>
           );
         })}
       </div>

@@ -120,7 +120,7 @@ export function AppNavbar() {
                 {label}
                 {showDot ? (
                   <span
-                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-attention)]"
                     aria-label="New dashboard notifications"
                   />
                 ) : null}
@@ -211,7 +211,7 @@ export function AppNavbar() {
                   {label}
                   {showDot ? (
                     <span
-                      className="ml-auto h-2 w-2 rounded-full bg-orange-500"
+                      className="ml-auto h-2 w-2 rounded-full bg-[var(--status-attention)]"
                       aria-label="New dashboard notifications"
                     />
                   ) : null}
