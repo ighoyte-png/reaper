@@ -39,7 +39,7 @@ import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sortin
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
-import type { Milestone, MilestoneStatus, Project } from "@/lib/types";
+import type { Milestone, Project } from "@/lib/types";
 
 function formatDisplayDate(dateKey: string | null | undefined): string {
   if (!dateKey) return "No date";
@@ -103,6 +103,9 @@ export default function ProjectDetailPage() {
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(
     null,
   );
+  const [confirmDeleteMilestoneId, setConfirmDeleteMilestoneId] = useState<
+    string | null
+  >(null);
   const [progressEditMode, setProgressEditMode] = useState(false);
   const [templatesExpanded, setTemplatesExpanded] = useState(false);
 
@@ -739,7 +742,10 @@ export default function ProjectDetailPage() {
       {canManage && editingMilestone && (
         <Modal
           title="Edit milestone"
-          onClose={() => setEditingMilestone(null)}
+          onClose={() => {
+            setConfirmDeleteMilestoneId(null);
+            setEditingMilestone(null);
+          }}
         >
           <div className="grid gap-3">
             <Field label="Name">
@@ -778,22 +784,6 @@ export default function ProjectDetailPage() {
                 }
               />
             </Field>
-            <Field label="Status">
-              <Select
-                value={editingMilestone.status}
-                onChange={(v) =>
-                  setEditingMilestone({
-                    ...editingMilestone,
-                    status: v as MilestoneStatus,
-                  })
-                }
-                options={[
-                  { value: "upcoming", label: "Upcoming" },
-                  { value: "done", label: "Done" },
-                  { value: "missed", label: "Missed" },
-                ]}
-              />
-            </Field>
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -811,11 +801,9 @@ export default function ProjectDetailPage() {
               <button
                 type="button"
                 className="cursor-pointer text-sm text-[var(--status-over)]"
-                onClick={() => {
-                  deleteMilestone(editingMilestone.id);
-                  setEditingMilestone(null);
-                  push("Milestone deleted");
-                }}
+                onClick={() =>
+                  setConfirmDeleteMilestoneId(editingMilestone.id)
+                }
               >
                 Delete
               </button>
@@ -823,7 +811,10 @@ export default function ProjectDetailPage() {
                 <button
                   type="button"
                   className="h-9 rounded-md border border-[var(--border)] px-3 text-sm"
-                  onClick={() => setEditingMilestone(null)}
+                  onClick={() => {
+                    setConfirmDeleteMilestoneId(null);
+                    setEditingMilestone(null);
+                  }}
                 >
                   Cancel
                 </button>
@@ -832,6 +823,7 @@ export default function ProjectDetailPage() {
                   className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
                   onClick={() => {
                     upsertMilestone(editingMilestone);
+                    setConfirmDeleteMilestoneId(null);
                     setEditingMilestone(null);
                     push("Milestone saved");
                   }}
@@ -843,6 +835,25 @@ export default function ProjectDetailPage() {
           </div>
         </Modal>
       )}
+
+      {confirmDeleteMilestoneId ? (
+        <ConfirmDialog
+          title="Delete milestone?"
+          message={`Delete “${
+            editingMilestone?.id === confirmDeleteMilestoneId
+              ? editingMilestone.name
+              : "this milestone"
+          }”? Linked task lists will keep their tasks but lose this milestone link.`}
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDeleteMilestoneId(null)}
+          onConfirm={() => {
+            deleteMilestone(confirmDeleteMilestoneId);
+            setConfirmDeleteMilestoneId(null);
+            setEditingMilestone(null);
+            push("Milestone deleted");
+          }}
+        />
+      ) : null}
 
       {confirmDelete && (
         <ConfirmDialog
