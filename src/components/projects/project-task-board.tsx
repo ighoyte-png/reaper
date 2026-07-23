@@ -1652,12 +1652,19 @@ function TaskRow({
   const isSelected = ctx.selected.has(task.id);
   const canEditStatus = !ctx.readOnly;
   const isEditing = ctx.editingTaskId === task.id;
+  const nestIndent = depth * 16;
   const nestLineLeft =
-    depth > 0 ? 8 + (depth - 1) * 16 + 16 + 6 + 5 - 2 + 3 - 2 : 0;
+    depth > 0
+      ? 8 + (depth - 1) * 16 + 16 + 6 + 5 - 2 + 3 - 2 - nestIndent
+      : 0;
 
   if (isEditing) {
     return (
-      <div id={`task-row-${task.id}`} className="relative my-1 py-1">
+      <div
+        id={`task-row-${task.id}`}
+        className="relative my-1 py-1"
+        style={nestIndent ? { marginLeft: nestIndent } : undefined}
+      >
         {depth > 0 ? (
           <span
             aria-hidden
@@ -1668,7 +1675,7 @@ function TaskRow({
         <InlineTaskForm
           people={ctx.people}
           status={task.status}
-          depth={depth}
+          depth={0}
           submitLabel="Save"
           initial={{
             title: task.title,
@@ -1703,6 +1710,7 @@ function TaskRow({
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.6 : 1,
+        ...(nestIndent ? { marginLeft: nestIndent } : {}),
       }}
       className={cn(
         "relative my-1 rounded-md py-1 transition-colors",
@@ -1726,7 +1734,7 @@ function TaskRow({
           task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "bg-[var(--accent)]/10",
         )}
-        style={{ paddingLeft: 8 + depth * 16 }}
+        style={{ paddingLeft: 8 }}
       >
         {ctx.manageLists ? (
           <button
@@ -1873,7 +1881,7 @@ function TaskRow({
       {!ctx.readOnly && isExpanded ? (
         <div
           className="pb-3 pr-2 pt-3"
-          style={{ paddingLeft: 8 + depth * 16 }}
+          style={{ paddingLeft: 8 }}
         >
           <div className="flex gap-1.5">
             <span className="w-4 shrink-0" aria-hidden />
