@@ -11,7 +11,8 @@ export function bulletinVisibleToPerson(
 }
 
 /**
- * Undismissed bulletin for this viewer (excludes posts they authored).
+ * Unread bulletin for this viewer (excludes posts they authored).
+ * `unread` is the inbox set — ids present there are still "new".
  * Manage roles without a linked person still see `audience: "all"` alerts
  * the same way admins with a person link do.
  */
@@ -19,7 +20,7 @@ export function isUnreadBulletin(
   bulletin: Bulletin,
   personId: string | null,
   profileId: string | null,
-  dismissed: Set<string>,
+  unread: Set<string>,
   opts?: { manageWithoutPerson?: boolean },
 ): boolean {
   const manageAll =
@@ -30,14 +31,29 @@ export function isUnreadBulletin(
     return false;
   }
   if (profileId && bulletin.created_by_profile_id === profileId) return false;
-  if (dismissed.has(bulletin.id)) return false;
-  return true;
+  return unread.has(bulletin.id);
 }
 
-/**
- * Legacy localStorage keys used before dismissals moved to the database.
- * Used once to migrate existing browser dismissals into bulletin_dismissals.
- */
+/** Profile ids that should get an unread row for a new bulletin. */
+export function bulletinUnreadRecipientProfileIds(
+  bulletin: Bulletin,
+  people: { id: string; profile_id: string | null }[],
+  profiles: { id: string }[],
+): string[] {
+  const author = bulletin.created_by_profile_id;
+  if (bulletin.audience === "people") {
+    const wanted = new Set(bulletin.audience_person_ids);
+    return people
+      .filter((p) => wanted.has(p.id) && p.profile_id && p.profile_id !== author)
+      .map((p) => p.profile_id!)
+      .filter((id, i, arr) => arr.indexOf(id) === i);
+  }
+  return profiles
+    .map((p) => p.id)
+    .filter((id) => id !== author);
+}
+
+/** Legacy localStorage keys for bulletin dismissals (pre-unread inbox). */
 export function legacyBulletinDismissStorageKeys(
   personId: string | null,
   profileId: string | null,
@@ -51,30 +67,6 @@ export function legacyBulletinDismissStorageKeys(
   return keys;
 }
 
-/** Read dismissed bulletin ids from legacy localStorage keys (browser-only). */
-export function readLegacyDismissedBulletinIds(
-  personId: string | null,
-  profileId: string | null,
-): string[] {
-  if (typeof window === "undefined") return [];
-  const ids = new Set<string>();
-  for (const key of legacyBulletinDismissStorageKeys(personId, profileId)) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const parsed = JSON.parse(raw) as unknown;
-      if (!Array.isArray(parsed)) continue;
-      for (const id of parsed) {
-        if (typeof id === "string" && id) ids.add(id);
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-  return [...ids];
-}
-
-/** Clear legacy localStorage keys after a successful DB migration. */
 export function clearLegacyDismissedBulletinIds(
   personId: string | null,
   profileId: string | null,
@@ -86,5 +78,29 @@ export function clearLegacyDismissedBulletinIds(
     } catch {
       /* ignore */
     }
+  }
+}
+
+/** Legacy localStorage dismissed mention comment ids. */
+export function readLegacyDismissedMentionIds(personId: string | null): string[] {
+  if (typeof window === "undefined" || !personId) return [];
+  try {
+    const raw = localStorage.getItem(`reaper-dismissed-mentions:${personId}`);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function clearLegacyDismissedMentionIds(personId: string | null) {
+  if (typeof window === "undefined" || !personId) return;
+  try {
+    localStorage.removeItem(`reaper-dismissed-mentions:${personId}`);
+  } catch {
+    /* ignore */
   }
 }

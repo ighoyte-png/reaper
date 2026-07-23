@@ -15,7 +15,6 @@ import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { stripWorkspacePrefix } from "@/lib/paths";
 import { isUnreadBulletin } from "@/lib/domain/bulletins";
-import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
 import { useViewAs } from "@/lib/view-as";
 
 function navLinkClass(active: boolean) {
@@ -45,10 +44,17 @@ export function AppNavbar() {
   } = useViewAs();
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
   const manageWithoutPerson = effectiveCanManage && !mentionPersonId;
-  const { dismissed: dismissedMentions } = useDismissedMentions(mentionPersonId);
-  const dismissedBulletins = useMemo(
-    () => new Set(state.dismissed_bulletin_ids ?? []),
-    [state.dismissed_bulletin_ids],
+  const unreadMentions = useMemo(() => {
+    if (!mentionPersonId) return new Set<string>();
+    return new Set(
+      (state.unread_mentions ?? [])
+        .filter((r) => r.person_id === mentionPersonId)
+        .map((r) => r.comment_id),
+    );
+  }, [mentionPersonId, state.unread_mentions]);
+  const unreadBulletins = useMemo(
+    () => new Set(state.unread_bulletin_ids ?? []),
+    [state.unread_bulletin_ids],
   );
   const { open, setOpen, toggle } = useMobileNav();
   const links = primaryNavLinks.filter((l) => effectiveCanManage || !l.manageOnly);
@@ -62,7 +68,7 @@ export function AppNavbar() {
       const hasMention = state.task_comments.some(
         (c) =>
           (c.mentioned_person_ids ?? []).includes(mentionPersonId) &&
-          !dismissedMentions.has(c.id),
+          unreadMentions.has(c.id),
       );
       if (hasMention) return true;
     }
@@ -72,7 +78,7 @@ export function AppNavbar() {
         b,
         mentionPersonId,
         profile?.id ?? null,
-        dismissedBulletins,
+        unreadBulletins,
         { manageWithoutPerson },
       ),
     );
@@ -81,8 +87,8 @@ export function AppNavbar() {
     manageWithoutPerson,
     state.task_comments,
     state.bulletins,
-    dismissedMentions,
-    dismissedBulletins,
+    unreadMentions,
+    unreadBulletins,
     profile?.id,
   ]);
 

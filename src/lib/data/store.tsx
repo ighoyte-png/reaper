@@ -23,8 +23,10 @@ import {
 } from "@/lib/data/realtime-patch";
 import { orderTasksParentsFirst } from "@/lib/domain/tasks";
 import {
+  bulletinUnreadRecipientProfileIds,
   clearLegacyDismissedBulletinIds,
-  readLegacyDismissedBulletinIds,
+  clearLegacyDismissedMentionIds,
+  readLegacyDismissedMentionIds,
 } from "@/lib/domain/bulletins";
 import {
   applyProjectTemplateRows,
@@ -51,8 +53,10 @@ import {
   seedDemoWorkspace,
   upsertAssignmentRow,
   upsertBulletinRow,
-  upsertBulletinDismissalRow,
-  upsertBulletinDismissalRows,
+  deleteBulletinUnreadRow,
+  deleteMentionUnreadRow,
+  deleteMentionUnreadRows,
+  seedBulletinUnreadRows,
   upsertClientRow,
   upsertHolidayCalendarDayRow,
   upsertHolidayCalendarRow,
@@ -219,11 +223,20 @@ function loadDemoState(): DemoState {
           ? b.audience_person_ids
           : [],
       })),
-      dismissed_bulletin_ids: Array.isArray(parsed.dismissed_bulletin_ids)
-        ? parsed.dismissed_bulletin_ids.filter(
+      unread_bulletin_ids: Array.isArray(parsed.unread_bulletin_ids)
+        ? parsed.unread_bulletin_ids.filter(
             (id): id is string => typeof id === "string",
           )
-        : [],
+        : (seed.unread_bulletin_ids ?? []),
+      unread_mentions: Array.isArray(parsed.unread_mentions)
+        ? parsed.unread_mentions.filter(
+            (r): r is { comment_id: string; person_id: string } =>
+              Boolean(r) &&
+              typeof r === "object" &&
+              typeof (r as { comment_id?: unknown }).comment_id === "string" &&
+              typeof (r as { person_id?: unknown }).person_id === "string",
+          )
+        : (seed.unread_mentions ?? []),
       project_templates: parsed.project_templates ?? seed.project_templates,
       template_milestones:
         parsed.template_milestones ?? seed.template_milestones,
@@ -255,7 +268,8 @@ function emptySupabaseState(): DemoState {
     tasks: [],
     task_comments: [],
     bulletins: [],
-    dismissed_bulletin_ids: [],
+    unread_bulletin_ids: [],
+    unread_mentions: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -429,8 +443,10 @@ interface DataContextValue {
     },
   ) => void;
   deleteBulletin: (id: string) => void;
-  /** Mark a bulletin as seen/dismissed for the current profile (persisted). */
+  /** Mark a bulletin as seen for the current profile (removes from unread inbox). */
   dismissBulletin: (id: string) => void;
+  /** Mark a tagged comment as seen for a person (removes from unread inbox). */
+  dismissMention: (commentId: string, personId: string) => void;
   upsertProjectTemplate: (
     template: Omit<ProjectTemplate, "organization_id"> & {
       organization_id?: string;
@@ -544,39 +560,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
     async function applyWorkspace(workspace: DemoState) {
       const personId =
         workspace.people.find((p) => p.profile_id === user!.id)?.id ?? null;
-      const legacyIds = readLegacyDismissedBulletinIds(personId, user!.id);
-      const knownBulletinIds = new Set(workspace.bulletins.map((b) => b.id));
-      const toMigrate = legacyIds.filter(
-        (id) =>
-          knownBulletinIds.has(id) &&
-          !workspace.dismissed_bulletin_ids.includes(id),
-      );
       let next = workspace;
-      if (toMigrate.length > 0 && workspace.organization.id) {
+      clearLegacyDismissedBulletinIds(personId, user!.id);
+
+      const legacyMentionDismissed = readLegacyDismissedMentionIds(personId);
+      if (personId && legacyMentionDismissed.length > 0) {
         try {
-          const wrote = await upsertBulletinDismissalRows(
+          const wrote = await deleteMentionUnreadRows(
             client,
-            toMigrate.map((bulletin_id) => ({
-              bulletin_id,
-              profile_id: user!.id,
-              organization_id: workspace.organization.id,
-            })),
+            personId,
+            legacyMentionDismissed,
           );
           if (wrote) {
+            const drop = new Set(legacyMentionDismissed);
             next = {
-              ...workspace,
-              dismissed_bulletin_ids: [
-                ...new Set([...workspace.dismissed_bulletin_ids, ...toMigrate]),
-              ],
+              ...next,
+              unread_mentions: next.unread_mentions.filter(
+                (r) =>
+                  !(r.person_id === personId && drop.has(r.comment_id)),
+              ),
             };
-            clearLegacyDismissedBulletinIds(personId, user!.id);
+            clearLegacyDismissedMentionIds(personId);
           }
         } catch {
-          /* keep legacy localStorage until migration is applied */
+          /* keep legacy until migration applied */
         }
-      } else if (legacyIds.length > 0) {
-        // Already mirrored in DB (or bulletins deleted) — drop stale browser keys.
-        clearLegacyDismissedBulletinIds(personId, user!.id);
+      } else if (personId) {
+        clearLegacyDismissedMentionIds(personId);
       }
       setState(next);
     }
@@ -815,10 +825,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
         {
           event: "*",
           schema: "public",
-          table: "bulletin_dismissals",
+          table: "bulletin_unreads",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("bulletin_dismissals"),
+        onChange("bulletin_unreads"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "mention_unreads",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("mention_unreads"),
       )
       .on(
         "postgres_changes",
@@ -2025,16 +2045,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
               : (existing?.reactions ?? []),
           };
           const exists = Boolean(existing);
+          const prevMentioned = new Set(existing?.mentioned_person_ids ?? []);
+          const nextMentioned = new Set(next.mentioned_person_ids);
+          let unread_mentions = prev.unread_mentions.filter(
+            (r) =>
+              r.comment_id !== next.id || nextMentioned.has(r.person_id),
+          );
+          for (const person_id of nextMentioned) {
+            if (prevMentioned.has(person_id)) continue;
+            if (
+              unread_mentions.some(
+                (r) =>
+                  r.comment_id === next.id && r.person_id === person_id,
+              )
+            ) {
+              continue;
+            }
+            unread_mentions = [
+              ...unread_mentions,
+              { comment_id: next.id, person_id },
+            ];
+          }
           return {
             ...prev,
             task_comments: exists
               ? prev.task_comments.map((c) => (c.id === next.id ? next : c))
               : [...prev.task_comments, next],
+            unread_mentions,
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("task_comments", row.id);
           noteLocalWrite("task_comment_mentions", row.id);
+          noteLocalWrite("mention_unreads", row.id);
           runRemoteSoft(() =>
             upsertTaskCommentRow(supabaseRef.current!, row),
           );
@@ -2044,10 +2087,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         patch((prev) => ({
           ...prev,
           task_comments: prev.task_comments.filter((c) => c.id !== id),
+          unread_mentions: prev.unread_mentions.filter(
+            (r) => r.comment_id !== id,
+          ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("task_comments", id);
           noteLocalWrite("task_comment_mentions", id);
+          noteLocalWrite("mention_unreads", id);
           runRemoteSoft(() =>
             deleteTaskCommentRow(supabaseRef.current!, id),
           );
@@ -2098,8 +2145,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       upsertBulletin: (bulletin) => {
         if (!manage) return;
         const row = withOrg(bulletin) as Bulletin;
+        let isNew = false;
         patch((prev) => {
           const exists = prev.bulletins.some((b) => b.id === row.id);
+          isNew = !exists;
           return {
             ...prev,
             bulletins: exists
@@ -2109,7 +2158,60 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("bulletins", row.id);
-          runRemoteSoft(() => upsertBulletinRow(supabaseRef.current!, row));
+          const client = supabaseRef.current;
+          runRemoteSoft(async () => {
+            await upsertBulletinRow(client, row);
+            if (!isNew) return;
+            const recipients = bulletinUnreadRecipientProfileIds(
+              row,
+              state.people,
+              state.profiles,
+            );
+            const unreadRows = recipients.map((profile_id) => ({
+              bulletin_id: row.id,
+              profile_id,
+              organization_id: row.organization_id,
+            }));
+            await seedBulletinUnreadRows(client, unreadRows);
+          });
+          if (isNew) {
+            const myId = profile?.id;
+            const recipients = bulletinUnreadRecipientProfileIds(
+              row,
+              state.people,
+              state.profiles,
+            );
+            if (myId && recipients.includes(myId)) {
+              patch((prev) =>
+                prev.unread_bulletin_ids.includes(row.id)
+                  ? prev
+                  : {
+                      ...prev,
+                      unread_bulletin_ids: [
+                        ...prev.unread_bulletin_ids,
+                        row.id,
+                      ],
+                    },
+              );
+            }
+          }
+        } else if (isNew && mode === "demo") {
+          const recipients = bulletinUnreadRecipientProfileIds(
+            row,
+            state.people,
+            state.profiles,
+          );
+          const myId = state.sessionProfileId;
+          if (myId && recipients.includes(myId)) {
+            patch((prev) =>
+              prev.unread_bulletin_ids.includes(row.id)
+                ? prev
+                : {
+                    ...prev,
+                    unread_bulletin_ids: [...prev.unread_bulletin_ids, row.id],
+                  },
+            );
+          }
         }
       },
       deleteBulletin: (id) => {
@@ -2117,9 +2219,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         patch((prev) => ({
           ...prev,
           bulletins: prev.bulletins.filter((b) => b.id !== id),
-          dismissed_bulletin_ids: prev.dismissed_bulletin_ids.filter(
-            (x) => x !== id,
-          ),
+          unread_bulletin_ids: prev.unread_bulletin_ids.filter((x) => x !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("bulletins", id);
@@ -2129,23 +2229,41 @@ export function DataProvider({ children }: { children: ReactNode }) {
       dismissBulletin: (id) => {
         const profileId = profile?.id;
         if (!profileId || !id) return;
-        let organizationId = "";
         patch((prev) => {
-          organizationId = prev.organization.id;
-          if (prev.dismissed_bulletin_ids.includes(id)) return prev;
+          if (!prev.unread_bulletin_ids.includes(id)) return prev;
           return {
             ...prev,
-            dismissed_bulletin_ids: [...prev.dismissed_bulletin_ids, id],
+            unread_bulletin_ids: prev.unread_bulletin_ids.filter(
+              (x) => x !== id,
+            ),
           };
         });
-        if (!organizationId) return;
         if (mode === "supabase" && supabaseRef.current) {
-          noteLocalWrite("bulletin_dismissals", id);
+          noteLocalWrite("bulletin_unreads", id);
           runRemoteSoft(async () => {
-            await upsertBulletinDismissalRow(supabaseRef.current!, {
+            await deleteBulletinUnreadRow(supabaseRef.current!, {
               bulletin_id: id,
               profile_id: profileId,
-              organization_id: organizationId,
+            });
+          });
+        }
+      },
+      dismissMention: (commentId, personId) => {
+        if (!commentId || !personId) return;
+        patch((prev) => {
+          const next = prev.unread_mentions.filter(
+            (r) =>
+              !(r.comment_id === commentId && r.person_id === personId),
+          );
+          if (next.length === prev.unread_mentions.length) return prev;
+          return { ...prev, unread_mentions: next };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("mention_unreads", `${commentId}:${personId}`);
+          runRemoteSoft(async () => {
+            await deleteMentionUnreadRow(supabaseRef.current!, {
+              comment_id: commentId,
+              person_id: personId,
             });
           });
         }

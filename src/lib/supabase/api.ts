@@ -330,7 +330,8 @@ function emptyWorkspace(): DemoState {
     tasks: [],
     task_comments: [],
     bulletins: [],
-    dismissed_bulletin_ids: [],
+    unread_bulletin_ids: [],
+    unread_mentions: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -408,7 +409,8 @@ export async function loadOrgWorkspace(
     taskCommentMentionsRes,
     taskCommentReactionsRes,
     bulletinsRes,
-    bulletinDismissalsRes,
+    bulletinUnreadsRes,
+    mentionUnreadsRes,
     projectTemplatesRes,
     templateMilestonesRes,
     templateTaskListsRes,
@@ -443,11 +445,15 @@ export async function loadOrgWorkspace(
     supabase.from("bulletins").select("*").eq("organization_id", orgId),
     sessionProfileId
       ? supabase
-          .from("bulletin_dismissals")
+          .from("bulletin_unreads")
           .select("bulletin_id")
           .eq("organization_id", orgId)
           .eq("profile_id", sessionProfileId)
       : Promise.resolve({ data: [] as { bulletin_id: unknown }[], error: null }),
+    supabase
+      .from("mention_unreads")
+      .select("comment_id, person_id")
+      .eq("organization_id", orgId),
     supabase
       .from("project_templates")
       .select("*")
@@ -570,22 +576,42 @@ export async function loadOrgWorkspace(
     : (bulletinsRes.data ?? []).map((row) =>
         mapBulletin(row as Record<string, unknown>),
       );
-  let dismissed_bulletin_ids: string[] = [];
-  if (bulletinDismissalsRes.error) {
+  let unread_bulletin_ids: string[] = [];
+  if (bulletinUnreadsRes.error) {
     if (
-      /relation .*bulletin_dismissals.* does not exist/i.test(
-        bulletinDismissalsRes.error.message,
+      /relation .*bulletin_unreads.* does not exist/i.test(
+        bulletinUnreadsRes.error.message,
       ) ||
-      bulletinDismissalsRes.error.code === "42P01"
+      bulletinUnreadsRes.error.code === "42P01"
     ) {
       console.warn(
-        "bulletin_dismissals missing — apply supabase/migrations/041_bulletin_dismissals.sql",
+        "bulletin_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
       );
     }
   } else {
-    dismissed_bulletin_ids = (bulletinDismissalsRes.data ?? [])
+    unread_bulletin_ids = (bulletinUnreadsRes.data ?? [])
       .map((row) => String((row as { bulletin_id: unknown }).bulletin_id))
       .filter(Boolean);
+  }
+  let unread_mentions: { comment_id: string; person_id: string }[] = [];
+  if (mentionUnreadsRes.error) {
+    if (
+      /relation .*mention_unreads.* does not exist/i.test(
+        mentionUnreadsRes.error.message,
+      ) ||
+      mentionUnreadsRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "mention_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
+      );
+    }
+  } else {
+    unread_mentions = (mentionUnreadsRes.data ?? [])
+      .map((row) => ({
+        comment_id: String((row as { comment_id: unknown }).comment_id),
+        person_id: String((row as { person_id: unknown }).person_id),
+      }))
+      .filter((r) => r.comment_id && r.person_id);
   }
   const project_templates: ProjectTemplate[] = projectTemplatesRes.error
     ? []
@@ -660,7 +686,8 @@ export async function loadOrgWorkspace(
     tasks,
     task_comments,
     bulletins,
-    dismissed_bulletin_ids,
+    unread_bulletin_ids,
+    unread_mentions,
     project_templates,
     template_milestones,
     template_task_lists,
@@ -1510,7 +1537,13 @@ export async function upsertTaskCommentRow(
   }
 
   const ids = [...new Set(comment.mentioned_person_ids ?? [])];
-  if (ids.length === 0) return;
+  if (ids.length === 0) {
+    await supabase
+      .from("mention_unreads")
+      .delete()
+      .eq("comment_id", comment.id);
+    return;
+  }
   const { error: insErr } = await supabase.from("task_comment_mentions").insert(
     ids.map((person_id) => ({
       comment_id: comment.id,
@@ -1519,6 +1552,52 @@ export async function upsertTaskCommentRow(
     })),
   );
   if (insErr) throw insErr;
+
+  const existingRes = await supabase
+    .from("mention_unreads")
+    .select("person_id")
+    .eq("comment_id", comment.id);
+  if (
+    existingRes.error &&
+    (/relation .*mention_unreads.* does not exist/i.test(
+      existingRes.error.message,
+    ) ||
+      existingRes.error.code === "42P01")
+  ) {
+    console.warn(
+      "mention_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
+    );
+    return;
+  }
+  if (existingRes.error) throw existingRes.error;
+
+  const existing = new Set(
+    (existingRes.data ?? []).map((r) => String(r.person_id)),
+  );
+  const idSet = new Set(ids);
+  const toRemove = [...existing].filter((id) => !idSet.has(id));
+  const toAdd = ids.filter((id) => !existing.has(id));
+
+  if (toRemove.length > 0) {
+    const { error: delUnreadErr } = await supabase
+      .from("mention_unreads")
+      .delete()
+      .eq("comment_id", comment.id)
+      .in("person_id", toRemove);
+    if (delUnreadErr) throw delUnreadErr;
+  }
+  if (toAdd.length > 0) {
+    const { error: addUnreadErr } = await supabase
+      .from("mention_unreads")
+      .insert(
+        toAdd.map((person_id) => ({
+          comment_id: comment.id,
+          person_id,
+          organization_id: comment.organization_id,
+        })),
+      );
+    if (addUnreadErr) throw addUnreadErr;
+  }
 }
 
 export async function deleteTaskCommentRow(
@@ -1625,35 +1704,8 @@ export async function deleteBulletinRow(supabase: SupabaseClient, id: string) {
   if (error) throw error;
 }
 
-export async function upsertBulletinDismissalRow(
-  supabase: SupabaseClient,
-  row: {
-    bulletin_id: string;
-    profile_id: string;
-    organization_id: string;
-  },
-): Promise<boolean> {
-  const { error } = await supabase.from("bulletin_dismissals").upsert({
-    bulletin_id: row.bulletin_id,
-    profile_id: row.profile_id,
-    organization_id: row.organization_id,
-    dismissed_at: new Date().toISOString(),
-  });
-  if (!error) return true;
-  if (
-    /relation .*bulletin_dismissals.* does not exist/i.test(error.message) ||
-    error.code === "42P01"
-  ) {
-    console.warn(
-      "bulletin_dismissals missing — apply supabase/migrations/041_bulletin_dismissals.sql",
-    );
-    return false;
-  }
-  throw error;
-}
-
-/** Upsert many dismissals (e.g. one-time localStorage → DB migration). */
-export async function upsertBulletinDismissalRows(
+/** Seed unread inbox rows for bulletin recipients (create only). */
+export async function seedBulletinUnreadRows(
   supabase: SupabaseClient,
   rows: {
     bulletin_id: string;
@@ -1662,21 +1714,92 @@ export async function upsertBulletinDismissalRows(
   }[],
 ): Promise<boolean> {
   if (rows.length === 0) return true;
-  const payload = rows.map((row) => ({
-    bulletin_id: row.bulletin_id,
-    profile_id: row.profile_id,
-    organization_id: row.organization_id,
-    dismissed_at: new Date().toISOString(),
-  }));
-  const { error } = await supabase.from("bulletin_dismissals").upsert(payload);
+  const { error } = await supabase.from("bulletin_unreads").upsert(rows, {
+    onConflict: "bulletin_id,profile_id",
+    ignoreDuplicates: true,
+  });
   if (!error) return true;
   if (
-    /relation .*bulletin_dismissals.* does not exist/i.test(error.message) ||
+    /relation .*bulletin_unreads.* does not exist/i.test(error.message) ||
     error.code === "42P01"
   ) {
     console.warn(
-      "bulletin_dismissals missing — apply supabase/migrations/041_bulletin_dismissals.sql",
+      "bulletin_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
     );
+    return false;
+  }
+  throw error;
+}
+
+/** Dismiss = delete from unread inbox. */
+export async function deleteBulletinUnreadRow(
+  supabase: SupabaseClient,
+  row: {
+    bulletin_id: string;
+    profile_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("bulletin_unreads")
+    .delete()
+    .eq("bulletin_id", row.bulletin_id)
+    .eq("profile_id", row.profile_id);
+  if (!error) return true;
+  if (
+    /relation .*bulletin_unreads.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
+    console.warn(
+      "bulletin_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
+/** Dismiss a tagged-comment notice for a person. */
+export async function deleteMentionUnreadRow(
+  supabase: SupabaseClient,
+  row: {
+    comment_id: string;
+    person_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("mention_unreads")
+    .delete()
+    .eq("comment_id", row.comment_id)
+    .eq("person_id", row.person_id);
+  if (!error) return true;
+  if (
+    /relation .*mention_unreads.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
+    console.warn(
+      "mention_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
+/** One-time: drop mention unreads that were dismissed in legacy localStorage. */
+export async function deleteMentionUnreadRows(
+  supabase: SupabaseClient,
+  personId: string,
+  commentIds: string[],
+): Promise<boolean> {
+  if (commentIds.length === 0) return true;
+  const { error } = await supabase
+    .from("mention_unreads")
+    .delete()
+    .eq("person_id", personId)
+    .in("comment_id", commentIds);
+  if (!error) return true;
+  if (
+    /relation .*mention_unreads.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
     return false;
   }
   throw error;

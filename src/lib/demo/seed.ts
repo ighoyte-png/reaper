@@ -927,7 +927,8 @@ export function createDemoSeed(): DemoState {
         sort_order: 1,
       },
     ],
-    dismissed_bulletin_ids: [],
+    unread_bulletin_ids: [],
+    unread_mentions: [],
     sessionProfileId: null,
   };
 }

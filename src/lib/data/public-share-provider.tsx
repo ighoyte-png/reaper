@@ -205,6 +205,7 @@ export function PublicShareProvider({
       upsertBulletin: () => {},
       deleteBulletin: () => {},
       dismissBulletin: () => {},
+      dismissMention: () => {},
       upsertProjectTemplate: () => {},
       deleteProjectTemplate: () => {},
       upsertTemplateMilestone: () => {},

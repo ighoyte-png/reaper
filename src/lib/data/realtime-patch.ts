@@ -32,9 +32,14 @@ export function realtimeEchoId(
     const emoji = row.emoji;
     return cid != null && emoji != null ? `${String(cid)}:${String(emoji)}` : null;
   }
-  if (table === "bulletin_dismissals") {
+  if (table === "bulletin_unreads") {
     const bid = row.bulletin_id;
     return bid != null ? String(bid) : null;
+  }
+  if (table === "mention_unreads") {
+    const cid = row.comment_id;
+    const pid = row.person_id;
+    return cid != null && pid != null ? `${String(cid)}:${String(pid)}` : null;
   }
   return row.id != null ? String(row.id) : null;
 }
@@ -107,9 +112,20 @@ export function applyRealtimeTableEvent(
         const id = String(oldRecord?.id ?? "");
         if (!id) return state;
         const next = state.task_comments.filter((c) => c.id !== id);
-        return next.length === state.task_comments.length
-          ? state
-          : { ...state, task_comments: next };
+        const nextUnreads = state.unread_mentions.filter(
+          (r) => r.comment_id !== id,
+        );
+        if (
+          next.length === state.task_comments.length &&
+          nextUnreads.length === state.unread_mentions.length
+        ) {
+          return state;
+        }
+        return {
+          ...state,
+          task_comments: next,
+          unread_mentions: nextUnreads,
+        };
       }
       const mapped = mapTaskComment(newRecord as Record<string, unknown>);
       const existing = state.task_comments.find((c) => c.id === mapped.id);
@@ -179,29 +195,26 @@ export function applyRealtimeTableEvent(
         const id = String(oldRecord?.id ?? "");
         if (!id) return state;
         const nextBulletins = state.bulletins.filter((b) => b.id !== id);
-        const nextDismissed = state.dismissed_bulletin_ids.filter(
-          (x) => x !== id,
-        );
+        const nextUnread = state.unread_bulletin_ids.filter((x) => x !== id);
         if (
           nextBulletins.length === state.bulletins.length &&
-          nextDismissed.length === state.dismissed_bulletin_ids.length
+          nextUnread.length === state.unread_bulletin_ids.length
         ) {
           return state;
         }
         return {
           ...state,
           bulletins: nextBulletins,
-          dismissed_bulletin_ids: nextDismissed,
+          unread_bulletin_ids: nextUnread,
         };
       }
       const mapped = mapBulletin(newRecord as Record<string, unknown>);
       return { ...state, bulletins: upsertById(state.bulletins, mapped) };
     }
-    case "bulletin_dismissals": {
+    case "bulletin_unreads": {
       const bulletinId = String(source.bulletin_id ?? "");
       const profileId = String(source.profile_id ?? "");
       if (!bulletinId) return state;
-      // Only apply the signed-in user's dismissals (RLS usually limits this).
       if (
         state.sessionProfileId &&
         profileId &&
@@ -210,18 +223,45 @@ export function applyRealtimeTableEvent(
         return state;
       }
       if (isDelete) {
-        if (!state.dismissed_bulletin_ids.includes(bulletinId)) return state;
+        if (!state.unread_bulletin_ids.includes(bulletinId)) return state;
         return {
           ...state,
-          dismissed_bulletin_ids: state.dismissed_bulletin_ids.filter(
+          unread_bulletin_ids: state.unread_bulletin_ids.filter(
             (id) => id !== bulletinId,
           ),
         };
       }
-      if (state.dismissed_bulletin_ids.includes(bulletinId)) return state;
+      if (state.unread_bulletin_ids.includes(bulletinId)) return state;
       return {
         ...state,
-        dismissed_bulletin_ids: [...state.dismissed_bulletin_ids, bulletinId],
+        unread_bulletin_ids: [...state.unread_bulletin_ids, bulletinId],
+      };
+    }
+    case "mention_unreads": {
+      const commentId = String(source.comment_id ?? "");
+      const personId = String(source.person_id ?? "");
+      if (!commentId || !personId) return state;
+      if (isDelete) {
+        const next = state.unread_mentions.filter(
+          (r) => !(r.comment_id === commentId && r.person_id === personId),
+        );
+        return next.length === state.unread_mentions.length
+          ? state
+          : { ...state, unread_mentions: next };
+      }
+      if (
+        state.unread_mentions.some(
+          (r) => r.comment_id === commentId && r.person_id === personId,
+        )
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        unread_mentions: [
+          ...state.unread_mentions,
+          { comment_id: commentId, person_id: personId },
+        ],
       };
     }
     default:

@@ -312,8 +312,10 @@ export interface DemoState {
   tasks: Task[];
   task_comments: TaskComment[];
   bulletins: Bulletin[];
-  /** Bulletin ids the current session profile has dismissed (not "new"). */
-  dismissed_bulletin_ids: string[];
+  /** Bulletin ids still unread for the current session profile. */
+  unread_bulletin_ids: string[];
+  /** Unread @mention inbox rows (comment_id + mentioned person_id). */
+  unread_mentions: { comment_id: string; person_id: string }[];
   project_templates: ProjectTemplate[];
   template_milestones: TemplateMilestone[];
   template_task_lists: TemplateTaskList[];

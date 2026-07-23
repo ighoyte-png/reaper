@@ -34,7 +34,6 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
-import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
 import {
   bulletinVisibleToPerson,
   isUnreadBulletin,
@@ -96,6 +95,7 @@ export default function DashboardPage() {
     upsertBulletin,
     deleteBulletin,
     dismissBulletin,
+    dismissMention,
     newId,
   } = useData();
   const { push } = useToast();
@@ -496,11 +496,17 @@ export default function DashboardPage() {
 
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
   const manageWithoutPerson = effectiveCanManage && !mentionPersonId;
-  const { dismiss: dismissMention, dismissed: dismissedMentions } =
-    useDismissedMentions(mentionPersonId);
-  const dismissedBulletins = useMemo(
-    () => new Set(state.dismissed_bulletin_ids ?? []),
-    [state.dismissed_bulletin_ids],
+  const unreadMentions = useMemo(() => {
+    if (!mentionPersonId) return new Set<string>();
+    return new Set(
+      (state.unread_mentions ?? [])
+        .filter((r) => r.person_id === mentionPersonId)
+        .map((r) => r.comment_id),
+    );
+  }, [mentionPersonId, state.unread_mentions]);
+  const unreadBulletins = useMemo(
+    () => new Set(state.unread_bulletin_ids ?? []),
+    [state.unread_bulletin_ids],
   );
 
   const unreadBulletinCount = useMemo(() => {
@@ -510,7 +516,7 @@ export default function DashboardPage() {
         b,
         mentionPersonId,
         profile?.id ?? null,
-        dismissedBulletins,
+        unreadBulletins,
         { manageWithoutPerson },
       ),
     ).length;
@@ -519,7 +525,7 @@ export default function DashboardPage() {
     manageWithoutPerson,
     state.bulletins,
     profile?.id,
-    dismissedBulletins,
+    unreadBulletins,
   ]);
 
   const taggedComments = useMemo(() => {
@@ -528,7 +534,7 @@ export default function DashboardPage() {
     const taskById = new Map(state.tasks.map((t) => [t.id, t]));
     return state.task_comments
       .filter((c) => (c.mentioned_person_ids ?? []).includes(personId))
-      .filter((c) => !dismissedMentions.has(c.id))
+      .filter((c) => unreadMentions.has(c.id))
       .map((c) => {
         const task = taskById.get(c.task_id);
         const project = task ? projectById.get(task.project_id) : undefined;
@@ -548,7 +554,7 @@ export default function DashboardPage() {
     state.tasks,
     state.profiles,
     projectById,
-    dismissedMentions,
+    unreadMentions,
   ]);
 
   const viewAsControl =
@@ -618,7 +624,7 @@ export default function DashboardPage() {
                   b,
                   mentionPersonId,
                   profile?.id ?? null,
-                  dismissedBulletins,
+                  unreadBulletins,
                   { manageWithoutPerson },
                 )
               }
@@ -663,7 +669,10 @@ export default function DashboardPage() {
             <TaggedCommentsPanel
               taggedComments={taggedComments}
               projectHref={projectHref}
-              onDismiss={dismissMention}
+              onDismiss={(commentId) => {
+                if (!mentionPersonId) return;
+                dismissMention(commentId, mentionPersonId);
+              }}
               compact
             />
             <TaskPulse
