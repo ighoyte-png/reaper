@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
@@ -10,8 +10,9 @@ import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
+import { useOrgForecastAggregate } from "@/lib/hooks/use-aggregates";
 import { formatHours, formatMoney } from "@/lib/domain/budget";
-import { orgForecast, projectForecast } from "@/lib/domain/forecast";
+import { projectForecast } from "@/lib/domain/forecast";
 import {
   sortClientsByName,
   sortProjectsByClientThenName,
@@ -22,19 +23,22 @@ import type { Client, Project } from "@/lib/types";
 type ClientFilter = "all" | "none" | string;
 
 export default function ForecastReportPage() {
-  const { state } = useData();
+  const { state, ensureOrgHeavyData, mode } = useData();
+  const { forecast: org } = useOrgForecastAggregate();
   const appHref = useAppHref();
   const budgetHref = useBudgetHref();
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    if (mode === "supabase") void ensureOrgHeavyData();
+  }, [mode, ensureOrgHeavyData]);
 
   const projects = sortProjectsByClientThenName(
     state.projects,
     state.clients,
   );
   const clients = sortClientsByName(state.clients);
-
-  const org = orgForecast(state.projects, state.assignments, state.people);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
 import { ChevronDown, ChevronRight, Copy, ExternalLink, Link2, Pencil, Plus, RefreshCw, Unlink } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
@@ -82,6 +82,9 @@ export default function ProjectDetailPage() {
     newId,
     isPublicShare,
     myPerson,
+    ensureProjectData,
+    setActiveRealtimeProjectIds,
+    dataStatus,
   } = useData();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
     useViewAs();
@@ -114,6 +117,22 @@ export default function ProjectDetailPage() {
     params.clientSlug,
     params.projectSlug,
   );
+
+  useEffect(() => {
+    if (!project?.id) return;
+    void ensureProjectData(project.id);
+    setActiveRealtimeProjectIds([project.id]);
+    return () => setActiveRealtimeProjectIds([]);
+  }, [project?.id, ensureProjectData, setActiveRealtimeProjectIds]);
+
+  const projectDataReady =
+    !project?.id ||
+    dataStatus.orgHeavy === "ready" ||
+    dataStatus.projects[project.id] === "ready";
+  const projectDataLoading =
+    Boolean(project?.id) &&
+    !projectDataReady &&
+    dataStatus.projects[project.id] !== "error";
 
   const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
 
@@ -209,6 +228,15 @@ export default function ProjectDetailPage() {
             Back to your projects
           </Link>
         </div>
+      </PageContainer>
+    );
+  }
+
+  if (projectDataLoading) {
+    return (
+      <PageContainer className="overflow-y-auto">
+        <PageHeader title={project.name} onBack={() => router.push(appHref("/projects"))} />
+        <div className="p-5 text-sm text-[var(--text-muted)]">Loading project…</div>
       </PageContainer>
     );
   }

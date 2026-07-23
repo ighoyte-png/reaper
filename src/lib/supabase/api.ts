@@ -365,6 +365,71 @@ export async function ensureProfileForUser(
   return true;
 }
 
+export type ProjectDataBundle = {
+  milestones: Milestone[];
+  task_lists: TaskList[];
+  tasks: Task[];
+  task_comments: TaskComment[];
+  project_assets: ProjectAsset[];
+  assignments: Assignment[];
+};
+
+export type OrgHeavyData = {
+  milestones: Milestone[];
+  assignments: Assignment[];
+  leave_days: LeaveDay[];
+  project_assets: ProjectAsset[];
+  task_lists: TaskList[];
+  tasks: Task[];
+  task_comments: TaskComment[];
+};
+
+function attachCommentExtras(
+  commentsRaw: TaskComment[],
+  mentionsRes: { data: unknown[] | null; error: { message: string; code?: string } | null },
+  reactionsRes: { data: unknown[] | null; error: { message: string; code?: string } | null },
+): TaskComment[] {
+  const mentionByComment = new Map<string, string[]>();
+  if (!mentionsRes.error) {
+    for (const row of mentionsRes.data ?? []) {
+      const cid = String((row as { comment_id: unknown }).comment_id);
+      const pid = String((row as { person_id: unknown }).person_id);
+      const list = mentionByComment.get(cid) ?? [];
+      list.push(pid);
+      mentionByComment.set(cid, list);
+    }
+  }
+  const reactionsByComment = new Map<
+    string,
+    { emoji: string; profile_id: string }[]
+  >();
+  if (!reactionsRes.error) {
+    for (const row of reactionsRes.data ?? []) {
+      const cid = String((row as { comment_id: unknown }).comment_id);
+      const emoji = String((row as { emoji: unknown }).emoji ?? "");
+      const profile_id = String((row as { profile_id: unknown }).profile_id);
+      if (!emoji || !profile_id) continue;
+      const list = reactionsByComment.get(cid) ?? [];
+      list.push({ emoji, profile_id });
+      reactionsByComment.set(cid, list);
+    }
+  } else if (
+    /relation .*task_comment_reactions.* does not exist/i.test(
+      reactionsRes.error.message,
+    ) ||
+    reactionsRes.error.code === "42P01"
+  ) {
+    console.warn(
+      "task_comment_reactions missing — apply supabase/migrations/036_task_comment_reactions.sql",
+    );
+  }
+  return commentsRaw.map((c) => ({
+    ...c,
+    mentioned_person_ids: mentionByComment.get(c.id) ?? [],
+    reactions: reactionsByComment.get(c.id) ?? [],
+  }));
+}
+
 export async function fetchWorkspace(
   supabase: SupabaseClient,
   userId: string,
@@ -381,11 +446,11 @@ export async function fetchWorkspace(
   }
 
   const orgId = profile.organization_id as string;
-  return loadOrgWorkspace(supabase, orgId, userId);
+  return loadOrgBootstrap(supabase, orgId, userId);
 }
 
-/** Load org planning data by id (service role for public share). */
-export async function loadOrgWorkspace(
+/** Thin shell: org, people, clients, projects, templates — no tasks/assignments. */
+export async function loadOrgBootstrap(
   supabase: SupabaseClient,
   orgId: string,
   sessionProfileId: string | null,
@@ -395,19 +460,10 @@ export async function loadOrgWorkspace(
     profilesRes,
     clientsRes,
     projectsRes,
-    milestonesRes,
     peopleRes,
-    assignmentsRes,
     projectMembersRes,
-    leaveRes,
     calendarsRes,
     calendarDaysRes,
-    projectAssetsRes,
-    taskListsRes,
-    tasksRes,
-    taskCommentsRes,
-    taskCommentMentionsRes,
-    taskCommentReactionsRes,
     bulletinsRes,
     bulletinUnreadsRes,
     mentionUnreadsRes,
@@ -420,26 +476,11 @@ export async function loadOrgWorkspace(
     supabase.from("profiles").select("*").eq("organization_id", orgId),
     supabase.from("clients").select("*").eq("organization_id", orgId),
     supabase.from("projects").select("*").eq("organization_id", orgId),
-    supabase.from("milestones").select("*").eq("organization_id", orgId),
     supabase.from("people").select("*").eq("organization_id", orgId),
-    supabase.from("assignments").select("*").eq("organization_id", orgId),
     supabase.from("project_members").select("*").eq("organization_id", orgId),
-    supabase.from("leave_days").select("*").eq("organization_id", orgId),
     supabase.from("holiday_calendars").select("*").eq("organization_id", orgId),
     supabase
       .from("holiday_calendar_days")
-      .select("*")
-      .eq("organization_id", orgId),
-    supabase.from("project_assets").select("*").eq("organization_id", orgId),
-    supabase.from("task_lists").select("*").eq("organization_id", orgId),
-    supabase.from("tasks").select("*").eq("organization_id", orgId),
-    supabase.from("task_comments").select("*").eq("organization_id", orgId),
-    supabase
-      .from("task_comment_mentions")
-      .select("*")
-      .eq("organization_id", orgId),
-    supabase
-      .from("task_comment_reactions")
       .select("*")
       .eq("organization_id", orgId),
     supabase.from("bulletins").select("*").eq("organization_id", orgId),
@@ -469,20 +510,10 @@ export async function loadOrgWorkspace(
     supabase.from("template_tasks").select("*").eq("organization_id", orgId),
   ]);
 
-  for (const res of [
-    orgRes,
-    profilesRes,
-    clientsRes,
-    projectsRes,
-    milestonesRes,
-    peopleRes,
-    assignmentsRes,
-    leaveRes,
-  ]) {
+  for (const res of [orgRes, profilesRes, clientsRes, projectsRes, peopleRes]) {
     if (res.error) throw res.error;
   }
 
-  // Calendars are optional until migration 008 is applied.
   const holiday_calendars: HolidayCalendar[] = calendarsRes.error
     ? []
     : (calendarsRes.data ?? []).map((row) => ({
@@ -511,66 +542,6 @@ export async function loadOrgWorkspace(
         ),
       }));
 
-  // PM execution tables are optional until migration 015 is applied.
-  const project_assets: ProjectAsset[] = projectAssetsRes.error
-    ? []
-    : (projectAssetsRes.data ?? []).map((row) =>
-        mapProjectAsset(row as Record<string, unknown>),
-      );
-  const task_lists: TaskList[] = taskListsRes.error
-    ? []
-    : (taskListsRes.data ?? []).map((row) =>
-        mapTaskList(row as Record<string, unknown>),
-      );
-  const tasks: Task[] = tasksRes.error
-    ? []
-    : (tasksRes.data ?? []).map((row) =>
-        mapTask(row as Record<string, unknown>),
-      );
-  const task_commentsRaw: TaskComment[] = taskCommentsRes.error
-    ? []
-    : (taskCommentsRes.data ?? []).map((row) =>
-        mapTaskComment(row as Record<string, unknown>),
-      );
-  const mentionByComment = new Map<string, string[]>();
-  if (!taskCommentMentionsRes.error) {
-    for (const row of taskCommentMentionsRes.data ?? []) {
-      const cid = String((row as { comment_id: unknown }).comment_id);
-      const pid = String((row as { person_id: unknown }).person_id);
-      const list = mentionByComment.get(cid) ?? [];
-      list.push(pid);
-      mentionByComment.set(cid, list);
-    }
-  }
-  const reactionsByComment = new Map<
-    string,
-    { emoji: string; profile_id: string }[]
-  >();
-  if (!taskCommentReactionsRes.error) {
-    for (const row of taskCommentReactionsRes.data ?? []) {
-      const cid = String((row as { comment_id: unknown }).comment_id);
-      const emoji = String((row as { emoji: unknown }).emoji ?? "");
-      const profile_id = String((row as { profile_id: unknown }).profile_id);
-      if (!emoji || !profile_id) continue;
-      const list = reactionsByComment.get(cid) ?? [];
-      list.push({ emoji, profile_id });
-      reactionsByComment.set(cid, list);
-    }
-  } else if (
-    /relation .*task_comment_reactions.* does not exist/i.test(
-      taskCommentReactionsRes.error.message,
-    ) ||
-    taskCommentReactionsRes.error.code === "42P01"
-  ) {
-    console.warn(
-      "task_comment_reactions missing — apply supabase/migrations/036_task_comment_reactions.sql",
-    );
-  }
-  const task_comments: TaskComment[] = task_commentsRaw.map((c) => ({
-    ...c,
-    mentioned_person_ids: mentionByComment.get(c.id) ?? [],
-    reactions: reactionsByComment.get(c.id) ?? [],
-  }));
   const bulletins: Bulletin[] = bulletinsRes.error
     ? []
     : (bulletinsRes.data ?? []).map((row) =>
@@ -666,25 +637,19 @@ export async function loadOrgWorkspace(
     projects: (projectsRes.data ?? []).map((row) =>
       mapProject(row as Record<string, unknown>),
     ),
-    milestones: (milestonesRes.data ?? []).map((row) =>
-      mapMilestone(row as Record<string, unknown>),
-    ),
+    milestones: [],
     people: (peopleRes.data ?? []).map((row) =>
       mapPerson(row as Record<string, unknown>),
     ),
-    assignments: (assignmentsRes.data ?? []).map((row) =>
-      mapAssignment(row as Record<string, unknown>),
-    ),
+    assignments: [],
     project_members,
-    leave_days: (leaveRes.data ?? []).map((row) =>
-      mapLeaveDay(row as Record<string, unknown>),
-    ),
+    leave_days: [],
     holiday_calendars,
     holiday_calendar_days,
-    project_assets,
-    task_lists,
-    tasks,
-    task_comments,
+    project_assets: [],
+    task_lists: [],
+    tasks: [],
+    task_comments: [],
     bulletins,
     unread_bulletin_ids,
     unread_mentions,
@@ -692,6 +657,376 @@ export async function loadOrgWorkspace(
     template_milestones,
     template_task_lists,
     template_tasks,
+    sessionProfileId,
+  };
+}
+
+/** Org-wide planning + PM rows (transitional until page-scoped fetches cover all callers). */
+export async function loadOrgHeavyData(
+  supabase: SupabaseClient,
+  orgId: string,
+): Promise<OrgHeavyData> {
+  const [
+    milestonesRes,
+    assignmentsRes,
+    leaveRes,
+    projectAssetsRes,
+    taskListsRes,
+    tasksRes,
+    taskCommentsRes,
+    taskCommentMentionsRes,
+    taskCommentReactionsRes,
+  ] = await Promise.all([
+    supabase.from("milestones").select("*").eq("organization_id", orgId),
+    supabase.from("assignments").select("*").eq("organization_id", orgId),
+    supabase.from("leave_days").select("*").eq("organization_id", orgId),
+    supabase.from("project_assets").select("*").eq("organization_id", orgId),
+    supabase.from("task_lists").select("*").eq("organization_id", orgId),
+    supabase.from("tasks").select("*").eq("organization_id", orgId),
+    supabase.from("task_comments").select("*").eq("organization_id", orgId),
+    supabase
+      .from("task_comment_mentions")
+      .select("*")
+      .eq("organization_id", orgId),
+    supabase
+      .from("task_comment_reactions")
+      .select("*")
+      .eq("organization_id", orgId),
+  ]);
+
+  for (const res of [milestonesRes, assignmentsRes, leaveRes]) {
+    if (res.error) throw res.error;
+  }
+
+  const project_assets: ProjectAsset[] = projectAssetsRes.error
+    ? []
+    : (projectAssetsRes.data ?? []).map((row) =>
+        mapProjectAsset(row as Record<string, unknown>),
+      );
+  const task_lists: TaskList[] = taskListsRes.error
+    ? []
+    : (taskListsRes.data ?? []).map((row) =>
+        mapTaskList(row as Record<string, unknown>),
+      );
+  const tasks: Task[] = tasksRes.error
+    ? []
+    : (tasksRes.data ?? []).map((row) =>
+        mapTask(row as Record<string, unknown>),
+      );
+  const task_commentsRaw: TaskComment[] = taskCommentsRes.error
+    ? []
+    : (taskCommentsRes.data ?? []).map((row) =>
+        mapTaskComment(row as Record<string, unknown>),
+      );
+
+  return {
+    milestones: (milestonesRes.data ?? []).map((row) =>
+      mapMilestone(row as Record<string, unknown>),
+    ),
+    assignments: (assignmentsRes.data ?? []).map((row) =>
+      mapAssignment(row as Record<string, unknown>),
+    ),
+    leave_days: (leaveRes.data ?? []).map((row) =>
+      mapLeaveDay(row as Record<string, unknown>),
+    ),
+    project_assets,
+    task_lists,
+    tasks,
+    task_comments: attachCommentExtras(
+      task_commentsRaw,
+      taskCommentMentionsRes,
+      taskCommentReactionsRes,
+    ),
+  };
+}
+
+/** Project hub / schedule tasks sidebar bundle. */
+export async function loadProjectData(
+  supabase: SupabaseClient,
+  orgId: string,
+  projectId: string,
+): Promise<ProjectDataBundle> {
+  const [
+    milestonesRes,
+    taskListsRes,
+    tasksRes,
+    projectAssetsRes,
+    assignmentsRes,
+  ] = await Promise.all([
+    supabase
+      .from("milestones")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("project_id", projectId),
+    supabase
+      .from("task_lists")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("project_id", projectId),
+    supabase
+      .from("tasks")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("project_id", projectId),
+    supabase
+      .from("project_assets")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("project_id", projectId),
+    supabase
+      .from("assignments")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("project_id", projectId),
+  ]);
+
+  for (const res of [milestonesRes, assignmentsRes]) {
+    if (res.error) throw res.error;
+  }
+
+  const tasks: Task[] = tasksRes.error
+    ? []
+    : (tasksRes.data ?? []).map((row) =>
+        mapTask(row as Record<string, unknown>),
+      );
+  const taskIds = tasks.map((t) => t.id);
+
+  let task_comments: TaskComment[] = [];
+  if (taskIds.length > 0) {
+    const [taskCommentsRes, taskCommentMentionsRes, taskCommentReactionsRes] =
+      await Promise.all([
+        supabase
+          .from("task_comments")
+          .select("*")
+          .eq("organization_id", orgId)
+          .in("task_id", taskIds),
+        supabase
+          .from("task_comment_mentions")
+          .select("*")
+          .eq("organization_id", orgId),
+        supabase
+          .from("task_comment_reactions")
+          .select("*")
+          .eq("organization_id", orgId),
+      ]);
+    const task_commentsRaw: TaskComment[] = taskCommentsRes.error
+      ? []
+      : (taskCommentsRes.data ?? []).map((row) =>
+          mapTaskComment(row as Record<string, unknown>),
+        );
+    const idSet = new Set(taskIds);
+    task_comments = attachCommentExtras(
+      task_commentsRaw.filter((c) => idSet.has(c.task_id)),
+      taskCommentMentionsRes,
+      taskCommentReactionsRes,
+    );
+  }
+
+  return {
+    milestones: (milestonesRes.data ?? []).map((row) =>
+      mapMilestone(row as Record<string, unknown>),
+    ),
+    task_lists: taskListsRes.error
+      ? []
+      : (taskListsRes.data ?? []).map((row) =>
+          mapTaskList(row as Record<string, unknown>),
+        ),
+    tasks,
+    task_comments,
+    project_assets: projectAssetsRes.error
+      ? []
+      : (projectAssetsRes.data ?? []).map((row) =>
+          mapProjectAsset(row as Record<string, unknown>),
+        ),
+    assignments: (assignmentsRes.data ?? []).map((row) =>
+      mapAssignment(row as Record<string, unknown>),
+    ),
+  };
+}
+
+/** Schedule viewport: assignments that overlap or may expand into the range. */
+export async function loadAssignmentsForRange(
+  supabase: SupabaseClient,
+  orgId: string,
+  rangeStart: string,
+  rangeEnd: string,
+  projectId?: string | null,
+): Promise<Assignment[]> {
+  let query = supabase
+    .from("assignments")
+    .select("*")
+    .eq("organization_id", orgId)
+    .or(
+      [
+        `and(recurrence.eq.none,start_date.lte.${rangeEnd},end_date.gte.${rangeStart})`,
+        `and(recurrence.eq.weekly,start_date.lte.${rangeEnd},or(recurrence_end_date.is.null,recurrence_end_date.gte.${rangeStart}))`,
+        // Legacy / null recurrence treated like none
+        `and(recurrence.is.null,start_date.lte.${rangeEnd},end_date.gte.${rangeStart})`,
+      ].join(","),
+    );
+  if (projectId) {
+    query = query.eq("project_id", projectId);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((row) => mapAssignment(row as Record<string, unknown>));
+}
+
+export async function loadLeaveForRange(
+  supabase: SupabaseClient,
+  orgId: string,
+  rangeStart: string,
+  rangeEnd: string,
+): Promise<LeaveDay[]> {
+  const { data, error } = await supabase
+    .from("leave_days")
+    .select("*")
+    .eq("organization_id", orgId)
+    .gte("date", rangeStart)
+    .lte("date", rangeEnd);
+  if (error) throw error;
+  return (data ?? []).map((row) => mapLeaveDay(row as Record<string, unknown>));
+}
+
+export type ProjectBudgetBurnRow = {
+  project_id: string;
+  used_hours: number;
+  future_hours: number;
+  planned_hours: number;
+  used_amount: number;
+  future_amount: number;
+  planned_amount: number;
+  total_hours: number;
+  total_amount: number | null;
+  mode: "none" | "hours" | "amount";
+  pct: number;
+  over_by: number;
+  remaining_hours: number;
+  remaining_amount: number | null;
+  amount_over_by: number;
+};
+
+export type OrgForecastRow = {
+  project_id: string | null;
+  planned_hours: number;
+  revenue: number;
+  cost: number;
+  margin: number;
+  margin_pct: number;
+  hours_used_to_date: number;
+  hours_future_planned: number;
+  hours_remaining: number | null;
+  budget_margin: number | null;
+  budget_margin_pct: number | null;
+  over_budget: boolean;
+};
+
+export type PersonUtilizationWeekRow = {
+  person_id: string;
+  week_start: string;
+  booked_hours: number;
+  available_hours: number;
+};
+
+export async function rpcProjectBudgetBurns(
+  supabase: SupabaseClient,
+  asOf?: string,
+): Promise<ProjectBudgetBurnRow[]> {
+  const { data, error } = await supabase.rpc("rpc_project_budget_burns", {
+    p_as_of: asOf ?? undefined,
+  });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    project_id: String(row.project_id),
+    used_hours: num(row.used_hours),
+    future_hours: num(row.future_hours),
+    planned_hours: num(row.planned_hours),
+    used_amount: num(row.used_amount),
+    future_amount: num(row.future_amount),
+    planned_amount: num(row.planned_amount),
+    total_hours: num(row.total_hours),
+    total_amount:
+      row.total_amount == null || row.total_amount === ""
+        ? null
+        : num(row.total_amount),
+    mode: String(row.mode ?? "none") as ProjectBudgetBurnRow["mode"],
+    pct: num(row.pct),
+    over_by: num(row.over_by),
+    remaining_hours: num(row.remaining_hours),
+    remaining_amount:
+      row.remaining_amount == null || row.remaining_amount === ""
+        ? null
+        : num(row.remaining_amount),
+    amount_over_by: num(row.amount_over_by),
+  }));
+}
+
+export async function rpcOrgForecast(
+  supabase: SupabaseClient,
+  asOf?: string,
+): Promise<OrgForecastRow[]> {
+  const { data, error } = await supabase.rpc("rpc_org_forecast", {
+    p_as_of: asOf ?? undefined,
+  });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    project_id: row.project_id == null ? null : String(row.project_id),
+    planned_hours: num(row.planned_hours),
+    revenue: num(row.revenue),
+    cost: num(row.cost),
+    margin: num(row.margin),
+    margin_pct: num(row.margin_pct),
+    hours_used_to_date: num(row.hours_used_to_date),
+    hours_future_planned: num(row.hours_future_planned),
+    hours_remaining:
+      row.hours_remaining == null || row.hours_remaining === ""
+        ? null
+        : num(row.hours_remaining),
+    budget_margin:
+      row.budget_margin == null || row.budget_margin === ""
+        ? null
+        : num(row.budget_margin),
+    budget_margin_pct:
+      row.budget_margin_pct == null || row.budget_margin_pct === ""
+        ? null
+        : num(row.budget_margin_pct),
+    over_budget: Boolean(row.over_budget),
+  }));
+}
+
+export async function rpcPersonUtilizationWeeks(
+  supabase: SupabaseClient,
+  weekStart: string,
+  weeks: number,
+  personIds?: string[] | null,
+): Promise<PersonUtilizationWeekRow[]> {
+  const { data, error } = await supabase.rpc("rpc_person_utilization_weeks", {
+    p_week_start: weekStart,
+    p_weeks: weeks,
+    p_person_ids: personIds?.length ? personIds : null,
+  });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    person_id: String(row.person_id),
+    week_start: String(row.week_start),
+    booked_hours: num(row.booked_hours),
+    available_hours: num(row.available_hours),
+  }));
+}
+
+/** Full org load (public share / recovery). Bootstrap + heavy. */
+export async function loadOrgWorkspace(
+  supabase: SupabaseClient,
+  orgId: string,
+  sessionProfileId: string | null,
+): Promise<DemoState> {
+  const [boot, heavy] = await Promise.all([
+    loadOrgBootstrap(supabase, orgId, sessionProfileId),
+    loadOrgHeavyData(supabase, orgId),
+  ]);
+  return {
+    ...boot,
+    ...heavy,
     sessionProfileId,
   };
 }

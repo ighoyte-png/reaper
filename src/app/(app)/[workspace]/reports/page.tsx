@@ -18,6 +18,10 @@ import { buttonClass } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import {
+  useOrgForecastAggregate,
+  useProjectBurnsMap,
+} from "@/lib/hooks/use-aggregates";
 import { useViewAs } from "@/lib/view-as";
 import {
   budgetBurn,
@@ -26,6 +30,7 @@ import {
   formatMoney,
 } from "@/lib/domain/budget";
 import type { BudgetBurn } from "@/lib/types";
+import type { ProjectForecast } from "@/lib/domain/forecast";
 import {
   availableHoursInRange,
   capacityLevel,
@@ -33,7 +38,6 @@ import {
   utilizationPct,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
-import { orgForecast } from "@/lib/domain/forecast";
 import { cn } from "@/lib/cn";
 
 const reports: {
@@ -83,7 +87,9 @@ type WeekUtilPoint = {
 };
 
 export default function ReportsPage() {
-  const { state, isPublicShare } = useData();
+  const { state, isPublicShare, ensureOrgHeavyData, mode } = useData();
+  const { burns } = useProjectBurnsMap();
+  const { forecast } = useOrgForecastAggregate();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
@@ -94,6 +100,10 @@ export default function ReportsPage() {
   useEffect(() => {
     if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
   }, [canManage, isPublicShare, router]);
+
+  useEffect(() => {
+    if (mode === "supabase") void ensureOrgHeavyData();
+  }, [mode, ensureOrgHeavyData]);
 
   const utilization = useMemo(() => {
     const weekAnchors = Array.from({ length: 8 }, (_, i) =>
@@ -175,7 +185,8 @@ export default function ReportsPage() {
     let over = 0;
     const rows = state.projects
       .map((p) => {
-        const burn = budgetBurn(p, state.assignments, state.people);
+        const burn =
+          burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people);
         if (burn.mode === "none") return null;
         const health = budgetHealth(burn);
         if (health === "healthy") healthy += 1;
@@ -199,7 +210,7 @@ export default function ReportsPage() {
       over,
       rows,
     };
-  }, [state.projects, state.assignments, state.people, state.clients]);
+  }, [state.projects, state.assignments, state.people, state.clients, burns]);
 
   const tasks = useMemo(() => {
     const open = state.tasks.filter((t) => t.status !== "complete");
@@ -217,11 +228,6 @@ export default function ReportsPage() {
       open: open.length,
     };
   }, [state.tasks, todayKey]);
-
-  const forecast = useMemo(
-    () => orgForecast(state.projects, state.assignments, state.people),
-    [state.projects, state.assignments, state.people],
-  );
 
   if (!canManage && !isPublicShare) {
     return (
@@ -624,7 +630,7 @@ function TasksOverview({
 function ForecastOverview({
   forecast,
 }: {
-  forecast: ReturnType<typeof orgForecast>;
+  forecast: ProjectForecast;
 }) {
   const max = Math.max(forecast.revenue, forecast.cost, 1);
   return (

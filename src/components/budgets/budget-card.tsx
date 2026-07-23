@@ -5,6 +5,7 @@ import { BurnBar } from "@/components/ui/burn-bar";
 import { panelClass } from "@/components/ui/panel";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { useData } from "@/lib/data/store";
+import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import {
   budgetBurn,
   budgetHealth,
@@ -27,7 +28,10 @@ export function BudgetCard({
   showName?: boolean;
 }) {
   const { state } = useData();
-  const burn = budgetBurn(project, state.assignments, state.people);
+  const { burns } = useProjectBurnsMap();
+  const burn =
+    burns.get(project.id) ??
+    budgetBurn(project, state.assignments, state.people);
   const health = budgetHealth(burn);
   const hoursFx = projectHoursForecast(
     project,

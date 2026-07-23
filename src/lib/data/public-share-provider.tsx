@@ -218,6 +218,18 @@ export function PublicShareProvider({
       exportProjectAsTemplate: async () => {},
       updateProjectShare: () => ({ enabled: false, token: null, url: null }),
       newId: (prefix) => `${prefix}-ro`,
+      dataStatus: {
+        orgHeavy: "ready",
+        projects: {},
+        scheduleRange: null,
+      },
+      ensureOrgHeavyData: async () => {},
+      ensureProjectData: async () => {},
+      ensureScheduleRange: async () => {},
+      setActiveRealtimeProjectIds: () => {},
+      fetchProjectBudgetBurnsRpc: async () => null,
+      fetchOrgForecastRpc: async () => null,
+      fetchPersonUtilizationWeeksRpc: async () => null,
     };
   }, [state, mode, shareBasePath]);
 

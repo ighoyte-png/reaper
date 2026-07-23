@@ -1,6 +1,7 @@
 "use client";
 
 import { addWeeks, format } from "date-fns";
+import { useEffect, useMemo, useState } from "react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { useData } from "@/lib/data/store";
 import {
@@ -70,8 +71,7 @@ function UtilizationPill({
   const level = capacityLevel(booked, available, available <= 0);
   const pct = utilizationPct(booked, available);
   const tone = levelTone(level);
-  const fillPct =
-    available <= 0 ? 0 : Math.min(100, Math.max(0, pct));
+  const fillPct = available <= 0 ? 0 : Math.min(100, Math.max(0, pct));
 
   return (
     <div
@@ -97,6 +97,8 @@ function UtilizationPill({
   );
 }
 
+type CellHours = { booked: number; available: number };
+
 export function UtilizationHeatmap({
   weeks = 8,
   personIds,
@@ -107,15 +109,82 @@ export function UtilizationHeatmap({
   personIds?: string[] | null;
   showLegend?: boolean;
 }) {
-  const { state } = useData();
-  const anchors = Array.from({ length: weeks }, (_, i) =>
-    weekStart(addWeeks(new Date(), i)),
+  const {
+    state,
+    mode,
+    fetchPersonUtilizationWeeksRpc,
+    ensureOrgHeavyData,
+  } = useData();
+  const anchors = useMemo(
+    () =>
+      Array.from({ length: weeks }, (_, i) =>
+        weekStart(addWeeks(new Date(), i)),
+      ),
+    [weeks],
   );
   const people = sortPeopleByName(
     personIds && personIds.length > 0
       ? state.people.filter((p) => personIds.includes(p.id))
       : state.people,
   );
+
+  const [rpcCells, setRpcCells] = useState<Map<string, CellHours> | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (mode === "demo") {
+        setRpcCells(null);
+        return;
+      }
+      const weekStartKey = toDateKey(anchors[0]!);
+      const ids =
+        personIds && personIds.length > 0
+          ? personIds
+          : state.people.map((p) => p.id);
+      const rows = await fetchPersonUtilizationWeeksRpc(
+        weekStartKey,
+        weeks,
+        ids,
+      );
+      if (cancelled) return;
+      if (rows) {
+        const map = new Map<string, CellHours>();
+        for (const row of rows) {
+          const ws =
+            typeof row.week_start === "string"
+              ? row.week_start.slice(0, 10)
+              : String(row.week_start);
+          map.set(`${row.person_id}:${ws}`, {
+            booked: row.booked_hours,
+            available: row.available_hours,
+          });
+        }
+        setRpcCells(map);
+        return;
+      }
+      try {
+        await ensureOrgHeavyData();
+      } catch {
+        /* soft-fail → client math */
+      }
+      if (!cancelled) setRpcCells(null);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mode,
+    weeks,
+    anchors,
+    personIds,
+    state.people,
+    fetchPersonUtilizationWeeksRpc,
+    ensureOrgHeavyData,
+  ]);
 
   return (
     <div className="space-y-3">
@@ -179,19 +248,24 @@ export function UtilizationHeatmap({
               {anchors.map((anchor) => {
                 const start = toDateKey(anchor);
                 const end = toDateKey(weekEnd(anchor));
-                const booked = personBookedHoursInRange(
-                  person.id,
-                  start,
-                  end,
-                  state.assignments,
-                  state.leave_days,
-                );
-                const available = availableHoursInRange(
-                  person,
-                  start,
-                  end,
-                  state.leave_days,
-                );
+                const rpc = rpcCells?.get(`${person.id}:${start}`);
+                const booked =
+                  rpc?.booked ??
+                  personBookedHoursInRange(
+                    person.id,
+                    start,
+                    end,
+                    state.assignments,
+                    state.leave_days,
+                  );
+                const available =
+                  rpc?.available ??
+                  availableHoursInRange(
+                    person,
+                    start,
+                    end,
+                    state.leave_days,
+                  );
                 return (
                   <div
                     key={`${person.id}-${start}`}

@@ -80,6 +80,7 @@ export default function PeoplePage() {
     mode,
     inviteDemoMember,
     refresh,
+    ensureOrgHeavyData,
   } = useData();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
@@ -87,6 +88,11 @@ export default function PeoplePage() {
   const router = useRouter();
   const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
+
+  useEffect(() => {
+    if (mode === "supabase") void ensureOrgHeavyData();
+  }, [mode, ensureOrgHeavyData]);
+
   const [editing, setEditing] = useState<Omit<Person, "organization_id"> | null>(
     null,
   );

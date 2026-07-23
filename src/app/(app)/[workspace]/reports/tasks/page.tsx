@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -391,11 +391,15 @@ function MobileClientChip({
 }
 
 export default function TasksReportPage() {
-  const { state } = useData();
+  const { state, mode, ensureOrgHeavyData } = useData();
   const projectHref = useProjectHref();
   const todayKey = toDateKey(new Date());
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
+
+  useEffect(() => {
+    if (mode === "supabase") void ensureOrgHeavyData();
+  }, [mode, ensureOrgHeavyData]);
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),

@@ -50,6 +50,13 @@ import {
   deleteTemplateTaskRow,
   ensureProfileForUser,
   fetchWorkspace,
+  loadAssignmentsForRange,
+  loadLeaveForRange,
+  loadOrgHeavyData,
+  loadProjectData,
+  rpcOrgForecast,
+  rpcPersonUtilizationWeeks,
+  rpcProjectBudgetBurns,
   seedDemoWorkspace,
   upsertAssignmentRow,
   upsertBulletinRow,
@@ -487,6 +494,35 @@ interface DataContextValue {
     action: "enable" | "disable" | "rotate",
   ) => { enabled: boolean; token: string | null; url: string | null };
   newId: (prefix: string) => string;
+  /** Page-scoped fetch status (supabase mode). Demo always ready. */
+  dataStatus: {
+    orgHeavy: "idle" | "loading" | "ready" | "error";
+    projects: Record<string, "idle" | "loading" | "ready" | "error">;
+    scheduleRange: { start: string; end: string } | null;
+  };
+  ensureOrgHeavyData: () => Promise<void>;
+  ensureProjectData: (projectId: string) => Promise<void>;
+  ensureScheduleRange: (
+    startKey: string,
+    endKey: string,
+    projectId?: string | null,
+  ) => Promise<void>;
+  /** Subscribe project task realtime while hub / schedule sidebar is active. */
+  setActiveRealtimeProjectIds: (projectIds: string[]) => void;
+  /** Soft-fail RPC helpers (demo / missing RPC → null; caller falls back to TS). */
+  fetchProjectBudgetBurnsRpc: () => Promise<
+    import("@/lib/supabase/api").ProjectBudgetBurnRow[] | null
+  >;
+  fetchOrgForecastRpc: () => Promise<
+    import("@/lib/supabase/api").OrgForecastRow[] | null
+  >;
+  fetchPersonUtilizationWeeksRpc: (
+    weekStart: string,
+    weeks: number,
+    personIds?: string[] | null,
+  ) => Promise<
+    import("@/lib/supabase/api").PersonUtilizationWeekRow[] | null
+  >;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -515,6 +551,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * resurrect rows after a newer undo/delete.
    */
   const leaveWriteEpochRef = useRef(0);
+
+  const [orgHeavyStatus, setOrgHeavyStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [projectDataStatus, setProjectDataStatus] = useState<
+    Record<string, "idle" | "loading" | "ready" | "error">
+  >({});
+  const [scheduleRangeLoaded, setScheduleRangeLoaded] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
+  const [activeRealtimeProjectIds, setActiveRealtimeProjectIdsState] =
+    useState<string[]>([]);
+
+  const orgHeavyInflight = useRef<Promise<void> | null>(null);
+  const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
+  const scheduleRangeInflight = useRef<Promise<void> | null>(null);
+  const orgHeavyReadyRef = useRef(false);
+  const projectReadyRef = useRef<Set<string>>(new Set());
+  const scheduleRangeLoadedRef = useRef<{ start: string; end: string } | null>(
+    null,
+  );
 
   const noteLocalWrite = useCallback((table: string, id: string) => {
     if (!id) return;
@@ -588,7 +646,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
       } else if (personId) {
         clearLegacyDismissedMentionIds(personId);
       }
-      setState(next);
+      // Bootstrap is shell-only. Re-applying it (e.g. auth INITIAL_SESSION after
+      // the schedule already fetched a date range) must not wipe page-scoped rows.
+      setState((prev) => {
+        const sameOrg =
+          Boolean(prev.organization.id) &&
+          prev.organization.id === next.organization.id;
+        if (!sameOrg) {
+          orgHeavyReadyRef.current = false;
+          projectReadyRef.current = new Set();
+          scheduleRangeLoadedRef.current = null;
+          setOrgHeavyStatus("idle");
+          setProjectDataStatus({});
+          setScheduleRangeLoaded(null);
+          return next;
+        }
+        return {
+          ...next,
+          assignments: prev.assignments,
+          leave_days: prev.leave_days,
+          milestones: prev.milestones,
+          task_lists: prev.task_lists,
+          tasks: prev.tasks,
+          task_comments: prev.task_comments,
+          project_assets: prev.project_assets,
+        };
+      });
     }
 
     if (existingProfile) {
@@ -696,7 +779,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [mode, refreshSupabase]);
 
-  // Live sync: patch only changed rows (assignments/tasks/leave/comments/bulletins).
+  // Live sync: org shell always; project task traffic only for active projects.
   useEffect(() => {
     if (mode !== "supabase" || !ready) return;
     const client = supabaseRef.current;
@@ -720,6 +803,41 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setState((prev) => {
         let next = prev;
         for (const ev of batch) {
+          if (
+            ev.table === "tasks" ||
+            ev.table === "task_comments" ||
+            ev.table === "task_comment_mentions" ||
+            ev.table === "task_comment_reactions"
+          ) {
+            const active = new Set(activeRealtimeProjectIds);
+            if (active.size === 0 && projectReadyRef.current.size === 0) {
+              continue;
+            }
+            if (ev.table === "tasks") {
+              const pid = String(
+                (ev.newRecord ?? ev.oldRecord)?.project_id ?? "",
+              );
+              if (
+                pid &&
+                !active.has(pid) &&
+                !projectReadyRef.current.has(pid)
+              ) {
+                continue;
+              }
+            } else {
+              const taskId = String(
+                (ev.newRecord ?? ev.oldRecord)?.task_id ?? "",
+              );
+              const task = next.tasks.find((t) => t.id === taskId);
+              if (!task) continue;
+              if (
+                !active.has(task.project_id) &&
+                !projectReadyRef.current.has(task.project_id)
+              ) {
+                continue;
+              }
+            }
+          }
           next = applyRealtimeTableEvent(
             next,
             ev.table,
@@ -753,12 +871,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           oldRecord: payload.old ?? null,
         });
         if (flushTimer == null) {
-          // Coalesce burst writes (e.g. leave + assignment cascades) into one paint.
           flushTimer = setTimeout(flush, 16);
         }
       };
 
-    const channel = client
+    const orgChannel = client
       .channel(`org-live:${organizationId}`)
       .on(
         "postgres_changes",
@@ -779,36 +896,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         onChange("leave_days"),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "task_comments",
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        onChange("task_comments"),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "task_comment_mentions",
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        onChange("task_comment_mentions"),
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "task_comment_reactions",
-          filter: `organization_id=eq.${organizationId}`,
-        },
-        onChange("task_comment_reactions"),
       )
       .on(
         "postgres_changes",
@@ -845,18 +932,63 @@ export function DataProvider({ children }: { children: ReactNode }) {
         {
           event: "*",
           schema: "public",
-          table: "tasks",
+          table: "task_comments",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("tasks"),
+        onChange("task_comments"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_comment_mentions",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("task_comment_mentions"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_comment_reactions",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("task_comment_reactions"),
       )
       .subscribe();
 
+    const projectChannels = activeRealtimeProjectIds.map((projectId) =>
+      client
+        .channel(`project-live:${projectId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "tasks",
+            filter: `project_id=eq.${projectId}`,
+          },
+          onChange("tasks"),
+        )
+        .subscribe(),
+    );
+
     return () => {
       if (flushTimer) clearTimeout(flushTimer);
-      void client.removeChannel(channel);
+      void client.removeChannel(orgChannel);
+      for (const ch of projectChannels) {
+        void client.removeChannel(ch);
+      }
     };
-  }, [mode, ready, state.organization.id, shouldIgnoreLocalEcho]);
+  }, [
+    mode,
+    ready,
+    state.organization.id,
+    shouldIgnoreLocalEcho,
+    activeRealtimeProjectIds,
+  ]);
 
   useEffect(() => {
     if (!ready || mode !== "demo") return;
@@ -920,6 +1052,271 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     [runRemote],
   );
+
+
+  const ensureOrgHeavyData = useCallback(async () => {
+    if (mode !== "supabase") {
+      orgHeavyReadyRef.current = true;
+      setOrgHeavyStatus("ready");
+      return;
+    }
+    if (orgHeavyReadyRef.current) return;
+    if (orgHeavyInflight.current) return orgHeavyInflight.current;
+    const client = supabaseRef.current ?? createClient();
+    const organizationId = state.organization.id;
+    if (!organizationId) return;
+
+    const run = (async () => {
+      setOrgHeavyStatus("loading");
+      try {
+        const heavy = await loadOrgHeavyData(client, organizationId);
+        setState((prev) => ({
+          ...prev,
+          milestones: heavy.milestones,
+          assignments: heavy.assignments,
+          leave_days: heavy.leave_days,
+          project_assets: heavy.project_assets,
+          task_lists: heavy.task_lists,
+          tasks: heavy.tasks,
+          task_comments: heavy.task_comments,
+        }));
+        orgHeavyReadyRef.current = true;
+        for (const t of heavy.tasks) {
+          projectReadyRef.current.add(t.project_id);
+        }
+        setOrgHeavyStatus("ready");
+        setProjectDataStatus((prev) => {
+          const next = { ...prev };
+          for (const id of projectReadyRef.current) next[id] = "ready";
+          return next;
+        });
+      } catch (err) {
+        console.error(err);
+        setOrgHeavyStatus("error");
+        throw err;
+      } finally {
+        orgHeavyInflight.current = null;
+      }
+    })();
+    orgHeavyInflight.current = run;
+    return run;
+  }, [mode, state.organization.id]);
+
+  const ensureProjectData = useCallback(
+    async (projectId: string) => {
+      if (!projectId) return;
+      if (mode !== "supabase") {
+        projectReadyRef.current.add(projectId);
+        setProjectDataStatus((prev) => ({ ...prev, [projectId]: "ready" }));
+        return;
+      }
+      if (orgHeavyReadyRef.current || projectReadyRef.current.has(projectId)) {
+        setProjectDataStatus((prev) =>
+          prev[projectId] === "ready"
+            ? prev
+            : { ...prev, [projectId]: "ready" },
+        );
+        return;
+      }
+      const existing = projectInflight.current.get(projectId);
+      if (existing) return existing;
+      const client = supabaseRef.current ?? createClient();
+      const organizationId = state.organization.id;
+      if (!organizationId) return;
+
+      const run = (async () => {
+        setProjectDataStatus((prev) => ({ ...prev, [projectId]: "loading" }));
+        try {
+          const bundle = await loadProjectData(
+            client,
+            organizationId,
+            projectId,
+          );
+          setState((prev) => {
+            const dropTasks = new Set(
+              prev.tasks
+                .filter((t) => t.project_id === projectId)
+                .map((t) => t.id),
+            );
+            return {
+              ...prev,
+              milestones: [
+                ...prev.milestones.filter((m) => m.project_id !== projectId),
+                ...bundle.milestones,
+              ],
+              task_lists: [
+                ...prev.task_lists.filter((l) => l.project_id !== projectId),
+                ...bundle.task_lists,
+              ],
+              tasks: [
+                ...prev.tasks.filter((t) => t.project_id !== projectId),
+                ...bundle.tasks,
+              ],
+              task_comments: [
+                ...prev.task_comments.filter((c) => !dropTasks.has(c.task_id)),
+                ...bundle.task_comments,
+              ],
+              project_assets: [
+                ...prev.project_assets.filter(
+                  (a) => a.project_id !== projectId,
+                ),
+                ...bundle.project_assets,
+              ],
+              assignments: [
+                ...prev.assignments.filter((a) => a.project_id !== projectId),
+                ...bundle.assignments,
+              ],
+            };
+          });
+          projectReadyRef.current.add(projectId);
+          setProjectDataStatus((prev) => ({ ...prev, [projectId]: "ready" }));
+        } catch (err) {
+          console.error(err);
+          setProjectDataStatus((prev) => ({ ...prev, [projectId]: "error" }));
+          throw err;
+        } finally {
+          projectInflight.current.delete(projectId);
+        }
+      })();
+      projectInflight.current.set(projectId, run);
+      return run;
+    },
+    [mode, state.organization.id],
+  );
+
+  const ensureScheduleRange = useCallback(
+    async (
+      startKey: string,
+      endKey: string,
+      projectId?: string | null,
+    ) => {
+      if (mode !== "supabase") {
+        scheduleRangeLoadedRef.current = { start: startKey, end: endKey };
+        setScheduleRangeLoaded({ start: startKey, end: endKey });
+        return;
+      }
+
+      const covers = (loaded: { start: string; end: string } | null) =>
+        Boolean(
+          loaded &&
+            loaded.start <= startKey &&
+            loaded.end >= endKey &&
+            !projectId,
+        );
+
+      if (covers(scheduleRangeLoadedRef.current)) return;
+      if (scheduleRangeInflight.current) {
+        await scheduleRangeInflight.current;
+        if (covers(scheduleRangeLoadedRef.current)) return;
+      }
+
+      const client = supabaseRef.current ?? createClient();
+      const organizationId = state.organization.id;
+      if (!organizationId) return;
+
+      const loadedBefore = scheduleRangeLoadedRef.current;
+      const run = (async () => {
+        try {
+          const [assignments, leave_days] = await Promise.all([
+            loadAssignmentsForRange(
+              client,
+              organizationId,
+              startKey,
+              endKey,
+              projectId,
+            ),
+            loadLeaveForRange(client, organizationId, startKey, endKey),
+          ]);
+          setState((prev) => {
+            const asgById = new Map(prev.assignments.map((a) => [a.id, a]));
+            for (const a of assignments) asgById.set(a.id, a);
+            const leaveById = new Map(prev.leave_days.map((l) => [l.id, l]));
+            for (const l of leave_days) leaveById.set(l.id, l);
+            return {
+              ...prev,
+              assignments: [...asgById.values()],
+              leave_days: [...leaveById.values()],
+            };
+          });
+          if (!projectId) {
+            const loaded = loadedBefore;
+            const nextRange = loaded
+              ? {
+                  start: loaded.start < startKey ? loaded.start : startKey,
+                  end: loaded.end > endKey ? loaded.end : endKey,
+                }
+              : { start: startKey, end: endKey };
+            scheduleRangeLoadedRef.current = nextRange;
+            setScheduleRangeLoaded(nextRange);
+          }
+        } finally {
+          scheduleRangeInflight.current = null;
+        }
+      })();
+      scheduleRangeInflight.current = run;
+      return run;
+    },
+    [mode, state.organization.id],
+  );
+
+  const setActiveRealtimeProjectIds = useCallback((projectIds: string[]) => {
+    setActiveRealtimeProjectIdsState((prev) => {
+      const next = [...new Set(projectIds.filter(Boolean))].sort();
+      if (
+        prev.length === next.length &&
+        prev.every((id, i) => id === next[i])
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
+  const fetchProjectBudgetBurnsRpc = useCallback(async () => {
+    if (mode !== "supabase") return null;
+    const client = supabaseRef.current ?? createClient();
+    try {
+      return await rpcProjectBudgetBurns(client);
+    } catch (err) {
+      console.warn("rpc_project_budget_burns failed", err);
+      return null;
+    }
+  }, [mode]);
+
+  const fetchOrgForecastRpc = useCallback(async () => {
+    if (mode !== "supabase") return null;
+    const client = supabaseRef.current ?? createClient();
+    try {
+      return await rpcOrgForecast(client);
+    } catch (err) {
+      console.warn("rpc_org_forecast failed", err);
+      return null;
+    }
+  }, [mode]);
+
+  const fetchPersonUtilizationWeeksRpc = useCallback(
+    async (
+      weekStartKey: string,
+      weeks: number,
+      personIds?: string[] | null,
+    ) => {
+      if (mode !== "supabase") return null;
+      const client = supabaseRef.current ?? createClient();
+      try {
+        return await rpcPersonUtilizationWeeks(
+          client,
+          weekStartKey,
+          weeks,
+          personIds,
+        );
+      } catch (err) {
+        console.warn("rpc_person_utilization_weeks failed", err);
+        return null;
+      }
+    },
+    [mode],
+  );
+
 
   const profile =
     state.profiles.find((p) => p.id === state.sessionProfileId) ?? null;
@@ -1161,6 +1558,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await refreshSupabase(client);
       },
       newId: uid,
+      dataStatus: {
+        orgHeavy: orgHeavyStatus,
+        projects: projectDataStatus,
+        scheduleRange: scheduleRangeLoaded,
+      },
+      ensureOrgHeavyData,
+      ensureProjectData,
+      ensureScheduleRange,
+      setActiveRealtimeProjectIds,
+      fetchProjectBudgetBurnsRpc,
+      fetchOrgForecastRpc,
+      fetchPersonUtilizationWeeksRpc,
       updateOrganizationName: async (name) => {
         const trimmed = name.trim();
         if (!admin || !trimmed) return;
@@ -2705,6 +3114,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
       runRemoteSoft,
       refreshSupabase,
       noteLocalWrite,
+      orgHeavyStatus,
+      projectDataStatus,
+      scheduleRangeLoaded,
+      ensureOrgHeavyData,
+      ensureProjectData,
+      ensureScheduleRange,
+      setActiveRealtimeProjectIds,
+      fetchProjectBudgetBurnsRpc,
+      fetchOrgForecastRpc,
+      fetchPersonUtilizationWeeksRpc,
     ],
   );
 

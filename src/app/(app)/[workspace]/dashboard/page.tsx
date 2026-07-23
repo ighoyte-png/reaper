@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { addWeeks, format, parseISO } from "date-fns";
 import {
@@ -34,6 +34,7 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import {
   bulletinVisibleToPerson,
   isUnreadBulletin,
@@ -97,7 +98,11 @@ export default function DashboardPage() {
     dismissBulletin,
     dismissMention,
     newId,
+    mode,
+    ensureOrgHeavyData,
+    ensureScheduleRange,
   } = useData();
+  const { burns } = useProjectBurnsMap();
   const { push } = useToast();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
@@ -114,6 +119,13 @@ export default function DashboardPage() {
   const start = toDateKey(weekStart(now));
   const end = toDateKey(weekEnd(now));
   const monthEndKey = toDateKey(endOfMonth(now));
+
+  useEffect(() => {
+    if (mode === "supabase") {
+      void ensureOrgHeavyData();
+      void ensureScheduleRange(start, end);
+    }
+  }, [mode, ensureOrgHeavyData, ensureScheduleRange, start, end]);
 
   /** Org-wide read layout (managers + public org share), unless View As. */
   const showOrgDashboard = (canManage || isPublicShare) && showingAsManager;
@@ -298,7 +310,9 @@ export default function DashboardPage() {
     ? state.projects
         .map((p) => ({
           project: p,
-          burn: budgetBurn(p, state.assignments, state.people),
+          burn:
+            burns.get(p.id) ??
+            budgetBurn(p, state.assignments, state.people),
           client: p.client_id
             ? state.clients.find((c) => c.id === p.client_id)
             : undefined,
@@ -412,7 +426,7 @@ export default function DashboardPage() {
     let none = 0;
     for (const p of activeProjects) {
       const health = budgetHealth(
-        budgetBurn(p, state.assignments, state.people),
+        burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people),
       );
       if (health === "healthy") healthy += 1;
       else if (health === "near") near += 1;
@@ -423,7 +437,7 @@ export default function DashboardPage() {
     const onTrackPct =
       scored <= 0 ? 100 : Math.round((healthy / scored) * 100);
     return { healthy, near, over, none, onTrackPct, total: activeProjects.length };
-  }, [activeProjects, state.assignments, state.people]);
+  }, [activeProjects, state.assignments, state.people, burns]);
 
   const teamUtilization = useMemo(() => {
     const people = showOrgDashboard

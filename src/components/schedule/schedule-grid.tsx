@@ -2,7 +2,7 @@
 
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
-import { format, isWeekend, parseISO } from "date-fns";
+import { format, isWeekend, parseISO, addWeeks, subWeeks } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
@@ -164,6 +164,9 @@ export function ScheduleGrid() {
     myPerson,
     profile,
     authError,
+    ensureScheduleRange,
+    ensureProjectData,
+    setActiveRealtimeProjectIds,
   } = useData();
   const viewAs = useViewAsOptional();
   const viewAsPersonId = viewAs?.viewAsPersonId ?? null;
@@ -320,6 +323,32 @@ export function ScheduleGrid() {
   );
   const startKey = columns[0]?.startKey ?? todayKey;
   const endKey = columns[columns.length - 1]?.endKey ?? todayKey;
+
+  useEffect(() => {
+    if (!state.organization.id) return;
+    const fetchStart = toDateKey(subWeeks(parseISO(startKey), 2));
+    const fetchEnd = toDateKey(addWeeks(parseISO(endKey), 2));
+    void ensureScheduleRange(fetchStart, fetchEnd);
+  }, [startKey, endKey, ensureScheduleRange, state.organization.id]);
+
+  useEffect(() => {
+    if (projectFilter === "all") {
+      setActiveRealtimeProjectIds([]);
+      return;
+    }
+    void ensureProjectData(projectFilter);
+    if (sidebarPanelTab === "tasks") {
+      setActiveRealtimeProjectIds([projectFilter]);
+    } else {
+      setActiveRealtimeProjectIds([]);
+    }
+    return () => setActiveRealtimeProjectIds([]);
+  }, [
+    projectFilter,
+    sidebarPanelTab,
+    ensureProjectData,
+    setActiveRealtimeProjectIds,
+  ]);
 
   const headerGroups = useMemo(() => {
     // Day zoom: one month chip per weekday week (5 days). Do not span the

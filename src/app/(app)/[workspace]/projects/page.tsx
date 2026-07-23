@@ -20,6 +20,7 @@ import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import {
   projectIdsForPerson,
   showProjectManagerUi,
@@ -76,6 +77,7 @@ export default function ProjectsPage() {
     isPublicShare,
     myPerson,
   } = useData();
+  const { burns } = useProjectBurnsMap();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
     useViewAs();
   const canManage = effectiveCanManage;
@@ -489,6 +491,7 @@ export default function ProjectsPage() {
                           project={project}
                           href={projectHref(project)}
                           showManager={showManagers}
+                          burn={burns.get(project.id)}
                         />
                       ))}
                       <CardGridPlaceholders
@@ -660,13 +663,16 @@ function ProjectCard({
   project,
   href,
   showManager,
+  burn: burnProp,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
+  burn?: ReturnType<typeof budgetBurn>;
 }) {
   const { state } = useData();
-  const burn = budgetBurn(project, state.assignments, state.people);
+  const burn =
+    burnProp ?? budgetBurn(project, state.assignments, state.people);
   const health = budgetHealth(burn);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const overallPct = projectDateProgress(project, today);

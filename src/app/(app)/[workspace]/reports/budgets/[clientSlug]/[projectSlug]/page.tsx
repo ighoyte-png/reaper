@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, parseISO } from "date-fns";
 import { ChartColumn, ChartLine, ChevronLeft, ChevronRight } from "lucide-react";
 import {
@@ -40,13 +40,35 @@ export default function ProjectBudgetDetailPage() {
   const router = useRouter();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
-  const { state } = useData();
+  const {
+    state,
+    ensureProjectData,
+    setActiveRealtimeProjectIds,
+    dataStatus,
+  } = useData();
   const project = resolveProjectBySlugs(
     state.clients,
     state.projects,
     params.clientSlug,
     params.projectSlug,
   );
+
+  useEffect(() => {
+    if (!project?.id) return;
+    void ensureProjectData(project.id);
+    setActiveRealtimeProjectIds([project.id]);
+    return () => setActiveRealtimeProjectIds([]);
+  }, [project?.id, ensureProjectData, setActiveRealtimeProjectIds]);
+
+  const projectDataReady =
+    !project?.id ||
+    dataStatus.orgHeavy === "ready" ||
+    dataStatus.projects[project.id] === "ready";
+  const projectDataLoading =
+    Boolean(project?.id) &&
+    !projectDataReady &&
+    dataStatus.projects[project.id] !== "error";
+
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [retainerTab, setRetainerTab] = useState<"calendar" | "weekly">(
     "calendar",
@@ -195,6 +217,15 @@ export default function ProjectBudgetDetailPage() {
     } else {
       router.push(appHref("/reports/budgets"));
     }
+  }
+
+  if (project && projectDataLoading) {
+    return (
+      <PageContainer className="overflow-y-auto">
+        <PageHeader title={project.name} onBack={goBack} />
+        <div className="p-5 text-sm text-[var(--text-muted)]">Loading budget…</div>
+      </PageContainer>
+    );
   }
 
   if (!project || !burn || !forecast || !hoursFx) {
