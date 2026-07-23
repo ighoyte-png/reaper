@@ -61,28 +61,6 @@ export function childTasks(tasks: Task[], parentId: string): Task[] {
     .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
 }
 
-/** Managers see all; members see only tasks assigned to them (including parent if any child is theirs).
- * When there is no person id (unlinked member), returns an empty list — public share
- * views should bypass this helper and show all project tasks instead.
- */
-export function filterTasksForViewer(
-  tasks: Task[],
-  canManage: boolean,
-  myPersonId: string | null,
-): Task[] {
-  if (canManage) return tasks;
-  if (!myPersonId) return [];
-  const mine = new Set(
-    tasks.filter((t) => t.assignee_person_id === myPersonId).map((t) => t.id),
-  );
-  return tasks.filter(
-    (t) =>
-      mine.has(t.id) ||
-      (t.parent_id && mine.has(t.parent_id)) ||
-      (!t.parent_id && tasks.some((c) => c.parent_id === t.id && mine.has(c.id))),
-  );
-}
-
 export function taskStatusLabel(status: TaskStatus): string {
   switch (status) {
     case "upcoming":

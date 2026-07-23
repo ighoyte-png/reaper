@@ -24,6 +24,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Archive,
+  ArchiveRestore,
   ChevronDown,
   ChevronRight,
   GripVertical,
@@ -38,6 +40,7 @@ import {
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip } from "@/components/ui/tooltip";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   RichNotesHtml,
@@ -46,13 +49,12 @@ import {
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
-import { notesHasContent } from "@/lib/notes-html";
+import { notesHasContent, notesPlainText } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
 import { projectTeamPersonIds } from "@/lib/domain/project-access";
 import {
   dueDateToneClass,
-  filterTasksForViewer,
   parentTasks,
   sortTaskLists,
   taskStatusLabel,
@@ -68,6 +70,13 @@ import type {
   TaskList,
   TaskStatus,
 } from "@/lib/types";
+
+type InlineTaskDraft = {
+  title: string;
+  assignee_person_id: string | null;
+  due_date: string | null;
+  notes: string;
+};
 
 type Props = {
   projectId: string;
@@ -194,6 +203,7 @@ export function ProjectTaskBoard({
     dueDate?: string;
   }>({});
   const [editing, setEditing] = useState<Task | null>(null);
+  const [draftingListId, setDraftingListId] = useState<string | null>(null);
   const [view, setView] = useState<"list" | "card">("list");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -230,17 +240,8 @@ export function ProjectTaskBoard({
   );
 
   const visibleTasks = useMemo(() => {
-    const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
-    // Public share / client-facing project views have no person — show every task.
-    if (isPublicShare) return projectTasks;
-    return filterTasksForViewer(projectTasks, viewerCanManage, viewerPersonId);
-  }, [
-    state.tasks,
-    projectId,
-    isPublicShare,
-    viewerCanManage,
-    viewerPersonId,
-  ]);
+    return state.tasks.filter((t) => t.project_id === projectId);
+  }, [state.tasks, projectId]);
 
   const childrenMap = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -340,7 +341,7 @@ export function ProjectTaskBoard({
     upsertTaskList(list);
   }
 
-  function addTask(listId: string, parentId: string | null = null) {
+  function addSubtask(listId: string, parentId: string) {
     if (!manageLists) return;
     const siblings = visibleTasks.filter(
       (t) => t.list_id === listId && t.parent_id === parentId,
@@ -352,7 +353,7 @@ export function ProjectTaskBoard({
       list_id: listId,
       parent_id: parentId,
       assignee_person_id: viewerPersonId ?? state.people[0]?.id ?? null,
-      title: parentId ? "New subtask" : "New task",
+      title: "New subtask",
       status: "upcoming",
       start_date: null,
       due_date: null,
@@ -360,7 +361,31 @@ export function ProjectTaskBoard({
       sort_order: siblings.length,
     };
     upsertTask(task);
-    setEditing(task);
+  }
+
+  function createTaskFromDraft(listId: string, draft: InlineTaskDraft) {
+    if (!manageLists) return;
+    const title = draft.title.trim();
+    if (!title) return;
+    const siblings = visibleTasks.filter(
+      (t) => t.list_id === listId && t.parent_id === null,
+    );
+    const task: Task = {
+      id: newId("task"),
+      organization_id: state.organization.id,
+      project_id: projectId,
+      list_id: listId,
+      parent_id: null,
+      assignee_person_id: draft.assignee_person_id,
+      title,
+      status: "upcoming",
+      start_date: null,
+      due_date: draft.due_date,
+      notes: draft.notes,
+      sort_order: siblings.length,
+    };
+    upsertTask(task);
+    setDraftingListId(null);
   }
 
   function cycleStatus(task: Task) {
@@ -692,7 +717,7 @@ export function ProjectTaskBoard({
     setParentsSelected,
     cycleStatus,
     setEditing,
-    addSubtask: (listId, parentId) => addTask(listId, parentId),
+    addSubtask,
     expanded,
     toggleExpand,
     childrenMap,
@@ -716,16 +741,41 @@ export function ProjectTaskBoard({
             allowCardView={allowCardView}
           />
         </div>
-        <KanbanBoard
-          tasks={parentTasks(
-            visibleTasks.filter((t) =>
-              activeLists.some((l) => l.id === t.list_id),
-            ),
-          )}
-          manageLists={manageLists}
-          onEdit={readOnly || isPublicShare ? undefined : setEditing}
-          onMove={moveTaskToColumn}
-        />
+        {activeLists.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">No task lists yet.</p>
+        ) : (
+          activeLists.map((list) => {
+            const listParents = parentTasks(
+              visibleTasks.filter((t) => t.list_id === list.id),
+            );
+            return (
+              <section
+                key={list.id}
+                className="overflow-hidden rounded-md border border-[var(--divider)]"
+              >
+                <div
+                  className={cn(
+                    "border-b border-[var(--divider)] px-3 py-1.5",
+                    !list.color && "bg-[var(--bg-elevated)]/50",
+                  )}
+                  style={
+                    list.color ? { backgroundColor: list.color } : undefined
+                  }
+                >
+                  <h4 className="truncate text-sm font-medium">{list.name}</h4>
+                </div>
+                <div className="p-2 sm:p-3">
+                  <KanbanBoard
+                    tasks={listParents}
+                    manageLists={manageLists}
+                    onEdit={readOnly || isPublicShare ? undefined : setEditing}
+                    onMove={moveTaskToColumn}
+                  />
+                </div>
+              </section>
+            );
+          })
+        )}
         {editing && !readOnly && !isPublicShare ? (
           <TaskEditModal
             task={editing}
@@ -905,7 +955,7 @@ export function ProjectTaskBoard({
         <p className="text-sm text-[var(--text-muted)]">
           {manageLists
             ? "No task lists yet — add a list to get started."
-            : "No tasks assigned to you on this project."}
+            : "No task lists on this project yet."}
         </p>
       ) : (
         <DndContext
@@ -942,7 +992,10 @@ export function ProjectTaskBoard({
                   }
                   milestoneName={milestone?.name ?? null}
                   onNameChange={(name) => upsertTaskList({ ...list, name })}
-                  onAddTask={() => addTask(list.id)}
+                  drafting={draftingListId === list.id}
+                  onStartDraft={() => setDraftingListId(list.id)}
+                  onCancelDraft={() => setDraftingListId(null)}
+                  onCreateDraft={(draft) => createTaskFromDraft(list.id, draft)}
                   onArchive={() =>
                     upsertTaskList({ ...list, archived: true })
                   }
@@ -1032,7 +1085,12 @@ export function ProjectTaskBoard({
                       }
                       milestoneName={milestone?.name ?? null}
                       onNameChange={(name) => upsertTaskList({ ...list, name })}
-                      onAddTask={() => addTask(list.id)}
+                      drafting={draftingListId === list.id}
+                      onStartDraft={() => setDraftingListId(list.id)}
+                      onCancelDraft={() => setDraftingListId(null)}
+                      onCreateDraft={(draft) =>
+                        createTaskFromDraft(list.id, draft)
+                      }
                       onArchive={() =>
                         upsertTaskList({ ...list, archived: true })
                       }
@@ -1103,7 +1161,10 @@ function ListSection({
   onToggleCollapse,
   milestoneName,
   onNameChange,
-  onAddTask,
+  drafting,
+  onStartDraft,
+  onCancelDraft,
+  onCreateDraft,
   onArchive,
   onUnarchive,
   onDelete,
@@ -1115,7 +1176,10 @@ function ListSection({
   onToggleCollapse: () => void;
   milestoneName: string | null;
   onNameChange: (name: string) => void;
-  onAddTask: () => void;
+  drafting: boolean;
+  onStartDraft: () => void;
+  onCancelDraft: () => void;
+  onCreateDraft: (draft: InlineTaskDraft) => void;
   onArchive: () => void;
   onUnarchive: () => void;
   onDelete: () => void;
@@ -1190,6 +1254,40 @@ function ListSection({
             {milestoneName}
           </span>
         ) : null}
+        {ctx.manageLists && ctx.listsEditMode ? (
+          <div className="flex items-center gap-1">
+            {list.archived ? (
+              <button
+                type="button"
+                className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                onClick={onUnarchive}
+                aria-label={`Unarchive list ${list.name}`}
+                title="Unarchive list"
+              >
+                <ArchiveRestore size={14} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                onClick={onArchive}
+                aria-label={`Archive list ${list.name}`}
+                title="Archive list"
+              >
+                <Archive size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="inline-flex cursor-pointer rounded p-1 text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+              onClick={onDelete}
+              aria-label={`Delete list ${list.name}`}
+              title="Delete list"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ) : null}
         {ctx.allowSelect && selectableIds.length > 0 ? (
           <Checkbox
             checked={allSelected}
@@ -1203,40 +1301,6 @@ function ListSection({
             aria-label={`Select all tasks in ${list.name}`}
             title="Select all"
           />
-        ) : null}
-        {ctx.manageLists && ctx.listsEditMode ? (
-          <div className="flex items-center gap-1">
-            {list.archived ? (
-              <button
-                type="button"
-                className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
-                onClick={onUnarchive}
-                aria-label={`Unarchive list ${list.name}`}
-                title="Unarchive list"
-              >
-                Unarchive
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
-                onClick={onArchive}
-                aria-label={`Archive list ${list.name}`}
-                title="Archive list"
-              >
-                Archive
-              </button>
-            )}
-            <button
-              type="button"
-              className="inline-flex cursor-pointer rounded p-1 text-[var(--status-over)] hover:bg-[var(--row-hover)]"
-              onClick={onDelete}
-              aria-label={`Delete list ${list.name}`}
-              title="Delete list"
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
         ) : null}
       </div>
       {!collapsed ? (
@@ -1258,15 +1322,23 @@ function ListSection({
           )}
           {ctx.manageLists ? (
             <ListTaskDropZone listId={list.id} disabled={false}>
-              <div className="px-2 py-1.5 text-left">
-                <button
-                  type="button"
-                  className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
-                  onClick={onAddTask}
-                >
-                  <Plus size={12} /> Add task
-                </button>
-              </div>
+              {drafting ? (
+                <InlineNewTaskForm
+                  people={ctx.people}
+                  onCancel={onCancelDraft}
+                  onCreate={onCreateDraft}
+                />
+              ) : (
+                <div className="px-2 py-1.5 text-left">
+                  <button
+                    type="button"
+                    className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                    onClick={onStartDraft}
+                  >
+                    <Plus size={12} /> Add task
+                  </button>
+                </div>
+              )}
             </ListTaskDropZone>
           ) : null}
         </>
@@ -1295,6 +1367,131 @@ function ListTaskDropZone({
       className={cn(isOver && "bg-[var(--accent)]/10")}
     >
       {children}
+    </div>
+  );
+}
+
+function InlineNewTaskForm({
+  people,
+  onCancel,
+  onCreate,
+}: {
+  people: Person[];
+  onCancel: () => void;
+  onCreate: (draft: InlineTaskDraft) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [hasDue, setHasDue] = useState(false);
+  const [dueDate, setDueDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  function submit() {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    onCreate({
+      title: trimmed,
+      assignee_person_id: assigneeId || null,
+      due_date: hasDue && dueDate ? dueDate : null,
+      notes,
+    });
+  }
+
+  return (
+    <div className="border-t border-[var(--divider)] bg-[var(--bg)] px-3 py-3">
+      <div className="flex items-center gap-2">
+        <span
+          className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[var(--task-upcoming-fg)]"
+          aria-hidden
+        />
+        <input
+          autoFocus
+          className="min-w-0 flex-1 border-0 bg-transparent text-base font-medium text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+          placeholder="Task title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+            if (e.key === "Escape") onCancel();
+          }}
+        />
+      </div>
+      <div className="my-3 border-t border-dashed border-[var(--divider)]" />
+      <div className="space-y-3">
+        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+          <span className="text-sm text-[var(--text-muted)]">Assigned to</span>
+          <Select
+            searchable
+            value={assigneeId}
+            onChange={setAssigneeId}
+            options={[
+              { value: "", label: "Unassigned" },
+              ...sortPeopleByName(people).map((p) => ({
+                value: p.id,
+                label: p.name,
+              })),
+            ]}
+          />
+        </div>
+        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
+          <span className="pt-1.5 text-sm text-[var(--text-muted)]">Due on</span>
+          <div className="space-y-2">
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="inline-task-due"
+                checked={!hasDue}
+                onChange={() => setHasDue(false)}
+                className="accent-[var(--accent)]"
+              />
+              No due date
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="inline-task-due"
+                checked={hasDue}
+                onChange={() => setHasDue(true)}
+                className="accent-[var(--accent)]"
+              />
+              <DateInput
+                className={cn(inputClass, "mt-0 h-8")}
+                value={dueDate}
+                disabled={!hasDue}
+                onChange={(e) => {
+                  setHasDue(true);
+                  setDueDate(e.target.value);
+                }}
+                onClick={() => setHasDue(true)}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
+          <span className="pt-1.5 text-sm text-[var(--text-muted)]">Notes</span>
+          <SimpleRichTextEditor value={notes} onChange={setNotes} />
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!title.trim()}
+          onClick={submit}
+        >
+          Add task
+        </button>
+        <button
+          type="button"
+          className="h-8 cursor-pointer rounded-md px-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+          onClick={onCancel}
+        >
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -1405,14 +1602,26 @@ function TaskRow({
                 "min-w-0 cursor-pointer truncate text-left hover:underline",
                 task.status === "complete" && "line-through",
               )}
-              onClick={() => ctx.setEditing(task)}
+              onClick={() => ctx.toggleExpand(task.id)}
             >
               {task.title}
             </button>
           )}
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
           {hasNotes ? (
-            <StickyNote size={12} className="shrink-0 text-[var(--text-muted)]" />
+            <Tooltip
+              content={
+                <span className="whitespace-pre-wrap">
+                  {notesPlainText(task.notes)}
+                </span>
+              }
+            >
+              <StickyNote
+                size={12}
+                className="shrink-0 text-[var(--text-muted)]"
+                aria-label="Task notes"
+              />
+            </Tooltip>
           ) : null}
           {task.due_date ? (
             <span
@@ -1440,6 +1649,17 @@ function TaskRow({
               <MessageSquare size={16} />
               {taskComments.length > 0 ? taskComments.length : null}
               {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+            </button>
+          ) : null}
+          {ctx.canManage && !ctx.readOnly ? (
+            <button
+              type="button"
+              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
+              onClick={() => ctx.setEditing(task)}
+              aria-label="Edit task"
+              title="Edit task"
+            >
+              <Pencil size={14} />
             </button>
           ) : null}
         </div>

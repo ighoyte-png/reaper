@@ -742,7 +742,7 @@ export default function DashboardPage() {
               ) : null}
 
               <KpiCard
-                title="Tagged Comments"
+                title="New Tagged Comments"
                 className={
                   taggedComments.length > 0
                     ? "!border-0 bg-[var(--status-attention-wash)]"
@@ -933,7 +933,7 @@ function TaggedCommentsPanel({
     <section className={panelClass()}>
       <div className="mb-3 flex items-center gap-2">
         <MessageSquare size={14} className="text-[var(--text-muted)]" />
-        <h2 className="text-sm font-semibold">Tagged Comments</h2>
+        <h2 className="text-sm font-semibold">New Tagged Comments</h2>
         {total > 0 ? (
           <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
             {total}

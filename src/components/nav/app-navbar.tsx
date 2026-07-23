@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LogOut, Menu, Settings } from "lucide-react";
 import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
 import { PlatformAdminNavLink } from "@/components/nav/platform-admin-link";
+import { PersonAvatar } from "@/components/people/person-avatar";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -62,6 +63,36 @@ export function AppNavbar() {
   const settingsActive =
     pathForNav === "/settings" || pathForNav.startsWith("/settings/");
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const accountName =
+    myPerson?.name?.trim() ||
+    profile?.full_name?.trim() ||
+    profile?.email?.trim() ||
+    "";
+  const workspaceName = state.organization.name?.trim() || "Workspace";
+  const accountTitle = myPerson?.role_title?.trim() || "";
+  const accountRole = profile?.role
+    ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
+    : "";
+
+  useEffect(() => {
+    if (!accountOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (!accountMenuRef.current?.contains(e.target as Node)) {
+        setAccountOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setAccountOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [accountOpen]);
 
   const hasDashboardDot = useMemo(() => {
     if (mentionPersonId) {
@@ -140,6 +171,68 @@ export function AppNavbar() {
           })}
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {accountName ? (
+            <div ref={accountMenuRef} className="relative mr-1">
+              <button
+                type="button"
+                className={cn(
+                  "flex max-w-[9.5rem] cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-[var(--row-hover)] sm:max-w-[12rem]",
+                  accountOpen && "bg-[var(--row-hover)]",
+                )}
+                aria-label={`Signed in as ${accountName}`}
+                aria-expanded={accountOpen}
+                aria-haspopup="dialog"
+                onClick={() => setAccountOpen((open) => !open)}
+              >
+                <PersonAvatar
+                  avatarUrl={myPerson?.avatar_url}
+                  name={accountName}
+                  size="team"
+                />
+                <span className="truncate text-xs font-medium leading-none text-[var(--text)]">
+                  {accountName}
+                </span>
+              </button>
+              {accountOpen ? (
+                <div
+                  role="dialog"
+                  aria-label="Account"
+                  className="absolute right-0 top-[calc(100%+0.35rem)] z-50 w-56 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 shadow-md"
+                >
+                  <div className="space-y-2.5">
+                    {accountTitle ? (
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                          Title
+                        </p>
+                        <p className="mt-1 truncate text-sm font-medium text-[var(--text)]">
+                          {accountTitle}
+                        </p>
+                      </div>
+                    ) : null}
+                    {accountRole ? (
+                      <div>
+                        <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                          Role
+                        </p>
+                        <p className="mt-1 truncate text-sm font-medium text-[var(--text)]">
+                          {accountRole}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div>
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                        Workspace
+                      </p>
+                      <p className="mt-1 truncate text-sm font-medium text-[var(--text)]">
+                        {workspaceName}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <ThemeToggle
             className={cn(
               navLinkClass(false),
