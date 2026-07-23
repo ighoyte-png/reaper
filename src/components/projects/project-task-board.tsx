@@ -209,6 +209,10 @@ export function ProjectTaskBoard({
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [draftingListId, setDraftingListId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [confirmDeleteList, setConfirmDeleteList] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [view, setView] = useState<"list" | "card">("list");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -1089,12 +1093,9 @@ export function ProjectTaskBoard({
                   onUnarchive={() =>
                     upsertTaskList({ ...list, archived: false })
                   }
-                  onDelete={() => {
-                    if (confirm(`Delete list "${list.name}" and its tasks?`)) {
-                      for (const t of listTasks) deleteTask(t.id);
-                      deleteTaskList(list.id);
-                    }
-                  }}
+                  onDelete={() =>
+                    setConfirmDeleteList({ id: list.id, name: list.name })
+                  }
                 />
               );
             })}
@@ -1175,14 +1176,9 @@ export function ProjectTaskBoard({
                       onUnarchive={() =>
                         upsertTaskList({ ...list, archived: false })
                       }
-                      onDelete={() => {
-                        if (
-                          confirm(`Delete list "${list.name}" and its tasks?`)
-                        ) {
-                          for (const t of listTasks) deleteTask(t.id);
-                          deleteTaskList(list.id);
-                        }
-                      }}
+                      onDelete={() =>
+                        setConfirmDeleteList({ id: list.id, name: list.name })
+                      }
                     />
                   );
                 })
@@ -1190,6 +1186,23 @@ export function ProjectTaskBoard({
             </div>
           ) : null}
         </section>
+      ) : null}
+      {confirmDeleteList ? (
+        <ConfirmDialog
+          title="Delete list?"
+          message={`Delete list "${confirmDeleteList.name}" and its tasks? This can't be undone.`}
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDeleteList(null)}
+          onConfirm={() => {
+            const listTasks = tasksForList(
+              visibleTasks,
+              confirmDeleteList.id,
+            );
+            for (const t of listTasks) deleteTask(t.id);
+            deleteTaskList(confirmDeleteList.id);
+            setConfirmDeleteList(null);
+          }}
+        />
       ) : null}
       {confirmBulkDelete ? (
         <ConfirmDialog

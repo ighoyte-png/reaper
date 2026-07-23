@@ -20,7 +20,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Pencil, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field, Modal, inputClass } from "@/components/ui/form";
+import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import type { TemplateMilestone } from "@/lib/types";
 
@@ -43,6 +43,9 @@ export function TemplateMilestoneList({
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 
   const [editing, setEditing] = useState<TemplateMilestone | null>(null);
+  const [confirmDeleteMilestoneId, setConfirmDeleteMilestoneId] = useState<
+    string | null
+  >(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -128,7 +131,13 @@ export function TemplateMilestoneList({
       </DndContext>
 
       {editing ? (
-        <Modal title="Edit Milestone" onClose={() => setEditing(null)}>
+        <Modal
+          title="Edit Milestone"
+          onClose={() => {
+            setConfirmDeleteMilestoneId(null);
+            setEditing(null);
+          }}
+        >
           <div className="grid gap-3">
             <Field label="Name">
               <input
@@ -148,17 +157,7 @@ export function TemplateMilestoneList({
               <Button
                 variant="destructiveOutline"
                 size="sm"
-                onClick={() => {
-                  if (
-                    !window.confirm(
-                      "Delete this milestone? Its task lists become unassigned.",
-                    )
-                  ) {
-                    return;
-                  }
-                  deleteTemplateMilestone(editing.id);
-                  setEditing(null);
-                }}
+                onClick={() => setConfirmDeleteMilestoneId(editing.id)}
               >
                 <Trash2 size={14} strokeWidth={1.75} /> Delete
               </Button>
@@ -188,6 +187,19 @@ export function TemplateMilestoneList({
             </div>
           </div>
         </Modal>
+      ) : null}
+      {confirmDeleteMilestoneId ? (
+        <ConfirmDialog
+          title="Delete milestone?"
+          message="Delete this milestone? Its task lists become unassigned."
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDeleteMilestoneId(null)}
+          onConfirm={() => {
+            deleteTemplateMilestone(confirmDeleteMilestoneId);
+            setConfirmDeleteMilestoneId(null);
+            setEditing(null);
+          }}
+        />
       ) : null}
     </div>
   );

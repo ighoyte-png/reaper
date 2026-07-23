@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { Field, Modal, inputClass } from "@/components/ui/form";
+import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -100,6 +100,10 @@ export function TemplateTaskBoard({ templateId }: { templateId: string }) {
   const [listsEditMode, setListsEditMode] = useState(false);
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [editingTask, setEditingTask] = useState<TemplateTask | null>(null);
+  const [confirmDeleteList, setConfirmDeleteList] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -402,23 +406,32 @@ export function TemplateTaskBoard({ templateId }: { templateId: string }) {
                   onAddTask={() => addTask(list.id)}
                   onAddSubtask={(parentId) => addTask(list.id, parentId)}
                   onEditTask={setEditingTask}
-                  onDelete={() => {
-                    if (
-                      !window.confirm(
-                        `Delete list "${list.name}" and its tasks?`,
-                      )
-                    ) {
-                      return;
-                    }
-                    for (const t of listTasks) deleteTemplateTask(t.id);
-                    deleteTemplateTaskList(list.id);
-                  }}
+                  onDelete={() =>
+                    setConfirmDeleteList({ id: list.id, name: list.name })
+                  }
                 />
               );
             })}
           </SortableContext>
         </DndContext>
       )}
+
+      {confirmDeleteList ? (
+        <ConfirmDialog
+          title="Delete list?"
+          message={`Delete list "${confirmDeleteList.name}" and its tasks?`}
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDeleteList(null)}
+          onConfirm={() => {
+            const listTasks = allTasks.filter(
+              (t) => t.list_id === confirmDeleteList.id,
+            );
+            for (const t of listTasks) deleteTemplateTask(t.id);
+            deleteTemplateTaskList(confirmDeleteList.id);
+            setConfirmDeleteList(null);
+          }}
+        />
+      ) : null}
 
       {editingTask ? (
         <Modal

@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { useTheme, type Theme } from "@/components/theme/theme-provider";
 import { useToast } from "@/components/toast/toast-provider";
-import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
+import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
@@ -94,6 +94,10 @@ export default function SettingsPage() {
   const [pwError, setPwError] = useState<string | null>(null);
   const [calBusy, setCalBusy] = useState(false);
   const [editingCalId, setEditingCalId] = useState<string | null>(null);
+  const [confirmDeleteCal, setConfirmDeleteCal] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const [newCalName, setNewCalName] = useState("");
   const [newCalRegion, setNewCalRegion] = useState("US");
   const [dayDate, setDayDate] = useState("");
@@ -798,18 +802,12 @@ export default function SettingsPage() {
                       <Button
                         variant="destructiveOutline"
                         size="sm"
-                        onClick={() => {
-                          if (
-                            !window.confirm(
-                              `Delete calendar “${editingCal.name}”?`,
-                            )
-                          ) {
-                            return;
-                          }
-                          deleteHolidayCalendar(editingCal.id);
-                          setEditingCalId(null);
-                          push("Calendar deleted");
-                        }}
+                        onClick={() =>
+                          setConfirmDeleteCal({
+                            id: editingCal.id,
+                            name: editingCal.name,
+                          })
+                        }
                       >
                         Delete
                       </Button>
@@ -1150,6 +1148,20 @@ export default function SettingsPage() {
             </div>
           </div>
         </Modal>
+      ) : null}
+      {confirmDeleteCal ? (
+        <ConfirmDialog
+          title="Delete calendar?"
+          message={`Delete calendar “${confirmDeleteCal.name}”?`}
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDeleteCal(null)}
+          onConfirm={() => {
+            deleteHolidayCalendar(confirmDeleteCal.id);
+            if (editingCalId === confirmDeleteCal.id) setEditingCalId(null);
+            setConfirmDeleteCal(null);
+            push("Calendar deleted");
+          }}
+        />
       ) : null}
     </PageContainer>
   );
