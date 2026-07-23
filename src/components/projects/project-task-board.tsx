@@ -795,13 +795,7 @@ export function ProjectTaskBoard({
 
   if (view === "card" && allowCardView) {
     return (
-      <section
-        className={cn(
-          !compact &&
-            "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
-        )}
-      >
-        <div className="space-y-3">
+      <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
               Tasks
@@ -856,19 +850,12 @@ export function ProjectTaskBoard({
               );
             })
           )}
-        </div>
-      </section>
+      </div>
     );
   }
 
   return (
     <>
-    <section
-      className={cn(
-        !compact &&
-          "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
-      )}
-    >
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
@@ -1097,7 +1084,6 @@ export function ProjectTaskBoard({
       )}
 
     </div>
-    </section>
       {templatesSlot}
       {!compact && (archivedLists.length > 0 || manageLists) ? (
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
@@ -1641,7 +1627,7 @@ function TaskRow({
   const canEditStatus = ctx.canManage || task.assignee_person_id === ctx.myPersonId;
   const isEditing = ctx.editingTaskId === task.id;
   const nestLineLeft =
-    depth > 0 ? 8 + (depth - 1) * 16 + 16 + 6 + 5 - 2 + 3 : 0;
+    depth > 0 ? 8 + (depth - 1) * 16 + 16 + 6 + 5 - 2 + 3 - 2 : 0;
 
   if (isEditing) {
     return (
@@ -1649,7 +1635,7 @@ function TaskRow({
         {depth > 0 ? (
           <span
             aria-hidden
-            className="pointer-events-none absolute top-0 -bottom-1 w-0.5 bg-[var(--text-muted)]/25"
+            className="pointer-events-none absolute top-0 -bottom-1 w-px bg-[var(--text-muted)]/25"
             style={{ left: nestLineLeft }}
           />
         ) : null}
@@ -1702,7 +1688,7 @@ function TaskRow({
       {depth > 0 ? (
         <span
           aria-hidden
-          className="pointer-events-none absolute top-0 -bottom-1 w-0.5 bg-[var(--text-muted)]/25"
+          className="pointer-events-none absolute top-0 -bottom-1 w-px bg-[var(--text-muted)]/25"
           style={{ left: nestLineLeft }}
         />
       ) : null}
