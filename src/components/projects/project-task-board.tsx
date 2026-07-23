@@ -1431,60 +1431,62 @@ function InlineNewTaskForm({
           }}
         />
       </div>
-      <div className="my-3 border-t border-dashed border-[var(--divider)]" />
-      <div className="space-y-3">
-        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
-          <span className="text-sm text-[var(--text-muted)]">Assigned to</span>
-          <Select
-            searchable
-            value={assigneeId}
-            onChange={setAssigneeId}
-            options={[
-              { value: "", label: "Unassigned" },
-              ...sortPeopleByName(people).map((p) => ({
-                value: p.id,
-                label: p.name,
-              })),
-            ]}
-          />
+      <div className="pl-[2.375rem]">
+        <div className="my-3 border-t border-dashed border-[var(--divider)]" />
+        <div className="space-y-3">
+          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+            <span className="text-sm text-[var(--text-muted)]">Assigned to</span>
+            <Select
+              searchable
+              value={assigneeId}
+              onChange={setAssigneeId}
+              options={[
+                { value: "", label: "Unassigned" },
+                ...sortPeopleByName(people).map((p) => ({
+                  value: p.id,
+                  label: p.name,
+                })),
+              ]}
+            />
+          </div>
+          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+            <span className="text-sm text-[var(--text-muted)]">Start</span>
+            <DateInput
+              className={cn(inputClass, "mt-0 h-8")}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+            <span className="text-sm text-[var(--text-muted)]">End</span>
+            <DateInput
+              className={cn(inputClass, "mt-0 h-8")}
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
+            <span className="pt-1.5 text-sm text-[var(--text-muted)]">Notes</span>
+            <SimpleRichTextEditor value={notes} onChange={setNotes} />
+          </div>
         </div>
-        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
-          <span className="text-sm text-[var(--text-muted)]">Start</span>
-          <DateInput
-            className={cn(inputClass, "mt-0 h-8")}
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!title.trim()}
+            onClick={submit}
+          >
+            Add task
+          </button>
+          <button
+            type="button"
+            className="h-8 cursor-pointer rounded-md px-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
         </div>
-        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
-          <span className="text-sm text-[var(--text-muted)]">End</span>
-          <DateInput
-            className={cn(inputClass, "mt-0 h-8")}
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-          />
-        </div>
-        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
-          <span className="pt-1.5 text-sm text-[var(--text-muted)]">Notes</span>
-          <SimpleRichTextEditor value={notes} onChange={setNotes} />
-        </div>
-      </div>
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!title.trim()}
-          onClick={submit}
-        >
-          Add task
-        </button>
-        <button
-          type="button"
-          className="h-8 cursor-pointer rounded-md px-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
-          onClick={onCancel}
-        >
-          Cancel
-        </button>
       </div>
     </div>
   );
