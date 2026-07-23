@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState, type ReactNode } from "react";
+import { format, parseISO } from "date-fns";
 import { ChartColumn, ChartLine } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
@@ -211,10 +212,10 @@ function ProgressLineChart({
   const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative overflow-visible">
       <svg
         viewBox={`0 0 ${w} ${h}`}
-        className="h-auto w-full"
+        className="h-auto w-full overflow-hidden"
         role="img"
         aria-label="Project progress chart"
         onMouseLeave={() => setHoverIdx(null)}
@@ -416,26 +417,56 @@ function ProgressLineChart({
 
       {hover && hoverIdx != null ? (
         <div
-          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 text-[11px] shadow-md"
+          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)] -translate-x-1/2 -translate-y-full"
           style={{
             left: `${(xAt(hoverIdx) / w) * 100}%`,
             top: `${(yAt(hoverVal) / h) * 100}%`,
-            marginTop: -8,
+            marginTop: -10,
           }}
         >
-          <div className="font-medium text-[var(--text)]">{hover.label}</div>
-          <div className="mt-0.5 tabular-nums text-[var(--text-muted)]">
-            Cumulative: {formatHours(hoverVal)}
-          </div>
-          <div className="tabular-nums text-[var(--text-muted)]">
-            Week: {formatHours(hover.weekHours)}
-          </div>
-          {hasBudget ? (
-            <div className="tabular-nums text-[var(--text-muted)]">
-              Budget: {formatHours(budgetHours!)} · Remaining:{" "}
-              {formatHours(Math.max(0, budgetHours! - hoverVal))}
+          <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
+            <div className="text-xs font-semibold leading-snug text-[var(--text)]">
+              Cumulative up to{" "}
+              {format(parseISO(hover.weekEndKey), "dd MMM yyyy")} (Week{" "}
+              {hoverIdx + 1})
             </div>
-          ) : null}
+            <div className="my-2 border-t border-[var(--border)]" />
+            <div
+              className={cn(
+                "grid gap-x-5 gap-y-1",
+                hasBudget ? "grid-cols-2" : "grid-cols-1",
+              )}
+            >
+              <div className="min-w-0">
+                <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+                  {hoverIdx > handoffIdx
+                    ? "Forecasted hours"
+                    : "Cumulative hours"}
+                </div>
+                <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+                  {formatHours(hoverVal)}
+                </div>
+              </div>
+              {hasBudget ? (
+                <div className="min-w-0">
+                  <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+                    Forecasted budget remaining
+                  </div>
+                  <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+                    {formatHours(Math.max(0, budgetHours! - hoverVal))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div
+            className="mx-auto h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-[var(--border)]"
+            aria-hidden
+          />
+          <div
+            className="-mt-[7px] mx-auto h-0 w-0 border-x-[5px] border-t-[5px] border-x-transparent border-t-[var(--bg-elevated)]"
+            aria-hidden
+          />
         </div>
       ) : null}
     </div>
