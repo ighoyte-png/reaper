@@ -115,16 +115,20 @@ export function useUserViewPrefs(profileId: string | null | undefined) {
     setPrefsState(readUserViewPrefs(profileId));
   }, [profileId]);
 
+  /** Update in-memory draft only — call savePrefs to persist. */
   const setPrefs = useCallback(
     (next: UserViewPrefs | ((prev: UserViewPrefs) => UserViewPrefs)) => {
-      setPrefsState((prev) => {
-        const resolved = typeof next === "function" ? next(prev) : next;
-        if (profileId) writeUserViewPrefs(profileId, resolved);
-        return resolved;
-      });
+      setPrefsState((prev) =>
+        typeof next === "function" ? next(prev) : next,
+      );
     },
-    [profileId],
+    [],
   );
 
-  return { prefs, setPrefs };
+  const savePrefs = useCallback(() => {
+    if (!profileId) return;
+    writeUserViewPrefs(profileId, prefs);
+  }, [profileId, prefs]);
+
+  return { prefs, setPrefs, savePrefs };
 }

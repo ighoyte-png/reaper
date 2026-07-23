@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -37,7 +37,7 @@ import {
   StickyNote,
   Trash2,
 } from "lucide-react";
-import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
+import { ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -81,7 +81,7 @@ type InlineTaskDraft = {
 
 type Props = {
   projectId: string;
-  /** When true, no create/reorder/edit — status toggle still allowed for own tasks. */
+  /** When true, no create/reorder/edit â€” status toggle still allowed for own tasks. */
   readOnly?: boolean;
   /** Compact for sidebar. */
   compact?: boolean;
@@ -127,18 +127,21 @@ type BoardCtx = {
   allowSelect: boolean;
   listsEditMode: boolean;
   compact: boolean;
-  /** Status changes only — no edit modal or comments (e.g. schedule sidebar). */
+  /** Status changes only â€” no edit modal or comments (e.g. schedule sidebar). */
   readOnly: boolean;
   /**
    * When set (schedule sidebar), task titles link to the project hub with
-   * comments open — same deep-link as dashboard tagged comments.
+   * comments open â€” same deep-link as dashboard tagged comments.
    */
   hubTaskHref: ((taskId: string) => string) | null;
   selected: Set<string>;
   toggleSelect: (id: string) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
   cycleStatus: (task: Task) => void;
-  setEditing: (task: Task) => void;
+  editingTaskId: string | null;
+  setEditingTask: (task: Task | null) => void;
+  saveEditingTask: (taskId: string, draft: InlineTaskDraft) => void;
+  deleteEditingTask: (taskId: string) => void;
   addSubtask: (listId: string, parentId: string) => void;
   expanded: Set<string>;
   toggleExpand: (id: string) => void;
@@ -203,8 +206,9 @@ export function ProjectTaskBoard({
     /** undefined = unchanged */
     dueDate?: string;
   }>({});
-  const [editing, setEditing] = useState<Task | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [draftingListId, setDraftingListId] = useState<string | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [view, setView] = useState<"list" | "card">("list");
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -292,8 +296,29 @@ export function ProjectTaskBoard({
     setBulkDraft({});
   }
 
+  function deleteSelectedTasks() {
+    if (!manageLists || selected.size === 0) return;
+    // Delete parents first so child cleanup in deleteTask doesn't fight
+    // with explicit child deletes in the same selection.
+    const selectedTasks = [...selected]
+      .map((id) => state.tasks.find((t) => t.id === id))
+      .filter((t): t is Task => Boolean(t));
+    const parents = selectedTasks.filter((t) => !t.parent_id);
+    const orphans = selectedTasks.filter(
+      (t) => t.parent_id && !selected.has(t.parent_id),
+    );
+    for (const task of [...parents, ...orphans]) {
+      deleteTask(task.id);
+    }
+    setConfirmBulkDelete(false);
+    clearSelection();
+  }
+
   useEffect(() => {
-    if (selected.size === 0) setBulkDraft({});
+    if (selected.size === 0) {
+      setBulkDraft({});
+      setConfirmBulkDelete(false);
+    }
   }, [selected.size]);
 
   const bulkHasChanges =
@@ -393,6 +418,36 @@ export function ProjectTaskBoard({
     };
     upsertTask(task);
     setDraftingListId(null);
+  }
+
+  function setEditingTask(task: Task | null) {
+    if (task) {
+      setDraftingListId(null);
+      setEditingTaskId(task.id);
+      return;
+    }
+    setEditingTaskId(null);
+  }
+
+  function saveEditingTask(taskId: string, draft: InlineTaskDraft) {
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    const title = draft.title.trim();
+    if (!title) return;
+    upsertTask({
+      ...task,
+      title,
+      assignee_person_id: draft.assignee_person_id,
+      start_date: draft.start_date,
+      due_date: draft.due_date,
+      notes: draft.notes,
+    });
+    setEditingTaskId(null);
+  }
+
+  function deleteEditingTask(taskId: string) {
+    deleteTask(taskId);
+    setEditingTaskId(null);
   }
 
   function cycleStatus(task: Task) {
@@ -723,7 +778,10 @@ export function ProjectTaskBoard({
     toggleSelect,
     setParentsSelected,
     cycleStatus,
-    setEditing,
+    editingTaskId,
+    setEditingTask,
+    saveEditingTask,
+    deleteEditingTask,
     addSubtask,
     expanded,
     toggleExpand,
@@ -775,7 +833,16 @@ export function ProjectTaskBoard({
                   <KanbanBoard
                     tasks={listParents}
                     manageLists={manageLists}
-                    onEdit={readOnly || isPublicShare ? undefined : setEditing}
+                    people={state.people}
+                    editingTaskId={
+                      readOnly || isPublicShare ? null : editingTaskId
+                    }
+                    onEdit={
+                      readOnly || isPublicShare ? undefined : setEditingTask
+                    }
+                    onSaveEdit={saveEditingTask}
+                    onDeleteEdit={deleteEditingTask}
+                    onCancelEdit={() => setEditingTaskId(null)}
                     onMove={moveTaskToColumn}
                   />
                 </div>
@@ -783,18 +850,6 @@ export function ProjectTaskBoard({
             );
           })
         )}
-        {editing && !readOnly && !isPublicShare ? (
-          <TaskEditModal
-            task={editing}
-            readOnly={
-              !(
-                viewerCanManage ||
-                editing.assignee_person_id === viewerPersonId
-              )
-            }
-            onClose={() => setEditing(null)}
-          />
-        ) : null}
       </div>
     );
   }
@@ -857,9 +912,9 @@ export function ProjectTaskBoard({
                 }));
               }}
               aria-label="Set status for selected tasks"
-              placeholder="Choose…"
+              placeholder="Chooseâ€¦"
               options={[
-                { value: "", label: "Choose…" },
+                { value: "", label: "Chooseâ€¦" },
                 {
                   value: "upcoming",
                   label: taskStatusLabel("upcoming"),
@@ -903,9 +958,9 @@ export function ProjectTaskBoard({
                     }));
                   }}
                   aria-label="Assign selected tasks"
-                  placeholder="Choose…"
+                  placeholder="Chooseâ€¦"
                   options={[
-                    { value: "", label: "Choose…" },
+                    { value: "", label: "Chooseâ€¦" },
                     { value: "__none__", label: "Unassigned" },
                     ...sortPeopleByName(state.people).map((p) => ({
                       value: p.id,
@@ -953,6 +1008,15 @@ export function ProjectTaskBoard({
               >
                 Clear
               </button>
+              {manageLists ? (
+                <button
+                  type="button"
+                  className="box-border h-9 cursor-pointer rounded-md border border-[var(--status-over)]/40 px-2.5 text-xs font-medium text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+                  onClick={() => setConfirmBulkDelete(true)}
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -961,7 +1025,7 @@ export function ProjectTaskBoard({
       {activeLists.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           {manageLists
-            ? "No task lists yet — add a list to get started."
+            ? "No task lists yet â€” add a list to get started."
             : "No task lists on this project yet."}
         </p>
       ) : (
@@ -1000,7 +1064,10 @@ export function ProjectTaskBoard({
                   milestoneName={milestone?.name ?? null}
                   onNameChange={(name) => upsertTaskList({ ...list, name })}
                   drafting={draftingListId === list.id}
-                  onStartDraft={() => setDraftingListId(list.id)}
+                  onStartDraft={() => {
+                    setEditingTaskId(null);
+                    setDraftingListId(list.id);
+                  }}
                   onCancelDraft={() => setDraftingListId(null)}
                   onCreateDraft={(draft) => createTaskFromDraft(list.id, draft)}
                   onArchive={() =>
@@ -1022,18 +1089,6 @@ export function ProjectTaskBoard({
         </DndContext>
       )}
 
-      {editing && !readOnly && !isPublicShare ? (
-        <TaskEditModal
-          task={editing}
-          readOnly={
-            !(
-              viewerCanManage ||
-              editing.assignee_person_id === viewerPersonId
-            )
-          }
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
     </div>
     </section>
       {templatesSlot}
@@ -1093,7 +1148,10 @@ export function ProjectTaskBoard({
                       milestoneName={milestone?.name ?? null}
                       onNameChange={(name) => upsertTaskList({ ...list, name })}
                       drafting={draftingListId === list.id}
-                      onStartDraft={() => setDraftingListId(list.id)}
+                      onStartDraft={() => {
+                        setEditingTaskId(null);
+                        setDraftingListId(list.id);
+                      }}
                       onCancelDraft={() => setDraftingListId(null)}
                       onCreateDraft={(draft) =>
                         createTaskFromDraft(list.id, draft)
@@ -1119,6 +1177,15 @@ export function ProjectTaskBoard({
             </div>
           ) : null}
         </section>
+      ) : null}
+      {confirmBulkDelete ? (
+        <ConfirmDialog
+          title="Delete selected tasks?"
+          message={`Delete ${selected.size} selected task${selected.size === 1 ? "" : "s"}? Subtasks of selected parents will also be removed. This canâ€™t be undone.`}
+          confirmLabel="Delete"
+          onCancel={() => setConfirmBulkDelete(false)}
+          onConfirm={deleteSelectedTasks}
+        />
       ) : null}
     </>
   );
@@ -1330,10 +1397,12 @@ function ListSection({
           {ctx.manageLists ? (
             <ListTaskDropZone listId={list.id} disabled={false}>
               {drafting ? (
-                <InlineNewTaskForm
+                <InlineTaskForm
                   people={ctx.people}
+                  status="upcoming"
+                  submitLabel="Add task"
                   onCancel={onCancelDraft}
-                  onCreate={onCreateDraft}
+                  onSubmit={onCreateDraft}
                 />
               ) : (
                 <div className="px-2 py-1.5 text-left">
@@ -1378,25 +1447,38 @@ function ListTaskDropZone({
   );
 }
 
-function InlineNewTaskForm({
+function InlineTaskForm({
   people,
+  initial,
+  status = "upcoming",
+  submitLabel,
   onCancel,
-  onCreate,
+  onSubmit,
+  onDelete,
+  depth = 0,
 }: {
   people: Person[];
+  initial?: InlineTaskDraft;
+  status?: TaskStatus;
+  submitLabel: string;
   onCancel: () => void;
-  onCreate: (draft: InlineTaskDraft) => void;
+  onSubmit: (draft: InlineTaskDraft) => void;
+  onDelete?: () => void;
+  depth?: number;
 }) {
-  const [title, setTitle] = useState("");
-  const [assigneeId, setAssigneeId] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [notes, setNotes] = useState("");
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [assigneeId, setAssigneeId] = useState(
+    initial?.assignee_person_id ?? "",
+  );
+  const [startDate, setStartDate] = useState(initial?.start_date ?? "");
+  const [dueDate, setDueDate] = useState(initial?.due_date ?? "");
+  const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   function submit() {
     const trimmed = title.trim();
     if (!trimmed) return;
-    onCreate({
+    onSubmit({
       title: trimmed,
       assignee_person_id: assigneeId || null,
       start_date: startDate || null,
@@ -1405,15 +1487,25 @@ function InlineNewTaskForm({
     });
   }
 
+  const statusSquareClass =
+    status === "complete"
+      ? "bg-[var(--task-complete-fg)]"
+      : status === "active"
+        ? "bg-[var(--task-active-fg)]"
+        : "bg-[var(--task-upcoming-fg)]";
+
   return (
     <div
-      className="border-t border-[var(--divider)] bg-[var(--bg)] px-2 py-3"
-      style={{ paddingLeft: 8 }}
+      className={cn(
+        "bg-[var(--bg)] px-2 py-3",
+        onDelete ? "border-b border-[var(--divider)]" : "border-t border-[var(--divider)]",
+      )}
+      style={{ paddingLeft: 8 + depth * 16 }}
     >
       <div className="flex items-center gap-1.5">
         <span className="w-4 shrink-0" aria-hidden />
         <span
-          className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[var(--task-upcoming-fg)]"
+          className={cn("h-2.5 w-2.5 shrink-0 rounded-sm", statusSquareClass)}
           aria-hidden
         />
         <input
@@ -1470,14 +1562,14 @@ function InlineNewTaskForm({
             <SimpleRichTextEditor value={notes} onChange={setNotes} />
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             type="button"
             className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!title.trim()}
             onClick={submit}
           >
-            Add task
+            {submitLabel}
           </button>
           <button
             type="button"
@@ -1486,8 +1578,29 @@ function InlineNewTaskForm({
           >
             Cancel
           </button>
+          {onDelete ? (
+            <button
+              type="button"
+              className="h-8 cursor-pointer rounded-md px-3 text-sm text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete
+            </button>
+          ) : null}
         </div>
       </div>
+      {confirmDelete && onDelete ? (
+        <ConfirmDialog
+          title="Delete task?"
+          message="Delete this task and its subtasks? This canâ€™t be undone."
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false);
+            onDelete();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1509,7 +1622,7 @@ function TaskRow({
         listId: task.list_id,
         parentId: task.parent_id,
       } satisfies TaskDragData,
-      disabled: !ctx.manageLists,
+      disabled: !ctx.manageLists || ctx.editingTaskId === task.id,
     });
 
   const assignee = ctx.people.find((p) => p.id === task.assignee_person_id);
@@ -1519,6 +1632,41 @@ function TaskRow({
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
   const canEditStatus = ctx.canManage || task.assignee_person_id === ctx.myPersonId;
+  const isEditing = ctx.editingTaskId === task.id;
+
+  if (isEditing) {
+    return (
+      <div id={`task-row-${task.id}`}>
+        <InlineTaskForm
+          people={ctx.people}
+          status={task.status}
+          depth={depth}
+          submitLabel="Save"
+          initial={{
+            title: task.title,
+            assignee_person_id: task.assignee_person_id,
+            start_date: task.start_date,
+            due_date: task.due_date,
+            notes: task.notes,
+          }}
+          onCancel={() => ctx.setEditingTask(null)}
+          onSubmit={(draft) => ctx.saveEditingTask(task.id, draft)}
+          onDelete={() => ctx.deleteEditingTask(task.id)}
+        />
+        {depth === 0 && kids.length > 0 ? (
+          <SortableContext
+            items={kids.map((k) => k.id)}
+            strategy={verticalListSortingStrategy}
+            disabled={!ctx.manageLists}
+          >
+            {kids.map((k) => (
+              <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />
+            ))}
+          </SortableContext>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1651,7 +1799,7 @@ function TaskRow({
             <button
               type="button"
               className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
-              onClick={() => ctx.setEditing(task)}
+              onClick={() => ctx.setEditingTask(task)}
               aria-label="Edit task"
               title="Edit task"
             >
@@ -1743,7 +1891,7 @@ function CommentThread({
             <SimpleRichTextEditor
               value={draft}
               onChange={setDraft}
-              placeholder="Add a comment… Use @ to mention"
+              placeholder="Add a commentâ€¦ Use @ to mention"
               mentionPeople={ctx.mentionPeople}
             />
             <div className="flex flex-wrap gap-2">
@@ -1833,7 +1981,7 @@ function CommentItem({
             {displayName}
           </span>
           <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
-            {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
+            {format(parseISO(comment.created_at), "MMM d, yyyy Â· h:mm a")}
             {wasEdited ? (
               <span
                 className="ml-1 italic"
@@ -1841,12 +1989,12 @@ function CommentItem({
                   comment.updated_at
                     ? format(
                         parseISO(comment.updated_at),
-                        "MMM d, yyyy · h:mm a",
+                        "MMM d, yyyy Â· h:mm a",
                       )
                     : undefined
                 }
               >
-                · edited
+                Â· edited
               </span>
             ) : null}
           </span>
@@ -1856,7 +2004,7 @@ function CommentItem({
             <SimpleRichTextEditor
               value={draft}
               onChange={setDraft}
-              placeholder="Edit comment… Use @ to mention"
+              placeholder="Edit commentâ€¦ Use @ to mention"
               mentionPeople={ctx.mentionPeople}
             />
             <div className="flex flex-wrap gap-2">
@@ -1915,7 +2063,7 @@ function CommentItem({
   );
 }
 
-const COMMENT_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👀", "🔥"] as const;
+const COMMENT_REACTION_EMOJIS = ["ðŸ‘", "â¤ï¸", "ðŸŽ‰", "ðŸ‘€", "ðŸ”¥"] as const;
 
 function CommentReactions({
   comment,
@@ -2054,12 +2202,22 @@ function statusCardTone(status: TaskStatus) {
 function KanbanBoard({
   tasks,
   manageLists,
+  people,
+  editingTaskId,
   onEdit,
+  onSaveEdit,
+  onDeleteEdit,
+  onCancelEdit,
   onMove,
 }: {
   tasks: Task[];
   manageLists: boolean;
+  people: Person[];
+  editingTaskId: string | null;
   onEdit?: (task: Task) => void;
+  onSaveEdit: (taskId: string, draft: InlineTaskDraft) => void;
+  onDeleteEdit: (taskId: string) => void;
+  onCancelEdit: () => void;
   onMove: (taskId: string, destStatus: TaskStatus, destIndex: number) => void;
 }) {
   const sensors = useSensors(
@@ -2119,7 +2277,12 @@ function KanbanBoard({
               .filter((t) => t.status === status)
               .sort((a, b) => a.sort_order - b.sort_order)}
             manageLists={manageLists}
+            people={people}
+            editingTaskId={editingTaskId}
             onEdit={onEdit}
+            onSaveEdit={onSaveEdit}
+            onDeleteEdit={onDeleteEdit}
+            onCancelEdit={onCancelEdit}
             activeId={activeId}
           />
         ))}
@@ -2137,13 +2300,23 @@ function KanbanColumn({
   status,
   tasks,
   manageLists,
+  people,
+  editingTaskId,
   onEdit,
+  onSaveEdit,
+  onDeleteEdit,
+  onCancelEdit,
   activeId,
 }: {
   status: TaskStatus;
   tasks: Task[];
   manageLists: boolean;
+  people: Person[];
+  editingTaskId: string | null;
   onEdit?: (task: Task) => void;
+  onSaveEdit: (taskId: string, draft: InlineTaskDraft) => void;
+  onDeleteEdit: (taskId: string) => void;
+  onCancelEdit: () => void;
   activeId: string | null;
 }) {
   const { setNodeRef } = useDroppable({
@@ -2178,15 +2351,34 @@ function KanbanColumn({
         {tasks.length === 0 ? (
           <div className="min-h-8" aria-hidden />
         ) : (
-          tasks.map((t) => (
-            <KanbanCard
-              key={t.id}
-              task={t}
-              manageLists={manageLists}
-              onEdit={onEdit}
-              isOverlaySource={activeId === t.id}
-            />
-          ))
+          tasks.map((t) =>
+            editingTaskId === t.id ? (
+              <InlineTaskForm
+                key={t.id}
+                people={people}
+                status={t.status}
+                submitLabel="Save"
+                initial={{
+                  title: t.title,
+                  assignee_person_id: t.assignee_person_id,
+                  start_date: t.start_date,
+                  due_date: t.due_date,
+                  notes: t.notes,
+                }}
+                onCancel={onCancelEdit}
+                onSubmit={(draft) => onSaveEdit(t.id, draft)}
+                onDelete={() => onDeleteEdit(t.id)}
+              />
+            ) : (
+              <KanbanCard
+                key={t.id}
+                task={t}
+                manageLists={manageLists}
+                onEdit={onEdit}
+                isOverlaySource={activeId === t.id}
+              />
+            ),
+          )
         )}
       </SortableContext>
     </div>
@@ -2289,148 +2481,3 @@ function KanbanCard({
   );
 }
 
-function TaskEditModal({
-  task,
-  readOnly,
-  onClose,
-}: {
-  task: Task;
-  readOnly: boolean;
-  onClose: () => void;
-}) {
-  const { canManage: roleCanManage, myPerson, upsertTask, deleteTask, state } =
-    useData();
-  const viewAs = useViewAsOptional();
-  const canManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
-  const viewerPersonId =
-    viewAs?.effectivePersonId ?? myPerson?.id ?? null;
-  const [draft, setDraft] = useState(task);
-
-  const canSave =
-    canManage ||
-    (!readOnly && draft.assignee_person_id === viewerPersonId);
-
-  return (
-    <Modal title={canManage ? "Edit task" : "Task"} onClose={onClose}>
-      <div className="space-y-3">
-        <Field label="Title">
-          <input
-            className={inputClass}
-            value={draft.title}
-            disabled={!canManage}
-            onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-          />
-        </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Status">
-            <Select
-              value={draft.status}
-              disabled={!canSave}
-              onChange={(v) =>
-                setDraft({
-                  ...draft,
-                  status: v as TaskStatus,
-                })
-              }
-              options={[
-                { value: "upcoming", label: "Upcoming" },
-                { value: "active", label: "Active" },
-                { value: "complete", label: "Complete" },
-              ]}
-            />
-          </Field>
-          <Field label="Assignee">
-            <Select
-              searchable
-              value={draft.assignee_person_id ?? ""}
-              disabled={!canManage}
-              onChange={(v) =>
-                setDraft({
-                  ...draft,
-                  assignee_person_id: v || null,
-                })
-              }
-              options={[
-                { value: "", label: "Unassigned" },
-                ...state.people.map((p) => ({
-                  value: p.id,
-                  label: p.name,
-                })),
-              ]}
-            />
-          </Field>
-          <Field label="Start">
-            <DateInput
-              className={inputClass}
-              value={draft.start_date ?? ""}
-              disabled={!canManage}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  start_date: e.target.value || null,
-                })
-              }
-            />
-          </Field>
-          <Field label="Due">
-            <DateInput
-              className={inputClass}
-              value={draft.due_date ?? ""}
-              disabled={!canManage}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  due_date: e.target.value || null,
-                })
-              }
-            />
-          </Field>
-        </div>
-        <Field label="Notes">
-          {canManage ? (
-            <SimpleRichTextEditor
-              value={draft.notes}
-              onChange={(notes) => setDraft({ ...draft, notes })}
-            />
-          ) : (
-            <div className="text-sm text-[var(--text-muted)]">No notes</div>
-          )}
-        </Field>
-
-        <div className="flex justify-end gap-2 pt-2">
-          {canManage ? (
-            <button
-              type="button"
-              className="mr-auto h-8 cursor-pointer rounded-md border border-[var(--status-over)]/40 px-3 text-sm text-[var(--status-over)]"
-              onClick={() => {
-                deleteTask(task.id);
-                onClose();
-              }}
-            >
-              Delete task
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm"
-            onClick={onClose}
-          >
-            Close
-          </button>
-          {canSave ? (
-            <button
-              type="button"
-              className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-              onClick={() => {
-                upsertTask(draft);
-                onClose();
-              }}
-            >
-              Save
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </Modal>
-  );
-}

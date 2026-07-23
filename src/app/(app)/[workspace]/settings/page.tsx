@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { useTheme, type Theme } from "@/components/theme/theme-provider";
 import { useToast } from "@/components/toast/toast-provider";
 import { Field, Modal, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
+import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
@@ -25,11 +26,20 @@ import { isAdmin } from "@/lib/auth/roles";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 import {
   SCHEDULE_VIEW_OFFSET_OPTIONS,
+  readUserViewPrefs,
   startPageOptions,
   useUserViewPrefs,
   type DefaultStartPage,
   type ScheduleViewOffset,
+  type UserViewPrefs,
 } from "@/lib/user-view-prefs";
+
+type SettingsTab =
+  | "account"
+  | "preferences"
+  | "sharing"
+  | "holidays"
+  | "advanced";
 
 export default function SettingsPage() {
   const {
@@ -56,12 +66,19 @@ export default function SettingsPage() {
     updateDemoShare,
   } = useData();
   const { clearViewAs } = useViewAs();
+  const { theme, setTheme } = useTheme();
   const { push } = useToast();
   const router = useRouter();
   const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
-  const { prefs, setPrefs } = useUserViewPrefs(profile?.id);
+  const { prefs, setPrefs, savePrefs } = useUserViewPrefs(profile?.id);
+  const [tab, setTab] = useState<SettingsTab>("account");
   const [busy, setBusy] = useState(false);
+  const [prefsBusy, setPrefsBusy] = useState(false);
+  const [savedPrefs, setSavedPrefs] = useState<UserViewPrefs>(() =>
+    readUserViewPrefs(profile?.id),
+  );
+  const [themeDraft, setThemeDraft] = useState<Theme>(theme);
   const [orgModalOpen, setOrgModalOpen] = useState(false);
   const [orgName, setOrgName] = useState(state.organization.name);
   const [orgBusy, setOrgBusy] = useState(false);
@@ -96,6 +113,16 @@ export default function SettingsPage() {
   }, [state.organization.slug, slugModalOpen]);
 
   useEffect(() => {
+    setThemeDraft(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    const fromStore = readUserViewPrefs(profile?.id);
+    setPrefs(fromStore);
+    setSavedPrefs(fromStore);
+  }, [profile?.id, setPrefs]);
+
+  useEffect(() => {
     if (!canManage) return;
     let cancelled = false;
     async function loadShare() {
@@ -121,7 +148,6 @@ export default function SettingsPage() {
         };
         if (!res.ok) {
           if (!cancelled && body.error) {
-            // Soft fail — columns may be missing until migration.
             setShareEnabled(false);
             setShareUrl(null);
           }
@@ -145,6 +171,42 @@ export default function SettingsPage() {
     state.organization.share_enabled,
     state.organization.share_token,
   ]);
+
+  const tabs = useMemo(() => {
+    const items: { id: SettingsTab; label: string }[] = [
+      { id: "account", label: "Account" },
+      { id: "preferences", label: "Preferences" },
+    ];
+    if (canManage) {
+      items.push(
+        { id: "sharing", label: "Sharing" },
+        { id: "holidays", label: "Holidays" },
+      );
+    }
+    items.push({ id: "advanced", label: "Advanced" });
+    return items;
+  }, [canManage]);
+
+  useEffect(() => {
+    if (!tabs.some((t) => t.id === tab)) setTab("account");
+  }, [tabs, tab]);
+
+  const prefsDirty =
+    themeDraft !== theme ||
+    prefs.defaultStartPage !== savedPrefs.defaultStartPage ||
+    prefs.scheduleViewOffset !== savedPrefs.scheduleViewOffset;
+
+  function savePreferences() {
+    setPrefsBusy(true);
+    try {
+      savePrefs();
+      setTheme(themeDraft);
+      setSavedPrefs(prefs);
+      push("Settings saved", "success");
+    } finally {
+      setPrefsBusy(false);
+    }
+  }
 
   async function setShare(action: "enable" | "disable" | "rotate") {
     setShareBusy(true);
@@ -324,557 +386,625 @@ export default function SettingsPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Settings" />
-      <div className="mx-auto max-w-2xl space-y-4 p-3 sm:p-5">
-        <Panel>
-          <h2 className="text-sm font-semibold">Organization</h2>
-          <div className="mt-2 flex items-center gap-1.5">
-            <p className="text-sm">{state.organization.name || "—"}</p>
-            {admin ? (
-              <button
-                type="button"
-                className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                title="Edit organization name"
-                aria-label="Edit organization name"
-                onClick={() => {
-                  setOrgName(state.organization.name);
-                  setOrgModalOpen(true);
-                }}
-              >
-                <Pencil size={14} strokeWidth={1.75} />
-              </button>
-            ) : null}
-          </div>
-          <div className="mt-3">
-            <p className="text-xs font-medium text-[var(--text-muted)]">
-              Workspace URL
-            </p>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <p className="font-mono text-sm text-[var(--text)]">
-                /{state.organization.slug || "—"}
-              </p>
-              {admin ? (
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                  title="Edit workspace URL"
-                  aria-label="Edit workspace URL"
-                  onClick={() => {
-                    setWorkspaceSlugDraft(state.organization.slug);
-                    setSlugModalOpen(true);
-                  }}
-                >
-                  <Pencil size={14} strokeWidth={1.75} />
-                </button>
-              ) : null}
-            </div>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Changing this updates all signed-in app links. Organization name
-              renames do not change the URL.
-            </p>
-          </div>
-          <p className="mt-2 text-xs text-[var(--text-muted)]">
-            Signed in as {profile?.full_name} ({profile?.role})
-            {myPerson ? ` · linked to ${myPerson.name}` : ""} ·{" "}
-            {mode === "supabase" ? "Supabase" : "Local demo"}
-          </p>
-        </Panel>
-
-        {myPerson ? (
-          <Panel>
-            <h2 className="text-sm font-semibold">Profile Photo</h2>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Shown on your dashboard and client portals when you&apos;re on a
-              project team.
-            </p>
-            <div className="mt-3 flex items-center gap-3">
-              <PersonAvatar
-                avatarUrl={myPerson.avatar_url}
-                name={myPerson.name}
-                size="lg"
-              />
-              <div className="flex flex-col gap-1.5">
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={avatarBusy}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void saveAvatarFile(file);
-                  }}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={avatarBusy}
-                  className="w-fit"
-                  onClick={() => avatarInputRef.current?.click()}
-                >
-                  {avatarBusy
-                    ? "Saving…"
-                    : myPerson.avatar_url
-                      ? "Change Photo"
-                      : "Upload Photo"}
-                </Button>
-                {myPerson.avatar_url ? (
-                  <button
-                    type="button"
-                    disabled={avatarBusy}
-                    className="w-fit text-xs text-[var(--text-muted)] disabled:opacity-60"
-                    onClick={() => void clearAvatar()}
-                  >
-                    Remove Photo
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          </Panel>
-        ) : null}
-
-        {canManage && (
-          <Panel>
-            <h2 className="text-sm font-semibold">Public Link</h2>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Share a read-only board with schedule, people, projects, clients,
-              and reports. Anyone with the link can view — nothing is editable.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button
-                variant="primary"
-                size="lg"
-                disabled={shareBusy}
-                onClick={() =>
-                  void setShare(shareEnabled ? "disable" : "enable")
-                }
-              >
-                {shareBusy
-                  ? "Updating…"
-                  : shareEnabled
-                    ? "Turn Off Public Link"
-                    : "Turn On Public Link"}
-              </Button>
-              {shareEnabled ? (
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  disabled={shareBusy}
-                  onClick={() => void setShare("rotate")}
-                >
-                  Regenerate Link
-                </Button>
-              ) : null}
-            </div>
-            {shareEnabled && shareUrl ? (
-              <div className="mt-3 space-y-2">
-                <label className="block text-xs text-[var(--text-muted)]">
-                  Public URL
-                  <input
-                    readOnly
-                    className={inputClass}
-                    value={shareUrl}
-                    onFocus={(e) => e.currentTarget.select()}
-                  />
-                </label>
-                <button
-                  type="button"
-                  className="text-xs text-[var(--accent)]"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(shareUrl);
-                      push("Public Link copied", "success");
-                    } catch {
-                      push("Could not copy — select the URL manually", "warning");
-                    }
-                  }}
-                >
-                  Copy Link
-                </button>
-              </div>
-            ) : null}
-          </Panel>
-        )}
-
-        {mode === "supabase" && (
-          <Panel>
-            <h2 className="text-sm font-semibold">Password</h2>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Change the password for {profile?.email || "your account"}.
-            </p>
-            <form onSubmit={onChangePassword} className="mt-3 space-y-3">
-              <label className="block text-xs text-[var(--text-muted)]">
-                Current password
-                <input
-                  type="password"
-                  required
-                  className={inputClass}
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
-              </label>
-              <label className="block text-xs text-[var(--text-muted)]">
-                New password
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  className={inputClass}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-              </label>
-              <label className="block text-xs text-[var(--text-muted)]">
-                Confirm new password
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  className={inputClass}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  autoComplete="new-password"
-                />
-              </label>
-              {pwError && (
-                <p className="text-sm text-[var(--status-over)]">{pwError}</p>
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 p-3 sm:flex-row sm:items-start sm:gap-0 sm:p-5">
+        <nav
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-[var(--border)] pb-2 sm:w-44 sm:flex-col sm:gap-0.5 sm:overflow-visible sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3"
+          aria-label="Settings sections"
+        >
+          {tabs.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={cn(
+                "cursor-pointer rounded-md px-2.5 py-1.5 text-left text-sm whitespace-nowrap transition-colors",
+                tab === item.id
+                  ? "bg-[var(--row-hover)] font-medium text-[var(--text)]"
+                  : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
               )}
-              <Button type="submit" variant="primary" size="lg" disabled={pwBusy}>
-                {pwBusy ? "Updating…" : "Update Password"}
-              </Button>
-            </form>
-          </Panel>
-        )}
+              aria-current={tab === item.id ? "page" : undefined}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-        <Panel>
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold">Theme</h2>
-              <p className="mt-1 text-xs text-[var(--text-muted)]">
-                Light / dark preference is saved locally.
-              </p>
-            </div>
-            <ThemeToggle />
-          </div>
-        </Panel>
-
-        <Panel>
-          <h2 className="text-sm font-semibold">Default Views</h2>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Saved on this device for your account.
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Default Start Page">
-              <Select
-                value={prefs.defaultStartPage}
-                onChange={(v) =>
-                  setPrefs((prev) => ({
-                    ...prev,
-                    defaultStartPage: v as DefaultStartPage,
-                  }))
-                }
-                options={startPageOptions(canManage)}
-              />
-            </Field>
-            <Field label="Schedule View Offset">
-              <Select
-                value={prefs.scheduleViewOffset}
-                onChange={(v) =>
-                  setPrefs((prev) => ({
-                    ...prev,
-                    scheduleViewOffset: v as ScheduleViewOffset,
-                  }))
-                }
-                options={SCHEDULE_VIEW_OFFSET_OPTIONS}
-              />
-            </Field>
-          </div>
-          <p className="mt-2 text-[11px] text-[var(--text-muted)]">
-            Start page is used after login and when opening the app root.
-            Schedule offset shifts the first visible week earlier when you open
-            the schedule.
-          </p>
-        </Panel>
-
-        {canManage && (
-          <Panel>
-            <h2 className="text-sm font-semibold">Holiday Calendars</h2>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Global calendars (e.g. US vs Canada). Assign on People, then apply
-              to create statutory leave days and clear overlapping bookings.
-            </p>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              {state.holiday_calendars.map((cal) => {
-                const assigned = state.people.filter(
-                  (p) => p.holiday_calendar_id === cal.id,
-                ).length;
-                const dayCount = state.holiday_calendar_days.filter(
-                  (d) => d.calendar_id === cal.id,
-                ).length;
-                return (
-                  <button
-                    key={cal.id}
-                    type="button"
-                    className={`rounded-md border px-3 py-1.5 text-left text-xs ${
-                      editingCalId === cal.id
-                        ? "border-[var(--accent)] bg-[var(--accent)]/10"
-                        : "border-[var(--border)] hover:bg-[var(--row-hover)]"
-                    }`}
-                    onClick={() => setEditingCalId(cal.id)}
-                  >
-                    <div className="font-medium">
-                      {cal.name}
-                      {cal.region ? ` · ${cal.region}` : ""}
-                    </div>
-                    <div className="text-[var(--text-muted)]">
-                      {dayCount} date{dayCount === 1 ? "" : "s"} · {assigned}{" "}
-                      people
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_6rem_auto]">
-              <input
-                className={inputClass}
-                placeholder="New calendar name"
-                value={newCalName}
-                onChange={(e) => setNewCalName(e.target.value)}
-              />
-              <input
-                className={inputClass}
-                placeholder="Region"
-                value={newCalRegion}
-                onChange={(e) => setNewCalRegion(e.target.value)}
-              />
-              <Button variant="secondary" size="lg" onClick={addCalendar}>
-                Add
-              </Button>
-            </div>
-
-            {editingCal && (
-              <div className="mt-4 space-y-3 border-t border-[var(--border)] pt-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-medium">{editingCal.name}</h3>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={calBusy}
-                      onClick={() => void applyCalendar(editingCal.id)}
-                    >
-                      {calBusy ? "Applying…" : "Apply To Assigned People"}
-                    </Button>
-                    <Button
-                      variant="destructiveOutline"
-                      size="sm"
+        <div className="min-w-0 flex-1 space-y-4 sm:pl-5">
+          {tab === "account" ? (
+            <>
+              <Panel>
+                <h2 className="text-sm font-semibold">Organization</h2>
+                <div className="mt-2 flex items-center gap-1.5">
+                  <p className="text-sm">{state.organization.name || "—"}</p>
+                  {admin ? (
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                      title="Edit organization name"
+                      aria-label="Edit organization name"
                       onClick={() => {
-                        if (
-                          !window.confirm(
-                            `Delete calendar “${editingCal.name}”?`,
-                          )
-                        ) {
-                          return;
-                        }
-                        deleteHolidayCalendar(editingCal.id);
-                        setEditingCalId(null);
-                        push("Calendar deleted");
+                        setOrgName(state.organization.name);
+                        setOrgModalOpen(true);
                       }}
                     >
-                      Delete
-                    </Button>
-                  </div>
+                      <Pencil size={14} strokeWidth={1.75} />
+                    </button>
+                  ) : null}
                 </div>
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-[var(--text-muted)]">
+                    Workspace URL
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <p className="font-mono text-sm text-[var(--text)]">
+                      /{state.organization.slug || "—"}
+                    </p>
+                    {admin ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                        title="Edit workspace URL"
+                        aria-label="Edit workspace URL"
+                        onClick={() => {
+                          setWorkspaceSlugDraft(state.organization.slug);
+                          setSlugModalOpen(true);
+                        }}
+                      >
+                        <Pencil size={14} strokeWidth={1.75} />
+                      </button>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Changing this updates all signed-in app links. Organization
+                    name renames do not change the URL.
+                  </p>
+                </div>
+                <p className="mt-2 text-xs text-[var(--text-muted)]">
+                  Signed in as {profile?.full_name} ({profile?.role})
+                  {myPerson ? ` · linked to ${myPerson.name}` : ""} ·{" "}
+                  {mode === "supabase" ? "Supabase" : "Local demo"}
+                </p>
+              </Panel>
 
-                <Field label="Assign people">
-                  <div className="mt-1 max-h-36 space-y-1 overflow-y-auto rounded-md border border-[var(--border)] p-2">
-                    {state.people.length === 0 ? (
-                      <p className="text-xs text-[var(--text-muted)]">
-                        No people yet.
-                      </p>
-                    ) : (
-                      state.people.map((person) => (
-                        <label
-                          key={person.id}
-                          className="flex items-center gap-2 text-sm"
+              {myPerson ? (
+                <Panel>
+                  <h2 className="text-sm font-semibold">Profile Photo</h2>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Shown on your dashboard and client portals when you&apos;re
+                    on a project team.
+                  </p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <PersonAvatar
+                      avatarUrl={myPerson.avatar_url}
+                      name={myPerson.name}
+                      size="lg"
+                    />
+                    <div className="flex flex-col gap-1.5">
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={avatarBusy}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) void saveAvatarFile(file);
+                        }}
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={avatarBusy}
+                        className="w-fit"
+                        onClick={() => avatarInputRef.current?.click()}
+                      >
+                        {avatarBusy
+                          ? "Saving…"
+                          : myPerson.avatar_url
+                            ? "Change Photo"
+                            : "Upload Photo"}
+                      </Button>
+                      {myPerson.avatar_url ? (
+                        <button
+                          type="button"
+                          disabled={avatarBusy}
+                          className="w-fit cursor-pointer text-xs text-[var(--text-muted)] disabled:opacity-60"
+                          onClick={() => void clearAvatar()}
                         >
-                          <input
-                            type="checkbox"
-                            checked={
-                              person.holiday_calendar_id === editingCal.id
-                            }
-                            onChange={(e) => {
-                              void upsertPerson({
-                                ...person,
-                                holiday_calendar_id: e.target.checked
-                                  ? editingCal.id
-                                  : null,
-                              });
-                            }}
-                          />
-                          {person.name}
-                        </label>
-                      ))
-                    )}
+                          Remove Photo
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
+                </Panel>
+              ) : null}
+
+              {mode === "supabase" ? (
+                <Panel>
+                  <h2 className="text-sm font-semibold">Password</h2>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Change the password for {profile?.email || "your account"}.
+                  </p>
+                  <form onSubmit={onChangePassword} className="mt-3 space-y-3">
+                    <label className="block text-xs text-[var(--text-muted)]">
+                      Current password
+                      <input
+                        type="password"
+                        required
+                        className={inputClass}
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        autoComplete="current-password"
+                      />
+                    </label>
+                    <label className="block text-xs text-[var(--text-muted)]">
+                      New password
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        className={inputClass}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        autoComplete="new-password"
+                      />
+                    </label>
+                    <label className="block text-xs text-[var(--text-muted)]">
+                      Confirm new password
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        className={inputClass}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                      />
+                    </label>
+                    {pwError ? (
+                      <p className="text-sm text-[var(--status-over)]">
+                        {pwError}
+                      </p>
+                    ) : null}
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="lg"
+                      disabled={pwBusy}
+                    >
+                      {pwBusy ? "Updating…" : "Update Password"}
+                    </Button>
+                  </form>
+                </Panel>
+              ) : null}
+
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={async () => {
+                  await logout();
+                  router.push("/login");
+                }}
+              >
+                Sign Out
+              </Button>
+            </>
+          ) : null}
+
+          {tab === "preferences" ? (
+            <Panel>
+              <h2 className="text-sm font-semibold">Preferences</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Theme and default views are saved on this device for your
+                account. Changes apply when you save.
+              </p>
+
+              <div className="mt-4 space-y-4">
+                <Field label="Theme">
+                  <Select
+                    value={themeDraft}
+                    onChange={(v) => setThemeDraft(v as Theme)}
+                    options={[
+                      { value: "light", label: "Light" },
+                      { value: "dark", label: "Dark" },
+                    ]}
+                  />
                 </Field>
-
-                <div className="overflow-x-auto rounded-md border border-[var(--border)]">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-[var(--bg-elevated)] text-xs text-[var(--text-muted)]">
-                      <tr>
-                        <th className="px-3 py-2 font-medium">Date</th>
-                        <th className="px-3 py-2 font-medium">Name</th>
-                        <th className="px-3 py-2 font-medium" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {editingDays.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={3}
-                            className="px-3 py-3 text-xs text-[var(--text-muted)]"
-                          >
-                            No holiday dates yet.
-                          </td>
-                        </tr>
-                      ) : (
-                        editingDays.map((day) => (
-                          <tr
-                            key={day.id}
-                            className="border-t border-[var(--border)]"
-                          >
-                            <td className="px-3 py-2">{day.date}</td>
-                            <td className="px-3 py-2">{day.name || "—"}</td>
-                            <td className="px-3 py-2 text-right">
-                              <button
-                                type="button"
-                                className="text-xs text-[var(--text-muted)]"
-                                onClick={() => {
-                                  deleteHolidayCalendarDay(day.id);
-                                  push("Date removed");
-                                }}
-                              >
-                                Remove
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Default Start Page">
+                    <Select
+                      value={prefs.defaultStartPage}
+                      onChange={(v) =>
+                        setPrefs((prev) => ({
+                          ...prev,
+                          defaultStartPage: v as DefaultStartPage,
+                        }))
+                      }
+                      options={startPageOptions(canManage)}
+                    />
+                  </Field>
+                  <Field label="Schedule View Offset">
+                    <Select
+                      value={prefs.scheduleViewOffset}
+                      onChange={(v) =>
+                        setPrefs((prev) => ({
+                          ...prev,
+                          scheduleViewOffset: v as ScheduleViewOffset,
+                        }))
+                      }
+                      options={SCHEDULE_VIEW_OFFSET_OPTIONS}
+                    />
+                  </Field>
                 </div>
+                <p className="text-[11px] text-[var(--text-muted)]">
+                  Start page is used after login and when opening the app root.
+                  Schedule offset shifts the first visible week earlier when you
+                  open the schedule.
+                </p>
+              </div>
 
-                <div className="grid gap-2 sm:grid-cols-[8rem_1fr_auto]">
-                  <DateInput
-                    className={inputClass}
-                    value={dayDate}
-                    onChange={(e) => setDayDate(e.target.value)}
-                  />
-                  <input
-                    className={inputClass}
-                    placeholder="Holiday name"
-                    value={dayName}
-                    onChange={(e) => setDayName(e.target.value)}
-                  />
+              <div className="mt-4 flex items-center justify-end border-t border-[var(--border)] pt-3">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={prefsBusy || !prefsDirty}
+                  onClick={savePreferences}
+                >
+                  {prefsBusy ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </Panel>
+          ) : null}
+
+          {tab === "sharing" && canManage ? (
+            <Panel>
+              <h2 className="text-sm font-semibold">Public Link</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Share a read-only board with schedule, people, projects,
+                clients, and reports. Anyone with the link can view — nothing is
+                editable.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="lg"
+                  disabled={shareBusy}
+                  onClick={() =>
+                    void setShare(shareEnabled ? "disable" : "enable")
+                  }
+                >
+                  {shareBusy
+                    ? "Updating…"
+                    : shareEnabled
+                      ? "Turn Off Public Link"
+                      : "Turn On Public Link"}
+                </Button>
+                {shareEnabled ? (
                   <Button
                     variant="secondary"
                     size="lg"
-                    onClick={() => addCalendarDay(editingCal.id)}
+                    disabled={shareBusy}
+                    onClick={() => void setShare("rotate")}
                   >
-                    Add Date
+                    Regenerate Link
                   </Button>
-                </div>
+                ) : null}
               </div>
-            )}
-          </Panel>
-        )}
+              {shareEnabled && shareUrl ? (
+                <div className="mt-3 space-y-2">
+                  <label className="block text-xs text-[var(--text-muted)]">
+                    Public URL
+                    <input
+                      readOnly
+                      className={inputClass}
+                      value={shareUrl}
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="cursor-pointer text-xs text-[var(--accent)]"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(shareUrl);
+                        push("Public Link copied", "success");
+                      } catch {
+                        push(
+                          "Could not copy — select the URL manually",
+                          "warning",
+                        );
+                      }
+                    }}
+                  >
+                    Copy Link
+                  </button>
+                </div>
+              ) : null}
+            </Panel>
+          ) : null}
 
-        {mode === "demo" && state.profiles.length > 1 && (
-          <Panel>
-            <h2 className="text-sm font-semibold">Switch Account (Demo)</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              After inviting a person, switch here to see My Schedule as that
-              member.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {state.profiles.map((p) => (
-                <Button
-                  key={p.id}
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    clearViewAs();
-                    switchDemoProfile(p.id);
-                    push(`Switched to ${p.full_name} (${p.role})`, "success");
-                    router.push(appHref("/schedule"));
-                  }}
-                >
-                  {p.full_name} · {p.role}
-                </Button>
-              ))}
-            </div>
-          </Panel>
-        )}
+          {tab === "holidays" && canManage ? (
+            <Panel>
+              <h2 className="text-sm font-semibold">Holiday Calendars</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Global calendars (e.g. US vs Canada). Assign on People, then
+                apply to create statutory leave days and clear overlapping
+                bookings.
+              </p>
 
-        {canManage && (
-          <Panel>
-            <h2 className="text-sm font-semibold">Demo Data</h2>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              {mode === "supabase"
-                ? "Clears this organization’s planning data in Supabase and loads the sample schedule narrative."
-                : "Reset the local workspace to the seeded schedule narrative."}
-            </p>
-            <Button
-              variant="secondary"
-              size="lg"
-              className="mt-3"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  await resetDemo();
-                  push("Demo Data restored", "success");
-                } catch (err) {
-                  push(
-                    err instanceof Error ? err.message : "Failed to load demo",
-                    "warning",
+              <div className="mt-3 flex flex-wrap gap-2">
+                {state.holiday_calendars.map((cal) => {
+                  const assigned = state.people.filter(
+                    (p) => p.holiday_calendar_id === cal.id,
+                  ).length;
+                  const dayCount = state.holiday_calendar_days.filter(
+                    (d) => d.calendar_id === cal.id,
+                  ).length;
+                  return (
+                    <button
+                      key={cal.id}
+                      type="button"
+                      className={`cursor-pointer rounded-md border px-3 py-1.5 text-left text-xs ${
+                        editingCalId === cal.id
+                          ? "border-[var(--accent)] bg-[var(--accent)]/10"
+                          : "border-[var(--border)] hover:bg-[var(--row-hover)]"
+                      }`}
+                      onClick={() => setEditingCalId(cal.id)}
+                    >
+                      <div className="font-medium">
+                        {cal.name}
+                        {cal.region ? ` · ${cal.region}` : ""}
+                      </div>
+                      <div className="text-[var(--text-muted)]">
+                        {dayCount} date{dayCount === 1 ? "" : "s"} · {assigned}{" "}
+                        people
+                      </div>
+                    </button>
                   );
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? "Loading…" : "Load Demo Data"}
-            </Button>
-          </Panel>
-        )}
+                })}
+              </div>
 
-        <Panel>
-          <h2 className="text-sm font-semibold">Backend</h2>
-          <p className="mt-1 text-sm text-[var(--text-muted)]">
-            {mode === "supabase"
-              ? "Using Supabase. Invites need SUPABASE_SERVICE_ROLE_KEY in .env (server-only)."
-              : "Local demo store. Set Supabase env vars for real auth + invites."}
-          </p>
-          {authError && (
-            <p className="mt-2 text-sm text-[var(--status-over)]">{authError}</p>
-          )}
-        </Panel>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_6rem_auto]">
+                <input
+                  className={inputClass}
+                  placeholder="New calendar name"
+                  value={newCalName}
+                  onChange={(e) => setNewCalName(e.target.value)}
+                />
+                <input
+                  className={inputClass}
+                  placeholder="Region"
+                  value={newCalRegion}
+                  onChange={(e) => setNewCalRegion(e.target.value)}
+                />
+                <Button variant="secondary" size="lg" onClick={addCalendar}>
+                  Add
+                </Button>
+              </div>
 
-        <Button
-          variant="secondary"
-          size="lg"
-          onClick={async () => {
-            await logout();
-            router.push("/login");
-          }}
-        >
-          Sign Out
-        </Button>
+              {editingCal ? (
+                <div className="mt-4 space-y-3 border-t border-[var(--border)] pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-medium">{editingCal.name}</h3>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={calBusy}
+                        onClick={() => void applyCalendar(editingCal.id)}
+                      >
+                        {calBusy ? "Applying…" : "Apply To Assigned People"}
+                      </Button>
+                      <Button
+                        variant="destructiveOutline"
+                        size="sm"
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Delete calendar “${editingCal.name}”?`,
+                            )
+                          ) {
+                            return;
+                          }
+                          deleteHolidayCalendar(editingCal.id);
+                          setEditingCalId(null);
+                          push("Calendar deleted");
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Field label="Assign people">
+                    <div className="mt-1 max-h-36 space-y-1 overflow-y-auto rounded-md border border-[var(--border)] p-2">
+                      {state.people.length === 0 ? (
+                        <p className="text-xs text-[var(--text-muted)]">
+                          No people yet.
+                        </p>
+                      ) : (
+                        state.people.map((person) => (
+                          <label
+                            key={person.id}
+                            className="flex cursor-pointer items-center gap-2 text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={
+                                person.holiday_calendar_id === editingCal.id
+                              }
+                              onChange={(e) => {
+                                void upsertPerson({
+                                  ...person,
+                                  holiday_calendar_id: e.target.checked
+                                    ? editingCal.id
+                                    : null,
+                                });
+                              }}
+                            />
+                            {person.name}
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </Field>
+
+                  <div className="overflow-x-auto rounded-md border border-[var(--border)]">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-[var(--bg-elevated)] text-xs text-[var(--text-muted)]">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Date</th>
+                          <th className="px-3 py-2 font-medium">Name</th>
+                          <th className="px-3 py-2 font-medium" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {editingDays.length === 0 ? (
+                          <tr>
+                            <td
+                              colSpan={3}
+                              className="px-3 py-3 text-xs text-[var(--text-muted)]"
+                            >
+                              No holiday dates yet.
+                            </td>
+                          </tr>
+                        ) : (
+                          editingDays.map((day) => (
+                            <tr
+                              key={day.id}
+                              className="border-t border-[var(--border)]"
+                            >
+                              <td className="px-3 py-2">{day.date}</td>
+                              <td className="px-3 py-2">{day.name || "—"}</td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  type="button"
+                                  className="cursor-pointer text-xs text-[var(--text-muted)]"
+                                  onClick={() => {
+                                    deleteHolidayCalendarDay(day.id);
+                                    push("Date removed");
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-[8rem_1fr_auto]">
+                    <DateInput
+                      className={inputClass}
+                      value={dayDate}
+                      onChange={(e) => setDayDate(e.target.value)}
+                    />
+                    <input
+                      className={inputClass}
+                      placeholder="Holiday name"
+                      value={dayName}
+                      onChange={(e) => setDayName(e.target.value)}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      onClick={() => addCalendarDay(editingCal.id)}
+                    >
+                      Add Date
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </Panel>
+          ) : null}
+
+          {tab === "advanced" ? (
+            <>
+              {mode === "demo" && state.profiles.length > 1 ? (
+                <Panel>
+                  <h2 className="text-sm font-semibold">
+                    Switch Account (Demo)
+                  </h2>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">
+                    After inviting a person, switch here to see My Schedule as
+                    that member.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {state.profiles.map((p) => (
+                      <Button
+                        key={p.id}
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          clearViewAs();
+                          switchDemoProfile(p.id);
+                          push(
+                            `Switched to ${p.full_name} (${p.role})`,
+                            "success",
+                          );
+                          router.push(appHref("/schedule"));
+                        }}
+                      >
+                        {p.full_name} · {p.role}
+                      </Button>
+                    ))}
+                  </div>
+                </Panel>
+              ) : null}
+
+              {canManage ? (
+                <Panel>
+                  <h2 className="text-sm font-semibold">Demo Data</h2>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">
+                    {mode === "supabase"
+                      ? "Clears this organization’s planning data in Supabase and loads the sample schedule narrative."
+                      : "Reset the local workspace to the seeded schedule narrative."}
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    className="mt-3"
+                    disabled={busy}
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await resetDemo();
+                        push("Demo Data restored", "success");
+                      } catch (err) {
+                        push(
+                          err instanceof Error
+                            ? err.message
+                            : "Failed to load demo",
+                          "warning",
+                        );
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    {busy ? "Loading…" : "Load Demo Data"}
+                  </Button>
+                </Panel>
+              ) : null}
+
+              <Panel>
+                <h2 className="text-sm font-semibold">Backend</h2>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">
+                  {mode === "supabase"
+                    ? "Using Supabase. Invites need SUPABASE_SERVICE_ROLE_KEY in .env (server-only)."
+                    : "Local demo store. Set Supabase env vars for real auth + invites."}
+                </p>
+                {authError ? (
+                  <p className="mt-2 text-sm text-[var(--status-over)]">
+                    {authError}
+                  </p>
+                ) : null}
+              </Panel>
+            </>
+          ) : null}
+        </div>
       </div>
 
       {orgModalOpen ? (
