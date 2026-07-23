@@ -1692,16 +1692,9 @@ function TaskRow({
     return (
       <div
         id={`task-row-${task.id}`}
-        className="relative my-1 py-1"
+        className="relative my-0.5 py-0.5"
         style={nestIndent ? { marginLeft: nestIndent } : undefined}
       >
-        {depth > 0 ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute top-0 -bottom-1 w-px bg-[var(--text-muted)]/25"
-            style={{ left: nestLineLeft }}
-          />
-        ) : null}
         <InlineTaskForm
           people={ctx.people}
           status={task.status}
@@ -1743,26 +1736,38 @@ function TaskRow({
         ...(nestIndent ? { marginLeft: nestIndent } : {}),
       }}
       className={cn(
-        "relative my-1 rounded-md py-1 transition-colors",
-        isFocused
-          ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25"
-          : isExpanded
-            ? "bg-[var(--row-hover)]"
-            : "hover:bg-[var(--row-hover)]",
+        "relative my-0.5 py-0.5",
+        // Named group only on subtasks so parent hover doesn't clear nest lines.
+        depth > 0 && "group/subtask",
       )}
     >
       {depth > 0 ? (
         <span
           aria-hidden
-          className="pointer-events-none absolute top-0 -bottom-1 w-px bg-[var(--text-muted)]/25"
+          className={cn(
+            "pointer-events-none absolute top-0 -bottom-0.5 w-px bg-[var(--text-muted)]/25 transition-opacity",
+            // Hover fill is translucent — hide only this subtask's segment under the highlight.
+            (isFocused || isExpanded) && "opacity-0",
+            "group-hover/subtask:opacity-0",
+          )}
           style={{ left: nestLineLeft }}
         />
       ) : null}
+      <div
+        className={cn(
+          "relative rounded-md py-0.5 transition-colors",
+          isFocused
+            ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25"
+            : isExpanded
+              ? "bg-[var(--row-hover)]"
+              : "hover:bg-[var(--row-hover)]",
+        )}
+      >
       {/* Measure only the row so parents with subtasks don't block top drops. */}
       <div
         ref={setNodeRef}
         className={cn(
-          "group flex items-center gap-1.5 px-2 py-1.5 text-sm",
+          "group flex items-center gap-1.5 px-2 py-1 text-sm",
           task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "bg-[var(--accent)]/10",
         )}
@@ -1936,6 +1941,7 @@ function TaskRow({
           </div>
         </div>
       ) : null}
+      </div>
       {depth === 0 && kids.length > 0 ? (
         <SortableContext
           items={kids.map((k) => k.id)}

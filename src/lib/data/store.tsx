@@ -54,7 +54,6 @@ import {
   loadLeaveForRange,
   loadOrgHeavyData,
   loadProjectData,
-  rpcOrgForecast,
   rpcPersonUtilizationWeeks,
   rpcProjectBudgetBurns,
   seedDemoWorkspace,
@@ -512,9 +511,6 @@ interface DataContextValue {
   /** Soft-fail RPC helpers (demo / missing RPC → null; caller falls back to TS). */
   fetchProjectBudgetBurnsRpc: () => Promise<
     import("@/lib/supabase/api").ProjectBudgetBurnRow[] | null
-  >;
-  fetchOrgForecastRpc: () => Promise<
-    import("@/lib/supabase/api").OrgForecastRow[] | null
   >;
   fetchPersonUtilizationWeeksRpc: (
     weekStart: string,
@@ -1309,17 +1305,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [mode]);
 
-  const fetchOrgForecastRpc = useCallback(async () => {
-    if (mode !== "supabase") return null;
-    const client = supabaseRef.current ?? createClient();
-    try {
-      return await rpcOrgForecast(client);
-    } catch (err) {
-      console.warn("rpc_org_forecast failed", err);
-      return null;
-    }
-  }, [mode]);
-
   const fetchPersonUtilizationWeeksRpc = useCallback(
     async (
       weekStartKey: string,
@@ -1594,7 +1579,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
-      fetchOrgForecastRpc,
       fetchPersonUtilizationWeeksRpc,
       updateOrganizationName: async (name) => {
         const trimmed = name.trim();
@@ -3152,7 +3136,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
-      fetchOrgForecastRpc,
       fetchPersonUtilizationWeeksRpc,
     ],
   );

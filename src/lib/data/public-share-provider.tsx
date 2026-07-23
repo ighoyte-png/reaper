@@ -228,7 +228,6 @@ export function PublicShareProvider({
       ensureScheduleRange: async () => {},
       setActiveRealtimeProjectIds: () => {},
       fetchProjectBudgetBurnsRpc: async () => null,
-      fetchOrgForecastRpc: async () => null,
       fetchPersonUtilizationWeeksRpc: async () => null,
     };
   }, [state, mode, shareBasePath]);

@@ -1,14 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { addWeeks, format } from "date-fns";
 import {
   ClipboardList,
   Gauge,
   LineChart,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
@@ -18,19 +17,15 @@ import { buttonClass } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
-import {
-  useOrgForecastAggregate,
-  useProjectBurnsMap,
-} from "@/lib/hooks/use-aggregates";
+import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { useViewAs } from "@/lib/view-as";
 import {
+  assignmentHours,
   budgetBurn,
   budgetHealth,
   formatHours,
-  formatMoney,
 } from "@/lib/domain/budget";
 import type { BudgetBurn } from "@/lib/types";
-import type { ProjectForecast } from "@/lib/domain/forecast";
 import {
   availableHoursInRange,
   capacityLevel,
@@ -46,20 +41,23 @@ const reports: {
   description: string;
   cta: string;
   icon: LucideIcon;
+  column: "left" | "right";
 }[] = [
+  {
+    path: "/reports/budgets",
+    title: "Project Budgets",
+    description: "Planned hours vs project total budget for every project.",
+    cta: "Hours and spend against project budgets",
+    icon: LineChart,
+    column: "right",
+  },
   {
     path: "/reports/utilization",
     title: "People Utilization",
     description: "People × weeks heatmap of planned load vs capacity.",
     cta: "Team load vs capacity by week",
     icon: Gauge,
-  },
-  {
-    path: "/reports/budgets",
-    title: "Project Budgets",
-    description: "Planned hours vs project total budget for every project.",
-    cta: "Hours and spend against project budgets",
-    icon: Wallet,
+    column: "left",
   },
   {
     path: "/reports/tasks",
@@ -68,13 +66,7 @@ const reports: {
       "Overdue tasks, tasks missing a due date, and recent completions.",
     cta: "Overdue, undated, and recently completed work",
     icon: ClipboardList,
-  },
-  {
-    path: "/reports/forecast",
-    title: "Financial Forecast",
-    description: "Revenue, cost, and margin implied by the schedule.",
-    cta: "Schedule-backed revenue, cost, and margin",
-    icon: LineChart,
+    column: "left",
   },
 ];
 
@@ -89,7 +81,6 @@ type WeekUtilPoint = {
 export default function ReportsPage() {
   const { state, isPublicShare, ensureOrgHeavyData, mode } = useData();
   const { burns } = useProjectBurnsMap();
-  const { forecast } = useOrgForecastAggregate();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
@@ -104,6 +95,14 @@ export default function ReportsPage() {
   useEffect(() => {
     if (mode === "supabase") void ensureOrgHeavyData();
   }, [mode, ensureOrgHeavyData]);
+
+  const plannedHoursAcrossSchedule = useMemo(
+    () =>
+      state.assignments
+        .filter((a) => a.status === "confirmed")
+        .reduce((sum, a) => sum + assignmentHours(a), 0),
+    [state.assignments],
+  );
 
   const utilization = useMemo(() => {
     const weekAnchors = Array.from({ length: 8 }, (_, i) =>
@@ -240,66 +239,98 @@ export default function ReportsPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Reports" />
-      <div className="grid gap-3 p-3 sm:p-5 md:grid-cols-2">
-        {reports.map((report) => {
-          const Icon = report.icon;
-          return (
-            <Panel
-              key={report.path}
-              padded={false}
-              className="flex flex-col"
-            >
-              <div className="flex flex-1 flex-col p-4 pb-3">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--accent)]">
-                    <Icon size={16} strokeWidth={1.75} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-sm font-semibold text-[var(--text)]">
-                      {report.title}
-                    </h2>
-                    <p className="mt-1 text-sm text-[var(--text-muted)]">
-                      {report.description}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex-1 border-t border-[var(--border)] pt-3">
-                  {report.path === "/reports/utilization" ? (
+      <div className="grid gap-3 p-3 sm:p-5 md:grid-cols-2 md:items-stretch">
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          {reports
+            .filter((r) => r.column === "left")
+            .map((report) => (
+              <ReportCard
+                key={report.path}
+                report={report}
+                appHref={appHref}
+                overview={
+                  report.path === "/reports/utilization" ? (
                     <UtilizationOverview data={utilization} />
-                  ) : null}
-                  {report.path === "/reports/budgets" ? (
-                    <BudgetsOverview data={budgets} />
-                  ) : null}
-                  {report.path === "/reports/tasks" ? (
+                  ) : (
                     <TasksOverview data={tasks} />
-                  ) : null}
-                  {report.path === "/reports/forecast" ? (
-                    <ForecastOverview forecast={forecast} />
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-2.5">
-                <p className="min-w-0 truncate text-xs text-[var(--text-muted)]">
-                  {report.cta}
-                </p>
-                <Link
-                  href={appHref(report.path)}
-                  className={buttonClass({
-                    variant: "secondary",
-                    size: "sm",
-                    className: "h-8 shrink-0 px-3 text-xs",
-                  })}
-                >
-                  View Details
-                </Link>
-              </div>
-            </Panel>
-          );
-        })}
+                  )
+                }
+              />
+            ))}
+        </div>
+        <div className="flex h-full min-h-0 flex-col">
+          {reports
+            .filter((r) => r.column === "right")
+            .map((report) => (
+              <ReportCard
+                key={report.path}
+                report={report}
+                appHref={appHref}
+                className="h-full flex-1"
+                overview={
+                  <BudgetsOverview
+                    data={budgets}
+                    plannedHours={plannedHoursAcrossSchedule}
+                  />
+                }
+              />
+            ))}
+        </div>
       </div>
     </PageContainer>
+  );
+}
+
+function ReportCard({
+  report,
+  appHref,
+  overview,
+  className,
+}: {
+  report: (typeof reports)[number];
+  appHref: (path: string) => string;
+  overview: ReactNode;
+  className?: string;
+}) {
+  const Icon = report.icon;
+  return (
+    <Panel padded={false} className={cn("flex flex-col", className)}>
+      <div className="flex min-h-0 flex-1 flex-col p-4 pb-3">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--accent)]">
+            <Icon size={16} strokeWidth={1.75} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-[var(--text)]">
+              {report.title}
+            </h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              {report.description}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-[var(--border)] pt-3">
+          {overview}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-2.5">
+        <p className="min-w-0 truncate text-xs text-[var(--text-muted)]">
+          {report.cta}
+        </p>
+        <Link
+          href={appHref(report.path)}
+          className={buttonClass({
+            variant: "secondary",
+            size: "sm",
+            className: "h-8 shrink-0 px-3 text-xs",
+          })}
+        >
+          View Details
+        </Link>
+      </div>
+    </Panel>
   );
 }
 
@@ -515,6 +546,7 @@ function UtilizationOverview({
 
 function BudgetsOverview({
   data,
+  plannedHours,
 }: {
   data: {
     tracked: number;
@@ -529,17 +561,24 @@ function BudgetsOverview({
       burn: BudgetBurn;
     }[];
   };
+  plannedHours: number;
 }) {
   return (
-    <div className="space-y-3">
-      <MetricRow label="Tracked projects" value={String(data.tracked)} />
-      <MetricRow
-        label="Over budget"
-        value={String(data.over)}
-        tone={data.over > 0 ? "over" : "muted"}
-      />
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="shrink-0 space-y-1.5">
+        <MetricRow
+          label="Planned across schedule"
+          value={formatHours(plannedHours)}
+        />
+        <MetricRow label="Tracked projects" value={String(data.tracked)} />
+        <MetricRow
+          label="Over budget"
+          value={String(data.over)}
+          tone={data.over > 0 ? "over" : "muted"}
+        />
+      </div>
       {data.rows.length > 0 ? (
-        <div className="max-h-56 space-y-2.5 overflow-y-auto pr-0.5">
+        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
           {data.rows.map((row) => (
             <div key={row.id} className="space-y-1">
               <div className="flex justify-between gap-2 text-[11px]">
@@ -574,15 +613,17 @@ function TasksOverview({
 }) {
   const total = Math.max(1, data.overdue + data.noDue + data.upcoming);
   return (
-    <div className="space-y-3">
-      <MetricRow
-        label="Overdue"
-        value={String(data.overdue)}
-        tone={data.overdue > 0 ? "over" : "healthy"}
-      />
-      <MetricRow label="No due date" value={String(data.noDue)} />
-      <MetricRow label="Open" value={String(data.open)} />
-      <div className="flex h-3 overflow-hidden rounded-full bg-[var(--border)]">
+    <div>
+      <div className="space-y-1">
+        <MetricRow
+          label="Overdue"
+          value={String(data.overdue)}
+          tone={data.overdue > 0 ? "over" : "healthy"}
+        />
+        <MetricRow label="No due date" value={String(data.noDue)} />
+        <MetricRow label="Open" value={String(data.open)} />
+      </div>
+      <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-[var(--border)]">
         {(
           [
             {
@@ -620,54 +661,8 @@ function TasksOverview({
             />
           ))}
       </div>
-      <p className="text-[11px] text-[var(--text-muted)]">
+      <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
         {data.complete} completed · open mix above
-      </p>
-    </div>
-  );
-}
-
-function ForecastOverview({
-  forecast,
-}: {
-  forecast: ProjectForecast;
-}) {
-  const max = Math.max(forecast.revenue, forecast.cost, 1);
-  return (
-    <div className="space-y-3">
-      <MetricRow label="Revenue" value={formatMoney(forecast.revenue)} />
-      <MetricRow label="Cost" value={formatMoney(forecast.cost)} />
-      <MetricRow
-        label="Margin"
-        value={`${formatMoney(forecast.margin)} (${Math.round(forecast.marginPct)}%)`}
-        tone={forecast.margin < 0 ? "over" : "healthy"}
-      />
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span className="w-14 shrink-0 text-[11px] text-[var(--text-muted)]">
-            Revenue
-          </span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--border)]">
-            <div
-              className="h-full rounded-full bg-[var(--accent)]"
-              style={{ width: `${(forecast.revenue / max) * 100}%` }}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-14 shrink-0 text-[11px] text-[var(--text-muted)]">
-            Cost
-          </span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--border)]">
-            <div
-              className="h-full rounded-full bg-[var(--text-muted)]/50"
-              style={{ width: `${(forecast.cost / max) * 100}%` }}
-            />
-          </div>
-        </div>
-      </div>
-      <p className="text-[11px] text-[var(--text-muted)]">
-        {formatHours(forecast.plannedHours)} planned across schedule
       </p>
     </div>
   );

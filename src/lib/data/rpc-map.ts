@@ -1,9 +1,5 @@
 import type { BudgetBurn } from "@/lib/types";
-import type {
-  OrgForecastRow,
-  ProjectBudgetBurnRow,
-} from "@/lib/supabase/api";
-import type { ProjectForecast } from "@/lib/domain/forecast";
+import type { ProjectBudgetBurnRow } from "@/lib/supabase/api";
 
 export function burnFromRpcRow(row: ProjectBudgetBurnRow): BudgetBurn {
   return {
@@ -21,22 +17,5 @@ export function burnFromRpcRow(row: ProjectBudgetBurnRow): BudgetBurn {
     remainingAmount: row.remaining_amount,
     amountOverBy: row.amount_over_by,
     mode: row.mode,
-  };
-}
-
-export function forecastFromRpcRow(row: OrgForecastRow): ProjectForecast {
-  return {
-    projectId: row.project_id ?? "org",
-    plannedHours: row.planned_hours,
-    revenue: row.revenue,
-    cost: row.cost,
-    margin: row.margin,
-    marginPct: row.margin_pct,
-    hoursUsedToDate: row.hours_used_to_date,
-    hoursFuturePlanned: row.hours_future_planned,
-    hoursRemaining: row.hours_remaining,
-    budgetMargin: row.budget_margin,
-    budgetMarginPct: row.budget_margin_pct,
-    overBudget: row.over_budget,
   };
 }

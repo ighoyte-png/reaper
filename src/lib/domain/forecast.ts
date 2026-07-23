@@ -87,33 +87,5 @@ export function projectForecast(
   };
 }
 
-export function orgForecast(
-  projects: Project[],
-  assignments: Assignment[],
-  people: Person[],
-): ProjectForecast {
-  const parts = projects.map((p) => projectForecast(p, assignments, people));
-  const revenue = parts.reduce((s, p) => s + p.revenue, 0);
-  const cost = parts.reduce((s, p) => s + p.cost, 0);
-  const margin = revenue - cost;
-  return {
-    projectId: "org",
-    plannedHours: parts.reduce((s, p) => s + p.plannedHours, 0),
-    revenue,
-    cost,
-    margin,
-    marginPct: revenue <= 0 ? 0 : (margin / revenue) * 100,
-    hoursUsedToDate: parts.reduce((s, p) => s + p.hoursUsedToDate, 0),
-    hoursFuturePlanned: parts.reduce((s, p) => s + p.hoursFuturePlanned, 0),
-    hoursRemaining: parts.reduce(
-      (s, p) => s + (p.hoursRemaining ?? 0),
-      0,
-    ),
-    budgetMargin: parts.reduce((s, p) => s + (p.budgetMargin ?? 0), 0),
-    budgetMarginPct: null,
-    overBudget: parts.some((p) => p.overBudget),
-  };
-}
-
 /** Re-export for callers that only need the hours split. */
 export { projectHoursForecast, projectPlannedAmount };

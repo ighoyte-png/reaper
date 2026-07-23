@@ -906,21 +906,6 @@ export type ProjectBudgetBurnRow = {
   amount_over_by: number;
 };
 
-export type OrgForecastRow = {
-  project_id: string | null;
-  planned_hours: number;
-  revenue: number;
-  cost: number;
-  margin: number;
-  margin_pct: number;
-  hours_used_to_date: number;
-  hours_future_planned: number;
-  hours_remaining: number | null;
-  budget_margin: number | null;
-  budget_margin_pct: number | null;
-  over_budget: boolean;
-};
-
 export type PersonUtilizationWeekRow = {
   person_id: string;
   week_start: string;
@@ -958,39 +943,6 @@ export async function rpcProjectBudgetBurns(
         ? null
         : num(row.remaining_amount),
     amount_over_by: num(row.amount_over_by),
-  }));
-}
-
-export async function rpcOrgForecast(
-  supabase: SupabaseClient,
-  asOf?: string,
-): Promise<OrgForecastRow[]> {
-  const { data, error } = await supabase.rpc("rpc_org_forecast", {
-    p_as_of: asOf ?? undefined,
-  });
-  if (error) throw error;
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    project_id: row.project_id == null ? null : String(row.project_id),
-    planned_hours: num(row.planned_hours),
-    revenue: num(row.revenue),
-    cost: num(row.cost),
-    margin: num(row.margin),
-    margin_pct: num(row.margin_pct),
-    hours_used_to_date: num(row.hours_used_to_date),
-    hours_future_planned: num(row.hours_future_planned),
-    hours_remaining:
-      row.hours_remaining == null || row.hours_remaining === ""
-        ? null
-        : num(row.hours_remaining),
-    budget_margin:
-      row.budget_margin == null || row.budget_margin === ""
-        ? null
-        : num(row.budget_margin),
-    budget_margin_pct:
-      row.budget_margin_pct == null || row.budget_margin_pct === ""
-        ? null
-        : num(row.budget_margin_pct),
-    over_budget: Boolean(row.over_budget),
   }));
 }
 
