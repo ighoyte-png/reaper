@@ -329,6 +329,12 @@ export function ProjectTaskBoard({
 
   function addList() {
     if (!manageLists) return;
+    activeLists.forEach((l, i) => {
+      const nextOrder = i + 1;
+      if (l.sort_order !== nextOrder) {
+        upsertTaskList({ ...l, sort_order: nextOrder });
+      }
+    });
     const list: TaskList = {
       id: newId("tlist"),
       organization_id: state.organization.id,
@@ -336,7 +342,7 @@ export function ProjectTaskBoard({
       milestone_id: null,
       name: "New list",
       color: null,
-      sort_order: activeLists.length,
+      sort_order: 0,
       archived: false,
     };
     upsertTaskList(list);
@@ -1400,15 +1406,19 @@ function InlineNewTaskForm({
   }
 
   return (
-    <div className="border-t border-[var(--divider)] bg-[var(--bg)] px-3 py-3">
-      <div className="flex items-center gap-2">
+    <div
+      className="border-t border-[var(--divider)] bg-[var(--bg)] px-2 py-3"
+      style={{ paddingLeft: 8 }}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="w-4 shrink-0" aria-hidden />
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[var(--task-upcoming-fg)]"
           aria-hidden
         />
         <input
           autoFocus
-          className="min-w-0 flex-1 border-0 bg-transparent text-base font-medium text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+          className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
           placeholder="Task title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
