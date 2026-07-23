@@ -795,7 +795,13 @@ export function ProjectTaskBoard({
 
   if (view === "card" && allowCardView) {
     return (
-      <div className="space-y-3">
+      <section
+        className={cn(
+          !compact &&
+            "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+        )}
+      >
+        <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
               Tasks
@@ -850,12 +856,19 @@ export function ProjectTaskBoard({
               );
             })
           )}
-      </div>
+        </div>
+      </section>
     );
   }
 
   return (
     <>
+    <section
+      className={cn(
+        !compact &&
+          "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+      )}
+    >
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
@@ -1084,6 +1097,7 @@ export function ProjectTaskBoard({
       )}
 
     </div>
+    </section>
       {templatesSlot}
       {!compact && (archivedLists.length > 0 || manageLists) ? (
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
