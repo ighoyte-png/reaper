@@ -836,21 +836,29 @@ export function ProjectTaskBoard({
                     <h4 className="truncate text-lg font-medium">{list.name}</h4>
                   </div>
                   <div className="p-2 sm:p-3">
-                    <KanbanBoard
-                      tasks={listParents}
-                      manageLists={manageLists}
-                      people={state.people}
-                      editingTaskId={
-                        readOnly || isPublicShare ? null : editingTaskId
-                      }
-                      onEdit={
-                        readOnly || isPublicShare ? undefined : setEditingTask
-                      }
-                      onSaveEdit={saveEditingTask}
-                      onDeleteEdit={deleteEditingTask}
-                      onCancelEdit={() => setEditingTaskId(null)}
-                      onMove={moveTaskToColumn}
-                    />
+                    {listParents.length === 0 && !manageLists ? (
+                      <p className="px-1 py-2 text-sm text-[var(--text-muted)]">
+                        No tasks in this list yet.
+                      </p>
+                    ) : (
+                      <KanbanBoard
+                        tasks={listParents}
+                        manageLists={manageLists}
+                        people={state.people}
+                        editingTaskId={
+                          readOnly || isPublicShare ? null : editingTaskId
+                        }
+                        onEdit={
+                          readOnly || isPublicShare
+                            ? undefined
+                            : setEditingTask
+                        }
+                        onSaveEdit={saveEditingTask}
+                        onDeleteEdit={deleteEditingTask}
+                        onCancelEdit={() => setEditingTaskId(null)}
+                        onMove={moveTaskToColumn}
+                      />
+                    )}
                   </div>
                 </section>
               );
@@ -1388,7 +1396,13 @@ function ListSection({
         <>
           {parents.length === 0 ? (
             <ListTaskDropZone listId={list.id} disabled={!ctx.manageLists}>
-              <div className="h-2" aria-hidden />
+              {!ctx.manageLists ? (
+                <p className="px-3 py-3 text-sm text-[var(--text-muted)]">
+                  No tasks in this list yet.
+                </p>
+              ) : (
+                <div className="h-2" aria-hidden />
+              )}
             </ListTaskDropZone>
           ) : (
             <SortableContext
@@ -1859,24 +1873,29 @@ function TaskRow({
         ) : null}
       </div>
       {!ctx.readOnly && isExpanded ? (
-        <div className="space-y-3 px-2 pb-3 pt-1">
-          {hasNotes ? (
-            <div
-              className="py-2"
-              style={{ paddingLeft: 20 + depth * 16 }}
-            >
-              <RichNotesHtml
-                html={task.notes}
-                className="text-sm text-[var(--text)]"
+        <div
+          className="pb-3 pr-2 pt-3"
+          style={{ paddingLeft: 8 + depth * 16 }}
+        >
+          <div className="flex gap-1.5">
+            <span className="w-4 shrink-0" aria-hidden />
+            <span className="w-2.5 shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1 space-y-8">
+              {hasNotes ? (
+                <div className="py-2">
+                  <RichNotesHtml
+                    html={task.notes}
+                    className="text-sm text-[var(--text)]"
+                  />
+                </div>
+              ) : null}
+              <CommentThread
+                task={task}
+                comments={taskComments}
+                ctx={ctx}
               />
             </div>
-          ) : null}
-          <CommentThread
-            task={task}
-            depth={depth}
-            comments={taskComments}
-            ctx={ctx}
-          />
+          </div>
         </div>
       ) : null}
       {depth === 0 && kids.length > 0 ? (
@@ -1896,12 +1915,10 @@ function TaskRow({
 
 function CommentThread({
   task,
-  depth,
   comments,
   ctx,
 }: {
   task: Task;
-  depth: number;
   comments: TaskComment[];
   ctx: BoardCtx;
 }) {
@@ -1924,10 +1941,7 @@ function CommentThread({
   }
 
   return (
-    <div
-      className="space-y-3 px-0 py-0"
-      style={{ paddingLeft: 20 + depth * 16 }}
-    >
+    <div className="space-y-3">
       {sorted.length === 0 ? (
         <p className="text-xs text-[var(--text-muted)]">No comments yet</p>
       ) : (
@@ -1964,7 +1978,7 @@ function CommentThread({
         ) : (
           <button
             type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[color-mix(in_srgb,var(--text)_22%,transparent)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
             onClick={() => setReplying(true)}
           >
             <Reply size={13} strokeWidth={1.75} />
