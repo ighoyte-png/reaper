@@ -81,7 +81,7 @@ type InlineTaskDraft = {
 
 type Props = {
   projectId: string;
-  /** When true, no create/reorder/edit â€” status toggle still allowed for own tasks. */
+  /** When true, no create/reorder/edit - status toggle still allowed for own tasks. */
   readOnly?: boolean;
   /** Compact for sidebar. */
   compact?: boolean;
@@ -127,11 +127,11 @@ type BoardCtx = {
   allowSelect: boolean;
   listsEditMode: boolean;
   compact: boolean;
-  /** Status changes only â€” no edit modal or comments (e.g. schedule sidebar). */
+  /** Status changes only - no edit modal or comments (e.g. schedule sidebar). */
   readOnly: boolean;
   /**
    * When set (schedule sidebar), task titles link to the project hub with
-   * comments open â€” same deep-link as dashboard tagged comments.
+   * comments open - same deep-link as dashboard tagged comments.
    */
   hubTaskHref: ((taskId: string) => string) | null;
   selected: Set<string>;
@@ -826,14 +826,14 @@ export function ProjectTaskBoard({
                 >
                   <div
                     className={cn(
-                      "border-b border-[var(--divider)] px-3 py-1.5",
+                      "border-b border-[var(--divider)] px-3 py-2.5",
                       !list.color && "bg-[var(--bg-elevated)]/50",
                     )}
                     style={
                       list.color ? { backgroundColor: list.color } : undefined
                     }
                   >
-                    <h4 className="truncate text-sm font-medium">{list.name}</h4>
+                    <h4 className="truncate text-lg font-medium">{list.name}</h4>
                   </div>
                   <div className="p-2 sm:p-3">
                     <KanbanBoard
@@ -919,9 +919,9 @@ export function ProjectTaskBoard({
                 }));
               }}
               aria-label="Set status for selected tasks"
-              placeholder="Chooseâ€¦"
+              placeholder="Choose..."
               options={[
-                { value: "", label: "Chooseâ€¦" },
+                { value: "", label: "Choose..." },
                 {
                   value: "upcoming",
                   label: taskStatusLabel("upcoming"),
@@ -965,9 +965,9 @@ export function ProjectTaskBoard({
                     }));
                   }}
                   aria-label="Assign selected tasks"
-                  placeholder="Chooseâ€¦"
+                  placeholder="Choose..."
                   options={[
-                    { value: "", label: "Chooseâ€¦" },
+                    { value: "", label: "Choose..." },
                     { value: "__none__", label: "Unassigned" },
                     ...sortPeopleByName(state.people).map((p) => ({
                       value: p.id,
@@ -1032,7 +1032,7 @@ export function ProjectTaskBoard({
       {activeLists.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           {manageLists
-            ? "No task lists yet â€” add a list to get started."
+            ? "No task lists yet - add a list to get started."
             : "No task lists on this project yet."}
         </p>
       ) : (
@@ -1188,7 +1188,7 @@ export function ProjectTaskBoard({
       {confirmBulkDelete ? (
         <ConfirmDialog
           title="Delete selected tasks?"
-          message={`Delete ${selected.size} selected task${selected.size === 1 ? "" : "s"}? Subtasks of selected parents will also be removed. This canâ€™t be undone.`}
+          message={`Delete ${selected.size} selected task${selected.size === 1 ? "" : "s"}? Subtasks of selected parents will also be removed. This can't be undone.`}
           confirmLabel="Delete"
           onCancel={() => setConfirmBulkDelete(false)}
           onConfirm={deleteSelectedTasks}
@@ -1296,7 +1296,7 @@ function ListSection({
       <div
         ref={setNodeRef}
         className={cn(
-          "flex flex-wrap items-center gap-2 border-b border-[var(--divider)] px-2 py-1.5",
+          "flex flex-wrap items-center gap-2 border-b border-[var(--divider)] px-2 py-2.5",
           !list.color && "bg-[var(--bg-elevated)]/50",
         )}
         style={list.color ? { backgroundColor: list.color } : undefined}
@@ -1323,12 +1323,12 @@ function ListSection({
         </button>
         {ctx.manageLists ? (
           <input
-            className="min-w-0 flex-1 border-0 bg-transparent text-sm font-medium outline-none"
+            className="min-w-0 flex-1 border-0 bg-transparent text-lg font-medium outline-none"
             value={list.name}
             onChange={(e) => onNameChange(e.target.value)}
           />
         ) : (
-          <span className="min-w-0 flex-1 text-sm font-medium">{list.name}</span>
+          <span className="min-w-0 flex-1 text-lg font-medium">{list.name}</span>
         )}
         {milestoneName ? (
           <span className="text-[10px] text-[var(--text-muted)]">
@@ -1599,7 +1599,7 @@ function InlineTaskForm({
       {confirmDelete && onDelete ? (
         <ConfirmDialog
           title="Delete task?"
-          message="Delete this task and its subtasks? This canâ€™t be undone."
+          message="Delete this task and its subtasks? This can't be undone."
           confirmLabel="Delete"
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
@@ -1640,10 +1640,19 @@ function TaskRow({
   const isSelected = ctx.selected.has(task.id);
   const canEditStatus = ctx.canManage || task.assignee_person_id === ctx.myPersonId;
   const isEditing = ctx.editingTaskId === task.id;
+  const nestLineLeft =
+    depth > 0 ? 8 + (depth - 1) * 16 + 16 + 6 + 5 - 2 + 3 : 0;
 
   if (isEditing) {
     return (
-      <div id={`task-row-${task.id}`}>
+      <div id={`task-row-${task.id}`} className="relative my-1 py-1">
+        {depth > 0 ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute top-0 -bottom-1 w-0.5 bg-[var(--text-muted)]/25"
+            style={{ left: nestLineLeft }}
+          />
+        ) : null}
         <InlineTaskForm
           people={ctx.people}
           status={task.status}
@@ -1683,12 +1692,25 @@ function TaskRow({
         transition,
         opacity: isDragging ? 0.6 : 1,
       }}
+      className={cn(
+        "relative my-1 rounded-md py-1 transition-colors",
+        isExpanded
+          ? "bg-[var(--row-hover)]"
+          : "hover:bg-[var(--row-hover)]",
+      )}
     >
+      {depth > 0 ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-0 -bottom-1 w-0.5 bg-[var(--text-muted)]/25"
+          style={{ left: nestLineLeft }}
+        />
+      ) : null}
       {/* Measure only the row so parents with subtasks don't block top drops. */}
       <div
         ref={setNodeRef}
         className={cn(
-          "group flex items-center gap-1.5 border-b border-[var(--divider)] px-2 py-1.5 text-sm",
+          "group flex items-center gap-1.5 px-2 py-1.5 text-sm",
           task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "bg-[var(--accent)]/10",
         )}
@@ -1697,7 +1719,10 @@ function TaskRow({
         {ctx.manageLists ? (
           <button
             type="button"
-            className="cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100"
+            className={cn(
+              "cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100",
+              depth > 0 && "-translate-x-2",
+            )}
             aria-label="Drag to reorder, nest, or move to another list"
             title="Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
             {...attributes}
@@ -1759,21 +1784,6 @@ function TaskRow({
             </button>
           )}
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
-          {hasNotes ? (
-            <Tooltip
-              content={
-                <span className="whitespace-pre-wrap">
-                  {notesPreviewText(task.notes, 100)}
-                </span>
-              }
-            >
-              <StickyNote
-                size={12}
-                className="shrink-0 text-[var(--text-muted)]"
-                aria-label="Task notes"
-              />
-            </Tooltip>
-          ) : null}
           {task.due_date ? (
             <span
               className={cn(
@@ -1785,6 +1795,21 @@ function TaskRow({
             >
               {format(parseISO(task.due_date), "MMM d, yyyy")}
             </span>
+          ) : null}
+          {hasNotes ? (
+            <Tooltip
+              content={
+                <span className="whitespace-pre-wrap">
+                  {notesPreviewText(task.notes, 100)}
+                </span>
+              }
+            >
+              <StickyNote
+                size={16}
+                className="shrink-0 text-[var(--text-muted)]"
+                aria-label="Task notes"
+              />
+            </Tooltip>
           ) : null}
           {!ctx.readOnly ? (
             <button
@@ -1834,16 +1859,12 @@ function TaskRow({
         ) : null}
       </div>
       {!ctx.readOnly && isExpanded ? (
-        <>
+        <div className="space-y-3 px-2 pb-3 pt-1">
           {hasNotes ? (
             <div
-              className="space-y-1.5 border-b border-[var(--divider)] px-2 pt-3 pb-2"
-              style={{ paddingLeft: 28 + depth * 16 }}
+              className="py-2"
+              style={{ paddingLeft: 20 + depth * 16 }}
             >
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
-                <StickyNote size={12} aria-hidden />
-                Notes
-              </p>
               <RichNotesHtml
                 html={task.notes}
                 className="text-sm text-[var(--text)]"
@@ -1856,7 +1877,7 @@ function TaskRow({
             comments={taskComments}
             ctx={ctx}
           />
-        </>
+        </div>
       ) : null}
       {depth === 0 && kids.length > 0 ? (
         <SortableContext
@@ -1904,8 +1925,8 @@ function CommentThread({
 
   return (
     <div
-      className="space-y-3 border-b border-[var(--divider)] px-2 py-3"
-      style={{ paddingLeft: 28 + depth * 16 }}
+      className="space-y-3 px-0 py-0"
+      style={{ paddingLeft: 20 + depth * 16 }}
     >
       {sorted.length === 0 ? (
         <p className="text-xs text-[var(--text-muted)]">No comments yet</p>
@@ -1920,7 +1941,7 @@ function CommentThread({
             <SimpleRichTextEditor
               value={draft}
               onChange={setDraft}
-              placeholder="Add a commentâ€¦ Use @ to mention"
+              placeholder="Add a comment... Use @ to mention"
               mentionPeople={ctx.mentionPeople}
             />
             <div className="flex flex-wrap gap-2">
@@ -2010,7 +2031,7 @@ function CommentItem({
             {displayName}
           </span>
           <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
-            {format(parseISO(comment.created_at), "MMM d, yyyy Â· h:mm a")}
+            {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
             {wasEdited ? (
               <span
                 className="ml-1 italic"
@@ -2018,12 +2039,12 @@ function CommentItem({
                   comment.updated_at
                     ? format(
                         parseISO(comment.updated_at),
-                        "MMM d, yyyy Â· h:mm a",
+                        "MMM d, yyyy · h:mm a",
                       )
                     : undefined
                 }
               >
-                Â· edited
+                · edited
               </span>
             ) : null}
           </span>
@@ -2033,7 +2054,7 @@ function CommentItem({
             <SimpleRichTextEditor
               value={draft}
               onChange={setDraft}
-              placeholder="Edit commentâ€¦ Use @ to mention"
+              placeholder="Edit comment... Use @ to mention"
               mentionPeople={ctx.mentionPeople}
             />
             <div className="flex flex-wrap gap-2">
@@ -2092,7 +2113,7 @@ function CommentItem({
   );
 }
 
-const COMMENT_REACTION_EMOJIS = ["ðŸ‘", "â¤ï¸", "ðŸŽ‰", "ðŸ‘€", "ðŸ”¥"] as const;
+const COMMENT_REACTION_EMOJIS = ["👍", "❤️", "🎉", "👀", "🔥"] as const;
 
 function CommentReactions({
   comment,
