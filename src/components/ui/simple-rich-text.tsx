@@ -1,15 +1,37 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
+import type { Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import Underline from "@tiptap/extension-underline";
-import { Bold, Link as LinkIcon, Underline as UnderlineIcon } from "lucide-react";
+import {
+  Bold,
+  Link as LinkIcon,
+  List,
+  ListOrdered,
+  Underline as UnderlineIcon,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 import { notesToEditorHtml, sanitizeNotesHtml } from "@/lib/notes-html";
 import type { MentionPerson } from "@/lib/mentions";
 import { createMentionSuggestion } from "@/components/ui/mention-suggestion";
+import { Field, Modal, inputClass } from "@/components/ui/form";
+import { Select } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+
+const editorContentClass = cn(
+  "min-h-[4.5rem] px-2 py-2 text-sm leading-relaxed text-[var(--text)] outline-none",
+  "[&_p]:m-0 [&_p+p]:mt-2",
+  "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5",
+  "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5",
+  "[&_li]:my-1 [&_li>p]:m-0",
+  "[&_p+ul]:mt-3 [&_p+ol]:mt-3",
+  "[&_ul+p]:mt-3 [&_ol+p]:mt-3",
+  "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
+  "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
+);
 
 function normalizeLinkUrl(raw: string): string | null {
   const t = raw.trim();
@@ -17,6 +39,73 @@ function normalizeLinkUrl(raw: string): string | null {
   if (/^https?:\/\//i.test(t) || /^mailto:/i.test(t)) return t;
   if (/^[a-z0-9][a-z0-9+.-]*:/i.test(t)) return null;
   return `https://${t}`;
+}
+
+type LinkTarget = "_blank" | "_self";
+
+type LinkDraft = {
+  title: string;
+  href: string;
+  target: LinkTarget;
+};
+
+function selectionLinkDraft(editor: Editor): LinkDraft {
+  const { from, to, empty } = editor.state.selection;
+  const selected = empty
+    ? ""
+    : editor.state.doc.textBetween(from, to, " ");
+  const attrs = editor.getAttributes("link");
+  const href = typeof attrs.href === "string" ? attrs.href : "";
+  const target: LinkTarget =
+    attrs.target === "_self" ? "_self" : "_blank";
+  return {
+    title: selected || (href ? selected : ""),
+    href: href || "https://",
+    target,
+  };
+}
+
+function applyLink(editor: Editor, draft: LinkDraft) {
+  const href = normalizeLinkUrl(draft.href);
+  if (!href) {
+    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    return;
+  }
+
+  const target = draft.target;
+  const rel = target === "_blank" ? "noopener noreferrer" : null;
+  const { from, to, empty } = editor.state.selection;
+  const selected = empty
+    ? ""
+    : editor.state.doc.textBetween(from, to, " ");
+  const title = draft.title.trim() || selected || href;
+
+  const attrs = { href, target, rel };
+
+  if (empty || title !== selected) {
+    editor
+      .chain()
+      .focus()
+      .command(({ tr, state, dispatch }) => {
+        const mark = state.schema.marks.link?.create(attrs);
+        if (!mark) return false;
+        const node = state.schema.text(title, [mark]);
+        if (dispatch) {
+          tr.replaceWith(from, empty ? from : to, node);
+          dispatch(tr);
+        }
+        return true;
+      })
+      .run();
+    return;
+  }
+
+  editor
+    .chain()
+    .focus()
+    .extendMarkRange("link")
+    .setLink(attrs)
+    .run();
 }
 
 export function SimpleRichTextEditor({
@@ -33,6 +122,13 @@ export function SimpleRichTextEditor({
   /** When set, typing @ opens a Slack-style mention flyout. */
   mentionPeople?: MentionPerson[];
 }) {
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkDraft, setLinkDraft] = useState<LinkDraft>({
+    title: "",
+    href: "https://",
+    target: "_blank",
+  });
+
   const peopleKey = (mentionPeople ?? [])
     .map((p) => p.id)
     .sort()
@@ -42,15 +138,11 @@ export function SimpleRichTextEditor({
     const base = [
       StarterKit.configure({
         blockquote: false,
-        bulletList: false,
         code: false,
         codeBlock: false,
         heading: false,
         horizontalRule: false,
         italic: false,
-        listItem: false,
-        listKeymap: false,
-        orderedList: false,
         strike: false,
         trailingNode: false,
         link: {
@@ -58,8 +150,6 @@ export function SimpleRichTextEditor({
           autolink: true,
           defaultProtocol: "https",
           HTMLAttributes: {
-            rel: "noopener noreferrer",
-            target: "_blank",
             class: "text-[var(--accent)] underline underline-offset-2",
           },
         },
@@ -103,12 +193,7 @@ export function SimpleRichTextEditor({
       immediatelyRender: false,
       editorProps: {
         attributes: {
-          class: cn(
-            "min-h-[4.5rem] px-2 py-2 text-sm text-[var(--text)] outline-none",
-            "[&_p]:m-0 [&_p+p]:mt-1",
-            "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
-            "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
-          ),
+          class: editorContentClass,
           "data-placeholder": placeholder,
         },
       },
@@ -137,27 +222,29 @@ export function SimpleRichTextEditor({
         bold: ed.isActive("bold"),
         underline: ed.isActive("underline"),
         link: ed.isActive("link"),
+        bulletList: ed.isActive("bulletList"),
+        orderedList: ed.isActive("orderedList"),
       };
     },
   });
 
   if (!editor) return null;
 
-  function setLink() {
-    const prev = editor?.getAttributes("link").href as string | undefined;
-    const raw = window.prompt("Link URL", prev ?? "https://");
-    if (raw === null) return;
-    const href = normalizeLinkUrl(raw);
-    if (!href) {
-      editor?.chain().focus().extendMarkRange("link").unsetLink().run();
-      return;
-    }
-    editor
-      ?.chain()
-      .focus()
-      .extendMarkRange("link")
-      .setLink({ href })
-      .run();
+  const ed = editor;
+
+  function openLinkDialog() {
+    setLinkDraft(selectionLinkDraft(ed));
+    setLinkOpen(true);
+  }
+
+  function submitLink() {
+    applyLink(ed, linkDraft);
+    setLinkOpen(false);
+  }
+
+  function removeLink() {
+    ed.chain().focus().extendMarkRange("link").unsetLink().run();
+    setLinkOpen(false);
   }
 
   return (
@@ -167,34 +254,117 @@ export function SimpleRichTextEditor({
         className,
       )}
     >
-      <div className="flex items-center gap-0.5 border-b border-[var(--border)] px-1 py-0.5">
+      <div className="flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] px-1 py-0.5">
         <ToolbarButton
           label="Bold"
           active={Boolean(toolbar?.bold)}
-          onClick={() => editor.chain().focus().toggleBold().run()}
+          onClick={() => ed.chain().focus().toggleBold().run()}
         >
           <Bold size={14} strokeWidth={2.5} />
         </ToolbarButton>
         <ToolbarButton
           label="Underline"
           active={Boolean(toolbar?.underline)}
-          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          onClick={() => ed.chain().focus().toggleUnderline().run()}
         >
           <UnderlineIcon size={14} strokeWidth={2.5} />
         </ToolbarButton>
         <ToolbarButton
+          label="Bullet list"
+          active={Boolean(toolbar?.bulletList)}
+          onClick={() => ed.chain().focus().toggleBulletList().run()}
+        >
+          <List size={14} strokeWidth={2.5} />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Numbered list"
+          active={Boolean(toolbar?.orderedList)}
+          onClick={() => ed.chain().focus().toggleOrderedList().run()}
+        >
+          <ListOrdered size={14} strokeWidth={2.5} />
+        </ToolbarButton>
+        <ToolbarButton
           label="Link"
           active={Boolean(toolbar?.link)}
-          onClick={setLink}
+          onClick={openLinkDialog}
         >
           <LinkIcon size={14} strokeWidth={2.5} />
         </ToolbarButton>
       </div>
-      <EditorContent editor={editor} />
+      <EditorContent editor={ed} />
       {mentionPeople && mentionPeople.length > 0 ? (
         <p className="border-t border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
           Type @ to mention someone
         </p>
+      ) : null}
+      {linkOpen ? (
+        <Modal title="Insert link" onClose={() => setLinkOpen(false)} className="max-w-md">
+          <div className="space-y-3">
+            <Field label="Title">
+              <input
+                className={inputClass}
+                value={linkDraft.title}
+                onChange={(e) =>
+                  setLinkDraft((prev) => ({ ...prev, title: e.target.value }))
+                }
+                placeholder="Link text"
+                autoFocus
+              />
+            </Field>
+            <Field label="URL">
+              <input
+                className={inputClass}
+                value={linkDraft.href}
+                onChange={(e) =>
+                  setLinkDraft((prev) => ({ ...prev, href: e.target.value }))
+                }
+                placeholder="https://"
+                inputMode="url"
+              />
+            </Field>
+            <Field label="Open in">
+              <Select
+                value={linkDraft.target}
+                onChange={(value) =>
+                  setLinkDraft((prev) => ({
+                    ...prev,
+                    target: value === "_self" ? "_self" : "_blank",
+                  }))
+                }
+                options={[
+                  { value: "_blank", label: "New tab" },
+                  { value: "_self", label: "Same tab" },
+                ]}
+              />
+            </Field>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              {toolbar?.link ? (
+                <button
+                  type="button"
+                  className="h-8 cursor-pointer rounded-md px-2 text-xs text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+                  onClick={removeLink}
+                >
+                  Remove link
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setLinkOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="button" size="sm" onClick={submitLink}>
+                  Apply
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
       ) : null}
     </div>
   );
@@ -241,8 +411,13 @@ export function RichNotesHtml({
   return (
     <span
       className={cn(
-        "rich-notes block [&_a]:pointer-events-auto",
-        "[&_p]:m-0 [&_p+p]:mt-1",
+        "rich-notes block leading-relaxed [&_a]:pointer-events-auto",
+        "[&_p]:m-0 [&_p+p]:mt-2",
+        "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5",
+        "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5",
+        "[&_li]:my-1 [&_li>p]:m-0",
+        "[&_p+ul]:mt-3 [&_p+ol]:mt-3",
+        "[&_ul+p]:mt-3 [&_ol+p]:mt-3",
         "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
         className,
       )}

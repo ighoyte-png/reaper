@@ -3,6 +3,8 @@ export function notesPlainText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/(?:ul|ol)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
@@ -41,14 +43,25 @@ function escapeText(text: string): string {
 export function notesToEditorHtml(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (/<\/?(?:p|strong|b|u|a|br|span)\b/i.test(trimmed)) return value;
+  if (/<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(trimmed)) return value;
   return trimmed
     .split(/\n/)
     .map((line) => `<p>${escapeText(line) || "<br>"}</p>`)
     .join("");
 }
 
-const ALLOWED_TAGS = new Set(["P", "BR", "STRONG", "B", "U", "A", "SPAN"]);
+const ALLOWED_TAGS = new Set([
+  "P",
+  "BR",
+  "STRONG",
+  "B",
+  "U",
+  "A",
+  "SPAN",
+  "UL",
+  "OL",
+  "LI",
+]);
 
 function sanitizeHref(href: string | null): string | null {
   if (!href) return null;
@@ -60,7 +73,7 @@ function sanitizeHref(href: string | null): string | null {
   return `https://${t}`;
 }
 
-/** Allow only p / br / strong / b / u / a / mention spans — for tooltips and any HTML render. */
+/** Allow only safe note markup — for tooltips and any HTML render. */
 export function sanitizeNotesHtml(html: string): string {
   if (typeof window === "undefined") {
     return notesHasContent(html) ? html : "";
@@ -93,8 +106,15 @@ export function sanitizeNotesHtml(html: string): string {
     if (tag === "A") {
       const href = sanitizeHref(el.getAttribute("href"));
       if (!href) return inner;
-      return `<a href="${escapeText(href)}" target="_blank" rel="noopener noreferrer" class="rich-notes-link">${inner}</a>`;
+      const target =
+        el.getAttribute("target") === "_self" ? "_self" : "_blank";
+      const rel =
+        target === "_blank" ? ' rel="noopener noreferrer"' : "";
+      return `<a href="${escapeText(href)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
     }
+    if (tag === "UL") return `<ul>${inner}</ul>`;
+    if (tag === "OL") return `<ol>${inner}</ol>`;
+    if (tag === "LI") return `<li>${inner}</li>`;
     if (tag === "B" || tag === "STRONG") return `<strong>${inner}</strong>`;
     if (tag === "U") return `<u>${inner}</u>`;
     return `<p>${inner}</p>`;

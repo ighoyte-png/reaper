@@ -1820,7 +1820,7 @@ function TaskRow({
             <Tooltip
               content={
                 <span className="whitespace-pre-wrap">
-                  {notesPreviewText(task.notes, 100)}
+                  {notesPreviewText(task.notes, 20)}
                 </span>
               }
             >
