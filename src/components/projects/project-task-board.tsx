@@ -74,6 +74,7 @@ import type {
 type InlineTaskDraft = {
   title: string;
   assignee_person_id: string | null;
+  start_date: string | null;
   due_date: string | null;
   notes: string;
 };
@@ -379,7 +380,7 @@ export function ProjectTaskBoard({
       assignee_person_id: draft.assignee_person_id,
       title,
       status: "upcoming",
-      start_date: null,
+      start_date: draft.start_date,
       due_date: draft.due_date,
       notes: draft.notes,
       sort_order: siblings.length,
@@ -1382,7 +1383,7 @@ function InlineNewTaskForm({
 }) {
   const [title, setTitle] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
-  const [hasDue, setHasDue] = useState(false);
+  const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -1392,7 +1393,8 @@ function InlineNewTaskForm({
     onCreate({
       title: trimmed,
       assignee_person_id: assigneeId || null,
-      due_date: hasDue && dueDate ? dueDate : null,
+      start_date: startDate || null,
+      due_date: dueDate || null,
       notes,
     });
   }
@@ -1436,39 +1438,21 @@ function InlineNewTaskForm({
             ]}
           />
         </div>
-        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
-          <span className="pt-1.5 text-sm text-[var(--text-muted)]">Due on</span>
-          <div className="space-y-2">
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="inline-task-due"
-                checked={!hasDue}
-                onChange={() => setHasDue(false)}
-                className="accent-[var(--accent)]"
-              />
-              No due date
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="inline-task-due"
-                checked={hasDue}
-                onChange={() => setHasDue(true)}
-                className="accent-[var(--accent)]"
-              />
-              <DateInput
-                className={cn(inputClass, "mt-0 h-8")}
-                value={dueDate}
-                disabled={!hasDue}
-                onChange={(e) => {
-                  setHasDue(true);
-                  setDueDate(e.target.value);
-                }}
-                onClick={() => setHasDue(true)}
-              />
-            </label>
-          </div>
+        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+          <span className="text-sm text-[var(--text-muted)]">Start</span>
+          <DateInput
+            className={cn(inputClass, "mt-0 h-8")}
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+          />
+        </div>
+        <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+          <span className="text-sm text-[var(--text-muted)]">End</span>
+          <DateInput
+            className={cn(inputClass, "mt-0 h-8")}
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+          />
         </div>
         <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
           <span className="pt-1.5 text-sm text-[var(--text-muted)]">Notes</span>
@@ -1774,7 +1758,7 @@ function CommentThread({
             onClick={() => setReplying(true)}
           >
             <Reply size={13} strokeWidth={1.75} />
-            Reply
+            {sorted.length === 0 ? "Add comment" : "Reply"}
           </button>
         )
       ) : null}
