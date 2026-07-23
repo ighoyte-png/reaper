@@ -805,6 +805,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         for (const ev of batch) {
           if (
             ev.table === "tasks" ||
+            ev.table === "project_assets" ||
+            ev.table === "milestones" ||
             ev.table === "task_comments" ||
             ev.table === "task_comment_mentions" ||
             ev.table === "task_comment_reactions"
@@ -813,7 +815,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
             if (active.size === 0 && projectReadyRef.current.size === 0) {
               continue;
             }
-            if (ev.table === "tasks") {
+            if (
+              ev.table === "tasks" ||
+              ev.table === "project_assets" ||
+              ev.table === "milestones"
+            ) {
               const pid = String(
                 (ev.newRecord ?? ev.oldRecord)?.project_id ?? "",
               );
@@ -971,6 +977,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
             filter: `project_id=eq.${projectId}`,
           },
           onChange("tasks"),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "project_assets",
+            filter: `project_id=eq.${projectId}`,
+          },
+          onChange("project_assets"),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "milestones",
+            filter: `project_id=eq.${projectId}`,
+          },
+          onChange("milestones"),
         )
         .subscribe(),
     );
@@ -1849,6 +1875,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       upsertMilestone: (milestone) => {
         const row = withOrg(milestone) as Milestone;
+        noteLocalWrite("milestones", row.id);
         patch((prev) => {
           const exists = prev.milestones.some((m) => m.id === row.id);
           return {
@@ -1863,6 +1890,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteMilestone: (id) => {
+        noteLocalWrite("milestones", id);
         patch((prev) => ({
           ...prev,
           milestones: prev.milestones.filter((m) => m.id !== id),
@@ -2349,6 +2377,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ...withOrg(asset),
           hide_from_client: Boolean(asset.hide_from_client),
         } as ProjectAsset;
+        noteLocalWrite("project_assets", row.id);
         patch((prev) => {
           const exists = prev.project_assets.some((a) => a.id === row.id);
           return {
@@ -2365,6 +2394,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteProjectAsset: (id) => {
+        noteLocalWrite("project_assets", id);
         patch((prev) => ({
           ...prev,
           project_assets: prev.project_assets.filter((a) => a.id !== id),

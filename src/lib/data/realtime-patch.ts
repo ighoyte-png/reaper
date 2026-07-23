@@ -2,6 +2,8 @@ import {
   mapAssignment,
   mapBulletin,
   mapLeaveDay,
+  mapMilestone,
+  mapProjectAsset,
   mapTask,
   mapTaskComment,
 } from "@/lib/supabase/api";
@@ -106,6 +108,33 @@ export function applyRealtimeTableEvent(
       }
       const mapped = mapTask(newRecord as Record<string, unknown>);
       return { ...state, tasks: upsertById(state.tasks, mapped) };
+    }
+    case "project_assets": {
+      if (isDelete) {
+        const id = String(oldRecord?.id ?? "");
+        if (!id) return state;
+        const next = state.project_assets.filter((a) => a.id !== id);
+        return next.length === state.project_assets.length
+          ? state
+          : { ...state, project_assets: next };
+      }
+      const mapped = mapProjectAsset(newRecord as Record<string, unknown>);
+      return {
+        ...state,
+        project_assets: upsertById(state.project_assets, mapped),
+      };
+    }
+    case "milestones": {
+      if (isDelete) {
+        const id = String(oldRecord?.id ?? "");
+        if (!id) return state;
+        const next = state.milestones.filter((m) => m.id !== id);
+        return next.length === state.milestones.length
+          ? state
+          : { ...state, milestones: next };
+      }
+      const mapped = mapMilestone(newRecord as Record<string, unknown>);
+      return { ...state, milestones: upsertById(state.milestones, mapped) };
     }
     case "task_comments": {
       if (isDelete) {

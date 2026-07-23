@@ -108,7 +108,7 @@ function mapClient(row: Record<string, unknown>): Client {
   };
 }
 
-function mapMilestone(row: Record<string, unknown>): Milestone {
+export function mapMilestone(row: Record<string, unknown>): Milestone {
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -122,7 +122,7 @@ function mapMilestone(row: Record<string, unknown>): Milestone {
   };
 }
 
-function mapProjectAsset(row: Record<string, unknown>): ProjectAsset {
+export function mapProjectAsset(row: Record<string, unknown>): ProjectAsset {
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
