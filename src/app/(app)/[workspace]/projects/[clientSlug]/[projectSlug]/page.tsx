@@ -680,6 +680,7 @@ export default function ProjectDetailPage() {
       {canManage && editing && draft && (
         <Modal
           title="Edit project"
+          className="max-w-3xl"
           onClose={() => {
             setEditing(false);
             setDraft(null);

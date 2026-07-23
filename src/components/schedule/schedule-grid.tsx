@@ -644,10 +644,9 @@ export function ScheduleGrid() {
   ]);
 
   const projectsByPersonId = useMemo(() => {
-    const active = sortProjectsByClientThenName(
-      state.projects.filter((p) => p.status === "active"),
-      state.clients,
-    );
+    // Keep assignment rows visible for every project status (on hold, archived,
+    // completed, etc.) — only the "add project" picker is limited to active.
+    const sorted = sortProjectsByClientThenName(state.projects, state.clients);
     const map = new Map<string, Project[]>();
 
     if (projectFilter !== "all") {
@@ -674,7 +673,7 @@ export function ScheduleGrid() {
       const extras = new Set(extraProjectsByPerson[person.id] ?? []);
       map.set(
         person.id,
-        active.filter((p) => fromAssignments.has(p.id) || extras.has(p.id)),
+        sorted.filter((p) => fromAssignments.has(p.id) || extras.has(p.id)),
       );
     }
     return map;

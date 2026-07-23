@@ -65,17 +65,25 @@ export function Modal({
   title,
   children,
   onClose,
+  className,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
+  /** Extra classes for the dialog panel (e.g. wider max-width). */
+  className?: string;
 }) {
   const mounted = useMounted();
   if (!mounted) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-      <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-[var(--radius-md)]">
+      <div
+        className={cn(
+          "max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-[var(--radius-md)]",
+          className,
+        )}
+      >
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">{title}</h2>
           <Button

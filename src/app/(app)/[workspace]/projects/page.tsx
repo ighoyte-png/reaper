@@ -522,6 +522,7 @@ export default function ProjectsPage() {
               ? "Edit project"
               : "Add Project"
           }
+          className="max-w-3xl"
           onClose={() => {
             setEditing(null);
             setMemberIds([]);
