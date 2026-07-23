@@ -241,23 +241,12 @@ export default function ProjectDetailPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader
         title={
-          <nav
-            aria-label="Breadcrumb"
-            className="flex min-w-0 items-center gap-1.5 text-sm"
+          <Link
+            href={appHref("/projects")}
+            className="text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
           >
-            <Link
-              href={appHref("/projects")}
-              className="shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
-            >
-              Projects
-            </Link>
-            <span className="shrink-0 text-[var(--text-muted)]" aria-hidden>
-              /
-            </span>
-            <span className="truncate font-semibold tracking-tight text-[var(--text)]">
-              {project.name}
-            </span>
-          </nav>
+            Projects
+          </Link>
         }
         documentTitle={project.name}
         onBack={goBack}
@@ -303,27 +292,23 @@ export default function ProjectDetailPage() {
       />
 
       <div className="p-5">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <ProjectColorBar
-            color={projectDisplayColor(project, state.clients)}
-          />
-          <span className="text-xs text-[var(--text-muted)]">
-            {client?.name ?? "No client"} ·{" "}
-            {isRetainer ? "Retainer" : "Project"}
-          </span>
-          <span className={projectStatusPillClass(project.status)}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-[var(--text)]">
+            <ProjectColorBar
+              color={projectDisplayColor(project, state.clients)}
+              size="lg"
+            />
+            <span className="truncate">
+              {client?.name ? `${client.name} – ${project.name}` : project.name}
+            </span>
+          </h1>
+          <span className={cn(projectStatusPillClass(project.status), "shrink-0")}>
             {project.status.replace("_", " ")}
           </span>
-          {project.notes ? (
-            <span className="w-full text-sm text-[var(--text-muted)]">
-              {project.notes}
-            </span>
-          ) : null}
         </div>
-
-        <h1 className="mb-4 text-lg font-semibold tracking-tight text-[var(--text)]">
-          {client?.name ? `${client.name} – ${project.name}` : project.name}
-        </h1>
+        {project.notes ? (
+          <p className="mb-4 text-sm text-[var(--text-muted)]">{project.notes}</p>
+        ) : null}
 
         {showTeamBar ? (
           <section className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
