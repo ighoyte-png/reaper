@@ -13,6 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { SchedulePie } from "@/components/charts/schedule-pie";
 import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
@@ -1543,126 +1544,6 @@ function TodaySchedule({
         </div>
       )}
     </section>
-  );
-}
-
-function polar(cx: number, cy: number, r: number, angleDeg: number) {
-  const a = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-}
-
-/** Donut segment path (angles in degrees, clockwise from 12 o'clock). */
-function donutSlicePath(
-  cx: number,
-  cy: number,
-  rOuter: number,
-  rInner: number,
-  startAngle: number,
-  endAngle: number,
-) {
-  const sweep = endAngle - startAngle;
-  if (sweep <= 0.01) return "";
-  // Full ring — two semicircles (SVG can't arc a full 360 in one go).
-  if (sweep >= 359.99) {
-    const top = polar(cx, cy, rOuter, 0);
-    const bottom = polar(cx, cy, rOuter, 180);
-    const topIn = polar(cx, cy, rInner, 0);
-    const bottomIn = polar(cx, cy, rInner, 180);
-    return [
-      `M ${top.x} ${top.y}`,
-      `A ${rOuter} ${rOuter} 0 1 1 ${bottom.x} ${bottom.y}`,
-      `A ${rOuter} ${rOuter} 0 1 1 ${top.x} ${top.y}`,
-      `M ${topIn.x} ${topIn.y}`,
-      `A ${rInner} ${rInner} 0 1 0 ${bottomIn.x} ${bottomIn.y}`,
-      `A ${rInner} ${rInner} 0 1 0 ${topIn.x} ${topIn.y}`,
-      "Z",
-    ].join(" ");
-  }
-  const large = sweep > 180 ? 1 : 0;
-  const o0 = polar(cx, cy, rOuter, startAngle);
-  const o1 = polar(cx, cy, rOuter, endAngle);
-  const i1 = polar(cx, cy, rInner, endAngle);
-  const i0 = polar(cx, cy, rInner, startAngle);
-  return [
-    `M ${o0.x} ${o0.y}`,
-    `A ${rOuter} ${rOuter} 0 ${large} 1 ${o1.x} ${o1.y}`,
-    `L ${i1.x} ${i1.y}`,
-    `A ${rInner} ${rInner} 0 ${large} 0 ${i0.x} ${i0.y}`,
-    "Z",
-  ].join(" ");
-}
-
-function SchedulePie({
-  slices,
-  totalHours,
-}: {
-  slices: { projectId: string; hours: number; color: string; label: string }[];
-  totalHours: number;
-}) {
-  const total = slices.reduce((s, x) => s + x.hours, 0);
-  const size = 100;
-  const cx = 50;
-  const cy = 50;
-  const rOuter = 48;
-  const rInner = 26;
-  const gapDeg = slices.length > 1 ? 1.5 : 0;
-  const usable = Math.max(0, 360 - gapDeg * slices.length);
-
-  const paths: { d: string; color: string; key: string }[] = [];
-  if (total > 0) {
-    let cursor = 0;
-    for (const slice of slices) {
-      const sliceDeg = (slice.hours / total) * usable;
-      const start = cursor + gapDeg / 2;
-      const end = cursor + sliceDeg + gapDeg / 2;
-      const d = donutSlicePath(cx, cy, rOuter, rInner, start, end);
-      if (d) {
-        paths.push({ d, color: slice.color, key: slice.projectId });
-      }
-      cursor += sliceDeg + gapDeg;
-    }
-  }
-
-  return (
-    <div
-      className="relative size-[13rem] shrink-0 sm:size-[14.5rem]"
-      role="img"
-      aria-label={`Schedule pie: ${formatHours(totalHours)} booked`}
-    >
-      <svg
-        viewBox={`0 0 ${size} ${size}`}
-        className="size-full"
-        aria-hidden
-      >
-        {paths.length === 0 ? (
-          <circle
-            cx={cx}
-            cy={cy}
-            r={(rOuter + rInner) / 2}
-            fill="none"
-            stroke="var(--border)"
-            strokeWidth={rOuter - rInner}
-          />
-        ) : (
-          paths.map((p) => (
-            <path
-              key={p.key}
-              d={p.d}
-              fill={p.color}
-              stroke="var(--bg)"
-              strokeWidth={0.6}
-              strokeLinejoin="round"
-            />
-          ))
-        )}
-      </svg>
-      <div className="pointer-events-none absolute inset-[26%] flex flex-col items-center justify-center rounded-full bg-[var(--bg)] text-center">
-        <span className="text-sm font-semibold tabular-nums tracking-tight">
-          {formatHours(totalHours)}
-        </span>
-        <span className="text-[10px] text-[var(--text-muted)]">booked</span>
-      </div>
-    </div>
   );
 }
 

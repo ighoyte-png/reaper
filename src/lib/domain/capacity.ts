@@ -125,6 +125,39 @@ export function buildBookedHoursByPersonDay(
   return byPerson;
 }
 
+/**
+ * Booked assignment hours per project over [startKey, endKey], excluding
+ * weekends and full-day leave (same rules as personBookedHoursOnDay).
+ */
+export function projectBookedHoursByProjectInRange(
+  startKey: string,
+  endKey: string,
+  assignments: Assignment[],
+  leaveDays: LeaveDay[],
+  includeTentative = true,
+): Map<string, number> {
+  const byProject = new Map<string, number>();
+  if (endKey < startKey) return byProject;
+
+  const occs = expandAssignmentsInRange(assignments, startKey, endKey);
+  for (const occ of occs) {
+    if (!includeTentative && occ.status !== "confirmed") continue;
+    const rangeStart = occ.start_date > startKey ? occ.start_date : startKey;
+    const rangeEnd = occ.end_date < endKey ? occ.end_date : endKey;
+    if (rangeEnd < rangeStart) continue;
+    for (const day of workingDaysBetween(rangeStart, rangeEnd)) {
+      if (isWeekend(parseISO(day))) continue;
+      if (isOnFullDayLeave(occ.person_id, day, leaveDays)) continue;
+      if (!occurrenceCoversDay(occ, day)) continue;
+      byProject.set(
+        occ.project_id,
+        (byProject.get(occ.project_id) ?? 0) + occ.hours_per_day,
+      );
+    }
+  }
+  return byProject;
+}
+
 export function sumBookedHoursFromDayMap(
   dayHours: Map<string, number> | undefined,
   startKey: string,
