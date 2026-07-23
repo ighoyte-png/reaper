@@ -795,62 +795,69 @@ export function ProjectTaskBoard({
 
   if (view === "card" && allowCardView) {
     return (
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
-            Tasks
-          </h3>
-          <ViewToggle
-            view={view}
-            setView={setView}
-            allowCardView={allowCardView}
-          />
-        </div>
-        {activeLists.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">No task lists yet.</p>
-        ) : (
-          activeLists.map((list) => {
-            const listParents = parentTasks(
-              visibleTasks.filter((t) => t.list_id === list.id),
-            );
-            return (
-              <section
-                key={list.id}
-                className="overflow-hidden rounded-md border border-[var(--divider)]"
-              >
-                <div
-                  className={cn(
-                    "border-b border-[var(--divider)] px-3 py-1.5",
-                    !list.color && "bg-[var(--bg-elevated)]/50",
-                  )}
-                  style={
-                    list.color ? { backgroundColor: list.color } : undefined
-                  }
-                >
-                  <h4 className="truncate text-sm font-medium">{list.name}</h4>
-                </div>
-                <div className="p-2 sm:p-3">
-                  <KanbanBoard
-                    tasks={listParents}
-                    manageLists={manageLists}
-                    people={state.people}
-                    editingTaskId={
-                      readOnly || isPublicShare ? null : editingTaskId
-                    }
-                    onEdit={
-                      readOnly || isPublicShare ? undefined : setEditingTask
-                    }
-                    onSaveEdit={saveEditingTask}
-                    onDeleteEdit={deleteEditingTask}
-                    onCancelEdit={() => setEditingTaskId(null)}
-                    onMove={moveTaskToColumn}
-                  />
-                </div>
-              </section>
-            );
-          })
+      <section
+        className={cn(
+          !compact &&
+            "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
         )}
-      </div>
+      >
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
+              Tasks
+            </h3>
+            <ViewToggle
+              view={view}
+              setView={setView}
+              allowCardView={allowCardView}
+            />
+          </div>
+          {activeLists.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">No task lists yet.</p>
+          ) : (
+            activeLists.map((list) => {
+              const listParents = parentTasks(
+                visibleTasks.filter((t) => t.list_id === list.id),
+              );
+              return (
+                <section
+                  key={list.id}
+                  className="overflow-hidden rounded-md border border-[var(--divider)]"
+                >
+                  <div
+                    className={cn(
+                      "border-b border-[var(--divider)] px-3 py-1.5",
+                      !list.color && "bg-[var(--bg-elevated)]/50",
+                    )}
+                    style={
+                      list.color ? { backgroundColor: list.color } : undefined
+                    }
+                  >
+                    <h4 className="truncate text-sm font-medium">{list.name}</h4>
+                  </div>
+                  <div className="p-2 sm:p-3">
+                    <KanbanBoard
+                      tasks={listParents}
+                      manageLists={manageLists}
+                      people={state.people}
+                      editingTaskId={
+                        readOnly || isPublicShare ? null : editingTaskId
+                      }
+                      onEdit={
+                        readOnly || isPublicShare ? undefined : setEditingTask
+                      }
+                      onSaveEdit={saveEditingTask}
+                      onDeleteEdit={deleteEditingTask}
+                      onCancelEdit={() => setEditingTaskId(null)}
+                      onMove={moveTaskToColumn}
+                    />
+                  </div>
+                </section>
+              );
+            })
+          )}
+        </div>
+      </section>
     );
   }
 
