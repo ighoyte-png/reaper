@@ -17,6 +17,18 @@ export function notesHasContent(html: string | null | undefined): boolean {
   return Boolean(html && notesPlainText(html));
 }
 
+/** Plain-text preview truncated to a word budget (for tooltips). */
+export function notesPreviewText(
+  html: string,
+  maxWords = 100,
+): string {
+  const plain = notesPlainText(html);
+  if (!plain) return "";
+  const words = plain.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return plain;
+  return `${words.slice(0, maxWords).join(" ")}…`;
+}
+
 function escapeText(text: string): string {
   return text
     .replace(/&/g, "&amp;")

@@ -313,13 +313,13 @@ export default function ProjectDetailPage() {
         {showTeamBar ? (
           <section className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Team</h2>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
               {showManagers && manager ? (
                 <>
                   <ProjectManagerPerson person={manager} showTag />
                   {teamWithoutManager.length > 0 ? (
                     <div
-                      className="hidden h-8 w-px shrink-0 bg-[var(--border)] sm:block"
+                      className="hidden h-8 w-px shrink-0 self-center bg-[var(--border)] sm:block"
                       aria-hidden
                     />
                   ) : null}
@@ -330,7 +330,7 @@ export default function ProjectDetailPage() {
                   (p) => (
                     <li
                       key={p.id}
-                      className="flex min-w-0 items-center gap-2 text-sm"
+                      className="flex min-w-0 items-start gap-2 text-sm"
                     >
                       <PersonAvatar
                         avatarUrl={p.avatar_url}
@@ -338,15 +338,16 @@ export default function ProjectDetailPage() {
                         size="team"
                         fallback="initials"
                       />
-                      <span className="min-w-0 truncate">
-                        {p.name}
+                      <div className="min-w-0 text-left">
+                        <div className="truncate font-medium leading-tight">
+                          {p.name}
+                        </div>
                         {p.role_title ? (
-                          <span className="text-[var(--text-muted)]">
-                            {" "}
-                            · {p.role_title}
-                          </span>
+                          <div className="truncate text-xs text-[var(--text-muted)]">
+                            {p.role_title}
+                          </div>
                         ) : null}
-                      </span>
+                      </div>
                     </li>
                   ),
                 )}

@@ -49,7 +49,7 @@ import {
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
-import { notesHasContent, notesPlainText } from "@/lib/notes-html";
+import { notesHasContent, notesPreviewText } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
 import { projectTeamPersonIds } from "@/lib/domain/project-access";
@@ -1763,7 +1763,7 @@ function TaskRow({
             <Tooltip
               content={
                 <span className="whitespace-pre-wrap">
-                  {notesPlainText(task.notes)}
+                  {notesPreviewText(task.notes, 100)}
                 </span>
               }
             >
@@ -1834,7 +1834,29 @@ function TaskRow({
         ) : null}
       </div>
       {!ctx.readOnly && isExpanded ? (
-        <CommentThread task={task} depth={depth} comments={taskComments} ctx={ctx} />
+        <>
+          {hasNotes ? (
+            <div
+              className="space-y-1.5 border-b border-[var(--divider)] px-2 pt-3 pb-2"
+              style={{ paddingLeft: 28 + depth * 16 }}
+            >
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-muted)]">
+                <StickyNote size={12} aria-hidden />
+                Notes
+              </p>
+              <RichNotesHtml
+                html={task.notes}
+                className="text-sm text-[var(--text)]"
+              />
+            </div>
+          ) : null}
+          <CommentThread
+            task={task}
+            depth={depth}
+            comments={taskComments}
+            ctx={ctx}
+          />
+        </>
       ) : null}
       {depth === 0 && kids.length > 0 ? (
         <SortableContext
