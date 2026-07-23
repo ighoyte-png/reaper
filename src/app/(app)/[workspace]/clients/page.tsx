@@ -4,32 +4,79 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { ProjectForm } from "@/components/projects/project-form";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
+import { ApplyTemplateDialog } from "@/components/templates/apply-template-dialog";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
-import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { sortClientsByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
-import type { Client, ClientStatus } from "@/lib/types";
+import type { Client, ClientStatus, Project } from "@/lib/types";
 
 type StatusFilter = "active" | "archived" | "all";
 
+function emptyProject(
+  id: string,
+  clientId: string,
+): Omit<Project, "organization_id"> {
+  return {
+    id,
+    client_id: clientId,
+    name: "",
+    slug: "",
+    status: "active",
+    priority: 3,
+    color: "#3498DB",
+    start_date: null,
+    end_date: null,
+    budget_hours: 80,
+    budget_amount: null,
+    budget_mode: "hours",
+    budget_monthly_reset: false,
+    notes: "",
+    manager_person_id: null,
+    hide_from_public_share: false,
+  };
+}
+
 export default function ClientsPage() {
-  const { state, upsertClient, deleteClient, newId, isPublicShare } = useData();
+  const {
+    state,
+    upsertClient,
+    deleteClient,
+    upsertProject,
+    setProjectMembers,
+    applyProjectTemplate,
+    newId,
+    isPublicShare,
+  } = useData();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
   const { push } = useToast();
   const router = useRouter();
   const appHref = useAppHref();
+  const projectHref = useProjectHref();
   const [editing, setEditing] = useState<Omit<Client, "organization_id"> | null>(
     null,
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [offerProjectForClient, setOfferProjectForClient] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [projectDraft, setProjectDraft] = useState<Omit<
+    Project,
+    "organization_id"
+  > | null>(null);
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [createTemplateId, setCreateTemplateId] = useState("");
+  const [pendingCreateApply, setPendingCreateApply] = useState(false);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const clients = sortClientsByName(state.clients);
 
@@ -68,6 +115,49 @@ export default function ClientsPage() {
     const next: ClientStatus = client.status === "archived" ? "active" : "archived";
     upsertClient({ ...client, status: next });
     push(next === "archived" ? "Client archived" : "Client restored");
+  }
+
+  function startProjectForClient(clientId: string) {
+    setMemberIds([]);
+    setCreateTemplateId("");
+    setPendingCreateApply(false);
+    setProjectDraft(emptyProject(newId("proj"), clientId));
+  }
+
+  async function saveFollowUpProject(
+    project: Omit<Project, "organization_id">,
+    members: string[],
+    templateToApply: string,
+  ) {
+    try {
+      const saved = await upsertProject({
+        ...project,
+        budget_hours:
+          project.budget_mode === "hours" ? project.budget_hours : null,
+        budget_amount:
+          project.budget_mode === "amount" ? project.budget_amount : null,
+        budget_monthly_reset:
+          project.budget_mode === "hours"
+            ? project.budget_monthly_reset
+            : false,
+      });
+      await setProjectMembers(saved.id, members);
+      if (templateToApply) {
+        await applyProjectTemplate(saved.id, templateToApply);
+      }
+      setProjectDraft(null);
+      setMemberIds([]);
+      setCreateTemplateId("");
+      push(
+        templateToApply ? "Project created from template" : "Project saved",
+      );
+      router.push(projectHref(saved));
+    } catch (err) {
+      push(
+        err instanceof Error ? err.message : "Could not save project",
+        "warning",
+      );
+    }
   }
 
   return (
@@ -279,9 +369,20 @@ export default function ClientsPage() {
                   size="lg"
                   onClick={() => {
                     if (!editing.name.trim()) return;
-                    upsertClient(editing);
+                    const isNew = !state.clients.some((c) => c.id === editing.id);
+                    const saved = {
+                      ...editing,
+                      name: editing.name.trim(),
+                    };
+                    upsertClient(saved);
                     setEditing(null);
                     push("Client saved");
+                    if (isNew) {
+                      setOfferProjectForClient({
+                        id: saved.id,
+                        name: saved.name,
+                      });
+                    }
                   }}
                 >
                   Save
@@ -306,6 +407,91 @@ export default function ClientsPage() {
           }}
         />
       )}
+
+      {canManage && offerProjectForClient ? (
+        <ConfirmDialog
+          title="Create a project?"
+          message={`Create a project for ${offerProjectForClient.name} now?`}
+          confirmLabel="Create project"
+          tone="accent"
+          onCancel={() => setOfferProjectForClient(null)}
+          onConfirm={() => {
+            const clientId = offerProjectForClient.id;
+            setOfferProjectForClient(null);
+            startProjectForClient(clientId);
+          }}
+        />
+      ) : null}
+
+      {canManage && projectDraft ? (
+        <Modal
+          title="Add Project"
+          className="max-w-3xl"
+          onClose={() => {
+            setProjectDraft(null);
+            setMemberIds([]);
+            setCreateTemplateId("");
+            setPendingCreateApply(false);
+          }}
+        >
+          <ProjectForm
+            project={projectDraft}
+            clients={state.clients}
+            people={state.people}
+            memberIds={memberIds}
+            onMemberIdsChange={setMemberIds}
+            onChange={setProjectDraft}
+            showTemplateSelect
+            templates={state.project_templates}
+            templateId={createTemplateId}
+            onTemplateIdChange={setCreateTemplateId}
+            onSave={() => {
+              if (!projectDraft.name.trim()) return;
+              if (!projectDraft.client_id) {
+                push("Choose a client for this project", "warning");
+                return;
+              }
+              if (
+                projectDraft.budget_mode === "hours" &&
+                !(projectDraft.budget_hours && projectDraft.budget_hours > 0)
+              ) {
+                return;
+              }
+              if (
+                projectDraft.budget_mode === "amount" &&
+                (projectDraft.budget_amount == null ||
+                  projectDraft.budget_amount < 0)
+              ) {
+                return;
+              }
+              if (createTemplateId) {
+                setPendingCreateApply(true);
+                return;
+              }
+              void saveFollowUpProject(projectDraft, memberIds, "");
+            }}
+            onCancel={() => {
+              setProjectDraft(null);
+              setMemberIds([]);
+              setCreateTemplateId("");
+              setPendingCreateApply(false);
+            }}
+          />
+        </Modal>
+      ) : null}
+
+      {pendingCreateApply && projectDraft && createTemplateId ? (
+        <ApplyTemplateDialog
+          templateId={createTemplateId}
+          projectName={projectDraft.name}
+          onCancel={() => setPendingCreateApply(false)}
+          onConfirm={() => {
+            const templateToApply = createTemplateId;
+            setPendingCreateApply(false);
+            void saveFollowUpProject(projectDraft, memberIds, templateToApply);
+          }}
+        />
+      ) : null}
     </PageContainer>
   );
 }
