@@ -379,6 +379,7 @@ export function ProjectTaskBoard({
 
   function addSubtask(listId: string, parentId: string) {
     if (!manageLists) return;
+    const parent = visibleTasks.find((t) => t.id === parentId);
     const siblings = visibleTasks.filter(
       (t) => t.list_id === listId && t.parent_id === parentId,
     );
@@ -388,7 +389,9 @@ export function ProjectTaskBoard({
       project_id: projectId,
       list_id: listId,
       parent_id: parentId,
-      assignee_person_id: viewerPersonId ?? state.people[0]?.id ?? null,
+      assignee_person_id: parent
+        ? parent.assignee_person_id
+        : (viewerPersonId ?? state.people[0]?.id ?? null),
       title: "New subtask",
       status: "upcoming",
       start_date: null,
