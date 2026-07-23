@@ -243,7 +243,7 @@ export default function ProjectDetailPage() {
         title={
           <Link
             href={appHref("/projects")}
-            className="text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
+            className="font-semibold tracking-tight text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
           >
             Projects
           </Link>

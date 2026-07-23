@@ -34,9 +34,9 @@ export function PageHeader({
               <span className="pr-0.5">Back</span>
             </button>
           ) : null}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 text-sm">
             {typeof title === "string" ? (
-              <h1 className="truncate text-sm font-semibold tracking-tight">
+              <h1 className="truncate font-semibold tracking-tight">
                 {title}
               </h1>
             ) : (
