@@ -451,9 +451,7 @@ export function ProjectTaskBoard({
   }
 
   function cycleStatus(task: Task) {
-    const canEdit =
-      viewerCanManage || task.assignee_person_id === viewerPersonId;
-    if (!canEdit) return;
+    if (readOnly || isPublicShare) return;
     const next =
       task.status === "upcoming"
         ? "active"
@@ -1652,7 +1650,7 @@ function TaskRow({
   const kids = depth === 0 ? ctx.childrenMap.get(task.id) ?? [] : [];
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
-  const canEditStatus = ctx.canManage || task.assignee_person_id === ctx.myPersonId;
+  const canEditStatus = !ctx.readOnly;
   const isEditing = ctx.editingTaskId === task.id;
   const nestLineLeft =
     depth > 0 ? 8 + (depth - 1) * 16 + 16 + 6 + 5 - 2 + 3 - 2 : 0;
@@ -1820,7 +1818,7 @@ function TaskRow({
             >
               <StickyNote
                 size={16}
-                className="shrink-0 text-[var(--text-muted)]"
+                className="ml-1 mr-0.5 shrink-0 text-[var(--text-muted)]"
                 aria-label="Task notes"
               />
             </Tooltip>
