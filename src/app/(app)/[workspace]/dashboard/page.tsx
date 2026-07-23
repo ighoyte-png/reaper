@@ -955,7 +955,7 @@ function TaggedCommentsPanel({
           {taggedComments.map(({ comment, task, project, author }) => (
             <li key={comment.id} className="relative">
               <Link
-                href={projectHref(project!, `task=${task!.id}&comments=1`)}
+                href={projectHref(project!, `task=${task!.id}`)}
                 className="block rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
               >
                 <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
@@ -1286,7 +1286,7 @@ function TaskRow({
     <Link
       href={
         project
-          ? projectHref(project)
+          ? projectHref(project, `task=${task.id}`)
           : "#"
       }
       className="flex gap-2 rounded-md border border-[var(--border)] px-3 py-2 hover:bg-[var(--row-hover)]"

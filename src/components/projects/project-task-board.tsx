@@ -89,9 +89,8 @@ type Props = {
   allowCardView?: boolean;
   /** When false, hide row/list selection checkboxes and bulk bar. */
   allowSelect?: boolean;
-  /** Deep-link: expand this task (and optionally open comments). */
+  /** Deep-link: scroll to this task, highlight it, and expand notes/comments. */
   focusTaskId?: string | null;
-  openComments?: boolean;
   /**
    * Rendered between active lists and the Archive section (e.g. Templates).
    * Lets the project page keep Templates above Archive while both sit under Tasks.
@@ -130,10 +129,12 @@ type BoardCtx = {
   /** Status changes only - no edit modal or comments (e.g. schedule sidebar). */
   readOnly: boolean;
   /**
-   * When set (schedule sidebar), task titles link to the project hub with
-   * comments open - same deep-link as dashboard tagged comments.
+   * When set (schedule sidebar / compact), task titles link to the project hub
+   * with ?task= for highlight scroll — same deep-link as the dashboard.
    */
   hubTaskHref: ((taskId: string) => string) | null;
+  /** Deep-link target from ?task= — slight blue highlight. */
+  focusTaskId: string | null;
   selected: Set<string>;
   toggleSelect: (id: string) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
@@ -177,7 +178,6 @@ export function ProjectTaskBoard({
   allowCardView = false,
   allowSelect: allowSelectProp,
   focusTaskId = null,
-  openComments = false,
   templatesSlot,
 }: Props) {
   const {
@@ -521,7 +521,20 @@ export function ProjectTaskBoard({
   ]);
 
   useEffect(() => {
-    if (!focusTaskId || !openComments) return;
+    if (!focusTaskId) return;
+    const focused =
+      visibleTasks.find((t) => t.id === focusTaskId) ??
+      state.tasks.find(
+        (t) => t.id === focusTaskId && t.project_id === projectId,
+      );
+    if (focused) {
+      setCollapsedLists((prev) => {
+        if (!prev.has(focused.list_id)) return prev;
+        const next = new Set(prev);
+        next.delete(focused.list_id);
+        return next;
+      });
+    }
     setExpanded((prev) => {
       const next = new Set(prev);
       next.add(focusTaskId);
@@ -531,9 +544,9 @@ export function ProjectTaskBoard({
       document
         .getElementById(`task-row-${focusTaskId}`)
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
+    }, 150);
     return () => window.clearTimeout(t);
-  }, [focusTaskId, openComments]);
+  }, [focusTaskId, visibleTasks, state.tasks, projectId]);
 
   function moveTaskToColumn(taskId: string, destStatus: TaskStatus, destIndex: number) {
     const task = state.tasks.find((t) => t.id === taskId);
@@ -775,10 +788,10 @@ export function ProjectTaskBoard({
     compact,
     readOnly: readOnly || isPublicShare,
     hubTaskHref:
-      compact && (readOnly || isPublicShare) && project
-        ? (taskId: string) =>
-            projectHref(project, `task=${taskId}&comments=1`)
+      compact && project
+        ? (taskId: string) => projectHref(project, `task=${taskId}`)
         : null,
+    focusTaskId,
     selected,
     toggleSelect,
     setParentsSelected,
@@ -1667,6 +1680,7 @@ function TaskRow({
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
   const canEditStatus = !ctx.readOnly;
+  const isFocused = ctx.focusTaskId === task.id;
   const isEditing = ctx.editingTaskId === task.id;
   const nestIndent = depth * 16;
   const nestLineLeft =
@@ -1730,9 +1744,11 @@ function TaskRow({
       }}
       className={cn(
         "relative my-1 rounded-md py-1 transition-colors",
-        isExpanded
-          ? "bg-[var(--row-hover)]"
-          : "hover:bg-[var(--row-hover)]",
+        isFocused
+          ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25"
+          : isExpanded
+            ? "bg-[var(--row-hover)]"
+            : "hover:bg-[var(--row-hover)]",
       )}
     >
       {depth > 0 ? (

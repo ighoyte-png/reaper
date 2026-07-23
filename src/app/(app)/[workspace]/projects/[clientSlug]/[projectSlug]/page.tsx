@@ -66,7 +66,6 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusTaskId = searchParams.get("task");
-  const openComments = searchParams.get("comments") === "1";
   const appHref = useAppHref();
   const budgetHref = useBudgetHref();
   const projectHref = useProjectHref();
@@ -366,7 +365,6 @@ export default function ProjectDetailPage() {
               projectId={project.id}
               allowCardView
               focusTaskId={focusTaskId}
-              openComments={openComments}
               templatesSlot={
                 canManage ? (
                   <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
