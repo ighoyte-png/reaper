@@ -82,6 +82,8 @@ export interface Project {
   /** Per-project client portal (separate from org schedule share). */
   share_enabled?: boolean;
   share_token?: string | null;
+  /** When true, omit from org-wide public share (schedule, reports, etc.). */
+  hide_from_public_share: boolean;
 }
 
 export interface Milestone {

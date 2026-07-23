@@ -297,6 +297,25 @@ export function ProjectForm({
           onChange={(e) => onChange({ ...project, notes: e.target.value })}
         />
       </Field>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={Boolean(project.hide_from_public_share)}
+          onChange={(e) =>
+            onChange({
+              ...project,
+              hide_from_public_share: e.target.checked,
+            })
+          }
+        />
+        <span>
+          Hide Project From Public Share
+          <span className="block text-xs text-[var(--text-muted)]">
+            Omit this project from the org-wide public schedule and reports link
+          </span>
+        </span>
+      </label>
       <div className="flex justify-between pt-2">
         {onDelete ? (
           <button

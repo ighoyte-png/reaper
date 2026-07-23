@@ -162,6 +162,7 @@ function loadDemoState(): DemoState {
         manager_person_id: p.manager_person_id ?? null,
         share_enabled: Boolean(p.share_enabled),
         share_token: p.share_token ?? null,
+        hide_from_public_share: Boolean(p.hide_from_public_share),
       })),
       clients: (parsed.clients ?? seed.clients).map((c) => ({
         ...c,
@@ -2139,13 +2140,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!organizationId) return;
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("bulletin_dismissals", id);
-          runRemoteSoft(() =>
-            upsertBulletinDismissalRow(supabaseRef.current!, {
+          runRemoteSoft(async () => {
+            await upsertBulletinDismissalRow(supabaseRef.current!, {
               bulletin_id: id,
               profile_id: profileId,
               organization_id: organizationId,
-            }),
-          );
+            });
+          });
         }
       },
       upsertProjectTemplate: (template) => {

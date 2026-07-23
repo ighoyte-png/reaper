@@ -10,13 +10,54 @@ import type {
   Recurrence,
 } from "@/lib/types";
 
-/** Strip cost/bill rates and emails from a public share payload. */
+/** Strip cost/bill rates and emails from a public share payload.
+ * Also omits projects marked hide_from_public_share and their related rows.
+ */
 export function sanitizePublicWorkspace(state: DemoState): DemoState {
+  const hiddenProjectIds = new Set(
+    state.projects
+      .filter((p) => p.hide_from_public_share)
+      .map((p) => p.id),
+  );
+  const projects = state.projects.filter((p) => !hiddenProjectIds.has(p.id));
+  const assignments = state.assignments.filter(
+    (a) => !hiddenProjectIds.has(a.project_id),
+  );
+  const milestones = state.milestones.filter(
+    (m) => !hiddenProjectIds.has(m.project_id),
+  );
+  const project_assets = state.project_assets.filter(
+    (a) => !hiddenProjectIds.has(a.project_id),
+  );
+  const task_lists = state.task_lists.filter(
+    (l) => !hiddenProjectIds.has(l.project_id),
+  );
+  const tasks = state.tasks.filter((t) => !hiddenProjectIds.has(t.project_id));
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const task_comments = state.task_comments.filter((c) =>
+    taskIds.has(c.task_id),
+  );
+  const project_members = state.project_members.filter(
+    (m) => !hiddenProjectIds.has(m.project_id),
+  );
+  const bulletins = state.bulletins.filter(
+    (b) => !b.project_id || !hiddenProjectIds.has(b.project_id),
+  );
+
   return {
     ...state,
     profiles: [],
     sessionProfileId: null,
     dismissed_bulletin_ids: [],
+    projects,
+    assignments,
+    milestones,
+    project_assets,
+    task_lists,
+    tasks,
+    task_comments,
+    project_members,
+    bulletins,
     people: state.people.map(
       (p): Person => ({
         ...p,

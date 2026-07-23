@@ -89,6 +89,7 @@ export function createDemoSeed(): DemoState {
         manager_person_id: "person-1",
         share_enabled: true,
         share_token: "demo-harbor-storefront",
+        hide_from_public_share: false,
       },
       {
         id: "proj-2",
@@ -109,6 +110,7 @@ export function createDemoSeed(): DemoState {
         manager_person_id: "person-2",
         share_enabled: false,
         share_token: null,
+        hide_from_public_share: false,
       },
       {
         id: "proj-3",
@@ -129,6 +131,7 @@ export function createDemoSeed(): DemoState {
         manager_person_id: null,
         share_enabled: false,
         share_token: null,
+        hide_from_public_share: false,
       },
       {
         id: "proj-4",
@@ -149,6 +152,7 @@ export function createDemoSeed(): DemoState {
         manager_person_id: "person-2",
         share_enabled: false,
         share_token: null,
+        hide_from_public_share: false,
       },
       {
         id: "proj-5",
@@ -169,6 +173,7 @@ export function createDemoSeed(): DemoState {
         manager_person_id: "person-1",
         share_enabled: false,
         share_token: null,
+        hide_from_public_share: false,
       },
     ],
     milestones: [

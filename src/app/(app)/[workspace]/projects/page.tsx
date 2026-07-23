@@ -50,6 +50,7 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
     budget_monthly_reset: false,
     notes: "",
     manager_person_id: null,
+    hide_from_public_share: false,
   };
 }
 

@@ -173,6 +173,7 @@ export function PublicShareProvider({
         budget_monthly_reset: false,
         notes: "",
         manager_person_id: null,
+        hide_from_public_share: false,
       }),
       setProjectMembers: async () => {},
       deleteProject: () => {},

@@ -84,6 +84,7 @@ function mapProject(row: Record<string, unknown>): Project {
       : null,
     share_enabled: Boolean(row.share_enabled),
     share_token: row.share_token ? String(row.share_token) : null,
+    hide_from_public_share: Boolean(row.hide_from_public_share),
   };
 }
 
@@ -792,6 +793,7 @@ export async function upsertProjectRow(
     manager_person_id: project.manager_person_id ?? null,
     share_enabled: Boolean(project.share_enabled),
     share_token: project.share_token ?? null,
+    hide_from_public_share: Boolean(project.hide_from_public_share),
   };
 
   const missingMonthly = (message: string, code?: string) =>
@@ -801,6 +803,10 @@ export async function upsertProjectRow(
   const missingShare = (message: string, code?: string) =>
     /Could not find the 'share_(enabled|token)' column/i.test(message) ||
     (code === "PGRST204" && /share_(enabled|token)/i.test(message));
+
+  const missingHideFromShare = (message: string, code?: string) =>
+    /Could not find the 'hide_from_public_share' column/i.test(message) ||
+    (code === "PGRST204" && /hide_from_public_share/i.test(message));
 
   const missingSlug = (message: string, code?: string) =>
     /Could not find the 'slug' column/i.test(message) ||
@@ -820,6 +826,19 @@ export async function upsertProjectRow(
     (/null value/i.test(message) || /not-null|not null/i.test(message));
 
   let { error } = await supabase.from("projects").upsert(payload);
+
+  // Retry without hide_from_public_share if migration 042 is not applied yet.
+  if (error && missingHideFromShare(error.message, error.code)) {
+    const { hide_from_public_share: _h, ...rest } = payload;
+    const retry = await supabase.from("projects").upsert(rest);
+    if (!retry.error) {
+      console.warn(
+        "projects.hide_from_public_share missing — apply supabase/migrations/042_project_hide_from_public_share.sql",
+      );
+      return;
+    }
+    error = retry.error;
+  }
 
   // Retry without slug if migration 037 is not applied yet.
   if (error && missingSlug(error.message, error.code)) {
@@ -1884,6 +1903,7 @@ export async function seedDemoWorkspace(
       : null,
     share_enabled: false,
     share_token: null as string | null,
+    hide_from_public_share: Boolean(p.hide_from_public_share),
   }));
 
   const people = seed.people.map((p) => ({

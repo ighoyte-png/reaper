@@ -45,6 +45,7 @@ function portalChartProject(
     budget_monthly_reset: true,
     notes: "",
     manager_person_id: null,
+    hide_from_public_share: false,
   };
 }
 
