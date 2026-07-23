@@ -104,6 +104,7 @@ function mapClient(row: Record<string, unknown>): Client {
     notes: String(row.notes ?? ""),
     color: String(row.color ?? "#64748B"),
     status,
+    hide_from_public_share: Boolean(row.hide_from_public_share),
   };
 }
 
@@ -729,16 +730,31 @@ export async function upsertClientRow(
   };
   const withSlug = { ...base, slug: client.slug };
   const withStatus = { ...withSlug, status: client.status ?? "active" };
+  const withHide = {
+    ...withStatus,
+    hide_from_public_share: Boolean(client.hide_from_public_share),
+  };
 
-  let { error } = await supabase.from("clients").upsert(withStatus);
+  let { error } = await supabase.from("clients").upsert(withHide);
   if (!error) return;
 
+  const missingHide =
+    /Could not find the 'hide_from_public_share' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /hide_from_public_share/i.test(error.message));
   const missingSlug =
     /Could not find the 'slug' column/i.test(error.message) ||
     (error.code === "PGRST204" && /slug/i.test(error.message));
   const missingStatus =
     /Could not find the 'status' column/i.test(error.message) ||
     (error.code === "PGRST204" && /status/i.test(error.message));
+
+  if (missingHide) {
+    console.warn(
+      "clients.hide_from_public_share missing — apply supabase/migrations/043_client_hide_from_public_share.sql",
+    );
+    ({ error } = await supabase.from("clients").upsert(withStatus));
+    if (!error) return;
+  }
 
   if (missingSlug || missingStatus) {
     console.warn(
@@ -1881,6 +1897,7 @@ export async function seedDemoWorkspace(
     notes: c.notes,
     color: c.color,
     status: c.status,
+    hide_from_public_share: Boolean(c.hide_from_public_share),
   }));
 
   const projects = seed.projects.map((p) => ({

@@ -169,6 +169,7 @@ function loadDemoState(): DemoState {
         slug: c.slug || uniqueSlug(c.name, [], { preferred: c.slug }),
         color: c.color ?? "#64748B",
         status: c.status ?? "active",
+        hide_from_public_share: Boolean(c.hide_from_public_share),
       })),
       milestones: (parsed.milestones ?? seed.milestones).map((m, idx) => ({
         ...m,

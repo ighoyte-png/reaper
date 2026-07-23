@@ -60,6 +60,7 @@ export default function ClientsPage() {
       notes: "",
       color: "#3498DB",
       status: "active",
+      hide_from_public_share: false,
     };
   }
 
@@ -237,6 +238,26 @@ export default function ClientsPage() {
                 }
               />
             </Field>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={Boolean(editing.hide_from_public_share)}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    hide_from_public_share: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Hide Client From Public Share
+                <span className="block text-xs text-[var(--text-muted)]">
+                  Omit this client and its projects from the org-wide public
+                  schedule and reports link
+                </span>
+              </span>
+            </label>
             <div className="flex justify-between pt-2">
               <Button
                 variant="ghost"

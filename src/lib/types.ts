@@ -56,6 +56,8 @@ export interface Client {
   notes: string;
   color: string;
   status: ClientStatus;
+  /** When true, omit from org-wide public share (and hide this client's projects). */
+  hide_from_public_share: boolean;
 }
 
 export interface Project {

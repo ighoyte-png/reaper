@@ -11,14 +11,24 @@ import type {
 } from "@/lib/types";
 
 /** Strip cost/bill rates and emails from a public share payload.
- * Also omits projects marked hide_from_public_share and their related rows.
+ * Also omits clients/projects marked hide_from_public_share and related rows.
  */
 export function sanitizePublicWorkspace(state: DemoState): DemoState {
+  const hiddenClientIds = new Set(
+    state.clients
+      .filter((c) => c.hide_from_public_share)
+      .map((c) => c.id),
+  );
   const hiddenProjectIds = new Set(
     state.projects
-      .filter((p) => p.hide_from_public_share)
+      .filter(
+        (p) =>
+          p.hide_from_public_share ||
+          (p.client_id != null && hiddenClientIds.has(p.client_id)),
+      )
       .map((p) => p.id),
   );
+  const clients = state.clients.filter((c) => !hiddenClientIds.has(c.id));
   const projects = state.projects.filter((p) => !hiddenProjectIds.has(p.id));
   const assignments = state.assignments.filter(
     (a) => !hiddenProjectIds.has(a.project_id),
@@ -49,6 +59,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     profiles: [],
     sessionProfileId: null,
     dismissed_bulletin_ids: [],
+    clients,
     projects,
     assignments,
     milestones,

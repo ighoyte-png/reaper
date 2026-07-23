@@ -49,6 +49,7 @@ export function createDemoSeed(): DemoState {
         notes: "E-commerce redesign",
         color: "#3B82F6",
         status: "active",
+        hide_from_public_share: false,
       },
       {
         id: "client-2",
@@ -58,6 +59,7 @@ export function createDemoSeed(): DemoState {
         notes: "Patient portal",
         color: "#10B981",
         status: "active",
+        hide_from_public_share: false,
       },
       {
         id: "client-3",
@@ -67,6 +69,7 @@ export function createDemoSeed(): DemoState {
         notes: "Ops and R&D",
         color: "#F59E0B",
         status: "active",
+        hide_from_public_share: false,
       },
     ],
     projects: [
