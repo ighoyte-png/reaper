@@ -9,6 +9,7 @@ import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { toDateKey } from "@/lib/domain/dates";
+import { dueDateToneClass } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
 import type { Client, Project, Task } from "@/lib/types";
 
@@ -19,6 +20,7 @@ function TaskTable({
   projectHref,
   emptyLabel,
   showDue,
+  todayKey,
 }: {
   tasks: Task[];
   projectById: Map<string, Project>;
@@ -26,6 +28,7 @@ function TaskTable({
   projectHref: (project: Project, search?: string) => string;
   emptyLabel: string;
   showDue: boolean;
+  todayKey: string;
 }) {
   if (tasks.length === 0) {
     return (
@@ -74,7 +77,14 @@ function TaskTable({
                   {client?.name ?? "—"}
                 </td>
                 {showDue ? (
-                  <td className="px-3 py-2.5 text-[var(--text-muted)]">
+                  <td
+                    className={cn(
+                      "px-3 py-2.5",
+                      dueDateToneClass(task.due_date, todayKey, {
+                        complete: task.status === "complete",
+                      }),
+                    )}
+                  >
                     {task.due_date ?? "—"}
                   </td>
                 ) : null}
@@ -163,6 +173,7 @@ export default function TasksReportPage() {
             projectHref={projectHref}
             emptyLabel="Nothing overdue — nice work."
             showDue
+            todayKey={todayKey}
           />
         </section>
 
@@ -181,6 +192,7 @@ export default function TasksReportPage() {
             projectHref={projectHref}
             emptyLabel="Every open task has a due date."
             showDue={false}
+            todayKey={todayKey}
           />
         </section>
 
@@ -199,6 +211,7 @@ export default function TasksReportPage() {
             projectHref={projectHref}
             emptyLabel="No completed tasks yet."
             showDue
+            todayKey={todayKey}
           />
         </section>
       </div>

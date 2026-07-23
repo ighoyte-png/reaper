@@ -591,6 +591,7 @@ export function createDemoSeed(): DemoState {
         name: "Design freeze",
         color: "#FEF3C7",
         sort_order: 0,
+        archived: false,
       },
       {
         id: "list-2",
@@ -600,6 +601,7 @@ export function createDemoSeed(): DemoState {
         name: "Launch",
         color: "#DBEAFE",
         sort_order: 1,
+        archived: false,
       },
       {
         id: "list-3",
@@ -609,6 +611,7 @@ export function createDemoSeed(): DemoState {
         name: "Backlog",
         color: null,
         sort_order: 2,
+        archived: false,
       },
       {
         id: "list-4",
@@ -618,6 +621,7 @@ export function createDemoSeed(): DemoState {
         name: "Retainer tasks",
         color: "#D1FAE5",
         sort_order: 0,
+        archived: false,
       },
     ],
     tasks: [

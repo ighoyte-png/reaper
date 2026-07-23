@@ -136,6 +136,15 @@ a {
   text-decoration: none;
 }
 
+/* Unlayered so TipTap / rich notes links beat the reset (utilities are layered). */
+.ProseMirror a,
+.rich-notes a,
+a.rich-notes-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.125rem;
+}
+
 @layer base {
   button,
   input,

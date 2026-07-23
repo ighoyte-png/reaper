@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { LogOut, Menu, Settings } from "lucide-react";
+import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
@@ -62,6 +63,7 @@ export function AppNavbar() {
   const showSettings = !viewAsPersonId;
   const settingsActive =
     pathForNav === "/settings" || pathForNav.startsWith("/settings/");
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const hasDashboardDot = useMemo(() => {
     if (mentionPersonId) {
@@ -104,13 +106,15 @@ export function AppNavbar() {
         >
           <Menu size={17} strokeWidth={1.75} />
         </button>
-        <Link
-          href={appHref("/dashboard")}
-          className="inline-flex shrink-0 items-center py-1"
-          aria-label="Reaper"
+        <button
+          type="button"
+          className="inline-flex shrink-0 cursor-pointer items-center rounded-md py-1 hover:bg-[var(--row-hover)]"
+          aria-label="About Reaper"
+          title="About Reaper"
+          onClick={() => setAboutOpen(true)}
         >
           <BrandLockup showVersion compact />
-        </Link>
+        </button>
         <nav
           className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex"
           aria-label="Main"
@@ -197,11 +201,22 @@ export function AppNavbar() {
           )}
         >
           <div className="border-b border-[var(--border)] px-4 py-3">
-            <BrandLockup
-              showVersion
-              logoClassName="h-8"
-              wordmarkClassName="text-base"
-            />
+            <button
+              type="button"
+              className="inline-flex cursor-pointer items-center rounded-md hover:bg-[var(--row-hover)]"
+              aria-label="About Reaper"
+              title="About Reaper"
+              onClick={() => {
+                setOpen(false);
+                setAboutOpen(true);
+              }}
+            >
+              <BrandLockup
+                showVersion
+                logoClassName="h-8"
+                wordmarkClassName="text-base"
+              />
+            </button>
           </div>
           <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
             {links.map(({ href, label, icon: Icon }) => {
@@ -273,6 +288,7 @@ export function AppNavbar() {
           </div>
         </div>
       </div>
+      {aboutOpen ? <AboutDialog onClose={() => setAboutOpen(false)} /> : null}
     </>
   );
 }

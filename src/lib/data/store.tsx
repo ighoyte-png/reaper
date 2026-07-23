@@ -192,6 +192,7 @@ function loadDemoState(): DemoState {
       task_lists: (parsed.task_lists ?? seed.task_lists).map((l) => ({
         ...l,
         color: l.color ?? null,
+        archived: Boolean(l.archived),
       })),
       tasks: parsed.tasks ?? seed.tasks,
       task_comments: (parsed.task_comments ?? seed.task_comments).map((c) => ({
@@ -2252,6 +2253,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             name: l.name,
             color: null,
             sort_order: l.sort_order,
+            archived: false,
           };
         });
 
@@ -2324,10 +2326,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
               (a.due_date ?? "").localeCompare(b.due_date ?? ""),
           );
         const projectLists = state.task_lists.filter(
-          (l) => l.project_id === projectId,
+          (l) => l.project_id === projectId && !l.archived,
         );
+        const listIds = new Set(projectLists.map((l) => l.id));
         const projectTasks = state.tasks.filter(
-          (t) => t.project_id === projectId,
+          (t) => t.project_id === projectId && listIds.has(t.list_id),
         );
 
         const templateId = uid("tmpl");

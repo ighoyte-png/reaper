@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useState, type ReactNode } from "react";
 import { ChartColumn, ChartLine } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
@@ -111,6 +111,7 @@ function ProgressLineChart({
   budgetHours: number | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const hatchId = useId().replace(/:/g, "");
   const w = 720;
   const h = 174;
   const padL = 44;
@@ -207,6 +208,7 @@ function ProgressLineChart({
   const mutedLine = "#9ca3af";
   const hover = hoverIdx != null ? points[hoverIdx] : null;
   const hoverVal = hoverIdx != null ? valueAt(hoverIdx) : 0;
+  const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;
 
   return (
     <div className="relative overflow-hidden">
@@ -215,7 +217,28 @@ function ProgressLineChart({
         className="h-auto w-full"
         role="img"
         aria-label="Project progress chart"
+        onMouseLeave={() => setHoverIdx(null)}
       >
+        <defs>
+          <pattern
+            id={`week-hover-hatch-${hatchId}`}
+            width="6"
+            height="6"
+            patternUnits="userSpaceOnUse"
+            patternTransform="rotate(-45)"
+          >
+            <line
+              x1="0"
+              y1="0"
+              x2="0"
+              y2="6"
+              stroke="var(--accent)"
+              strokeWidth="2"
+              strokeOpacity="0.32"
+            />
+          </pattern>
+        </defs>
+
         {yTicks.map((v, i) => {
           const y = yAt(v);
           return (
@@ -300,6 +323,34 @@ function ProgressLineChart({
           </g>
         ) : null}
 
+        {hoverX != null ? (
+          <g pointerEvents="none">
+            <rect
+              x={hoverX - weekBandW / 2}
+              y={padT}
+              width={weekBandW}
+              height={plotH}
+              fill={`url(#week-hover-hatch-${hatchId})`}
+            />
+            <rect
+              x={hoverX - weekBandW / 2}
+              y={padT}
+              width={weekBandW}
+              height={plotH}
+              fill="var(--accent)"
+              fillOpacity={0.06}
+            />
+            <line
+              x1={hoverX - weekBandW / 2}
+              x2={hoverX + weekBandW / 2}
+              y1={padT}
+              y2={padT}
+              stroke="var(--accent)"
+              strokeWidth={1.25}
+            />
+          </g>
+        ) : null}
+
         {budgetY != null ? (
           <line
             x1={padL}
@@ -341,18 +392,22 @@ function ProgressLineChart({
           const cx = xAt(i);
           const cy = yAt(valueAt(i));
           return (
-            <g
-              key={p.key}
-              onMouseEnter={() => setHoverIdx(i)}
-              onMouseLeave={() => setHoverIdx(null)}
-              className="cursor-pointer"
-            >
-              <circle cx={cx} cy={cy} r={10} fill="transparent" />
+            <g key={p.key}>
+              <rect
+                x={cx - weekBandW / 2}
+                y={padT}
+                width={weekBandW}
+                height={plotH}
+                fill="transparent"
+                className="cursor-pointer"
+                onMouseEnter={() => setHoverIdx(i)}
+              />
               <circle
                 cx={cx}
                 cy={cy}
                 r={hoverIdx === i ? 3.5 : 2}
                 fill={future ? mutedLine : lineColor}
+                className="pointer-events-none"
               />
             </g>
           );

@@ -124,6 +124,25 @@ export function taskUrgency(
   return "none";
 }
 
+/** Due date color: red overdue, orange within 3 days (incl. today), else muted. */
+export function dueDateToneClass(
+  dueDate: string | null,
+  todayKey: string,
+  opts?: { complete?: boolean },
+): string {
+  if (!dueDate || opts?.complete) return "text-[var(--text-muted)]";
+  const urgency = taskUrgency(dueDate, todayKey);
+  if (urgency === "overdue") return "font-medium text-[var(--status-over)]";
+  if (
+    urgency === "today" ||
+    urgency === "tomorrow" ||
+    urgency === "three_days"
+  ) {
+    return "font-medium text-[var(--status-near)]";
+  }
+  return "text-[var(--text-muted)]";
+}
+
 export function reindexSortOrders<T extends { id: string; sort_order: number }>(
   items: T[],
 ): T[] {

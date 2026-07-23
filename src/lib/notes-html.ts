@@ -81,7 +81,7 @@ export function sanitizeNotesHtml(html: string): string {
     if (tag === "A") {
       const href = sanitizeHref(el.getAttribute("href"));
       if (!href) return inner;
-      return `<a href="${escapeText(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+      return `<a href="${escapeText(href)}" target="_blank" rel="noopener noreferrer" class="rich-notes-link">${inner}</a>`;
     }
     if (tag === "B" || tag === "STRONG") return `<strong>${inner}</strong>`;
     if (tag === "U") return `<u>${inner}</u>`;

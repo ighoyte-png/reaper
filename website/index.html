@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Reaper — Project Management That Doesn't Get in Your Way</title>
+    <meta
+      name="description"
+      content="Reaper - Project Management That Doesn't Get in Your Way."
+    />
+    <link rel="icon" href="assets/reaper_logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="fonts.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true">
+      <div class="leak leak-a"></div>
+      <div class="leak leak-b"></div>
+      <div class="leak leak-c"></div>
+    </div>
+
+    <header class="site-header">
+      <a class="brand" href="/">
+        <img src="assets/reaper_logo.svg" alt="" width="28" height="34" />
+        <span>Reaper</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#product">Product</a>
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="link-quiet" href="https://app.reaperpm.com">Sign in</a>
+        <a class="btn btn-accent" href="https://app.reaperpm.com">Sign up</a>
+      </div>
+      <button
+        type="button"
+        class="nav-toggle"
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="mobile-nav"
+      >
+        <span></span><span></span>
+      </button>
+    </header>
+
+    <div id="mobile-nav" class="mobile-nav" hidden>
+      <a href="#product">Product</a>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="https://app.reaperpm.com">Sign in</a>
+      <a class="btn btn-accent" href="https://app.reaperpm.com">Sign up</a>
+    </div>
+
+    <main>
+      <section class="hero">
+        <p class="brand-mark">Reaper</p>
+        <h1>Schedule that burns the budget.</h1>
+        <p class="lede">
+          Forecast-first planning for agencies. Confirmed hours consume the
+          project total as you schedule—not after the timesheet chase.
+        </p>
+
+        <form class="cta-form" action="https://app.reaperpm.com" method="get">
+          <label class="sr-only" for="email">Work email</label>
+          <input
+            id="email"
+            name="email"
+            type="email"
+            autocomplete="email"
+            placeholder="Your work e-mail"
+            required
+          />
+          <button class="btn btn-accent btn-lg" type="submit">
+            Get started in 30 seconds
+          </button>
+        </form>
+        <p class="cta-note">
+          Already have a workspace?
+          <a href="https://app.reaperpm.com">Sign in</a>
+        </p>
+
+        <div class="product" id="product">
+          <div class="product-glow" aria-hidden="true"></div>
+          <div class="product-frame">
+            <img
+              src="assets/hero-dashboard.png"
+              alt="Reaper dashboard showing people utilization, project budgets, tasks, and financial forecast"
+              width="1600"
+              height="1000"
+            />
+          </div>
+        </div>
+      </section>
+
+      <section class="logos">
+        <p>Built for studios that sell weeks, not timesheets</p>
+        <div class="logo-row">
+          <span>Northwind</span>
+          <span>Harbor</span>
+          <span>Atlas</span>
+          <span>Fieldwork</span>
+          <span>Kinetic</span>
+          <span>Plainform</span>
+        </div>
+      </section>
+
+      <section class="feature-hero" id="features">
+        <h2>Best-in-class capacity planning.<br />No timesheet chase.</h2>
+        <p>
+          One grid for people, projects, and remaining budget—so overcommitment
+          shows up on the schedule, not in last month’s invoice.
+        </p>
+        <a class="btn btn-ghost" href="#how">
+          Explore how burn works
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M3.5 8h9M8.5 4l4 4-4 4"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </a>
+      </section>
+
+      <section class="detail" id="how">
+        <div class="detail-grid">
+          <article>
+            <h3>Confirmed hours burn budget</h3>
+            <p>
+              Place people on the week. Confirmed blocks consume hours or dollars
+              against each project’s total—remaining capacity stays on the board.
+            </p>
+          </article>
+          <article>
+            <h3>Utilization without the ritual</h3>
+            <p>
+              Leave, holidays, and load share the same grid. Heat and burn bars
+              show who has room and which retainers are already spoken for.
+            </p>
+          </article>
+          <article>
+            <h3>Delivery and a calm portal</h3>
+            <p>
+              Hub notes, milestones, and tasks for the team. Share a read-only
+              client view when progress should be visible—without the shop floor.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="close">
+        <h2>Start with the week ahead.</h2>
+        <p>Open Reaper—demo or your own workspace.</p>
+        <a class="btn btn-accent btn-lg" href="https://app.reaperpm.com">
+          Get started in 30 seconds
+        </a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="/">
+        <img src="assets/reaper_logo.svg" alt="" width="22" height="27" />
+        <span>Reaper</span>
+      </a>
+      <p>
+        <a href="https://app.reaperpm.com">app.reaperpm.com</a>
+        <span class="sep">·</span>
+        <a href="mailto:hello@reaperpm.com">hello@reaperpm.com</a>
+      </p>
+    </footer>
+
+    <script>
+      const toggle = document.querySelector(".nav-toggle");
+      const panel = document.getElementById("mobile-nav");
+      toggle?.addEventListener("click", () => {
+        const open = toggle.getAttribute("aria-expanded") === "true";
+        toggle.setAttribute("aria-expanded", String(!open));
+        panel.hidden = open;
+      });
+      panel?.querySelectorAll("a").forEach((a) => {
+        a.addEventListener("click", () => {
+          toggle?.setAttribute("aria-expanded", "false");
+          panel.hidden = true;
+        });
+      });
+    </script>
+  </body>
+</html>

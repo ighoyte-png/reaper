@@ -66,7 +66,7 @@ import {
   occurrenceCoversDay,
 } from "@/lib/domain/recurrence";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
-import { taskUrgency, type TaskUrgency } from "@/lib/domain/tasks";
+import { taskUrgency, dueDateToneClass, type TaskUrgency } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
 import type {
   Bulletin,
@@ -1265,6 +1265,7 @@ function TaskRow({
   assignee,
   showAssignee,
   projectHref,
+  todayKey = toDateKey(new Date()),
 }: {
   task: Task;
   project: Project | undefined;
@@ -1273,6 +1274,7 @@ function TaskRow({
   assignee?: Person | null;
   showAssignee?: boolean;
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
+  todayKey?: string;
 }) {
   return (
     <Link
@@ -1312,7 +1314,9 @@ function TaskRow({
           {task.due_date ? (
             <span
               className={cn(
-                overdue && "font-medium text-[var(--status-over)]",
+                dueDateToneClass(task.due_date, todayKey, {
+                  complete: task.status === "complete",
+                }),
               )}
             >
               {overdue ? "Overdue" : task.due_date}

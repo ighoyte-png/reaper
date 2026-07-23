@@ -241,7 +241,7 @@ export function RichNotesHtml({
   return (
     <span
       className={cn(
-        "block [&_a]:pointer-events-auto [&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
+        "rich-notes block [&_a]:pointer-events-auto",
         "[&_p]:m-0 [&_p+p]:mt-1",
         "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
         className,

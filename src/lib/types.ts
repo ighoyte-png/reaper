@@ -121,6 +121,8 @@ export interface TaskList {
   /** Optional header background color (hex). */
   color: string | null;
   sort_order: number;
+  /** When true, list is hidden from the main board until restored. */
+  archived: boolean;
 }
 
 export interface Task {

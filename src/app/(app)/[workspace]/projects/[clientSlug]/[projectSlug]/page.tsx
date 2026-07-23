@@ -350,91 +350,90 @@ export default function ProjectDetailPage() {
         <div className="grid gap-4 lg:grid-cols-3">
           {/* Main: tasks + templates */}
           <div className="min-w-0 space-y-4 lg:col-span-2">
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <ProjectTaskBoard
-                projectId={project.id}
-                allowCardView
-                focusTaskId={focusTaskId}
-                openComments={openComments}
-              />
-            </section>
-
-            {canManage ? (
-              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-                <button
-                  type="button"
-                  className="flex w-full cursor-pointer items-center gap-1.5 text-left"
-                  onClick={() => setTemplatesExpanded((v) => !v)}
-                  aria-expanded={templatesExpanded}
-                >
-                  {templatesExpanded ? (
-                    <ChevronDown
-                      size={14}
-                      className="shrink-0 text-[var(--text-muted)]"
-                    />
-                  ) : (
-                    <ChevronRight
-                      size={14}
-                      className="shrink-0 text-[var(--text-muted)]"
-                    />
-                  )}
-                  <h2 className="text-sm font-semibold">Templates</h2>
-                </button>
-                {templatesExpanded ? (
-                  <div className="mt-3 space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Select
-                        searchable
-                        className={`${inputClass} mt-0 h-8 max-w-[200px]`}
-                        value={templateId}
-                        onChange={setTemplateId}
-                        aria-label="Apply template"
-                        placeholder="Apply template…"
-                        options={[
-                          { value: "", label: "Apply template…" },
-                          ...state.project_templates.map((t) => ({
-                            value: t.id,
-                            label: t.name,
-                          })),
-                        ]}
-                      />
-                      <button
-                        type="button"
-                        className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
-                        disabled={!templateId}
-                        onClick={() => {
-                          if (!templateId) return;
-                          setConfirmApplyTemplateId(templateId);
-                        }}
-                      >
-                        Apply
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <input
-                        className={`${inputClass} mt-0 h-8 max-w-[200px]`}
-                        placeholder="New template name"
-                        value={exportName}
-                        onChange={(e) => setExportName(e.target.value)}
-                        aria-label="Template name"
-                      />
-                      <button
-                        type="button"
-                        className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
-                        onClick={() => setConfirmSaveAsTemplate(true)}
-                      >
-                        Save as Template
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-[var(--text-muted)]">
-                      Apply appends undated milestones and unassigned tasks.
-                      Save includes milestones and tasks only (no dates,
-                      assignees, or comments).
-                    </p>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
+            <ProjectTaskBoard
+              projectId={project.id}
+              allowCardView
+              focusTaskId={focusTaskId}
+              openComments={openComments}
+              templatesSlot={
+                canManage ? (
+                  <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                    <button
+                      type="button"
+                      className="flex w-full cursor-pointer items-center gap-1.5 text-left"
+                      onClick={() => setTemplatesExpanded((v) => !v)}
+                      aria-expanded={templatesExpanded}
+                    >
+                      {templatesExpanded ? (
+                        <ChevronDown
+                          size={14}
+                          className="shrink-0 text-[var(--text-muted)]"
+                        />
+                      ) : (
+                        <ChevronRight
+                          size={14}
+                          className="shrink-0 text-[var(--text-muted)]"
+                        />
+                      )}
+                      <h2 className="text-sm font-semibold">Templates</h2>
+                    </button>
+                    {templatesExpanded ? (
+                      <div className="mt-3 space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Select
+                            searchable
+                            className={`${inputClass} mt-0 h-8 max-w-[200px]`}
+                            value={templateId}
+                            onChange={setTemplateId}
+                            aria-label="Apply template"
+                            placeholder="Apply template…"
+                            options={[
+                              { value: "", label: "Apply template…" },
+                              ...state.project_templates.map((t) => ({
+                                value: t.id,
+                                label: t.name,
+                              })),
+                            ]}
+                          />
+                          <button
+                            type="button"
+                            className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)] disabled:opacity-40"
+                            disabled={!templateId}
+                            onClick={() => {
+                              if (!templateId) return;
+                              setConfirmApplyTemplateId(templateId);
+                            }}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            className={`${inputClass} mt-0 h-8 max-w-[200px]`}
+                            placeholder="New template name"
+                            value={exportName}
+                            onChange={(e) => setExportName(e.target.value)}
+                            aria-label="Template name"
+                          />
+                          <button
+                            type="button"
+                            className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                            onClick={() => setConfirmSaveAsTemplate(true)}
+                          >
+                            Save as Template
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-[var(--text-muted)]">
+                          Apply appends undated milestones and unassigned tasks.
+                          Save includes milestones and tasks only (no dates,
+                          assignees, or comments).
+                        </p>
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null
+              }
+            />
           </div>
 
           {/* Sidebar: Progress → Essentials → Budget → Client portal */}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ export default function PlatformAdminPage() {
   const [renameName, setRenameName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceRow | null>(null);
   const [deleteSlug, setDeleteSlug] = useState("");
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -245,7 +247,15 @@ export default function PlatformAdminPage() {
   return (
     <div className="min-h-dvh bg-[var(--page-bg)] text-[var(--text)]">
       <header className="flex h-11 items-center gap-3 border-b border-[var(--border)] bg-[var(--sidebar)] px-3">
-        <BrandLockup showVersion compact />
+        <button
+          type="button"
+          className="inline-flex shrink-0 cursor-pointer items-center rounded-md py-1 hover:bg-[var(--row-hover)]"
+          aria-label="About Reaper"
+          title="About Reaper"
+          onClick={() => setAboutOpen(true)}
+        >
+          <BrandLockup showVersion compact />
+        </button>
         <span className="text-sm font-medium">Platform</span>
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle />
@@ -472,6 +482,7 @@ export default function PlatformAdminPage() {
           </Field>
         </ConfirmDialog>
       ) : null}
+      {aboutOpen ? <AboutDialog onClose={() => setAboutOpen(false)} /> : null}
     </div>
   );
 }

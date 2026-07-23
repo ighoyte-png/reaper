@@ -17,7 +17,8 @@ export const metadata: Metadata = {
     default: "Reaper",
     template: "%s · Reaper",
   },
-  description: "Resource planning — schedule blocks that burn project budgets",
+  description:
+    "Reaper - Project Management That Doesn't Get in Your Way.",
   icons: {
     icon: "/reaper_logo.svg",
     apple: "/reaper_logo.svg",

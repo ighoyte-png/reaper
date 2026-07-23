@@ -51,6 +51,7 @@ import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
 import { projectTeamPersonIds } from "@/lib/domain/project-access";
 import {
+  dueDateToneClass,
   filterTasksForViewer,
   parentTasks,
   sortTaskLists,
@@ -81,6 +82,11 @@ type Props = {
   /** Deep-link: expand this task (and optionally open comments). */
   focusTaskId?: string | null;
   openComments?: boolean;
+  /**
+   * Rendered between active lists and the Archive section (e.g. Templates).
+   * Lets the project page keep Templates above Archive while both sit under Tasks.
+   */
+  templatesSlot?: ReactNode;
 };
 
 function todayKey() {
@@ -159,6 +165,7 @@ export function ProjectTaskBoard({
   allowSelect: allowSelectProp,
   focusTaskId = null,
   openComments = false,
+  templatesSlot,
 }: Props) {
   const {
     state,
@@ -191,6 +198,7 @@ export function ProjectTaskBoard({
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
+  const [archiveExpanded, setArchiveExpanded] = useState(false);
 
   const viewerCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
   const viewerPersonId =
@@ -211,6 +219,14 @@ export function ProjectTaskBoard({
     () =>
       sortTaskLists(state.task_lists.filter((l) => l.project_id === projectId)),
     [state.task_lists, projectId],
+  );
+  const activeLists = useMemo(
+    () => allLists.filter((l) => !l.archived),
+    [allLists],
+  );
+  const archivedLists = useMemo(
+    () => allLists.filter((l) => l.archived),
+    [allLists],
   );
 
   const visibleTasks = useMemo(() => {
@@ -318,7 +334,8 @@ export function ProjectTaskBoard({
       milestone_id: null,
       name: "New list",
       color: null,
-      sort_order: allLists.length,
+      sort_order: activeLists.length,
+      archived: false,
     };
     upsertTaskList(list);
   }
@@ -471,10 +488,10 @@ export function ProjectTaskBoard({
 
     if (activeData.type === "list" && overData?.type === "list") {
       if (active.id === over.id) return;
-      const oldIndex = allLists.findIndex((l) => l.id === active.id);
-      const newIndex = allLists.findIndex((l) => l.id === over.id);
+      const oldIndex = activeLists.findIndex((l) => l.id === active.id);
+      const newIndex = activeLists.findIndex((l) => l.id === over.id);
       if (oldIndex < 0 || newIndex < 0) return;
-      const reordered = arrayMove(allLists, oldIndex, newIndex);
+      const reordered = arrayMove(activeLists, oldIndex, newIndex);
       reordered.forEach((l, i) => {
         if (l.sort_order !== i) upsertTaskList({ ...l, sort_order: i });
       });
@@ -700,7 +717,11 @@ export function ProjectTaskBoard({
           />
         </div>
         <KanbanBoard
-          tasks={parentTasks(visibleTasks)}
+          tasks={parentTasks(
+            visibleTasks.filter((t) =>
+              activeLists.some((l) => l.id === t.list_id),
+            ),
+          )}
           manageLists={manageLists}
           onEdit={readOnly || isPublicShare ? undefined : setEditing}
           onMove={moveTaskToColumn}
@@ -722,6 +743,13 @@ export function ProjectTaskBoard({
   }
 
   return (
+    <>
+    <section
+      className={cn(
+        !compact &&
+          "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+      )}
+    >
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
@@ -873,7 +901,7 @@ export function ProjectTaskBoard({
         </div>
       ) : null}
 
-      {allLists.length === 0 ? (
+      {activeLists.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           {manageLists
             ? "No task lists yet — add a list to get started."
@@ -886,11 +914,11 @@ export function ProjectTaskBoard({
           onDragEnd={handleListDragEnd}
         >
           <SortableContext
-            items={allLists.map((l) => l.id)}
+            items={activeLists.map((l) => l.id)}
             strategy={verticalListSortingStrategy}
             disabled={!manageLists}
           >
-            {allLists.map((list) => {
+            {activeLists.map((list) => {
               const listTasks = tasksForList(visibleTasks, list.id);
               const parents = parentTasks(listTasks);
               const collapsed = collapsedLists.has(list.id);
@@ -915,6 +943,12 @@ export function ProjectTaskBoard({
                   milestoneName={milestone?.name ?? null}
                   onNameChange={(name) => upsertTaskList({ ...list, name })}
                   onAddTask={() => addTask(list.id)}
+                  onArchive={() =>
+                    upsertTaskList({ ...list, archived: true })
+                  }
+                  onUnarchive={() =>
+                    upsertTaskList({ ...list, archived: false })
+                  }
                   onDelete={() => {
                     if (confirm(`Delete list "${list.name}" and its tasks?`)) {
                       for (const t of listTasks) deleteTask(t.id);
@@ -941,6 +975,87 @@ export function ProjectTaskBoard({
         />
       ) : null}
     </div>
+    </section>
+      {templatesSlot}
+      {!compact && (archivedLists.length > 0 || manageLists) ? (
+        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+          <button
+            type="button"
+            className="flex w-full cursor-pointer items-center gap-1.5 text-left"
+            onClick={() => setArchiveExpanded((v) => !v)}
+            aria-expanded={archiveExpanded}
+          >
+            {archiveExpanded ? (
+              <ChevronDown
+                size={14}
+                className="shrink-0 text-[var(--text-muted)]"
+              />
+            ) : (
+              <ChevronRight
+                size={14}
+                className="shrink-0 text-[var(--text-muted)]"
+              />
+            )}
+            <h2 className="text-sm font-semibold">
+              Archive
+              {archivedLists.length > 0 ? ` (${archivedLists.length})` : ""}
+            </h2>
+          </button>
+          {archiveExpanded ? (
+            <div className="mt-3 space-y-3">
+              {archivedLists.length === 0 ? (
+                <p className="text-sm text-[var(--text-muted)]">
+                  No archived lists.
+                </p>
+              ) : (
+                archivedLists.map((list) => {
+                  const listTasks = tasksForList(visibleTasks, list.id);
+                  const parents = parentTasks(listTasks);
+                  const collapsed = collapsedLists.has(list.id);
+                  const milestone = list.milestone_id
+                    ? state.milestones.find((m) => m.id === list.milestone_id)
+                    : null;
+                  return (
+                    <ListSection
+                      key={list.id}
+                      list={list}
+                      parents={parents}
+                      ctx={ctx}
+                      collapsed={collapsed}
+                      onToggleCollapse={() =>
+                        setCollapsedLists((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(list.id)) next.delete(list.id);
+                          else next.add(list.id);
+                          return next;
+                        })
+                      }
+                      milestoneName={milestone?.name ?? null}
+                      onNameChange={(name) => upsertTaskList({ ...list, name })}
+                      onAddTask={() => addTask(list.id)}
+                      onArchive={() =>
+                        upsertTaskList({ ...list, archived: true })
+                      }
+                      onUnarchive={() =>
+                        upsertTaskList({ ...list, archived: false })
+                      }
+                      onDelete={() => {
+                        if (
+                          confirm(`Delete list "${list.name}" and its tasks?`)
+                        ) {
+                          for (const t of listTasks) deleteTask(t.id);
+                          deleteTaskList(list.id);
+                        }
+                      }}
+                    />
+                  );
+                })
+              )}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+    </>
   );
 }
 
@@ -989,6 +1104,8 @@ function ListSection({
   milestoneName,
   onNameChange,
   onAddTask,
+  onArchive,
+  onUnarchive,
   onDelete,
 }: {
   list: TaskList;
@@ -999,6 +1116,8 @@ function ListSection({
   milestoneName: string | null;
   onNameChange: (name: string) => void;
   onAddTask: () => void;
+  onArchive: () => void;
+  onUnarchive: () => void;
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -1086,15 +1205,38 @@ function ListSection({
           />
         ) : null}
         {ctx.manageLists && ctx.listsEditMode ? (
-          <button
-            type="button"
-            className="inline-flex cursor-pointer rounded p-1 text-[var(--status-over)] hover:bg-[var(--row-hover)]"
-            onClick={onDelete}
-            aria-label={`Delete list ${list.name}`}
-            title="Delete list"
-          >
-            <Trash2 size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            {list.archived ? (
+              <button
+                type="button"
+                className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
+                onClick={onUnarchive}
+                aria-label={`Unarchive list ${list.name}`}
+                title="Unarchive list"
+              >
+                Unarchive
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
+                onClick={onArchive}
+                aria-label={`Archive list ${list.name}`}
+                title="Archive list"
+              >
+                Archive
+              </button>
+            )}
+            <button
+              type="button"
+              className="inline-flex cursor-pointer rounded p-1 text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+              onClick={onDelete}
+              aria-label={`Delete list ${list.name}`}
+              title="Delete list"
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
         ) : null}
       </div>
       {!collapsed ? (
@@ -1180,8 +1322,6 @@ function TaskRow({
   const assignee = ctx.people.find((p) => p.id === task.assignee_person_id);
   const taskComments = ctx.comments.filter((c) => c.task_id === task.id);
   const hasNotes = notesHasContent(task.notes);
-  const overdue =
-    task.due_date && task.status !== "complete" && task.due_date < todayKey();
   const kids = depth === 0 ? ctx.childrenMap.get(task.id) ?? [] : [];
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
@@ -1239,12 +1379,15 @@ function TaskRow({
           {ctx.hubTaskHref ? (
             <Link
               href={ctx.hubTaskHref(task.id)}
-              className={cn(
-                "min-w-0 truncate hover:underline",
-                task.status === "complete" && "line-through",
-              )}
+              className="min-w-0 truncate hover:underline"
             >
-              {task.title}
+              <span
+                className={cn(
+                  task.status === "complete" && "line-through",
+                )}
+              >
+                {task.title}
+              </span>
             </Link>
           ) : ctx.readOnly ? (
             <span
@@ -1275,9 +1418,9 @@ function TaskRow({
             <span
               className={cn(
                 "shrink-0 text-xs",
-                overdue
-                  ? "font-medium text-[var(--status-over)]"
-                  : "text-[var(--text-muted)]",
+                dueDateToneClass(task.due_date, todayKey(), {
+                  complete: task.status === "complete",
+                }),
               )}
             >
               {format(parseISO(task.due_date), "MMM d, yyyy")}
@@ -1880,7 +2023,14 @@ function KanbanCardFace({
         title
       )}
       {task.due_date ? (
-        <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+        <div
+          className={cn(
+            "mt-1 text-[10px]",
+            dueDateToneClass(task.due_date, todayKey(), {
+              complete: task.status === "complete",
+            }),
+          )}
+        >
           {format(parseISO(task.due_date), "MMM d, yyyy")}
         </div>
       ) : null}

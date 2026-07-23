@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { Menu } from "lucide-react";
+import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { shareNavLinks } from "@/components/nav/nav-links";
@@ -24,6 +26,7 @@ export function ShareNavbar() {
   const { shareBasePath, state } = useData();
   const { open, setOpen, toggle } = useMobileNav();
   const base = shareBasePath ?? "";
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   return (
     <>
@@ -36,13 +39,15 @@ export function ShareNavbar() {
         >
           <Menu size={17} strokeWidth={1.75} />
         </button>
-        <Link
-          href={`${base}/schedule`}
-          className="inline-flex shrink-0 items-center py-1"
-          aria-label="Reaper"
+        <button
+          type="button"
+          className="inline-flex shrink-0 cursor-pointer items-center rounded-md py-1 hover:bg-[var(--row-hover)]"
+          aria-label="About Reaper"
+          title="About Reaper"
+          onClick={() => setAboutOpen(true)}
         >
           <BrandLockup showVersion compact />
-        </Link>
+        </button>
         <nav
           className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex"
           aria-label="Main"
@@ -98,11 +103,22 @@ export function ShareNavbar() {
           )}
         >
           <div className="border-b border-[var(--border)] px-4 py-3">
-            <BrandLockup
-              showVersion
-              logoClassName="h-8"
-              wordmarkClassName="text-base"
-            />
+            <button
+              type="button"
+              className="inline-flex cursor-pointer items-center rounded-md hover:bg-[var(--row-hover)]"
+              aria-label="About Reaper"
+              title="About Reaper"
+              onClick={() => {
+                setOpen(false);
+                setAboutOpen(true);
+              }}
+            >
+              <BrandLockup
+                showVersion
+                logoClassName="h-8"
+                wordmarkClassName="text-base"
+              />
+            </button>
           </div>
           <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
             {shareNavLinks.map(({ href, label, icon: Icon }) => {
@@ -127,20 +143,9 @@ export function ShareNavbar() {
               );
             })}
           </nav>
-          <div className="space-y-2 border-t border-[var(--border)] p-2">
-            <div className="flex items-center justify-between gap-2 rounded-md px-2.5 py-2">
-              <span className="text-sm text-[var(--text-muted)]">Theme</span>
-              <ThemeToggle />
-            </div>
-            <div className="px-2.5 pb-1 text-xs text-[var(--text-muted)]">
-              <div className="truncate font-medium text-[var(--text)]">
-                {state.organization.name}
-              </div>
-              Public view · read only
-            </div>
-          </div>
         </div>
       </div>
+      {aboutOpen ? <AboutDialog onClose={() => setAboutOpen(false)} /> : null}
     </>
   );
 }

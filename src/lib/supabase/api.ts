@@ -143,6 +143,7 @@ function mapTaskList(row: Record<string, unknown>): TaskList {
     name: String(row.name ?? ""),
     color: row.color ? String(row.color) : null,
     sort_order: num(row.sort_order),
+    archived: Boolean(row.archived),
   };
 }
 
@@ -1341,7 +1342,7 @@ export async function upsertTaskListRow(
   supabase: SupabaseClient,
   list: TaskList,
 ) {
-  const { error } = await supabase.from("task_lists").upsert({
+  const payload = {
     id: list.id,
     organization_id: list.organization_id,
     project_id: list.project_id,
@@ -1349,7 +1350,18 @@ export async function upsertTaskListRow(
     name: list.name,
     color: list.color,
     sort_order: list.sort_order,
-  });
+    archived: list.archived,
+  };
+  let { error } = await supabase.from("task_lists").upsert(payload);
+  if (error && /archived/i.test(error.message)) {
+    const { archived: _drop, ...legacy } = payload;
+    ({ error } = await supabase.from("task_lists").upsert(legacy));
+    if (!error) {
+      console.warn(
+        "task_lists.archived missing — apply supabase/migrations/040_task_list_archived.sql",
+      );
+    }
+  }
   if (error) throw error;
 }
 
@@ -1710,6 +1722,7 @@ export async function applyProjectTemplateRows(
     name: l.name,
     color: l.color ?? null,
     sort_order: l.sort_order,
+    archived: false,
   }));
   const taskRows = orderTasksParentsFirst(
     args.tasks.map((t) => ({
@@ -1853,6 +1866,7 @@ export async function seedDemoWorkspace(
     name: l.name,
     color: l.color,
     sort_order: l.sort_order,
+    archived: Boolean(l.archived),
   }));
 
   const tasks = seed.tasks.map((t) => ({
