@@ -262,7 +262,18 @@ function TaskTable({
                 key={task.id}
                 className="border-t border-[var(--border)] hover:bg-[var(--row-hover)]"
               >
-                <td className="px-3 py-2.5 font-medium">{task.title}</td>
+                <td className="px-3 py-2.5 font-medium">
+                  {project ? (
+                    <Link
+                      href={projectHref(project, `task=${task.id}`)}
+                      className="text-[var(--text)] hover:text-[var(--accent)] hover:underline"
+                    >
+                      {task.title}
+                    </Link>
+                  ) : (
+                    task.title
+                  )}
+                </td>
                 <td className="px-3 py-2.5">
                   {project ? (
                     <Link
