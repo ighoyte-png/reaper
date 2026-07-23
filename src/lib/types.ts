@@ -308,6 +308,8 @@ export interface DemoState {
   tasks: Task[];
   task_comments: TaskComment[];
   bulletins: Bulletin[];
+  /** Bulletin ids the current session profile has dismissed (not "new"). */
+  dismissed_bulletin_ids: string[];
   project_templates: ProjectTemplate[];
   template_milestones: TemplateMilestone[];
   template_task_lists: TemplateTaskList[];

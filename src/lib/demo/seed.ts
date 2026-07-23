@@ -919,6 +919,7 @@ export function createDemoSeed(): DemoState {
         sort_order: 1,
       },
     ],
+    dismissed_bulletin_ids: [],
     sessionProfileId: null,
   };
 }

@@ -16,6 +16,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     ...state,
     profiles: [],
     sessionProfileId: null,
+    dismissed_bulletin_ids: [],
     people: state.people.map(
       (p): Person => ({
         ...p,

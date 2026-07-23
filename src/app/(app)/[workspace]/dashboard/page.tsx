@@ -34,9 +34,8 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
-import { useDismissedMentions, useDismissedBulletins } from "@/lib/hooks/use-dismissed-mentions";
+import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
 import {
-  bulletinDismissSubject,
   bulletinVisibleToPerson,
   isUnreadBulletin,
 } from "@/lib/domain/bulletins";
@@ -96,6 +95,7 @@ export default function DashboardPage() {
     profile,
     upsertBulletin,
     deleteBulletin,
+    dismissBulletin,
     newId,
   } = useData();
   const { push } = useToast();
@@ -496,15 +496,12 @@ export default function DashboardPage() {
 
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
   const manageWithoutPerson = effectiveCanManage && !mentionPersonId;
-  const bulletinSubject = bulletinDismissSubject(
-    mentionPersonId,
-    profile?.id ?? null,
-    effectiveCanManage,
-  );
   const { dismiss: dismissMention, dismissed: dismissedMentions } =
     useDismissedMentions(mentionPersonId);
-  const { dismiss: dismissBulletin, dismissed: dismissedBulletins } =
-    useDismissedBulletins(bulletinSubject);
+  const dismissedBulletins = useMemo(
+    () => new Set(state.dismissed_bulletin_ids ?? []),
+    [state.dismissed_bulletin_ids],
+  );
 
   const unreadBulletinCount = useMemo(() => {
     if (!mentionPersonId && !manageWithoutPerson) return 0;

@@ -240,7 +240,26 @@ export default function ProjectDetailPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader
-        title={project.name}
+        title={
+          <nav
+            aria-label="Breadcrumb"
+            className="flex min-w-0 items-center gap-1.5 text-sm"
+          >
+            <Link
+              href={appHref("/projects")}
+              className="shrink-0 text-[var(--text-muted)] transition-colors hover:text-[var(--text)]"
+            >
+              Projects
+            </Link>
+            <span className="shrink-0 text-[var(--text-muted)]" aria-hidden>
+              /
+            </span>
+            <span className="truncate font-semibold tracking-tight text-[var(--text)]">
+              {project.name}
+            </span>
+          </nav>
+        }
+        documentTitle={project.name}
         onBack={goBack}
         actions={
           <>
@@ -301,6 +320,10 @@ export default function ProjectDetailPage() {
             </span>
           ) : null}
         </div>
+
+        <h1 className="mb-4 text-lg font-semibold tracking-tight text-[var(--text)]">
+          {client?.name ? `${client.name} – ${project.name}` : project.name}
+        </h1>
 
         {showTeamBar ? (
           <section className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">

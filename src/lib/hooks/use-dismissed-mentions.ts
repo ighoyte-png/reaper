@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-type DismissKind = "mentions" | "bulletins";
+type DismissKind = "mentions";
 
 function storageKey(kind: DismissKind, personId: string) {
-  return kind === "mentions"
-    ? `reaper-dismissed-mentions:${personId}`
-    : `reaper-dismissed-bulletins:${personId}`;
+  return `reaper-dismissed-mentions:${personId}`;
 }
 
 const CHANGE_EVENT = "reaper-dismissed-ids-changed";
@@ -97,9 +95,4 @@ function useDismissedIds(kind: DismissKind, personId: string | null) {
 /** Persist dismissed @mention comment ids for a person (local to this browser). */
 export function useDismissedMentions(personId: string | null) {
   return useDismissedIds("mentions", personId);
-}
-
-/** Persist dismissed bulletin ids for a person (local to this browser). */
-export function useDismissedBulletins(personId: string | null) {
-  return useDismissedIds("bulletins", personId);
 }

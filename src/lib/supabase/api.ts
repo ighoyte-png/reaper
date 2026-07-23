@@ -328,6 +328,7 @@ function emptyWorkspace(): DemoState {
     tasks: [],
     task_comments: [],
     bulletins: [],
+    dismissed_bulletin_ids: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -405,6 +406,7 @@ export async function loadOrgWorkspace(
     taskCommentMentionsRes,
     taskCommentReactionsRes,
     bulletinsRes,
+    bulletinDismissalsRes,
     projectTemplatesRes,
     templateMilestonesRes,
     templateTaskListsRes,
@@ -437,6 +439,13 @@ export async function loadOrgWorkspace(
       .select("*")
       .eq("organization_id", orgId),
     supabase.from("bulletins").select("*").eq("organization_id", orgId),
+    sessionProfileId
+      ? supabase
+          .from("bulletin_dismissals")
+          .select("bulletin_id")
+          .eq("organization_id", orgId)
+          .eq("profile_id", sessionProfileId)
+      : Promise.resolve({ data: [] as { bulletin_id: unknown }[], error: null }),
     supabase
       .from("project_templates")
       .select("*")
@@ -559,6 +568,23 @@ export async function loadOrgWorkspace(
     : (bulletinsRes.data ?? []).map((row) =>
         mapBulletin(row as Record<string, unknown>),
       );
+  let dismissed_bulletin_ids: string[] = [];
+  if (bulletinDismissalsRes.error) {
+    if (
+      /relation .*bulletin_dismissals.* does not exist/i.test(
+        bulletinDismissalsRes.error.message,
+      ) ||
+      bulletinDismissalsRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "bulletin_dismissals missing — apply supabase/migrations/041_bulletin_dismissals.sql",
+      );
+    }
+  } else {
+    dismissed_bulletin_ids = (bulletinDismissalsRes.data ?? [])
+      .map((row) => String((row as { bulletin_id: unknown }).bulletin_id))
+      .filter(Boolean);
+  }
   const project_templates: ProjectTemplate[] = projectTemplatesRes.error
     ? []
     : (projectTemplatesRes.data ?? []).map((row) =>
@@ -632,6 +658,7 @@ export async function loadOrgWorkspace(
     tasks,
     task_comments,
     bulletins,
+    dismissed_bulletin_ids,
     project_templates,
     template_milestones,
     template_task_lists,
@@ -1561,6 +1588,63 @@ export async function upsertBulletinRow(
 export async function deleteBulletinRow(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("bulletins").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function upsertBulletinDismissalRow(
+  supabase: SupabaseClient,
+  row: {
+    bulletin_id: string;
+    profile_id: string;
+    organization_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase.from("bulletin_dismissals").upsert({
+    bulletin_id: row.bulletin_id,
+    profile_id: row.profile_id,
+    organization_id: row.organization_id,
+    dismissed_at: new Date().toISOString(),
+  });
+  if (!error) return true;
+  if (
+    /relation .*bulletin_dismissals.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
+    console.warn(
+      "bulletin_dismissals missing — apply supabase/migrations/041_bulletin_dismissals.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
+/** Upsert many dismissals (e.g. one-time localStorage → DB migration). */
+export async function upsertBulletinDismissalRows(
+  supabase: SupabaseClient,
+  rows: {
+    bulletin_id: string;
+    profile_id: string;
+    organization_id: string;
+  }[],
+): Promise<boolean> {
+  if (rows.length === 0) return true;
+  const payload = rows.map((row) => ({
+    bulletin_id: row.bulletin_id,
+    profile_id: row.profile_id,
+    organization_id: row.organization_id,
+    dismissed_at: new Date().toISOString(),
+  }));
+  const { error } = await supabase.from("bulletin_dismissals").upsert(payload);
+  if (!error) return true;
+  if (
+    /relation .*bulletin_dismissals.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
+    console.warn(
+      "bulletin_dismissals missing — apply supabase/migrations/041_bulletin_dismissals.sql",
+    );
+    return false;
+  }
+  throw error;
 }
 
 export async function upsertProjectTemplateRow(

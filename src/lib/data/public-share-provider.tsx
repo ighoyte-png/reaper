@@ -203,6 +203,7 @@ export function PublicShareProvider({
       toggleTaskCommentReaction: () => {},
       upsertBulletin: () => {},
       deleteBulletin: () => {},
+      dismissBulletin: () => {},
       upsertProjectTemplate: () => {},
       deleteProjectTemplate: () => {},
       upsertTemplateMilestone: () => {},

@@ -34,13 +34,57 @@ export function isUnreadBulletin(
   return true;
 }
 
-/** localStorage subject for bulletin dismissals (person id or profile fallback). */
-export function bulletinDismissSubject(
+/**
+ * Legacy localStorage keys used before dismissals moved to the database.
+ * Used once to migrate existing browser dismissals into bulletin_dismissals.
+ */
+export function legacyBulletinDismissStorageKeys(
   personId: string | null,
   profileId: string | null,
-  canManage: boolean,
-): string | null {
-  if (personId) return personId;
-  if (canManage && profileId) return `profile:${profileId}`;
-  return null;
+): string[] {
+  const keys: string[] = [];
+  if (personId) keys.push(`reaper-dismissed-bulletins:${personId}`);
+  if (profileId) {
+    keys.push(`reaper-dismissed-bulletins:profile:${profileId}`);
+    keys.push(`reaper-dismissed-bulletins:${profileId}`);
+  }
+  return keys;
+}
+
+/** Read dismissed bulletin ids from legacy localStorage keys (browser-only). */
+export function readLegacyDismissedBulletinIds(
+  personId: string | null,
+  profileId: string | null,
+): string[] {
+  if (typeof window === "undefined") return [];
+  const ids = new Set<string>();
+  for (const key of legacyBulletinDismissStorageKeys(personId, profileId)) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) continue;
+      for (const id of parsed) {
+        if (typeof id === "string" && id) ids.add(id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return [...ids];
+}
+
+/** Clear legacy localStorage keys after a successful DB migration. */
+export function clearLegacyDismissedBulletinIds(
+  personId: string | null,
+  profileId: string | null,
+) {
+  if (typeof window === "undefined") return;
+  for (const key of legacyBulletinDismissStorageKeys(personId, profileId)) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* ignore */
+    }
+  }
 }

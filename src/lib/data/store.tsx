@@ -23,6 +23,10 @@ import {
 } from "@/lib/data/realtime-patch";
 import { orderTasksParentsFirst } from "@/lib/domain/tasks";
 import {
+  clearLegacyDismissedBulletinIds,
+  readLegacyDismissedBulletinIds,
+} from "@/lib/domain/bulletins";
+import {
   applyProjectTemplateRows,
   bootstrapOrganization,
   deleteAssignmentRow,
@@ -47,6 +51,8 @@ import {
   seedDemoWorkspace,
   upsertAssignmentRow,
   upsertBulletinRow,
+  upsertBulletinDismissalRow,
+  upsertBulletinDismissalRows,
   upsertClientRow,
   upsertHolidayCalendarDayRow,
   upsertHolidayCalendarRow,
@@ -211,6 +217,11 @@ function loadDemoState(): DemoState {
           ? b.audience_person_ids
           : [],
       })),
+      dismissed_bulletin_ids: Array.isArray(parsed.dismissed_bulletin_ids)
+        ? parsed.dismissed_bulletin_ids.filter(
+            (id): id is string => typeof id === "string",
+          )
+        : [],
       project_templates: parsed.project_templates ?? seed.project_templates,
       template_milestones:
         parsed.template_milestones ?? seed.template_milestones,
@@ -242,6 +253,7 @@ function emptySupabaseState(): DemoState {
     tasks: [],
     task_comments: [],
     bulletins: [],
+    dismissed_bulletin_ids: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -415,6 +427,8 @@ interface DataContextValue {
     },
   ) => void;
   deleteBulletin: (id: string) => void;
+  /** Mark a bulletin as seen/dismissed for the current profile (persisted). */
+  dismissBulletin: (id: string) => void;
   upsertProjectTemplate: (
     template: Omit<ProjectTemplate, "organization_id"> & {
       organization_id?: string;
@@ -525,10 +539,50 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .maybeSingle();
     if (profileLookupError) throw profileLookupError;
 
+    async function applyWorkspace(workspace: DemoState) {
+      const personId =
+        workspace.people.find((p) => p.profile_id === user!.id)?.id ?? null;
+      const legacyIds = readLegacyDismissedBulletinIds(personId, user!.id);
+      const knownBulletinIds = new Set(workspace.bulletins.map((b) => b.id));
+      const toMigrate = legacyIds.filter(
+        (id) =>
+          knownBulletinIds.has(id) &&
+          !workspace.dismissed_bulletin_ids.includes(id),
+      );
+      let next = workspace;
+      if (toMigrate.length > 0 && workspace.organization.id) {
+        try {
+          const wrote = await upsertBulletinDismissalRows(
+            client,
+            toMigrate.map((bulletin_id) => ({
+              bulletin_id,
+              profile_id: user!.id,
+              organization_id: workspace.organization.id,
+            })),
+          );
+          if (wrote) {
+            next = {
+              ...workspace,
+              dismissed_bulletin_ids: [
+                ...new Set([...workspace.dismissed_bulletin_ids, ...toMigrate]),
+              ],
+            };
+            clearLegacyDismissedBulletinIds(personId, user!.id);
+          }
+        } catch {
+          /* keep legacy localStorage until migration is applied */
+        }
+      } else if (legacyIds.length > 0) {
+        // Already mirrored in DB (or bulletins deleted) — drop stale browser keys.
+        clearLegacyDismissedBulletinIds(personId, user!.id);
+      }
+      setState(next);
+    }
+
     if (existingProfile) {
       setPlatformOnly(false);
       const workspace = await fetchWorkspace(client, user.id);
-      setState(workspace);
+      await applyWorkspace(workspace);
       return;
     }
 
@@ -554,7 +608,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await ensureProfileForUser(client, user);
     setPlatformOnly(false);
     const workspace = await fetchWorkspace(client, user.id);
-    setState(workspace);
+    await applyWorkspace(workspace);
   }, []);
 
   useEffect(() => {
@@ -753,6 +807,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         onChange("bulletins"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "bulletin_dismissals",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("bulletin_dismissals"),
       )
       .on(
         "postgres_changes",
@@ -2051,10 +2115,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
         patch((prev) => ({
           ...prev,
           bulletins: prev.bulletins.filter((b) => b.id !== id),
+          dismissed_bulletin_ids: prev.dismissed_bulletin_ids.filter(
+            (x) => x !== id,
+          ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("bulletins", id);
           runRemoteSoft(() => deleteBulletinRow(supabaseRef.current!, id));
+        }
+      },
+      dismissBulletin: (id) => {
+        const profileId = profile?.id;
+        if (!profileId || !id) return;
+        let organizationId = "";
+        patch((prev) => {
+          organizationId = prev.organization.id;
+          if (prev.dismissed_bulletin_ids.includes(id)) return prev;
+          return {
+            ...prev,
+            dismissed_bulletin_ids: [...prev.dismissed_bulletin_ids, id],
+          };
+        });
+        if (!organizationId) return;
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("bulletin_dismissals", id);
+          runRemoteSoft(() =>
+            upsertBulletinDismissalRow(supabaseRef.current!, {
+              bulletin_id: id,
+              profile_id: profileId,
+              organization_id: organizationId,
+            }),
+          );
         }
       },
       upsertProjectTemplate: (template) => {

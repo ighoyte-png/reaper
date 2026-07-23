@@ -32,6 +32,10 @@ export function realtimeEchoId(
     const emoji = row.emoji;
     return cid != null && emoji != null ? `${String(cid)}:${String(emoji)}` : null;
   }
+  if (table === "bulletin_dismissals") {
+    const bid = row.bulletin_id;
+    return bid != null ? String(bid) : null;
+  }
   return row.id != null ? String(row.id) : null;
 }
 
@@ -174,13 +178,51 @@ export function applyRealtimeTableEvent(
       if (isDelete) {
         const id = String(oldRecord?.id ?? "");
         if (!id) return state;
-        const next = state.bulletins.filter((b) => b.id !== id);
-        return next.length === state.bulletins.length
-          ? state
-          : { ...state, bulletins: next };
+        const nextBulletins = state.bulletins.filter((b) => b.id !== id);
+        const nextDismissed = state.dismissed_bulletin_ids.filter(
+          (x) => x !== id,
+        );
+        if (
+          nextBulletins.length === state.bulletins.length &&
+          nextDismissed.length === state.dismissed_bulletin_ids.length
+        ) {
+          return state;
+        }
+        return {
+          ...state,
+          bulletins: nextBulletins,
+          dismissed_bulletin_ids: nextDismissed,
+        };
       }
       const mapped = mapBulletin(newRecord as Record<string, unknown>);
       return { ...state, bulletins: upsertById(state.bulletins, mapped) };
+    }
+    case "bulletin_dismissals": {
+      const bulletinId = String(source.bulletin_id ?? "");
+      const profileId = String(source.profile_id ?? "");
+      if (!bulletinId) return state;
+      // Only apply the signed-in user's dismissals (RLS usually limits this).
+      if (
+        state.sessionProfileId &&
+        profileId &&
+        profileId !== state.sessionProfileId
+      ) {
+        return state;
+      }
+      if (isDelete) {
+        if (!state.dismissed_bulletin_ids.includes(bulletinId)) return state;
+        return {
+          ...state,
+          dismissed_bulletin_ids: state.dismissed_bulletin_ids.filter(
+            (id) => id !== bulletinId,
+          ),
+        };
+      }
+      if (state.dismissed_bulletin_ids.includes(bulletinId)) return state;
+      return {
+        ...state,
+        dismissed_bulletin_ids: [...state.dismissed_bulletin_ids, bulletinId],
+      };
     }
     default:
       return state;

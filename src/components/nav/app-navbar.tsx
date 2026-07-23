@@ -14,14 +14,8 @@ import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { stripWorkspacePrefix } from "@/lib/paths";
-import {
-  isUnreadBulletin,
-  bulletinDismissSubject,
-} from "@/lib/domain/bulletins";
-import {
-  useDismissedBulletins,
-  useDismissedMentions,
-} from "@/lib/hooks/use-dismissed-mentions";
+import { isUnreadBulletin } from "@/lib/domain/bulletins";
+import { useDismissedMentions } from "@/lib/hooks/use-dismissed-mentions";
 import { useViewAs } from "@/lib/view-as";
 
 function navLinkClass(active: boolean) {
@@ -51,13 +45,11 @@ export function AppNavbar() {
   } = useViewAs();
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
   const manageWithoutPerson = effectiveCanManage && !mentionPersonId;
-  const bulletinSubject = bulletinDismissSubject(
-    mentionPersonId,
-    profile?.id ?? null,
-    effectiveCanManage,
-  );
   const { dismissed: dismissedMentions } = useDismissedMentions(mentionPersonId);
-  const { dismissed: dismissedBulletins } = useDismissedBulletins(bulletinSubject);
+  const dismissedBulletins = useMemo(
+    () => new Set(state.dismissed_bulletin_ids ?? []),
+    [state.dismissed_bulletin_ids],
+  );
   const { open, setOpen, toggle } = useMobileNav();
   const links = primaryNavLinks.filter((l) => effectiveCanManage || !l.manageOnly);
   const showSettings = !viewAsPersonId;
@@ -74,7 +66,7 @@ export function AppNavbar() {
       );
       if (hasMention) return true;
     }
-    if (!bulletinSubject && !manageWithoutPerson) return false;
+    if (!mentionPersonId && !manageWithoutPerson) return false;
     return state.bulletins.some((b) =>
       isUnreadBulletin(
         b,
@@ -86,7 +78,6 @@ export function AppNavbar() {
     );
   }, [
     mentionPersonId,
-    bulletinSubject,
     manageWithoutPerson,
     state.task_comments,
     state.bulletins,
