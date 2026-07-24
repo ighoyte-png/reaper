@@ -12,6 +12,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
@@ -178,11 +179,53 @@ export function ScheduleGrid() {
   const isCoarse = useMediaQuery("(pointer: coarse)");
   const DAY_W = isNarrow ? DAY_W_MOBILE : DAY_W_DESKTOP;
   const LABEL_PX = isNarrow ? LABEL_MOBILE : LABEL_DESKTOP;
-  const [zoom, setZoom] = useState<ScheduleZoom>("day");
+  const { filters, setFilter, setFilters } = useUrlFilters({
+    project: "all",
+    person: "all",
+    zoom: "day",
+  });
+  const zoom = (
+    filters.zoom === "week" || filters.zoom === "month" || filters.zoom === "day"
+      ? filters.zoom
+      : "day"
+  ) as ScheduleZoom;
+  const projectFilter = filters.project;
+  const personFilter = filters.person;
   const [anchor, setAnchor] = useState(() =>
     scheduleAnchorForOffset(readUserViewPrefs(null).scheduleViewOffset),
   );
   const scheduleOffsetAppliedRef = useRef(false);
+
+  useEffect(() => {
+    const patch: { project?: string; person?: string; zoom?: string } = {};
+    if (
+      projectFilter !== "all" &&
+      !state.projects.some((p) => p.id === projectFilter)
+    ) {
+      patch.project = "all";
+    }
+    if (
+      personFilter !== "all" &&
+      !state.people.some((p) => p.id === personFilter)
+    ) {
+      patch.person = "all";
+    }
+    if (
+      filters.zoom !== "day" &&
+      filters.zoom !== "week" &&
+      filters.zoom !== "month"
+    ) {
+      patch.zoom = "day";
+    }
+    if (Object.keys(patch).length) setFilters(patch);
+  }, [
+    projectFilter,
+    personFilter,
+    filters.zoom,
+    state.projects,
+    state.people,
+    setFilters,
+  ]);
 
   useLayoutEffect(() => {
     if (scheduleOffsetAppliedRef.current) return;
@@ -195,8 +238,6 @@ export function ScheduleGrid() {
     scheduleOffsetAppliedRef.current = true;
   }, [profile?.id]);
 
-  const [projectFilter, setProjectFilter] = useState<string>("all");
-  const [personFilter, setPersonFilter] = useState<string>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLeaveBlockId, setSelectedLeaveBlockId] = useState<
     string | null
@@ -469,8 +510,8 @@ export function ScheduleGrid() {
   }, []);
 
   useEffect(() => {
-    if (viewAsPersonId) setPersonFilter(viewAsPersonId);
-  }, [viewAsPersonId]);
+    if (viewAsPersonId) setFilter("person", viewAsPersonId);
+  }, [viewAsPersonId, setFilter]);
 
   const visiblePeople = useMemo(() => {
     if (viewAsPersonId) {
@@ -1268,8 +1309,7 @@ export function ScheduleGrid() {
     setLeaveEditForm(null);
     setDraft(null);
     setLeaveDraft(null);
-    setProjectFilter("all");
-    setPersonFilter("all");
+    setFilters({ project: "all", person: "all" });
     setMobilePanelOpen(false);
     setSidebarMinimized(sidebarPreferMinimizedRef.current);
     dragSnapshot.current = null;
@@ -1740,7 +1780,7 @@ export function ScheduleGrid() {
           <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
             <Select
               value={zoom}
-              onChange={(v) => setZoom(v as ScheduleZoom)}
+              onChange={(v) => setFilter("zoom", v)}
               className="mt-0 h-8 w-[7.25rem] shrink-0"
               aria-label="Schedule zoom"
               options={[
@@ -1753,7 +1793,7 @@ export function ScheduleGrid() {
               <>
                 <Select
                   value={projectFilter}
-                  onChange={setProjectFilter}
+                  onChange={(v) => setFilter("project", v)}
                   searchable
                   className="mt-0 h-8 w-auto min-w-[13rem] max-w-[22rem] shrink-0"
                   aria-label="Filter by project"
@@ -1767,7 +1807,7 @@ export function ScheduleGrid() {
                 />
                 <Select
                   value={viewAsPersonId ?? personFilter}
-                  onChange={setPersonFilter}
+                  onChange={(v) => setFilter("person", v)}
                   searchable
                   disabled={Boolean(viewAsPersonId)}
                   className="mt-0 h-8 w-auto min-w-[10rem] max-w-[16rem] shrink-0"
@@ -3887,7 +3927,7 @@ export function ScheduleGrid() {
                     <button
                       key={project.id}
                       type="button"
-                      onClick={() => setProjectFilter(project.id)}
+                      onClick={() => setFilter("project", project.id)}
                       className="w-full rounded-md border border-[var(--border)] p-3 text-left hover:bg-[var(--row-hover)]"
                     >
                       <div className="mb-2 flex items-start gap-2 text-[var(--text)]">

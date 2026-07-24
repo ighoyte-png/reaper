@@ -29,13 +29,19 @@ export function projectManagerFilterTabs(
 export function useProjectManagerFilter(
   projects: Project[],
   people: Person[],
+  controlled?: {
+    value: ManagerFilter;
+    onChange: (next: ManagerFilter) => void;
+  },
 ): {
   showManagers: boolean;
   managerTabs: Person[];
   managerFilter: ManagerFilter;
   setManagerFilter: (next: ManagerFilter) => void;
 } {
-  const [managerFilter, setManagerFilter] = useState<ManagerFilter>("all");
+  const [internal, setInternal] = useState<ManagerFilter>("all");
+  const managerFilter = controlled?.value ?? internal;
+  const setManagerFilter = controlled?.onChange ?? setInternal;
   const managerTabs = useMemo(
     () => projectManagerFilterTabs(projects, people),
     [projects, people],
@@ -47,7 +53,7 @@ export function useProjectManagerFilter(
     if (!managerTabs.some((person) => person.id === managerFilter)) {
       setManagerFilter("all");
     }
-  }, [managerFilter, managerTabs]);
+  }, [managerFilter, managerTabs, setManagerFilter]);
 
   return { showManagers, managerTabs, managerFilter, setManagerFilter };
 }

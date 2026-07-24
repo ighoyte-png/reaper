@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
@@ -17,6 +17,7 @@ import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import {
   sortClientsByName,
   sortProjectsByClientThenName,
@@ -25,6 +26,16 @@ import { cn } from "@/lib/cn";
 import type { Client, Project } from "@/lib/types";
 
 type ClientFilter = "all" | "none" | string;
+
+const BUDGET_FILTER_DEFAULTS: {
+  q: string;
+  client: string;
+  pm: string;
+} = {
+  q: "",
+  client: "all",
+  pm: "all",
+};
 
 export default function BudgetsReportPage() {
   return (
@@ -41,8 +52,12 @@ function BudgetsReportContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectParam = searchParams.get("project");
-  const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
-  const [query, setQuery] = useState("");
+  const { filters, setFilter, setFilters } = useUrlFilters(
+    BUDGET_FILTER_DEFAULTS,
+    { debounceMs: { q: 250 } },
+  );
+  const query = filters.q;
+  const clientFilter = filters.client as ClientFilter;
 
   const projects = sortProjectsByClientThenName(
     state.projects,
@@ -51,7 +66,10 @@ function BudgetsReportContent() {
   const clients = sortClientsByName(state.clients);
 
   const { managerTabs, managerFilter, setManagerFilter } =
-    useProjectManagerFilter(state.projects, state.people);
+    useProjectManagerFilter(state.projects, state.people, {
+      value: filters.pm,
+      onChange: (next) => setFilter("pm", next),
+    });
 
   // Legacy deep link (?project=) → dedicated budget detail page.
   useEffect(() => {
@@ -60,6 +78,16 @@ function BudgetsReportContent() {
     if (!project) return;
     router.replace(budgetHref(project));
   }, [projectParam, state.projects, router, budgetHref]);
+
+  useEffect(() => {
+    if (
+      clientFilter !== "all" &&
+      clientFilter !== "none" &&
+      !state.clients.some((c) => c.id === clientFilter)
+    ) {
+      setFilters({ client: "all" });
+    }
+  }, [clientFilter, state.clients, setFilters]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -140,7 +168,7 @@ function BudgetsReportContent() {
                 <input
                   type="search"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => setFilter("q", e.target.value)}
                   placeholder="Search…"
                   className={cn(inputClass, "h-8 pl-8 text-sm")}
                   aria-label="Search projects"
@@ -151,7 +179,7 @@ function BudgetsReportContent() {
             <nav className="space-y-0.5 p-2" aria-label="Clients">
               <ClientNavButton
                 active={clientFilter === "all"}
-                onClick={() => setClientFilter("all")}
+                onClick={() => setFilter("client", "all")}
                 label="All Clients"
                 count={projects.length}
               />
@@ -159,7 +187,7 @@ function BudgetsReportContent() {
                 <ClientNavButton
                   key={client.id}
                   active={clientFilter === client.id}
-                  onClick={() => setClientFilter(client.id)}
+                  onClick={() => setFilter("client", client.id)}
                   label={client.name}
                   count={clientCounts.get(client.id) ?? 0}
                   color={client.color}
@@ -168,7 +196,7 @@ function BudgetsReportContent() {
               {(clientCounts.get("none") ?? 0) > 0 ? (
                 <ClientNavButton
                   active={clientFilter === "none"}
-                  onClick={() => setClientFilter("none")}
+                  onClick={() => setFilter("client", "none")}
                   label="No Client"
                   count={clientCounts.get("none") ?? 0}
                 />
@@ -193,7 +221,7 @@ function BudgetsReportContent() {
               <input
                 type="search"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => setFilter("q", e.target.value)}
                 placeholder="Search projects or clients…"
                 className={cn(inputClass, "pl-9")}
                 aria-label="Search projects"
@@ -203,14 +231,14 @@ function BudgetsReportContent() {
             <div className="mb-4 flex gap-1 overflow-x-auto md:hidden">
               <MobileClientChip
                 active={clientFilter === "all"}
-                onClick={() => setClientFilter("all")}
+                onClick={() => setFilter("client", "all")}
                 label="All"
               />
               {clients.map((c) => (
                 <MobileClientChip
                   key={c.id}
                   active={clientFilter === c.id}
-                  onClick={() => setClientFilter(c.id)}
+                  onClick={() => setFilter("client", c.id)}
                   label={c.name}
                   color={c.color}
                 />
@@ -218,7 +246,7 @@ function BudgetsReportContent() {
               {(clientCounts.get("none") ?? 0) > 0 ? (
                 <MobileClientChip
                   active={clientFilter === "none"}
-                  onClick={() => setClientFilter("none")}
+                  onClick={() => setFilter("client", "none")}
                   label="No Client"
                 />
               ) : null}

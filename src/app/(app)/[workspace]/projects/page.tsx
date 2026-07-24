@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
@@ -23,6 +23,7 @@ import { ApplyTemplateDialog } from "@/components/templates/apply-template-dialo
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
@@ -68,7 +69,29 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "all", label: "Show All" },
 ];
 
+const PROJECT_FILTER_DEFAULTS: {
+  q: string;
+  client: string;
+  status: string;
+  pm: string;
+} = {
+  q: "",
+  client: "all",
+  status: "active",
+  pm: "all",
+};
+
+const VALID_STATUS = new Set<string>(STATUS_TABS.map((t) => t.id));
+
 export default function ProjectsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProjectsPageContent />
+    </Suspense>
+  );
+}
+
+function ProjectsPageContent() {
   const {
     state,
     upsertProject,
@@ -91,9 +114,16 @@ export default function ProjectsPage() {
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [createTemplateId, setCreateTemplateId] = useState("");
   const [pendingCreateApply, setPendingCreateApply] = useState(false);
-  const [query, setQuery] = useState("");
-  const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+
+  const { filters, setFilter, setFilters } = useUrlFilters(
+    PROJECT_FILTER_DEFAULTS,
+    { debounceMs: { q: 250 } },
+  );
+  const query = filters.q;
+  const clientFilter = filters.client as ClientFilter;
+  const statusFilter = (
+    VALID_STATUS.has(filters.status) ? filters.status : "active"
+  ) as StatusFilter;
 
   const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
 
@@ -124,7 +154,26 @@ export default function ProjectsPage() {
   // From all visible projects (not status-scoped) so the filter stays
   // available when a status tab has no PM-assigned projects. Hidden unless ≥2.
   const { showManagers, managerTabs, managerFilter, setManagerFilter } =
-    useProjectManagerFilter(visibleProjects, state.people);
+    useProjectManagerFilter(visibleProjects, state.people, {
+      value: filters.pm,
+      onChange: (next) => setFilter("pm", next),
+    });
+
+  // Drop invalid client / status from the URL once data is available.
+  useEffect(() => {
+    const patch: Partial<typeof PROJECT_FILTER_DEFAULTS> = {};
+    if (
+      clientFilter !== "all" &&
+      clientFilter !== "none" &&
+      !state.clients.some((c) => c.id === clientFilter)
+    ) {
+      patch.client = "all";
+    }
+    if (!VALID_STATUS.has(filters.status)) {
+      patch.status = "active";
+    }
+    if (Object.keys(patch).length) setFilters(patch);
+  }, [clientFilter, filters.status, state.clients, setFilters]);
 
   const projects = sortProjectsByClientThenName(
     statusScopedProjects,
@@ -298,7 +347,7 @@ export default function ProjectsPage() {
                 <input
                   type="search"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => setFilter("q", e.target.value)}
                   placeholder="Search…"
                   className={cn(inputClass, "h-8 pl-8 text-sm")}
                   aria-label="Search projects"
@@ -309,7 +358,7 @@ export default function ProjectsPage() {
             <nav className="space-y-0.5 p-2" aria-label="Clients">
               <ClientNavButton
                 active={clientFilter === "all"}
-                onClick={() => setClientFilter("all")}
+                onClick={() => setFilter("client", "all")}
                 label="All clients"
                 count={projects.length}
               />
@@ -317,7 +366,7 @@ export default function ProjectsPage() {
                 <ClientNavButton
                   key={client.id}
                   active={clientFilter === client.id}
-                  onClick={() => setClientFilter(client.id)}
+                  onClick={() => setFilter("client", client.id)}
                   label={client.name}
                   count={clientCounts.get(client.id) ?? 0}
                   color={client.color}
@@ -326,7 +375,7 @@ export default function ProjectsPage() {
               {(clientCounts.get("none") ?? 0) > 0 ? (
                 <ClientNavButton
                   active={clientFilter === "none"}
-                  onClick={() => setClientFilter("none")}
+                  onClick={() => setFilter("client", "none")}
                   label="No client"
                   count={clientCounts.get("none") ?? 0}
                 />
@@ -347,7 +396,7 @@ export default function ProjectsPage() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setStatusFilter(tab.id)}
+                  onClick={() => setFilter("status", tab.id)}
                   className={cn(
                     "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs transition-colors",
                     statusFilter === tab.id
@@ -372,7 +421,7 @@ export default function ProjectsPage() {
               <input
                 type="search"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => setFilter("q", e.target.value)}
                 placeholder="Search projects or clients…"
                 className={cn(inputClass, "pl-9")}
                 aria-label="Search projects"
@@ -382,14 +431,14 @@ export default function ProjectsPage() {
             <div className="mb-4 flex gap-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden">
               <MobileClientChip
                 active={clientFilter === "all"}
-                onClick={() => setClientFilter("all")}
+                onClick={() => setFilter("client", "all")}
                 label="All"
               />
               {sidebarClients.map((c) => (
                 <MobileClientChip
                   key={c.id}
                   active={clientFilter === c.id}
-                  onClick={() => setClientFilter(c.id)}
+                  onClick={() => setFilter("client", c.id)}
                   label={c.name}
                   color={c.color}
                 />
@@ -397,7 +446,7 @@ export default function ProjectsPage() {
               {(clientCounts.get("none") ?? 0) > 0 ? (
                 <MobileClientChip
                   active={clientFilter === "none"}
-                  onClick={() => setClientFilter("none")}
+                  onClick={() => setFilter("client", "none")}
                   label="No client"
                 />
               ) : null}

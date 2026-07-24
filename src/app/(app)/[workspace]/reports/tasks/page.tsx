@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -23,11 +22,11 @@ import {
 } from "@/components/projects/project-manager-filter-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
-import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { useProjectHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { toDateKey } from "@/lib/domain/dates";
 import { dueDateToneClass, taskStatusLabel } from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
-import { tasksReportRelativePath } from "@/lib/paths";
 import { cn } from "@/lib/cn";
 import type { Client, Person, Project, Task } from "@/lib/types";
 
@@ -475,12 +474,12 @@ export default function TasksReportPage() {
 function TasksReportContent() {
   const { state, mode, ensureOrgHeavyData } = useData();
   const projectHref = useProjectHref();
-  const appHref = useAppHref();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const projectParam = searchParams.get("project");
   const todayKey = toDateKey(new Date());
-  const [projectFilter, setProjectFilter] = useState<ProjectFilter>("all");
+  const { filters, setFilter, setFilters } = useUrlFilters({
+    project: "",
+    pm: "all",
+  });
+  const projectFilter: ProjectFilter = filters.project || "all";
   const [expandedClientIds, setExpandedClientIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -489,26 +488,16 @@ function TasksReportContent() {
     if (mode === "supabase") void ensureOrgHeavyData();
   }, [mode, ensureOrgHeavyData]);
 
-  // Deep link / favorite: ?project= scopes the report like the sidebar.
+  // Drop invalid project id from the URL once data is available.
   useEffect(() => {
-    if (!projectParam) {
-      setProjectFilter("all");
-      return;
+    if (!filters.project) return;
+    if (!state.projects.some((p) => p.id === filters.project)) {
+      setFilters({ project: "" });
     }
-    if (state.projects.some((p) => p.id === projectParam)) {
-      setProjectFilter(projectParam);
-    }
-  }, [projectParam, state.projects]);
+  }, [filters.project, state.projects, setFilters]);
 
   function selectProjectFilter(next: ProjectFilter) {
-    setProjectFilter(next);
-    router.replace(
-      appHref(
-        next === "all"
-          ? tasksReportRelativePath()
-          : tasksReportRelativePath(next),
-      ),
-    );
+    setFilter("project", next === "all" ? "" : next);
   }
 
   const projectById = useMemo(
@@ -607,7 +596,10 @@ function TasksReportContent() {
 
   // Same ≥2 assigned-PM gate as Projects / Budgets (org-wide assignments).
   const { managerTabs, managerFilter, setManagerFilter } =
-    useProjectManagerFilter(state.projects, state.people);
+    useProjectManagerFilter(state.projects, state.people, {
+      value: filters.pm,
+      onChange: (next) => setFilter("pm", next),
+    });
 
   function toggleClientExpanded(key: string) {
     setExpandedClientIds((prev) => {

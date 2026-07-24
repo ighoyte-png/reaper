@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Archive,
+  ArchiveRestore,
   Globe,
   Mail,
+  Pencil,
   Phone,
   User,
   type LucideIcon,
@@ -22,12 +25,16 @@ import { ApplyTemplateDialog } from "@/components/templates/apply-template-dialo
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
 import { sortClientsByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Client, ClientStatus, Project } from "@/lib/types";
 
 type StatusFilter = "active" | "archived" | "all";
+
+const CLIENT_FILTER_DEFAULTS: { status: string } = { status: "active" };
+const VALID_CLIENT_STATUS = new Set<string>(["active", "archived", "all"]);
 
 function IconInput({
   icon: Icon,
@@ -141,6 +148,14 @@ function websiteHref(url: string): string | null {
 }
 
 export default function ClientsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ClientsPageContent />
+    </Suspense>
+  );
+}
+
+function ClientsPageContent() {
   const {
     state,
     upsertClient,
@@ -172,7 +187,17 @@ export default function ClientsPage() {
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [createTemplateId, setCreateTemplateId] = useState("");
   const [pendingCreateApply, setPendingCreateApply] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const { filters, setFilter, setFilters } = useUrlFilters(CLIENT_FILTER_DEFAULTS);
+  const statusFilter = (
+    VALID_CLIENT_STATUS.has(filters.status) ? filters.status : "active"
+  ) as StatusFilter;
+
+  useEffect(() => {
+    if (!VALID_CLIENT_STATUS.has(filters.status)) {
+      setFilters({ status: "active" });
+    }
+  }, [filters.status, setFilters]);
+
   const clients = sortClientsByName(state.clients);
 
   const filteredClients = useMemo(() => {
@@ -287,7 +312,7 @@ export default function ClientsPage() {
             <button
               key={f}
               type="button"
-              onClick={() => setStatusFilter(f)}
+              onClick={() => setFilter("status", f)}
               className={cn(
                 "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs capitalize transition-colors",
                 statusFilter === f
@@ -392,22 +417,34 @@ export default function ClientsPage() {
                   </div>
 
                   {canManage ? (
-                    <div className="mt-3 flex items-center justify-end gap-3 border-t border-[var(--border)] pt-2.5">
+                    <div className="mt-3 flex items-center justify-end gap-1 border-t border-[var(--border)] pt-2.5">
                       <button
                         type="button"
-                        className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
+                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
                         onClick={() => toggleArchive(client)}
+                        aria-label={
+                          archived
+                            ? `Unarchive ${client.name}`
+                            : `Archive ${client.name}`
+                        }
+                        title={archived ? "Unarchive" : "Archive"}
                       >
-                        {archived ? "Unarchive" : "Archive"}
+                        {archived ? (
+                          <ArchiveRestore size={14} strokeWidth={1.75} />
+                        ) : (
+                          <Archive size={14} strokeWidth={1.75} />
+                        )}
                       </button>
                       <button
                         type="button"
-                        className="cursor-pointer text-xs text-[var(--accent)]"
+                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
                         onClick={() =>
                           setEditing(normalizeClientContact(client))
                         }
+                        aria-label={`Edit ${client.name}`}
+                        title="Edit"
                       >
-                        Edit
+                        <Pencil size={14} strokeWidth={1.75} />
                       </button>
                     </div>
                   ) : null}
