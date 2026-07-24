@@ -239,33 +239,19 @@ export function PersonForm({
                         <p className="mt-1 text-xs text-[var(--text-muted)]">
                           Keep at least one admin on the workspace.
                         </p>
-                      ) : (
-                        <p className="mt-1 text-xs text-[var(--text-muted)]">
-                          Controls what this login can manage in the app.
-                        </p>
-                      )}
+                      ) : null}
                     </>
                   ) : canEditAccessAsManager ? (
-                    <>
-                      <Select
-                        value={accessRole}
-                        onChange={(v) => onAccessRoleChange(v as Role)}
-                        options={[
-                          { value: "member", label: "Member" },
-                          { value: "manager", label: "Manager" },
-                        ]}
-                      />
-                      <p className="mt-1 text-xs text-[var(--text-muted)]">
-                        Controls what this login can manage in the app.
-                      </p>
-                    </>
+                    <Select
+                      value={accessRole}
+                      onChange={(v) => onAccessRoleChange(v as Role)}
+                      options={[
+                        { value: "member", label: "Member" },
+                        { value: "manager", label: "Manager" },
+                      ]}
+                    />
                   ) : (
-                    <p className="text-sm">
-                      {accessLabel(linkedProfile.role)}
-                      {linkedProfile.email
-                        ? ` · ${linkedProfile.email}`
-                        : ""}
-                    </p>
+                    <p className="text-sm">{accessLabel(linkedProfile.role)}</p>
                   )}
                 </Field>
               ) : (
@@ -275,11 +261,6 @@ export function PersonForm({
                     : "No login linked yet — invite them to set Access."}
                 </p>
               )}
-              {linkedProfile?.email ? (
-                <p className="text-xs text-[var(--text-muted)]">
-                  Login email: {linkedProfile.email}
-                </p>
-              ) : null}
             </>
           ) : null}
 
