@@ -213,10 +213,16 @@ export function ProjectTaskBoard({
     deleteTask,
     deleteTaskList,
     newId,
+    ensureProjectData,
   } = useData();
   const projectHref = useProjectHref();
   const project = state.projects.find((p) => p.id === projectId);
   const viewAs = useViewAsOptional();
+
+  useEffect(() => {
+    if (!projectId) return;
+    void ensureProjectData(projectId);
+  }, [projectId, ensureProjectData]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDraft, setBulkDraft] = useState<{
     status?: TaskStatus;

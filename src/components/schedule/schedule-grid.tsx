@@ -410,25 +410,6 @@ export function ScheduleGrid() {
     void ensureScheduleRange(fetchStart, fetchEnd);
   }, [startKey, endKey, ensureScheduleRange, state.organization.id]);
 
-  useEffect(() => {
-    if (projectFilter === "all") {
-      setActiveRealtimeProjectIds([]);
-      return;
-    }
-    void ensureProjectData(projectFilter);
-    if (sidebarPanelTab === "tasks") {
-      setActiveRealtimeProjectIds([projectFilter]);
-    } else {
-      setActiveRealtimeProjectIds([]);
-    }
-    return () => setActiveRealtimeProjectIds([]);
-  }, [
-    projectFilter,
-    sidebarPanelTab,
-    ensureProjectData,
-    setActiveRealtimeProjectIds,
-  ]);
-
   const headerGroups = useMemo(() => {
     // Day zoom: one month chip per weekday week (5 days). Do not span the
     // whole calendar month — that made Jul/Aug headers unreadable.
@@ -652,6 +633,29 @@ export function ScheduleGrid() {
     showManagers && sidebarProject
       ? projectManagerPerson(sidebarProject, state.people)
       : null;
+
+  useEffect(() => {
+    const loadIds = new Set<string>();
+    if (projectFilter !== "all") loadIds.add(projectFilter);
+    if (sidebarProjectId) loadIds.add(sidebarProjectId);
+    for (const id of loadIds) {
+      void ensureProjectData(id);
+    }
+
+    const realtimeId =
+      sidebarPanelTab === "tasks"
+        ? (sidebarProjectId ??
+          (projectFilter !== "all" ? projectFilter : null))
+        : null;
+    setActiveRealtimeProjectIds(realtimeId ? [realtimeId] : []);
+    return () => setActiveRealtimeProjectIds([]);
+  }, [
+    projectFilter,
+    sidebarProjectId,
+    sidebarPanelTab,
+    ensureProjectData,
+    setActiveRealtimeProjectIds,
+  ]);
 
   // Local form draft — only persisted on Save; grid move/resize updates dates
   useEffect(() => {
