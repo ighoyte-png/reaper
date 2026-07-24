@@ -26,6 +26,29 @@ export interface AssignmentOccurrence {
 /** Horizon used when summing budget burn for indefinite weekly series. */
 export const RECURRENCE_BUDGET_WEEKS = 52;
 
+/** True when a (possibly weekly) assignment can produce days inside [rangeStart, rangeEnd]. */
+export function assignmentOverlapsDateRange(
+  assignment: Assignment,
+  rangeStartKey: string,
+  rangeEndKey: string,
+): boolean {
+  const recurrence = assignment.recurrence ?? "none";
+  if (recurrence === "weekly") {
+    if (assignment.start_date > rangeEndKey) return false;
+    if (
+      assignment.recurrence_end_date &&
+      assignment.recurrence_end_date < rangeStartKey
+    ) {
+      return false;
+    }
+    return true;
+  }
+  return (
+    assignment.start_date <= rangeEndKey &&
+    assignment.end_date >= rangeStartKey
+  );
+}
+
 export function expandAssignmentInRange(
   assignment: Assignment,
   rangeStartKey: string,

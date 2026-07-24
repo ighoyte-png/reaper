@@ -22,16 +22,20 @@ export function projectTeamPersonIds(
   return ids;
 }
 
-/** Project ids a person appears on via roster, schedule, or task assignment. */
+/** Project ids a person appears on via roster, schedule, task assignment, or PM. */
 export function projectIdsForPerson(
   personId: string,
   assignments: Assignment[],
   tasks: Task[],
   projectMembers: ProjectMember[] = [],
+  projects: Project[] = [],
 ): Set<string> {
   const ids = new Set<string>();
   for (const m of projectMembers) {
     if (m.person_id === personId) ids.add(m.project_id);
+  }
+  for (const p of projects) {
+    if (p.manager_person_id === personId) ids.add(p.id);
   }
   for (const a of assignments) {
     if (a.person_id === personId) ids.add(a.project_id);

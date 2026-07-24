@@ -80,7 +80,7 @@ export default function PeoplePage() {
     mode,
     inviteDemoMember,
     refresh,
-    ensureOrgHeavyData,
+    ensureScheduleRange,
   } = useData();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
@@ -89,9 +89,12 @@ export default function PeoplePage() {
   const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
 
+  const start = toDateKey(weekStart(new Date()));
+  const end = toDateKey(weekEnd(new Date()));
+
   useEffect(() => {
-    if (mode === "supabase") void ensureOrgHeavyData();
-  }, [mode, ensureOrgHeavyData]);
+    if (mode === "supabase") void ensureScheduleRange(start, end);
+  }, [mode, ensureScheduleRange, start, end]);
 
   const [editing, setEditing] = useState<Omit<Person, "organization_id"> | null>(
     null,
@@ -113,8 +116,6 @@ export default function PeoplePage() {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [inviteEmailSent, setInviteEmailSent] = useState<boolean | null>(null);
   const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
-  const start = toDateKey(weekStart(new Date()));
-  const end = toDateKey(weekEnd(new Date()));
 
   const editingLinkedProfile = editing?.profile_id
     ? state.profiles.find((p) => p.id === editing.profile_id)

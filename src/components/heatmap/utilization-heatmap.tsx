@@ -116,7 +116,7 @@ export function UtilizationHeatmap({
     state,
     mode,
     fetchPersonUtilizationWeeksRpc,
-    ensureOrgHeavyData,
+    ensureScheduleRange,
   } = useData();
   const anchors = useMemo(
     () =>
@@ -143,6 +143,7 @@ export function UtilizationHeatmap({
         return;
       }
       const weekStartKey = toDateKey(anchors[0]!);
+      const weekEndKey = toDateKey(weekEnd(anchors[anchors.length - 1]!));
       const ids =
         personIds && personIds.length > 0
           ? personIds
@@ -169,9 +170,9 @@ export function UtilizationHeatmap({
         return;
       }
       try {
-        await ensureOrgHeavyData();
+        await ensureScheduleRange(weekStartKey, weekEndKey);
       } catch {
-        /* soft-fail → client math */
+        /* soft-fail → client math on whatever is loaded */
       }
       if (!cancelled) setRpcCells(null);
     }
@@ -186,7 +187,7 @@ export function UtilizationHeatmap({
     personIds,
     state.people,
     fetchPersonUtilizationWeeksRpc,
-    ensureOrgHeavyData,
+    ensureScheduleRange,
   ]);
 
   return (

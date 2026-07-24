@@ -221,16 +221,20 @@ export function PublicShareProvider({
       updateProjectShare: () => ({ enabled: false, token: null, url: null }),
       newId: (prefix) => `${prefix}-ro`,
       dataStatus: {
-        orgHeavy: "ready",
+        orgTasks: "ready",
+        mentionComments: "ready",
         projects: {},
         scheduleRange: null,
       },
-      ensureOrgHeavyData: async () => {},
+      ensureOrgTasks: async () => {},
+      ensureMentionComments: async () => {},
       ensureProjectData: async () => {},
       ensureScheduleRange: async () => {},
       setActiveRealtimeProjectIds: () => {},
       fetchProjectBudgetBurnsRpc: async () => null,
       fetchPersonUtilizationWeeksRpc: async () => null,
+      fetchOrgForecastRpc: async () => null,
+      fetchOrgTaskStatsRpc: async () => null,
     };
   }, [state, mode, shareBasePath]);
 

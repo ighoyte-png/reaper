@@ -135,6 +135,7 @@ function ProjectsPageContent() {
       state.assignments,
       state.tasks,
       state.project_members,
+      state.projects,
     );
     return state.projects.filter((p) => ids.has(p.id));
   }, [

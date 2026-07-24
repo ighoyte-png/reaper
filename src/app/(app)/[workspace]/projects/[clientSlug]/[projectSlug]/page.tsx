@@ -129,9 +129,7 @@ export default function ProjectDetailPage() {
   }, [project?.id, ensureProjectData, setActiveRealtimeProjectIds]);
 
   const projectDataReady =
-    !project?.id ||
-    dataStatus.orgHeavy === "ready" ||
-    dataStatus.projects[project.id] === "ready";
+    !project?.id || dataStatus.projects[project.id] === "ready";
   const projectDataLoading =
     Boolean(project?.id) &&
     !projectDataReady &&
@@ -148,6 +146,7 @@ export default function ProjectDetailPage() {
       state.assignments,
       state.tasks,
       state.project_members,
+      state.projects,
     ).has(project.id);
   }, [
     showingAsManager,
@@ -156,6 +155,7 @@ export default function ProjectDetailPage() {
     state.assignments,
     state.tasks,
     state.project_members,
+    state.projects,
   ]);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const isRetainer = Boolean(project?.budget_monthly_reset);

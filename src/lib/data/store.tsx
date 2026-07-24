@@ -21,6 +21,9 @@ import {
   applyRealtimeTableEvent,
   realtimeEchoId,
 } from "@/lib/data/realtime-patch";
+import { addDays, parseISO } from "date-fns";
+import { assignmentOverlapsDateRange } from "@/lib/domain/recurrence";
+import { toDateKey } from "@/lib/domain/dates";
 import { emptyTaskAuditFields, orderTasksParentsFirst } from "@/lib/domain/tasks";
 import {
   bulletinUnreadRecipientProfileIds,
@@ -53,8 +56,12 @@ import {
   fetchWorkspace,
   loadAssignmentsForRange,
   loadLeaveForRange,
-  loadOrgHeavyData,
+  loadMentionComments,
+  loadOrgTasks,
   loadProjectData,
+  mapAssignment,
+  rpcOrgForecast,
+  rpcOrgTaskStats,
   rpcPersonUtilizationWeeks,
   rpcProjectBudgetBurns,
   seedDemoWorkspace,
@@ -519,11 +526,16 @@ interface DataContextValue {
   newId: (prefix: string) => string;
   /** Page-scoped fetch status (supabase mode). Demo always ready. */
   dataStatus: {
-    orgHeavy: "idle" | "loading" | "ready" | "error";
+    orgTasks: "idle" | "loading" | "ready" | "error";
+    mentionComments: "idle" | "loading" | "ready" | "error";
     projects: Record<string, "idle" | "loading" | "ready" | "error">;
     scheduleRange: { start: string; end: string } | null;
   };
-  ensureOrgHeavyData: () => Promise<void>;
+  ensureOrgTasks: (options?: {
+    assigneePersonId?: string | null;
+    openOnly?: boolean;
+  }) => Promise<void>;
+  ensureMentionComments: (commentIds?: string[]) => Promise<void>;
   ensureProjectData: (projectId: string) => Promise<void>;
   ensureScheduleRange: (
     startKey: string,
@@ -543,6 +555,12 @@ interface DataContextValue {
   ) => Promise<
     import("@/lib/supabase/api").PersonUtilizationWeekRow[] | null
   >;
+  fetchOrgForecastRpc: () => Promise<
+    import("@/lib/supabase/api").OrgForecastRow[] | null
+  >;
+  fetchOrgTaskStatsRpc: (
+    asOf?: string,
+  ) => Promise<import("@/lib/supabase/api").OrgTaskStats | null>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -572,7 +590,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
    */
   const leaveWriteEpochRef = useRef(0);
 
-  const [orgHeavyStatus, setOrgHeavyStatus] = useState<
+  const [orgTasksStatus, setOrgTasksStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const [mentionCommentsStatus, setMentionCommentsStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const [projectDataStatus, setProjectDataStatus] = useState<
@@ -585,14 +606,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [activeRealtimeProjectIds, setActiveRealtimeProjectIdsState] =
     useState<string[]>([]);
 
-  const orgHeavyInflight = useRef<Promise<void> | null>(null);
+  const orgTasksInflight = useRef<Promise<void> | null>(null);
+  const mentionCommentsInflight = useRef<Promise<void> | null>(null);
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
   const scheduleRangeInflight = useRef<Promise<void> | null>(null);
-  const orgHeavyReadyRef = useRef(false);
+  /** Tracks the broadest org-tasks scope already loaded this session. */
+  const orgTasksScopeRef = useRef<{
+    all: boolean;
+    personIds: Set<string>;
+  }>({ all: false, personIds: new Set() });
+  const mentionCommentsLoadedRef = useRef<Set<string>>(new Set());
   const projectReadyRef = useRef<Set<string>>(new Set());
   const scheduleRangeLoadedRef = useRef<{ start: string; end: string } | null>(
     null,
   );
+  const SCHEDULE_EVICT_PAD_DAYS = 7;
 
   const noteLocalWrite = useCallback((table: string, id: string) => {
     if (!id) return;
@@ -673,10 +701,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           Boolean(prev.organization.id) &&
           prev.organization.id === next.organization.id;
         if (!sameOrg) {
-          orgHeavyReadyRef.current = false;
+          orgTasksScopeRef.current = { all: false, personIds: new Set() };
+          mentionCommentsLoadedRef.current = new Set();
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
-          setOrgHeavyStatus("idle");
+          setOrgTasksStatus("idle");
+          setMentionCommentsStatus("idle");
           setProjectDataStatus({});
           setScheduleRangeLoaded(null);
           return next;
@@ -861,6 +891,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 !projectReadyRef.current.has(task.project_id)
               ) {
                 continue;
+              }
+            }
+          } else if (ev.table === "assignments" || ev.table === "leave_days") {
+            if (ev.eventType !== "DELETE") {
+              const loaded = scheduleRangeLoadedRef.current;
+              const row = ev.newRecord;
+              if (!row) continue;
+              if (ev.table === "assignments") {
+                const mapped = mapAssignment(row);
+                if (!projectReadyRef.current.has(mapped.project_id)) {
+                  if (!loaded) continue;
+                  const padStart = toDateKey(
+                    addDays(parseISO(loaded.start), -SCHEDULE_EVICT_PAD_DAYS),
+                  );
+                  const padEnd = toDateKey(
+                    addDays(parseISO(loaded.end), SCHEDULE_EVICT_PAD_DAYS),
+                  );
+                  if (
+                    !assignmentOverlapsDateRange(mapped, padStart, padEnd)
+                  ) {
+                    continue;
+                  }
+                }
+              } else {
+                if (!loaded) continue;
+                const date = String(row.date ?? "").slice(0, 10);
+                const padStart = toDateKey(
+                  addDays(parseISO(loaded.start), -SCHEDULE_EVICT_PAD_DAYS),
+                );
+                const padEnd = toDateKey(
+                  addDays(parseISO(loaded.end), SCHEDULE_EVICT_PAD_DAYS),
+                );
+                if (!date || date < padStart || date > padEnd) continue;
               }
             }
           }
@@ -1100,53 +1163,137 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 
 
-  const ensureOrgHeavyData = useCallback(async () => {
-    if (mode !== "supabase") {
-      orgHeavyReadyRef.current = true;
-      setOrgHeavyStatus("ready");
-      return;
-    }
-    if (orgHeavyReadyRef.current) return;
-    if (orgHeavyInflight.current) return orgHeavyInflight.current;
-    const client = supabaseRef.current ?? createClient();
-    const organizationId = state.organization.id;
-    if (!organizationId) return;
-
-    const run = (async () => {
-      setOrgHeavyStatus("loading");
-      try {
-        const heavy = await loadOrgHeavyData(client, organizationId);
-        setState((prev) => ({
-          ...prev,
-          milestones: heavy.milestones,
-          assignments: heavy.assignments,
-          leave_days: heavy.leave_days,
-          project_assets: heavy.project_assets,
-          task_lists: heavy.task_lists,
-          tasks: heavy.tasks,
-          task_comments: heavy.task_comments,
-        }));
-        orgHeavyReadyRef.current = true;
-        for (const t of heavy.tasks) {
-          projectReadyRef.current.add(t.project_id);
-        }
-        setOrgHeavyStatus("ready");
-        setProjectDataStatus((prev) => {
-          const next = { ...prev };
-          for (const id of projectReadyRef.current) next[id] = "ready";
-          return next;
-        });
-      } catch (err) {
-        console.error(err);
-        setOrgHeavyStatus("error");
-        throw err;
-      } finally {
-        orgHeavyInflight.current = null;
+  const ensureOrgTasks = useCallback(
+    async (options?: {
+      assigneePersonId?: string | null;
+      openOnly?: boolean;
+    }) => {
+      if (mode !== "supabase") {
+        orgTasksScopeRef.current = { all: true, personIds: new Set() };
+        setOrgTasksStatus("ready");
+        return;
       }
-    })();
-    orgHeavyInflight.current = run;
-    return run;
-  }, [mode, state.organization.id]);
+      const assigneeId = options?.assigneePersonId ?? null;
+      const openOnly = Boolean(options?.openOnly);
+      const scope = orgTasksScopeRef.current;
+      if (scope.all) {
+        setOrgTasksStatus("ready");
+        return;
+      }
+      if (assigneeId && scope.personIds.has(assigneeId) && !openOnly) {
+        setOrgTasksStatus("ready");
+        return;
+      }
+      if (orgTasksInflight.current) return orgTasksInflight.current;
+      const client = supabaseRef.current ?? createClient();
+      const organizationId = state.organization.id;
+      if (!organizationId) return;
+
+      const run = (async () => {
+        setOrgTasksStatus("loading");
+        try {
+          const tasks = await loadOrgTasks(client, organizationId, {
+            assigneePersonId: assigneeId,
+            openOnly,
+          });
+          setState((prev) => {
+            if (!assigneeId && !openOnly) {
+              return { ...prev, tasks };
+            }
+            const byId = new Map(prev.tasks.map((t) => [t.id, t]));
+            for (const t of tasks) byId.set(t.id, t);
+            return { ...prev, tasks: [...byId.values()] };
+          });
+          if (!assigneeId && !openOnly) {
+            orgTasksScopeRef.current = { all: true, personIds: new Set() };
+          } else if (assigneeId) {
+            orgTasksScopeRef.current.personIds.add(assigneeId);
+          }
+          setOrgTasksStatus("ready");
+        } catch (err) {
+          console.error(err);
+          setOrgTasksStatus("error");
+          throw err;
+        } finally {
+          orgTasksInflight.current = null;
+        }
+      })();
+      orgTasksInflight.current = run;
+      return run;
+    },
+    [mode, state.organization.id],
+  );
+
+  const ensureMentionComments = useCallback(
+    async (commentIds?: string[]) => {
+      if (mode !== "supabase") {
+        setMentionCommentsStatus("ready");
+        return;
+      }
+      const ids = [
+        ...new Set(
+          (commentIds ?? state.unread_mentions.map((m) => m.comment_id)).filter(
+            Boolean,
+          ),
+        ),
+      ];
+      const missing = ids.filter(
+        (id) => !mentionCommentsLoadedRef.current.has(id),
+      );
+      if (missing.length === 0) {
+        setMentionCommentsStatus("ready");
+        return;
+      }
+      if (mentionCommentsInflight.current) {
+        await mentionCommentsInflight.current;
+        const stillMissing = missing.filter(
+          (id) => !mentionCommentsLoadedRef.current.has(id),
+        );
+        if (stillMissing.length === 0) {
+          setMentionCommentsStatus("ready");
+          return;
+        }
+      }
+      const client = supabaseRef.current ?? createClient();
+      const organizationId = state.organization.id;
+      if (!organizationId) return;
+
+      const run = (async () => {
+        setMentionCommentsStatus("loading");
+        try {
+          const bundle = await loadMentionComments(
+            client,
+            organizationId,
+            missing,
+          );
+          setState((prev) => {
+            const tasksById = new Map(prev.tasks.map((t) => [t.id, t]));
+            for (const t of bundle.tasks) tasksById.set(t.id, t);
+            const commentsById = new Map(
+              prev.task_comments.map((c) => [c.id, c]),
+            );
+            for (const c of bundle.task_comments) commentsById.set(c.id, c);
+            return {
+              ...prev,
+              tasks: [...tasksById.values()],
+              task_comments: [...commentsById.values()],
+            };
+          });
+          for (const id of missing) mentionCommentsLoadedRef.current.add(id);
+          setMentionCommentsStatus("ready");
+        } catch (err) {
+          console.error(err);
+          setMentionCommentsStatus("error");
+          throw err;
+        } finally {
+          mentionCommentsInflight.current = null;
+        }
+      })();
+      mentionCommentsInflight.current = run;
+      return run;
+    },
+    [mode, state.organization.id, state.unread_mentions],
+  );
 
   const ensureProjectData = useCallback(
     async (projectId: string) => {
@@ -1156,7 +1303,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setProjectDataStatus((prev) => ({ ...prev, [projectId]: "ready" }));
         return;
       }
-      if (orgHeavyReadyRef.current || projectReadyRef.current.has(projectId)) {
+      if (projectReadyRef.current.has(projectId)) {
         setProjectDataStatus((prev) =>
           prev[projectId] === "ready"
             ? prev
@@ -1273,25 +1420,44 @@ export function DataProvider({ children }: { children: ReactNode }) {
             ),
             loadLeaveForRange(client, organizationId, startKey, endKey),
           ]);
+          const nextRange = !projectId
+            ? { start: startKey, end: endKey }
+            : loadedBefore;
+
           setState((prev) => {
             const asgById = new Map(prev.assignments.map((a) => [a.id, a]));
             for (const a of assignments) asgById.set(a.id, a);
             const leaveById = new Map(prev.leave_days.map((l) => [l.id, l]));
             for (const l of leave_days) leaveById.set(l.id, l);
+
+            let nextAssignments = [...asgById.values()];
+            let nextLeave = [...leaveById.values()];
+
+            if (nextRange) {
+              const padStart = toDateKey(
+                addDays(parseISO(nextRange.start), -SCHEDULE_EVICT_PAD_DAYS),
+              );
+              const padEnd = toDateKey(
+                addDays(parseISO(nextRange.end), SCHEDULE_EVICT_PAD_DAYS),
+              );
+              const readyProjects = projectReadyRef.current;
+              nextAssignments = nextAssignments.filter(
+                (a) =>
+                  readyProjects.has(a.project_id) ||
+                  assignmentOverlapsDateRange(a, padStart, padEnd),
+              );
+              nextLeave = nextLeave.filter(
+                (l) => l.date >= padStart && l.date <= padEnd,
+              );
+            }
+
             return {
               ...prev,
-              assignments: [...asgById.values()],
-              leave_days: [...leaveById.values()],
+              assignments: nextAssignments,
+              leave_days: nextLeave,
             };
           });
-          if (!projectId) {
-            const loaded = loadedBefore;
-            const nextRange = loaded
-              ? {
-                  start: loaded.start < startKey ? loaded.start : startKey,
-                  end: loaded.end > endKey ? loaded.end : endKey,
-                }
-              : { start: startKey, end: endKey };
+          if (!projectId && nextRange) {
             scheduleRangeLoadedRef.current = nextRange;
             setScheduleRangeLoaded(nextRange);
           }
@@ -1346,6 +1512,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
         );
       } catch (err) {
         console.warn("rpc_person_utilization_weeks failed", err);
+        return null;
+      }
+    },
+    [mode],
+  );
+
+  const fetchOrgForecastRpc = useCallback(async () => {
+    if (mode !== "supabase") return null;
+    const client = supabaseRef.current ?? createClient();
+    try {
+      return await rpcOrgForecast(client);
+    } catch (err) {
+      console.warn("rpc_org_forecast failed", err);
+      return null;
+    }
+  }, [mode]);
+
+  const fetchOrgTaskStatsRpc = useCallback(
+    async (asOf?: string) => {
+      if (mode !== "supabase") return null;
+      const client = supabaseRef.current ?? createClient();
+      try {
+        return await rpcOrgTaskStats(client, asOf);
+      } catch (err) {
+        console.warn("rpc_org_task_stats failed", err);
         return null;
       }
     },
@@ -1594,16 +1785,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       newId: uid,
       dataStatus: {
-        orgHeavy: orgHeavyStatus,
+        orgTasks: orgTasksStatus,
+        mentionComments: mentionCommentsStatus,
         projects: projectDataStatus,
         scheduleRange: scheduleRangeLoaded,
       },
-      ensureOrgHeavyData,
+      ensureOrgTasks,
+      ensureMentionComments,
       ensureProjectData,
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
       fetchPersonUtilizationWeeksRpc,
+      fetchOrgForecastRpc,
+      fetchOrgTaskStatsRpc,
       updateOrganizationName: async (name) => {
         const trimmed = name.trim();
         if (!admin || !trimmed) return;
@@ -3265,15 +3460,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       runRemoteSoft,
       refreshSupabase,
       noteLocalWrite,
-      orgHeavyStatus,
+      orgTasksStatus,
+      mentionCommentsStatus,
       projectDataStatus,
       scheduleRangeLoaded,
-      ensureOrgHeavyData,
+      ensureOrgTasks,
+      ensureMentionComments,
       ensureProjectData,
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
       fetchPersonUtilizationWeeksRpc,
+      fetchOrgForecastRpc,
+      fetchOrgTaskStatsRpc,
     ],
   );
 

@@ -6,17 +6,12 @@ import { burnFromRpcRow } from "@/lib/data/rpc-map";
 import { budgetBurn } from "@/lib/domain/budget";
 import type { BudgetBurn } from "@/lib/types";
 
-/** Project burns via RPC (supabase) with TS fallback after heavy load / demo. */
+/** Project burns via RPC (supabase). Soft-fails to empty/demo TS math — never org-heavy. */
 export function useProjectBurnsMap(): {
   burns: Map<string, BudgetBurn>;
   ready: boolean;
 } {
-  const {
-    mode,
-    state,
-    fetchProjectBudgetBurnsRpc,
-    ensureOrgHeavyData,
-  } = useData();
+  const { mode, state, fetchProjectBudgetBurnsRpc } = useData();
   const [rpcBurns, setRpcBurns] = useState<Map<string, BudgetBurn> | null>(
     null,
   );
@@ -35,30 +30,25 @@ export function useProjectBurnsMap(): {
         setRpcBurns(
           new Map(rows.map((r) => [r.project_id, burnFromRpcRow(r)])),
         );
-        setReady(true);
-        return;
+      } else {
+        setRpcBurns(new Map());
       }
-      try {
-        await ensureOrgHeavyData();
-      } catch {
-        /* soft-fail */
-      }
-      if (!cancelled) setReady(true);
+      setReady(true);
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [mode, fetchProjectBudgetBurnsRpc, ensureOrgHeavyData]);
+  }, [mode, fetchProjectBudgetBurnsRpc]);
 
   const burns = useMemo(() => {
-    if (rpcBurns) return rpcBurns;
+    if (rpcBurns && mode === "supabase") return rpcBurns;
     const map = new Map<string, BudgetBurn>();
     for (const p of state.projects) {
       map.set(p.id, budgetBurn(p, state.assignments, state.people));
     }
     return map;
-  }, [rpcBurns, state.projects, state.assignments, state.people]);
+  }, [rpcBurns, mode, state.projects, state.assignments, state.people]);
 
   return { burns, ready };
 }

@@ -100,7 +100,8 @@ export default function DashboardPage() {
     dismissMention,
     newId,
     mode,
-    ensureOrgHeavyData,
+    ensureOrgTasks,
+    ensureMentionComments,
     ensureScheduleRange,
   } = useData();
   const { burns } = useProjectBurnsMap();
@@ -120,13 +121,21 @@ export default function DashboardPage() {
   const start = toDateKey(weekStart(now));
   const end = toDateKey(weekEnd(now));
   const monthEndKey = toDateKey(endOfMonth(now));
+  const utilRangeStart = toDateKey(weekStart(addWeeks(now, -5)));
 
   useEffect(() => {
-    if (mode === "supabase") {
-      void ensureOrgHeavyData();
-      void ensureScheduleRange(start, end);
-    }
-  }, [mode, ensureOrgHeavyData, ensureScheduleRange, start, end]);
+    if (mode !== "supabase") return;
+    const scheduleEnd = monthEndKey > end ? monthEndKey : end;
+    void ensureScheduleRange(utilRangeStart, scheduleEnd);
+    void ensureMentionComments();
+  }, [
+    mode,
+    ensureScheduleRange,
+    ensureMentionComments,
+    utilRangeStart,
+    monthEndKey,
+    end,
+  ]);
 
   /** Org-wide read layout (managers + public org share), unless View As. */
   const showOrgDashboard = (canManage || isPublicShare) && showingAsManager;
@@ -141,6 +150,22 @@ export default function DashboardPage() {
 
   /** Task Pulse + Today's Schedule: always the signed-in (or View As) person. */
   const personalPersonId = viewAsPerson?.id ?? myPerson?.id ?? null;
+
+  useEffect(() => {
+    if (mode !== "supabase") return;
+    if (showingAsManager && (canManage || isPublicShare)) {
+      void ensureOrgTasks();
+    } else if (personalPersonId) {
+      void ensureOrgTasks({ assigneePersonId: personalPersonId });
+    }
+  }, [
+    mode,
+    ensureOrgTasks,
+    showingAsManager,
+    canManage,
+    isPublicShare,
+    personalPersonId,
+  ]);
 
   /** Members / View As: capacity + leave widgets scoped to one person. */
   const scopePersonalCapacity = !showingAsManager;

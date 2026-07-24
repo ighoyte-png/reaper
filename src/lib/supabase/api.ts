@@ -406,14 +406,39 @@ export type ProjectDataBundle = {
   assignments: Assignment[];
 };
 
-export type OrgHeavyData = {
-  milestones: Milestone[];
-  assignments: Assignment[];
-  leave_days: LeaveDay[];
-  project_assets: ProjectAsset[];
-  task_lists: TaskList[];
+export type LoadOrgTasksOptions = {
+  /** When set, only tasks assigned to this person. */
+  assigneePersonId?: string | null;
+  /** When true, exclude completed tasks. */
+  openOnly?: boolean;
+};
+
+export type MentionCommentsBundle = {
   tasks: Task[];
   task_comments: TaskComment[];
+};
+
+export type OrgTaskStats = {
+  open_count: number;
+  complete_count: number;
+  overdue_count: number;
+  no_due_count: number;
+  upcoming_count: number;
+};
+
+export type OrgForecastRow = {
+  project_id: string;
+  planned_hours: number;
+  revenue: number;
+  cost: number;
+  margin: number;
+  margin_pct: number;
+  hours_used_to_date: number;
+  hours_future_planned: number;
+  hours_remaining: number;
+  budget_margin: number;
+  budget_margin_pct: number;
+  over_budget: boolean;
 };
 
 function attachCommentExtras(
@@ -723,82 +748,82 @@ export async function loadOrgBootstrap(
   };
 }
 
-/** Org-wide planning + PM rows (transitional until page-scoped fetches cover all callers). */
-export async function loadOrgHeavyData(
+/** Org tasks for dashboard pulse / tasks report (optional person / open filters). */
+export async function loadOrgTasks(
   supabase: SupabaseClient,
   orgId: string,
-): Promise<OrgHeavyData> {
-  const [
-    milestonesRes,
-    assignmentsRes,
-    leaveRes,
-    projectAssetsRes,
-    taskListsRes,
-    tasksRes,
-    taskCommentsRes,
-    taskCommentMentionsRes,
-    taskCommentReactionsRes,
-  ] = await Promise.all([
-    supabase.from("milestones").select("*").eq("organization_id", orgId),
-    supabase.from("assignments").select("*").eq("organization_id", orgId),
-    supabase.from("leave_days").select("*").eq("organization_id", orgId),
-    supabase.from("project_assets").select("*").eq("organization_id", orgId),
-    supabase.from("task_lists").select("*").eq("organization_id", orgId),
-    supabase.from("tasks").select("*").eq("organization_id", orgId),
-    supabase.from("task_comments").select("*").eq("organization_id", orgId),
+  options: LoadOrgTasksOptions = {},
+): Promise<Task[]> {
+  let query = supabase.from("tasks").select("*").eq("organization_id", orgId);
+  if (options.assigneePersonId) {
+    query = query.eq("assignee_person_id", options.assigneePersonId);
+  }
+  if (options.openOnly) {
+    query = query.neq("status", "complete");
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((row) => mapTask(row as Record<string, unknown>));
+}
+
+/** Fetch unread mention comments (+ parent tasks) by comment id. */
+export async function loadMentionComments(
+  supabase: SupabaseClient,
+  orgId: string,
+  commentIds: string[],
+): Promise<MentionCommentsBundle> {
+  const ids = [...new Set(commentIds.filter(Boolean))];
+  if (ids.length === 0) {
+    return { tasks: [], task_comments: [] };
+  }
+
+  const [commentsRes, mentionsRes, reactionsRes] = await Promise.all([
+    supabase
+      .from("task_comments")
+      .select("*")
+      .eq("organization_id", orgId)
+      .in("id", ids),
     supabase
       .from("task_comment_mentions")
       .select("*")
-      .eq("organization_id", orgId),
+      .eq("organization_id", orgId)
+      .in("comment_id", ids),
     supabase
       .from("task_comment_reactions")
       .select("*")
-      .eq("organization_id", orgId),
+      .eq("organization_id", orgId)
+      .in("comment_id", ids),
   ]);
 
-  for (const res of [milestonesRes, assignmentsRes, leaveRes]) {
-    if (res.error) throw res.error;
+  if (commentsRes.error) throw commentsRes.error;
+
+  const task_commentsRaw = (commentsRes.data ?? []).map((row) =>
+    mapTaskComment(row as Record<string, unknown>),
+  );
+  const task_comments = attachCommentExtras(
+    task_commentsRaw,
+    mentionsRes,
+    reactionsRes,
+  );
+  const taskIds = [
+    ...new Set(task_comments.map((c) => c.task_id).filter(Boolean)),
+  ];
+  if (taskIds.length === 0) {
+    return { tasks: [], task_comments };
   }
 
-  const project_assets: ProjectAsset[] = projectAssetsRes.error
-    ? []
-    : (projectAssetsRes.data ?? []).map((row) =>
-        mapProjectAsset(row as Record<string, unknown>),
-      );
-  const task_lists: TaskList[] = taskListsRes.error
-    ? []
-    : (taskListsRes.data ?? []).map((row) =>
-        mapTaskList(row as Record<string, unknown>),
-      );
-  const tasks: Task[] = tasksRes.error
-    ? []
-    : (tasksRes.data ?? []).map((row) =>
-        mapTask(row as Record<string, unknown>),
-      );
-  const task_commentsRaw: TaskComment[] = taskCommentsRes.error
-    ? []
-    : (taskCommentsRes.data ?? []).map((row) =>
-        mapTaskComment(row as Record<string, unknown>),
-      );
+  const tasksRes = await supabase
+    .from("tasks")
+    .select("*")
+    .eq("organization_id", orgId)
+    .in("id", taskIds);
+  if (tasksRes.error) throw tasksRes.error;
 
   return {
-    milestones: (milestonesRes.data ?? []).map((row) =>
-      mapMilestone(row as Record<string, unknown>),
+    tasks: (tasksRes.data ?? []).map((row) =>
+      mapTask(row as Record<string, unknown>),
     ),
-    assignments: (assignmentsRes.data ?? []).map((row) =>
-      mapAssignment(row as Record<string, unknown>),
-    ),
-    leave_days: (leaveRes.data ?? []).map((row) =>
-      mapLeaveDay(row as Record<string, unknown>),
-    ),
-    project_assets,
-    task_lists,
-    tasks,
-    task_comments: attachCommentExtras(
-      task_commentsRaw,
-      taskCommentMentionsRes,
-      taskCommentReactionsRes,
-    ),
+    task_comments,
   };
 }
 
@@ -950,6 +975,63 @@ export async function loadLeaveForRange(
   return (data ?? []).map((row) => mapLeaveDay(row as Record<string, unknown>));
 }
 
+/**
+ * Public org share payload body (no full org assignments/comments forever).
+ * Schedule window should cover share schedule + dashboard KPI horizons.
+ */
+export async function loadPublicOrgShareData(
+  supabase: SupabaseClient,
+  orgId: string,
+  rangeStart: string,
+  rangeEnd: string,
+): Promise<{
+  milestones: Milestone[];
+  task_lists: TaskList[];
+  project_assets: ProjectAsset[];
+  tasks: Task[];
+  assignments: Assignment[];
+  leave_days: LeaveDay[];
+  task_comments: TaskComment[];
+}> {
+  const [
+    milestonesRes,
+    taskListsRes,
+    projectAssetsRes,
+    tasks,
+    assignments,
+    leave_days,
+  ] = await Promise.all([
+    supabase.from("milestones").select("*").eq("organization_id", orgId),
+    supabase.from("task_lists").select("*").eq("organization_id", orgId),
+    supabase.from("project_assets").select("*").eq("organization_id", orgId),
+    loadOrgTasks(supabase, orgId),
+    loadAssignmentsForRange(supabase, orgId, rangeStart, rangeEnd),
+    loadLeaveForRange(supabase, orgId, rangeStart, rangeEnd),
+  ]);
+
+  if (milestonesRes.error) throw milestonesRes.error;
+
+  return {
+    milestones: (milestonesRes.data ?? []).map((row) =>
+      mapMilestone(row as Record<string, unknown>),
+    ),
+    task_lists: taskListsRes.error
+      ? []
+      : (taskListsRes.data ?? []).map((row) =>
+          mapTaskList(row as Record<string, unknown>),
+        ),
+    project_assets: projectAssetsRes.error
+      ? []
+      : (projectAssetsRes.data ?? []).map((row) =>
+          mapProjectAsset(row as Record<string, unknown>),
+        ),
+    tasks,
+    assignments,
+    leave_days,
+    task_comments: [],
+  };
+}
+
 export type ProjectBudgetBurnRow = {
   project_id: string;
   used_hours: number;
@@ -1028,20 +1110,112 @@ export async function rpcPersonUtilizationWeeks(
   }));
 }
 
-/** Full org load (public share / recovery). Bootstrap + heavy. */
+export async function rpcOrgForecast(
+  supabase: SupabaseClient,
+  asOf?: string,
+): Promise<OrgForecastRow[]> {
+  const { data, error } = await supabase.rpc("rpc_org_forecast", {
+    p_as_of: asOf ?? undefined,
+  });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    project_id: String(row.project_id),
+    planned_hours: num(row.planned_hours),
+    revenue: num(row.revenue),
+    cost: num(row.cost),
+    margin: num(row.margin),
+    margin_pct: num(row.margin_pct),
+    hours_used_to_date: num(row.hours_used_to_date),
+    hours_future_planned: num(row.hours_future_planned),
+    hours_remaining: num(row.hours_remaining),
+    budget_margin: num(row.budget_margin),
+    budget_margin_pct: num(row.budget_margin_pct),
+    over_budget: Boolean(row.over_budget),
+  }));
+}
+
+export async function rpcOrgTaskStats(
+  supabase: SupabaseClient,
+  asOf?: string,
+): Promise<OrgTaskStats> {
+  const { data, error } = await supabase.rpc("rpc_org_task_stats", {
+    p_as_of: asOf ?? undefined,
+  });
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") {
+    return {
+      open_count: 0,
+      complete_count: 0,
+      overdue_count: 0,
+      no_due_count: 0,
+      upcoming_count: 0,
+    };
+  }
+  const r = row as Record<string, unknown>;
+  return {
+    open_count: num(r.open_count),
+    complete_count: num(r.complete_count),
+    overdue_count: num(r.overdue_count),
+    no_due_count: num(r.no_due_count),
+    upcoming_count: num(r.upcoming_count),
+  };
+}
+
+/** Org public share: bootstrap + scoped share body (not full historical assignments). */
 export async function loadOrgWorkspace(
   supabase: SupabaseClient,
   orgId: string,
   sessionProfileId: string | null,
+  rangeStart?: string,
+  rangeEnd?: string,
 ): Promise<DemoState> {
-  const [boot, heavy] = await Promise.all([
+  const start =
+    rangeStart ??
+    (() => {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - 12 * 7);
+      return d.toISOString().slice(0, 10);
+    })();
+  const end =
+    rangeEnd ??
+    (() => {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() + 52 * 7);
+      return d.toISOString().slice(0, 10);
+    })();
+
+  const [boot, share] = await Promise.all([
     loadOrgBootstrap(supabase, orgId, sessionProfileId),
-    loadOrgHeavyData(supabase, orgId),
+    loadPublicOrgShareData(supabase, orgId, start, end),
   ]);
   return {
     ...boot,
-    ...heavy,
+    ...share,
     sessionProfileId,
+  };
+}
+
+/** Project portal: bootstrap shell + one project bundle (no org-wide heavy). */
+export async function loadProjectPortalWorkspace(
+  supabase: SupabaseClient,
+  orgId: string,
+  projectId: string,
+): Promise<DemoState> {
+  const [boot, bundle] = await Promise.all([
+    loadOrgBootstrap(supabase, orgId, null),
+    loadProjectData(supabase, orgId, projectId),
+  ]);
+  return {
+    ...boot,
+    milestones: bundle.milestones,
+    task_lists: bundle.task_lists,
+    tasks: bundle.tasks,
+    task_comments: bundle.task_comments,
+    project_assets: bundle.project_assets,
+    assignments: bundle.assignments,
+    leave_days: [],
+    sessionProfileId: null,
   };
 }
 

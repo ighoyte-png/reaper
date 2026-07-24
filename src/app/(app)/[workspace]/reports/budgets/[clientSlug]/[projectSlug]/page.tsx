@@ -61,9 +61,7 @@ export default function ProjectBudgetDetailPage() {
   }, [project?.id, ensureProjectData, setActiveRealtimeProjectIds]);
 
   const projectDataReady =
-    !project?.id ||
-    dataStatus.orgHeavy === "ready" ||
-    dataStatus.projects[project.id] === "ready";
+    !project?.id || dataStatus.projects[project.id] === "ready";
   const projectDataLoading =
     Boolean(project?.id) &&
     !projectDataReady &&

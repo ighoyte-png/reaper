@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { addWeeks, format } from "date-fns";
 import {
@@ -79,7 +79,13 @@ type WeekUtilPoint = {
 };
 
 export default function ReportsPage() {
-  const { state, isPublicShare, ensureOrgHeavyData, mode } = useData();
+  const {
+    state,
+    isPublicShare,
+    ensureScheduleRange,
+    fetchOrgTaskStatsRpc,
+    mode,
+  } = useData();
   const { burns } = useProjectBurnsMap();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
@@ -88,22 +94,64 @@ export default function ReportsPage() {
   const router = useRouter();
   const now = useMemo(() => new Date(), []);
   const todayKey = toDateKey(now);
+  const utilStart = toDateKey(weekStart(now));
+  const utilEnd = toDateKey(weekEnd(addWeeks(now, 7)));
 
   useEffect(() => {
     if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
   }, [canManage, isPublicShare, router]);
 
   useEffect(() => {
-    if (mode === "supabase") void ensureOrgHeavyData();
-  }, [mode, ensureOrgHeavyData]);
+    if (mode === "supabase") void ensureScheduleRange(utilStart, utilEnd);
+  }, [mode, ensureScheduleRange, utilStart, utilEnd]);
 
-  const plannedHoursAcrossSchedule = useMemo(
-    () =>
-      state.assignments
-        .filter((a) => a.status === "confirmed")
-        .reduce((sum, a) => sum + assignmentHours(a), 0),
-    [state.assignments],
-  );
+  const [taskStats, setTaskStats] = useState<{
+    overdue: number;
+    noDue: number;
+    upcoming: number;
+    complete: number;
+    open: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (mode !== "supabase") {
+        setTaskStats(null);
+        return;
+      }
+      const stats = await fetchOrgTaskStatsRpc(todayKey);
+      if (cancelled || !stats) {
+        if (!cancelled) setTaskStats(null);
+        return;
+      }
+      setTaskStats({
+        overdue: stats.overdue_count,
+        noDue: stats.no_due_count,
+        upcoming: stats.upcoming_count,
+        complete: stats.complete_count,
+        open: stats.open_count,
+      });
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, fetchOrgTaskStatsRpc, todayKey]);
+
+  const plannedHoursAcrossSchedule = useMemo(() => {
+    let sum = 0;
+    for (const p of state.projects) {
+      const burn = burns.get(p.id);
+      if (burn) sum += burn.plannedHours;
+      else {
+        sum += state.assignments
+          .filter((a) => a.project_id === p.id && a.status === "confirmed")
+          .reduce((s, a) => s + assignmentHours(a), 0);
+      }
+    }
+    return sum;
+  }, [state.projects, state.assignments, burns]);
 
   const utilization = useMemo(() => {
     const weekAnchors = Array.from({ length: 8 }, (_, i) =>
@@ -214,6 +262,7 @@ export default function ReportsPage() {
   }, [state.projects, state.assignments, state.people, state.clients, burns]);
 
   const tasks = useMemo(() => {
+    if (taskStats) return taskStats;
     const open = state.tasks.filter((t) => t.status !== "complete");
     const overdue = open.filter((t) => t.due_date && t.due_date < todayKey);
     const noDue = open.filter((t) => !t.due_date);
@@ -228,7 +277,7 @@ export default function ReportsPage() {
       complete: complete.length,
       open: open.length,
     };
-  }, [state.tasks, todayKey]);
+  }, [taskStats, state.tasks, todayKey]);
 
   if (!canManage && !isPublicShare) {
     return (

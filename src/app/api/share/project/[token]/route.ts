@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { loadOrgWorkspace } from "@/lib/supabase/api";
+import { loadProjectPortalWorkspace } from "@/lib/supabase/api";
 import { sanitizeProjectPortal } from "@/lib/share/sanitize";
 
 type Params = { params: Promise<{ token: string }> };
@@ -49,10 +49,10 @@ export async function GET(_request: Request, { params }: Params) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const workspace = await loadOrgWorkspace(
+    const workspace = await loadProjectPortalWorkspace(
       admin,
       String(project.organization_id),
-      null,
+      String(project.id),
     );
     const portal = sanitizeProjectPortal(workspace, String(project.id));
     if (!portal) {

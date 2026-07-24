@@ -472,7 +472,7 @@ export default function TasksReportPage() {
 }
 
 function TasksReportContent() {
-  const { state, mode, ensureOrgHeavyData } = useData();
+  const { state, mode, ensureOrgTasks } = useData();
   const projectHref = useProjectHref();
   const todayKey = toDateKey(new Date());
   const { filters, setFilter, setFilters } = useUrlFilters({
@@ -485,8 +485,8 @@ function TasksReportContent() {
   );
 
   useEffect(() => {
-    if (mode === "supabase") void ensureOrgHeavyData();
-  }, [mode, ensureOrgHeavyData]);
+    if (mode === "supabase") void ensureOrgTasks();
+  }, [mode, ensureOrgTasks]);
 
   // Drop invalid project id from the URL once data is available.
   useEffect(() => {
