@@ -6,6 +6,7 @@ import { Clock, Mail, Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import { PersonForm } from "@/components/people/person-form";
 import { PodFilterBar } from "@/components/people/pod-filter-bar";
 import { PodsEditorModal } from "@/components/people/pods-editor-modal";
 import { ManagerTag } from "@/components/projects/project-manager-person";
@@ -28,7 +29,6 @@ import {
   filterPeopleByPod,
   peopleInPod,
   podsForPerson,
-  podsManagedBy,
   sortPods,
   type PodFilter,
 } from "@/lib/domain/pods";
@@ -54,17 +54,6 @@ const actionIconClass =
 
 const mutedActionIconClass =
   "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]";
-
-function accessLabel(role: Role): string {
-  switch (role) {
-    case "admin":
-      return "Admin";
-    case "manager":
-      return "Manager";
-    default:
-      return "Member";
-  }
-}
 
 const emptyPerson = (): Omit<Person, "organization_id"> => ({
   id: "",
@@ -579,6 +568,7 @@ function PeoplePageContent() {
       {canManage && editing && (
         <Modal
           title={isNewPerson ? "Add Person" : "Edit Person"}
+          className="max-w-3xl"
           onClose={() => {
             setEditing(null);
             setIsNewPerson(false);
@@ -586,330 +576,52 @@ function PeoplePageContent() {
             setAvatarPreview(null);
           }}
         >
-          <div className="grid gap-3">
-            <Field label="Photo">
-              <div className="flex items-center gap-3">
-                <PersonAvatar
-                  avatarUrl={avatarPreview}
-                  name={editing.name}
-                  color={personAvatarColor(editing)}
-                  size="lg"
-                />
-                <div className="flex flex-col gap-1.5">
-                  <input
-                    ref={avatarInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] ?? null;
-                      if (!file) return;
-                      setAvatarFile(file);
-                      const url = URL.createObjectURL(file);
-                      setAvatarPreview(url);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="h-8 w-fit rounded-[var(--radius-md)] border border-[var(--border)] px-2.5 text-xs"
-                    onClick={() => avatarInputRef.current?.click()}
-                  >
-                    {avatarPreview ? "Change Photo" : "Upload Photo"}
-                  </button>
-                  {avatarPreview ? (
-                    <button
-                      type="button"
-                      className="w-fit text-xs text-[var(--text-muted)]"
-                      onClick={() => {
-                        setAvatarFile(null);
-                        setAvatarPreview(null);
-                        setEditing({ ...editing, avatar_url: null });
-                        if (avatarInputRef.current) {
-                          avatarInputRef.current.value = "";
-                        }
-                      }}
-                    >
-                      Remove Photo
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            </Field>
-            <Field label="Name">
-              <input
-                className={inputClass}
-                value={editing.name}
-                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              />
-            </Field>
-            <Field label="Work email">
-              <input
-                type="email"
-                required={isNewPerson}
-                className={inputClass}
-                value={editing.email}
-                onChange={(e) =>
-                  setEditing({ ...editing, email: e.target.value })
-                }
-                placeholder="alex@company.com"
-              />
-            </Field>
-            {isNewPerson && (
-              <p className="text-xs text-[var(--text-muted)]">
-                We’ll create their account and show an invite link to set a
-                password.
-              </p>
-            )}
-            <Field label="Role title">
-              <input
-                className={inputClass}
-                value={editing.role_title}
-                onChange={(e) =>
-                  setEditing({ ...editing, role_title: e.target.value })
-                }
-              />
-            </Field>
-            {editing.profile_id && editingLinkedProfile ? (
-              <Field label="Access">
-                {admin ? (
-                  <>
-                    <Select
-                      value={editAccessRole}
-                      disabled={editingIsLastAdmin}
-                      onChange={(v) => setEditAccessRole(v as Role)}
-                      options={[
-                        { value: "member", label: "Member" },
-                        { value: "manager", label: "Manager" },
-                        { value: "admin", label: "Admin" },
-                      ]}
-                    />
-                    {editingIsLastAdmin ? (
-                      <p className="mt-1 text-xs text-[var(--text-muted)]">
-                        Keep at least one admin on the workspace.
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-xs text-[var(--text-muted)]">
-                        Controls what this login can manage in the app.
-                      </p>
-                    )}
-                  </>
-                ) : canManage && editingLinkedProfile.role !== "admin" ? (
-                  <>
-                    <Select
-                      value={editAccessRole}
-                      onChange={(v) => setEditAccessRole(v as Role)}
-                      options={[
-                        { value: "member", label: "Member" },
-                        { value: "manager", label: "Manager" },
-                      ]}
-                    />
-                    <p className="mt-1 text-xs text-[var(--text-muted)]">
-                      Controls what this login can manage in the app.
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-sm">
-                    {accessLabel(editingLinkedProfile.role)}
-                    {editingLinkedProfile.email
-                      ? ` · ${editingLinkedProfile.email}`
-                      : ""}
-                  </p>
-                )}
-              </Field>
-            ) : !isNewPerson ? (
-              <p className="text-xs text-[var(--text-muted)]">
-                No login linked yet — invite them to set Access.
-              </p>
-            ) : null}
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Department">
-                <input
-                  className={inputClass}
-                  value={editing.department}
-                  onChange={(e) =>
-                    setEditing({ ...editing, department: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Office">
-                <input
-                  className={inputClass}
-                  value={editing.office}
-                  onChange={(e) =>
-                    setEditing({ ...editing, office: e.target.value })
-                  }
-                />
-              </Field>
-            </div>
-            <Field label="Holiday calendar">
-              <Select
-                searchable
-                value={editing.holiday_calendar_id ?? ""}
-                onChange={(v) =>
-                  setEditing({
-                    ...editing,
-                    holiday_calendar_id: v || null,
-                  })
-                }
-                options={[
-                  { value: "", label: "None" },
-                  ...state.holiday_calendars.map((cal) => ({
-                    value: cal.id,
-                    label: cal.region
-                      ? `${cal.name} (${cal.region})`
-                      : cal.name,
-                  })),
-                ]}
-              />
-            </Field>
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={Boolean(editing.hide_from_schedule)}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    hide_from_schedule: e.target.checked,
-                  })
-                }
-              />
-              <span>
-                Hide from schedule &amp; capacity
-                <span className="block text-xs text-[var(--text-muted)]">
-                  Management-only accounts stay off the schedule and out of
-                  utilization capacity.
-                </span>
-              </span>
-            </label>
-            {pods.length > 0 ? (
-              <Field label="Pods">
-                <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-[var(--border)] p-2">
-                  {pods.map((pod) => {
-                    const isPodManager = pod.manager_person_id === editing.id;
-                    const checked = isPodManager || selectedPodIds.includes(pod.id);
-                    return (
-                      <label
-                        key={pod.id}
-                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-[var(--row-hover)]"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          disabled={isPodManager}
-                          onChange={(e) => {
-                            const on = e.target.checked;
-                            setSelectedPodIds((prev) =>
-                              on
-                                ? [...new Set([...prev, pod.id])]
-                                : prev.filter((id) => id !== pod.id),
-                            );
-                          }}
-                        />
-                        <span className="min-w-0 truncate">{pod.name}</span>
-                        {isPodManager ? (
-                          <span className="text-[10px] uppercase text-[var(--text-muted)]">
-                            Manager
-                          </span>
-                        ) : null}
-                      </label>
-                    );
-                  })}
-                </div>
-              </Field>
-            ) : null}
-            {(() => {
-              const managedPods = podsManagedBy(editing.id, state.pods);
-              if (managedPods.length === 0) return null;
-              return (
-                <p className="text-xs text-[var(--text-muted)]">
-                  Manages {managedPods.map((p) => p.name).join(", ")} — kept
-                  as a member of{" "}
-                  {managedPods.length === 1 ? "that pod" : "those pods"}{" "}
-                  automatically.
-                </p>
-              );
-            })()}
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Capacity hrs/week">
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={editing.capacity_hours_week}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      capacity_hours_week: Number(e.target.value) || 0,
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Cost rate">
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={editing.cost_rate}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      cost_rate: Number(e.target.value) || 0,
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Bill rate">
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={editing.bill_rate}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      bill_rate: Number(e.target.value) || 0,
-                    })
-                  }
-                />
-              </Field>
-            </div>
-            <div className="flex justify-between pt-2">
-              <Button
-                variant="ghost"
-                className="text-[var(--status-over)] hover:text-[var(--status-over)]"
-                onClick={() => {
-                  if (!editing.id || isNewPerson) return;
-                  setConfirmDelete(true);
-                }}
-              >
-                Delete
-              </Button>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  onClick={() => {
-                    setEditing(null);
-                    setIsNewPerson(false);
-                    setAvatarFile(null);
-                    setAvatarPreview(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  size="lg"
-                  disabled={saveBusy}
-                  onClick={() => void savePerson()}
-                >
-                  {saveBusy
-                    ? "Saving…"
-                    : isNewPerson
-                      ? "Add & Invite"
-                      : "Save"}
-                </Button>
-              </div>
-            </div>
-          </div>
+          <PersonForm
+            key={editing.id || "new"}
+            person={editing}
+            isNew={isNewPerson}
+            saveBusy={saveBusy}
+            avatarPreview={avatarPreview}
+            avatarInputRef={avatarInputRef}
+            onAvatarFile={(file) => {
+              setAvatarFile(file);
+              setAvatarPreview(URL.createObjectURL(file));
+            }}
+            onClearAvatar={() => {
+              setAvatarFile(null);
+              setAvatarPreview(null);
+              setEditing({ ...editing, avatar_url: null });
+              if (avatarInputRef.current) {
+                avatarInputRef.current.value = "";
+              }
+            }}
+            onChange={setEditing}
+            accessRole={editAccessRole}
+            onAccessRoleChange={setEditAccessRole}
+            linkedProfile={editingLinkedProfile}
+            canEditAccessAsAdmin={Boolean(admin)}
+            canEditAccessAsManager={
+              Boolean(canManage && !admin && editingLinkedProfile?.role !== "admin")
+            }
+            isLastAdmin={editingIsLastAdmin}
+            holidayCalendars={state.holiday_calendars}
+            pods={pods}
+            selectedPodIds={selectedPodIds}
+            onSelectedPodIdsChange={setSelectedPodIds}
+            onSave={() => void savePerson()}
+            onCancel={() => {
+              setEditing(null);
+              setIsNewPerson(false);
+              setAvatarFile(null);
+              setAvatarPreview(null);
+            }}
+            onDelete={
+              !isNewPerson && editing.id
+                ? () => setConfirmDelete(true)
+                : undefined
+            }
+            saveLabel={isNewPerson ? "Add & Invite" : "Save"}
+          />
         </Modal>
       )}
 

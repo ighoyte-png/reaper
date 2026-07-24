@@ -13,7 +13,6 @@ import { ProjectManagerPerson } from "@/components/projects/project-manager-pers
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
-import { PodFilterBar } from "@/components/people/pod-filter-bar";
 import { ManagerTag } from "@/components/projects/project-manager-person";
 import {
   filterPeopleByPod,
@@ -21,6 +20,10 @@ import {
   sortPods,
   type PodFilter,
 } from "@/lib/domain/pods";
+import {
+  readSchedulePodFilter,
+  writeSchedulePodFilter,
+} from "@/lib/schedule-pod-filter";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
@@ -192,7 +195,6 @@ export function ScheduleGrid() {
     project: "all",
     person: "all",
     zoom: "day",
-    pod: "all",
   });
   const zoom = (
     filters.zoom === "week" || filters.zoom === "month" || filters.zoom === "day"
@@ -201,15 +203,32 @@ export function ScheduleGrid() {
   ) as ScheduleZoom;
   const projectFilter = filters.project;
   const personFilter = filters.person;
-  const podFilter = filters.pod as PodFilter;
+  const [podFilter, setPodFilter] = useState<PodFilter>("all");
+  const skipPodFilterWrite = useRef(true);
   const [anchor, setAnchor] = useState(() =>
     scheduleAnchorForOffset(readUserViewPrefs(null).scheduleViewOffset),
   );
   const scheduleOffsetAppliedRef = useRef(false);
 
+  useLayoutEffect(() => {
+    const orgId = state.organization.id;
+    if (!orgId) return;
+    skipPodFilterWrite.current = true;
+    setPodFilter(readSchedulePodFilter(orgId, profile?.id));
+  }, [state.organization.id, profile?.id]);
+
   useEffect(() => {
-    const patch: { project?: string; person?: string; zoom?: string; pod?: string } =
-      {};
+    if (skipPodFilterWrite.current) {
+      skipPodFilterWrite.current = false;
+      return;
+    }
+    const orgId = state.organization.id;
+    if (!orgId) return;
+    writeSchedulePodFilter(orgId, profile?.id, podFilter);
+  }, [state.organization.id, profile?.id, podFilter]);
+
+  useEffect(() => {
+    const patch: { project?: string; person?: string; zoom?: string } = {};
     if (
       projectFilter !== "all" &&
       !state.projects.some((p) => p.id === projectFilter)
@@ -223,12 +242,6 @@ export function ScheduleGrid() {
       patch.person = "all";
     }
     if (
-      podFilter !== "all" &&
-      !state.pods.some((p) => p.id === podFilter)
-    ) {
-      patch.pod = "all";
-    }
-    if (
       filters.zoom !== "day" &&
       filters.zoom !== "week" &&
       filters.zoom !== "month"
@@ -239,13 +252,18 @@ export function ScheduleGrid() {
   }, [
     projectFilter,
     personFilter,
-    podFilter,
     filters.zoom,
     state.projects,
     state.people,
-    state.pods,
     setFilters,
   ]);
+
+  useEffect(() => {
+    if (podFilter === "all") return;
+    if (!state.pods.some((p) => p.id === podFilter)) {
+      setPodFilter("all");
+    }
+  }, [podFilter, state.pods]);
 
   useLayoutEffect(() => {
     if (scheduleOffsetAppliedRef.current) return;
@@ -566,7 +584,16 @@ export function ScheduleGrid() {
     !viewAsPersonId &&
     state.pods.length >= 1;
 
-  const podTabsForFilter = useMemo(() => sortPods(state.pods), [state.pods]);
+  const podSelectOptions = useMemo(
+    () => [
+      { value: "all", label: "All People" },
+      ...sortPods(state.pods).map((pod) => ({
+        value: pod.id,
+        label: pod.name,
+      })),
+    ],
+    [state.pods],
+  );
 
   const scheduleProjectManagers = useMemo(
     () => scheduleProjectManagerPeople(visiblePeople, state.profiles),
@@ -1941,16 +1968,6 @@ export function ScheduleGrid() {
           </div>
         </div>
 
-        {showPodFilter && (
-          <div className="border-b border-[var(--border)] px-3 py-2 sm:px-5">
-            <PodFilterBar
-              pods={podTabsForFilter}
-              podFilter={podFilter}
-              onSelect={(v) => setFilter("pod", v)}
-            />
-          </div>
-        )}
-
         {canManage && selectedBurn && selectedProject && (
           <div className="border-b border-[var(--border)] px-3 py-2 sm:px-5">
             <BurnBar burn={selectedBurn} />
@@ -2012,10 +2029,20 @@ export function ScheduleGrid() {
               {/* Column labels */}
               <div className="flex border-b border-[var(--border)]">
                 <div
-                  className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
-                  style={{ width: LABEL_PX }}
-                  aria-hidden
-                />
+                  className="sticky left-0 z-40 flex shrink-0 items-center border-r border-[var(--border)] bg-[var(--bg)] px-1.5 sm:px-2"
+                  style={{ width: LABEL_PX, height: DAY_H }}
+                >
+                  {showPodFilter ? (
+                    <Select
+                      value={podFilter}
+                      onChange={(v) => setPodFilter(v as PodFilter)}
+                      options={podSelectOptions}
+                      searchable={state.pods.length > 6}
+                      className="mt-0 h-7 w-full min-w-0 py-0 text-xs"
+                      aria-label="Filter schedule by pod"
+                    />
+                  ) : null}
+                </div>
                 <div className="flex min-w-0 flex-1">
                   {columns.map((col) => (
                     <div
@@ -3445,19 +3472,6 @@ export function ScheduleGrid() {
                       </div>
                     );
                   })}
-
-                  {personProjects.length === 0 && (
-                    <div className="flex">
-                      <div
-                        className="sticky left-0 z-20 px-3 py-2 text-xs text-[var(--text-muted)]"
-                        style={{ width: LABEL_PX }}
-                      >
-                        {canManage
-                          ? "No projects — use + to add a row"
-                          : "No projects in view"}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Full-height wash for Full Day / Statutory / Sick / Training (day view only) */}
                   {zoom === "day" ? (

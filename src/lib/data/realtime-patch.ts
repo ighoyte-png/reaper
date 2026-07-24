@@ -3,11 +3,13 @@ import {
   mapBulletin,
   mapLeaveDay,
   mapMilestone,
+  mapPod,
+  mapPodMember,
   mapProjectAsset,
   mapTask,
   mapTaskComment,
 } from "@/lib/supabase/api";
-import type { DemoState } from "@/lib/types";
+import type { DemoState, PodMember } from "@/lib/types";
 
 function upsertById<T extends { id: string }>(list: T[], row: T): T[] {
   const exists = list.some((x) => x.id === row.id);
@@ -42,6 +44,13 @@ export function realtimeEchoId(
     const cid = row.comment_id;
     const pid = row.person_id;
     return cid != null && pid != null ? `${String(cid)}:${String(pid)}` : null;
+  }
+  if (table === "pod_members") {
+    const podId = row.pod_id;
+    const personId = row.person_id;
+    return podId != null && personId != null
+      ? `${String(podId)}:${String(personId)}`
+      : null;
   }
   return row.id != null ? String(row.id) : null;
 }
@@ -291,6 +300,52 @@ export function applyRealtimeTableEvent(
           ...state.unread_mentions,
           { comment_id: commentId, person_id: personId },
         ],
+      };
+    }
+    case "pods": {
+      if (isDelete) {
+        const id = String(oldRecord?.id ?? "");
+        if (!id) return state;
+        const nextPods = state.pods.filter((p) => p.id !== id);
+        const nextMembers = state.pod_members.filter((m) => m.pod_id !== id);
+        if (
+          nextPods.length === state.pods.length &&
+          nextMembers.length === state.pod_members.length
+        ) {
+          return state;
+        }
+        return {
+          ...state,
+          pods: nextPods,
+          pod_members: nextMembers,
+        };
+      }
+      const mapped = mapPod(newRecord as Record<string, unknown>);
+      return { ...state, pods: upsertById(state.pods, mapped) };
+    }
+    case "pod_members": {
+      const mapped = mapPodMember(source as Record<string, unknown>);
+      if (!mapped.pod_id || !mapped.person_id) return state;
+      if (isDelete) {
+        const next = state.pod_members.filter(
+          (m) =>
+            !(
+              m.pod_id === mapped.pod_id && m.person_id === mapped.person_id
+            ),
+        );
+        return next.length === state.pod_members.length
+          ? state
+          : { ...state, pod_members: next };
+      }
+      const exists = state.pod_members.some(
+        (m) =>
+          m.pod_id === mapped.pod_id && m.person_id === mapped.person_id,
+      );
+      if (exists) return state;
+      const row: PodMember = mapped;
+      return {
+        ...state,
+        pod_members: [...state.pod_members, row],
       };
     }
     default:

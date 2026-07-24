@@ -1068,6 +1068,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
         },
         onChange("task_comment_reactions"),
       )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pods",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("pods"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "pod_members",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("pod_members"),
+      )
       .subscribe();
 
     const projectChannels = activeRealtimeProjectIds.map((projectId) =>
@@ -2165,6 +2185,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           manager_person_id: pod.manager_person_id ?? null,
           sort_order: pod.sort_order ?? 0,
         };
+        noteLocalWrite("pods", row.id);
+        if (row.manager_person_id) {
+          noteLocalWrite(
+            "pod_members",
+            `${row.id}:${row.manager_person_id}`,
+          );
+        }
         patch((prev) => {
           const exists = prev.pods.some((p) => p.id === row.id);
           let members = prev.pod_members;
@@ -2213,6 +2240,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deletePod: async (id) => {
+        noteLocalWrite("pods", id);
+        for (const m of state.pod_members.filter((x) => x.pod_id === id)) {
+          noteLocalWrite("pod_members", `${m.pod_id}:${m.person_id}`);
+        }
         patch((prev) => ({
           ...prev,
           pods: prev.pods.filter((p) => p.id !== id),
@@ -2237,6 +2268,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           person_id,
           organization_id: orgId,
         }));
+        const prevMembers = state.pod_members.filter((m) => m.pod_id === podId);
+        for (const m of prevMembers) {
+          noteLocalWrite("pod_members", `${m.pod_id}:${m.person_id}`);
+        }
+        for (const person_id of unique) {
+          noteLocalWrite("pod_members", `${podId}:${person_id}`);
+        }
         patch((prev) => ({
           ...prev,
           pod_members: [
@@ -2257,6 +2295,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // Always keep membership for pods this person manages.
         for (const pod of state.pods) {
           if (pod.manager_person_id === personId) wanted.add(pod.id);
+        }
+        const previous = state.pod_members.filter(
+          (m) => m.person_id === personId,
+        );
+        for (const m of previous) {
+          noteLocalWrite("pod_members", `${m.pod_id}:${m.person_id}`);
+        }
+        for (const podId of wanted) {
+          noteLocalWrite("pod_members", `${podId}:${personId}`);
         }
         patch((prev) => {
           const kept = prev.pod_members.filter((m) => m.person_id !== personId);

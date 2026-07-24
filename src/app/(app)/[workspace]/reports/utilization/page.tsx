@@ -19,7 +19,6 @@ import {
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import {
-  defaultPeopleScopeForViewer,
   filterPeopleByPod,
   sortPods,
   type PodFilter,
@@ -42,7 +41,7 @@ export default function UtilizationReportPage() {
 }
 
 function UtilizationReportContent() {
-  const { state, profile, myPerson, mode, ensureScheduleRange } = useData();
+  const { state, mode, ensureScheduleRange } = useData();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const now = useMemo(() => new Date(), []);
@@ -53,31 +52,22 @@ function UtilizationReportContent() {
     ? filters.pod
     : "all";
 
+  /** Default: all schedule-visible people. Pod chip narrows the set. */
   const scopedPeople = useMemo(() => {
-    if (podFilter !== "all") {
-      return scheduleVisiblePeople(
-        filterPeopleByPod(state.people, state.pods, state.pod_members, podFilter),
-      );
-    }
-    return defaultPeopleScopeForViewer(state.people, state.pods, state.pod_members, {
-      role: profile?.role,
-      myPersonId: myPerson?.id ?? null,
-      orgWide: true,
-    });
-  }, [
-    podFilter,
-    state.people,
-    state.pods,
-    state.pod_members,
-    profile?.role,
-    myPerson?.id,
-  ]);
+    const visible = scheduleVisiblePeople(state.people);
+    if (podFilter === "all") return visible;
+    return filterPeopleByPod(
+      visible,
+      state.pods,
+      state.pod_members,
+      podFilter,
+    );
+  }, [podFilter, state.people, state.pods, state.pod_members]);
 
   const scopedPersonIds = useMemo(() => {
-    if (podFilter !== "all") return scopedPeople.map((p) => p.id);
-    if (scopedPeople.length >= state.people.length) return null;
+    if (podFilter === "all") return null;
     return scopedPeople.map((p) => p.id);
-  }, [podFilter, scopedPeople, state.people.length]);
+  }, [podFilter, scopedPeople]);
 
   const weekAnchors = useMemo(
     () => Array.from({ length: 3 }, (_, i) => weekStart(addWeeks(now, i))),
@@ -165,9 +155,11 @@ function UtilizationReportContent() {
       <PageHeader title={<ReportBreadcrumb current="Utilization" />} />
       <div className="space-y-3 py-3 sm:py-5">
         <PodFilterBar
+          className="mb-1"
           pods={pods}
           podFilter={podFilter}
           onSelect={(next) => setFilter("pod", next)}
+          showAllOption={false}
         />
 
         <section className="space-y-3">

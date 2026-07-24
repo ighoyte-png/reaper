@@ -47,12 +47,15 @@ export function PodFilterBar({
   onSelect,
   className,
   allLabel = "All People",
+  /** When false, matches Project Manager report chips (no All tab; clear with X). */
+  showAllOption = true,
 }: {
   pods: Pod[];
   podFilter: PodFilter;
   onSelect: (next: PodFilter) => void;
   className?: string;
   allLabel?: string;
+  showAllOption?: boolean;
 }) {
   const podTabs = useMemo(() => sortPods(pods), [pods]);
   if (!showPodFilterUi(podTabs)) return null;
@@ -65,16 +68,18 @@ export function PodFilterBar({
       )}
       aria-label="Pods"
     >
-      <h2 className="mb-3 text-sm font-semibold">Pods</h2>
-      <ul className="flex flex-wrap gap-x-3 gap-y-2">
-        <li>
-          <PodChip
-            label={allLabel}
-            selected={podFilter === "all"}
-            onSelect={() => onSelect("all")}
-            showClear={false}
-          />
-        </li>
+      <h2 className="mb-3 text-sm font-semibold">Pod</h2>
+      <ul className="flex flex-wrap gap-x-4 gap-y-2">
+        {showAllOption ? (
+          <li>
+            <PodChip
+              label={allLabel}
+              selected={podFilter === "all"}
+              onSelect={() => onSelect("all")}
+              showClear={false}
+            />
+          </li>
+        ) : null}
         {podTabs.map((pod) => {
           const selected = podFilter === pod.id;
           return (
