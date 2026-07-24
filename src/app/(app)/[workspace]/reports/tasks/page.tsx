@@ -10,7 +10,6 @@ import {
   CalendarOff,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
@@ -20,6 +19,7 @@ import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
+import { ExpandPanel } from "@/components/ui/expand-panel";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
@@ -373,12 +373,7 @@ function ClientAccordionRow({
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}
-      className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
-        expanded
-          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
-          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
-      )}
+      className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
     >
       {color ? (
         <ProjectColorBar color={color} size="sm" />
@@ -389,11 +384,13 @@ function ClientAccordionRow({
       <span className="text-[11px] tabular-nums text-[var(--text-muted)]">
         {count}
       </span>
-      {expanded ? (
-        <ChevronDown size={14} className="shrink-0 text-[var(--text-muted)]" />
-      ) : (
-        <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)]" />
-      )}
+      <ChevronDown
+        size={14}
+        className={cn(
+          "shrink-0 text-[var(--text-muted)] transition-transform duration-200 ease-out motion-reduce:transition-none",
+          !expanded && "-rotate-90",
+        )}
+      />
     </button>
   );
 }
@@ -677,8 +674,9 @@ function TasksReportContent() {
                     count={group.count}
                     color={group.color}
                   />
-                  {expanded
-                    ? group.projects.map((project) => (
+                  <ExpandPanel open={expanded}>
+                    <div className="space-y-0.5">
+                      {group.projects.map((project) => (
                         <ProjectNavButton
                           key={project.id}
                           active={projectFilter === project.id}
@@ -687,8 +685,9 @@ function TasksReportContent() {
                           count={projectTaskCounts.get(project.id) ?? 0}
                           color={projectDisplayColor(project, state.clients)}
                         />
-                      ))
-                    : null}
+                      ))}
+                    </div>
+                  </ExpandPanel>
                 </div>
               );
             })}
