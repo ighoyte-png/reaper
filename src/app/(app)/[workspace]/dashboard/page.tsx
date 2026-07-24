@@ -5,13 +5,21 @@ import Link from "next/link";
 import { addWeeks, format, parseISO } from "date-fns";
 import {
   AlertTriangle,
+  CalendarOff,
+  CalendarRange,
+  FolderKanban,
+  Gauge,
+  HeartPulse,
+  LayoutGrid,
   Megaphone,
   MessageSquare,
   Pencil,
   Pin,
   Plus,
   Trash2,
+  Users,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
 import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar";
@@ -842,7 +850,7 @@ export default function DashboardPage() {
               ) : null}
 
               {showOrgKpis ? (
-                <KpiCard title="Team Utilization Rate">
+                <KpiCard title="Team Utilization Rate" icon={Gauge}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold tabular-nums">
                       {Math.round(teamUtilization.avg)}% Avg
@@ -859,6 +867,7 @@ export default function DashboardPage() {
 
               <KpiCard
                 title="New Tagged Comments"
+                icon={MessageSquare}
                 className={
                   taggedComments.length > 0
                     ? "!border-0 bg-[var(--status-attention-wash)]"
@@ -878,6 +887,7 @@ export default function DashboardPage() {
 
               <KpiCard
                 title="Overdue / Critical Tasks"
+                icon={AlertTriangle}
                 className={
                   pulseOverdueTasks.length > 0
                     ? "!border-0 bg-[var(--status-over)]/20"
@@ -914,7 +924,7 @@ export default function DashboardPage() {
 
             <section className={panelClass()}>
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">People Utilization</h2>
+                <WidgetTitle icon={LayoutGrid}>People Utilization</WidgetTitle>
                 {showOrgKpis ? (
                   <Link
                     href={appHref("/reports/utilization")}
@@ -942,12 +952,38 @@ export default function DashboardPage() {
   );
 }
 
+function WidgetTitle({
+  icon: Icon,
+  children,
+  as: Tag = "h2",
+  className,
+}: {
+  icon: LucideIcon;
+  children: ReactNode;
+  as?: "h2" | "h3";
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex min-w-0 items-center gap-2", className)}>
+      <Icon
+        size={14}
+        strokeWidth={1.75}
+        className="shrink-0 text-[var(--text-muted)]"
+        aria-hidden
+      />
+      <Tag className="text-sm font-semibold">{children}</Tag>
+    </div>
+  );
+}
+
 function KpiCard({
   title,
+  icon: Icon,
   children,
   className,
 }: {
   title: string;
+  icon: LucideIcon;
   children: ReactNode;
   className?: string;
 }) {
@@ -958,7 +994,8 @@ function KpiCard({
         className,
       )}
     >
-      <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+      <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        <Icon size={12} strokeWidth={1.75} className="shrink-0" aria-hidden />
         {title}
       </h3>
       <div className="space-y-2">{children}</div>
@@ -979,7 +1016,7 @@ function ActiveProjectsHealthCard({
   };
 }) {
   return (
-    <KpiCard title="Active Projects / Health">
+    <KpiCard title="Active Projects / Health" icon={FolderKanban}>
       <div className="text-sm font-semibold tabular-nums">
         {stats.total} Active
         {stats.total > 0 ? (
@@ -1066,7 +1103,12 @@ function TaggedCommentsPanel({
   return (
     <section className={panelClass()}>
       <div className="mb-3 flex items-center gap-2">
-        <MessageSquare size={14} className="text-[var(--text-muted)]" />
+        <MessageSquare
+          size={14}
+          strokeWidth={1.75}
+          className="shrink-0 text-[var(--text-muted)]"
+          aria-hidden
+        />
         <h2 className="text-sm font-semibold">New Tagged Comments</h2>
         {total > 0 ? (
           <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
@@ -1150,7 +1192,7 @@ function ProjectHealthBudget({
   return (
     <section className={panelClass()}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Project Health &amp; Budget</h2>
+        <WidgetTitle icon={HeartPulse}>Project Health &amp; Budget</WidgetTitle>
         {canManage ? (
           <Link
             href={appHref("/reports/budgets")}
@@ -1340,8 +1382,8 @@ function DashboardCapacityLeave({
   return (
     <>
       <section className={panelClass()}>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Capacity &amp; Load</h2>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <WidgetTitle icon={Users}>Capacity &amp; Load</WidgetTitle>
           <Link
             href={appHref("/schedule")}
             className={buttonClass({ variant: "secondary" })}
@@ -1370,7 +1412,9 @@ function DashboardCapacityLeave({
       </section>
 
       <section className={panelClass()}>
-        <h2 className="mb-3 text-sm font-semibold">Upcoming Leave</h2>
+        <WidgetTitle icon={CalendarOff} className="mb-3">
+          Upcoming Leave
+        </WidgetTitle>
         <div className="space-y-4">
           <LeaveMonthCalendar leaveDays={approvedLeave} people={people} />
           {upcomingLeaveBlocks.length > 0 ? (
@@ -1591,7 +1635,7 @@ function TodaySchedule({
     <section className={panelClass()}>
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Schedules</h2>
+          <WidgetTitle icon={CalendarRange}>Schedules</WidgetTitle>
           <p className="mt-0.5 text-xs text-[var(--text-muted)]">
             Today&apos;s hours by project
           </p>
@@ -1724,7 +1768,12 @@ function TaskPulse({
   return (
     <section className={panelClass()}>
       <div className="mb-3 flex items-center gap-2">
-        <Pin size={14} className="text-[var(--text-muted)]" />
+        <Pin
+          size={14}
+          strokeWidth={1.75}
+          className="shrink-0 text-[var(--text-muted)]"
+          aria-hidden
+        />
         <h2 className="text-sm font-semibold">Task Pulse</h2>
         {total > 0 ? (
           <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
@@ -1836,7 +1885,12 @@ function BulletinBoard({
     <section className={panelClass()}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <Megaphone size={14} className="text-[var(--text-muted)]" />
+          <Megaphone
+            size={14}
+            strokeWidth={1.75}
+            className="shrink-0 text-[var(--text-muted)]"
+            aria-hidden
+          />
           <h2 className="text-sm font-semibold">Bulletin Board</h2>
           {unreadCount > 0 ? (
             <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
