@@ -477,10 +477,13 @@ export default function DashboardPage() {
 
   const sortedPeople = sortPeopleByName(state.people);
 
-  const activeProjects = useMemo(
-    () => state.projects.filter((p) => p.status === "active"),
-    [state.projects],
-  );
+  const activeProjects = useMemo(() => {
+    if (!personalPersonId) return [];
+    return state.projects.filter(
+      (p) =>
+        p.status === "active" && p.manager_person_id === personalPersonId,
+    );
+  }, [state.projects, personalPersonId]);
 
   const projectHealthStats = useMemo(() => {
     let healthy = 0;
@@ -501,6 +504,9 @@ export default function DashboardPage() {
       scored <= 0 ? 100 : Math.round((healthy / scored) * 100);
     return { healthy, near, over, none, onTrackPct, total: activeProjects.length };
   }, [activeProjects, state.assignments, state.people, burns]);
+
+  /** Members (and managers) who are PM on ≥1 active project see this KPI. */
+  const showPmHealthKpi = projectHealthStats.total > 0;
 
   const teamUtilization = useMemo(() => {
     const people = showOrgDashboard
@@ -824,57 +830,23 @@ export default function DashboardPage() {
             <div
               className={cn(
                 "grid grid-cols-2 gap-3",
-                showOrgKpis ? "xl:grid-cols-4" : "xl:grid-cols-2",
+                showOrgKpis ? "xl:grid-cols-3" : "xl:grid-cols-2",
               )}
             >
               {showOrgKpis ? (
-                <>
-                  <KpiCard title="Active Projects / Health">
+                <KpiCard title="Team Utilization Rate">
+                  <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold tabular-nums">
-                      {projectHealthStats.total} Active
-                      {projectHealthStats.total > 0 ? (
-                        <span className="font-normal text-[var(--text-muted)]">
-                          {" "}
-                          | {projectHealthStats.onTrackPct}% On Track
-                        </span>
-                      ) : null}
+                      {Math.round(teamUtilization.avg)}% Avg
                     </div>
-                    <SegmentBar
-                      segments={[
-                        {
-                          value: projectHealthStats.healthy,
-                          className: "bg-[var(--status-healthy)]",
-                        },
-                        {
-                          value: projectHealthStats.near,
-                          className: "bg-[var(--status-near)]",
-                        },
-                        {
-                          value: projectHealthStats.over,
-                          className: "bg-[var(--status-over)]",
-                        },
-                        {
-                          value: projectHealthStats.none,
-                          className: "bg-[var(--status-unavailable)]",
-                        },
-                      ]}
+                    <SchedulePie
+                      compact
+                      showCenter={false}
+                      slices={teamUtilizationPieSlices}
+                      totalHours={teamUtilization.thisWeekBooked}
                     />
-                  </KpiCard>
-
-                  <KpiCard title="Team Utilization Rate">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold tabular-nums">
-                        {Math.round(teamUtilization.avg)}% Avg
-                      </div>
-                      <SchedulePie
-                        compact
-                        showCenter={false}
-                        slices={teamUtilizationPieSlices}
-                        totalHours={teamUtilization.thisWeekBooked}
-                      />
-                    </div>
-                  </KpiCard>
-                </>
+                  </div>
+                </KpiCard>
               ) : null}
 
               <KpiCard
@@ -914,6 +886,40 @@ export default function DashboardPage() {
                 </div>
               </KpiCard>
             </div>
+
+            {showPmHealthKpi ? (
+              <KpiCard title="Active Projects / Health">
+                <div className="text-sm font-semibold tabular-nums">
+                  {projectHealthStats.total} Active
+                  {projectHealthStats.total > 0 ? (
+                    <span className="font-normal text-[var(--text-muted)]">
+                      {" "}
+                      | {projectHealthStats.onTrackPct}% On Track
+                    </span>
+                  ) : null}
+                </div>
+                <SegmentBar
+                  segments={[
+                    {
+                      value: projectHealthStats.healthy,
+                      className: "bg-[var(--status-healthy)]",
+                    },
+                    {
+                      value: projectHealthStats.near,
+                      className: "bg-[var(--status-near)]",
+                    },
+                    {
+                      value: projectHealthStats.over,
+                      className: "bg-[var(--status-over)]",
+                    },
+                    {
+                      value: projectHealthStats.none,
+                      className: "bg-[var(--status-unavailable)]",
+                    },
+                  ]}
+                />
+              </KpiCard>
+            ) : null}
 
             <TodaySchedule
               assignments={todaysAssignments}
