@@ -9,20 +9,26 @@ import {
   ArrowUpDown,
   CalendarOff,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
-import { Select } from "@/components/ui/select";
+import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
+import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { toDateKey } from "@/lib/domain/dates";
+import { showProjectManagerUi } from "@/lib/domain/project-access";
 import { dueDateToneClass, taskStatusLabel } from "@/lib/domain/tasks";
-import { sortClientsByName } from "@/lib/domain/sorting";
+import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Client, Person, Project, Task } from "@/lib/types";
 
-type ClientFilter = "all" | "none" | string;
+type ProjectFilter = "all" | string;
+type ManagerFilter = "all" | string;
 type SortKey =
   | "title"
   | "project"
@@ -32,16 +38,6 @@ type SortKey =
   | "end"
   | "status";
 type SortDir = "asc" | "desc";
-
-function projectMatchesClient(
-  project: Project | undefined,
-  clientFilter: ClientFilter,
-): boolean {
-  if (!project) return clientFilter === "all";
-  if (clientFilter === "all") return true;
-  if (clientFilter === "none") return !project.client_id;
-  return project.client_id === clientFilter;
-}
 
 function compareNullableDates(a: string | null, b: string | null): number {
   if (!a && !b) return 0;
@@ -328,7 +324,79 @@ function TaskTable({
   );
 }
 
-function ClientNavButton({
+function AllProjectsNavButton({
+  active,
+  onClick,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  count: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+        active
+          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+      )}
+    >
+      <ProjectColorBar color="var(--border)" size="sm" />
+      <span className="min-w-0 flex-1 truncate">All projects</span>
+      <span className="text-[11px] tabular-nums text-[var(--text-muted)]">
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function ClientAccordionRow({
+  expanded,
+  onToggle,
+  label,
+  count,
+  color,
+}: {
+  expanded: boolean;
+  onToggle: () => void;
+  label: string;
+  count: number;
+  color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+        expanded
+          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+      )}
+    >
+      {color ? (
+        <ProjectColorBar color={color} size="sm" />
+      ) : (
+        <ProjectColorBar color="var(--border)" size="sm" />
+      )}
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="text-[11px] tabular-nums text-[var(--text-muted)]">
+        {count}
+      </span>
+      {expanded ? (
+        <ChevronDown size={14} className="shrink-0 text-[var(--text-muted)]" />
+      ) : (
+        <ChevronRight size={14} className="shrink-0 text-[var(--text-muted)]" />
+      )}
+    </button>
+  );
+}
+
+function ProjectNavButton({
   active,
   onClick,
   label,
@@ -339,35 +407,33 @@ function ClientNavButton({
   onClick: () => void;
   label: string;
   count: number;
-  color?: string | null;
+  color?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm",
+        "flex w-full cursor-pointer items-center gap-2 rounded-md py-2 pl-7 pr-2.5 text-left text-sm transition-colors",
         active
-          ? "bg-[var(--row-hover)] font-medium text-[var(--text)]"
+          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
           : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
       )}
     >
       {color ? (
-        <span
-          className="h-2 w-2 shrink-0 rounded-full"
-          style={{ backgroundColor: color }}
-          aria-hidden
-        />
+        <ProjectColorBar color={color} size="sm" />
       ) : (
-        <span className="h-2 w-2 shrink-0" aria-hidden />
+        <ProjectColorBar color="var(--border)" size="sm" />
       )}
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      <span className="shrink-0 text-xs text-[var(--text-muted)]">{count}</span>
+      <span className="text-[11px] tabular-nums text-[var(--text-muted)]">
+        {count}
+      </span>
     </button>
   );
 }
 
-function MobileClientChip({
+function MobileProjectChip({
   active,
   onClick,
   label,
@@ -376,26 +442,20 @@ function MobileClientChip({
   active: boolean;
   onClick: () => void;
   label: string;
-  color?: string | null;
+  color?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs",
+        "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs",
         active
           ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
-          : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
+          : "border-[var(--border)] text-[var(--text-muted)]",
       )}
     >
-      {color ? (
-        <span
-          className="h-1.5 w-1.5 rounded-full"
-          style={{ backgroundColor: color }}
-          aria-hidden
-        />
-      ) : null}
+      {color ? <ProjectColorBar color={color} size="sm" /> : null}
       {label}
     </button>
   );
@@ -405,8 +465,11 @@ export default function TasksReportPage() {
   const { state, mode, ensureOrgHeavyData } = useData();
   const projectHref = useProjectHref();
   const todayKey = toDateKey(new Date());
-  const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
-  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>("all");
+  const [managerFilter, setManagerFilter] = useState<ManagerFilter>("all");
+  const [expandedClientIds, setExpandedClientIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     if (mode === "supabase") void ensureOrgHeavyData();
@@ -429,44 +492,130 @@ export default function TasksReportPage() {
     [state.clients],
   );
 
-  const clientCounts = useMemo(() => {
-    const counts = new Map<string | "none", number>();
+  const projectTaskCounts = useMemo(() => {
+    const counts = new Map<string, number>();
     for (const task of state.tasks) {
-      const project = projectById.get(task.project_id);
-      const key = project?.client_id ?? "none";
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      counts.set(task.project_id, (counts.get(task.project_id) ?? 0) + 1);
     }
     return counts;
-  }, [state.tasks, projectById]);
+  }, [state.tasks]);
 
-  const sidebarClients = useMemo(
-    () => clients.filter((c) => (clientCounts.get(c.id) ?? 0) > 0),
-    [clients, clientCounts],
-  );
-
-  const projectsForFilter = useMemo(() => {
-    return [...state.projects]
-      .filter((p) => projectMatchesClient(p, clientFilter))
+  const projectsWithTasks = useMemo(() => {
+    return state.projects
+      .filter((p) => (projectTaskCounts.get(p.id) ?? 0) > 0)
       .sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
       );
-  }, [state.projects, clientFilter]);
+  }, [state.projects, projectTaskCounts]);
 
-  function selectClient(next: ClientFilter) {
-    setClientFilter(next);
-    setProjectFilter("all");
+  const sidebarGroups = useMemo(() => {
+    const byClient = new Map<string | "none", Project[]>();
+    for (const project of projectsWithTasks) {
+      const key = project.client_id ?? "none";
+      const list = byClient.get(key) ?? [];
+      list.push(project);
+      byClient.set(key, list);
+    }
+    const groups: {
+      key: string;
+      label: string;
+      color?: string;
+      count: number;
+      projects: Project[];
+    }[] = [];
+
+    for (const client of clients) {
+      const projects = byClient.get(client.id);
+      if (!projects?.length) continue;
+      groups.push({
+        key: client.id,
+        label: client.name,
+        color: client.color,
+        count: projects.reduce(
+          (sum, p) => sum + (projectTaskCounts.get(p.id) ?? 0),
+          0,
+        ),
+        projects,
+      });
+    }
+
+    const uncategorized = byClient.get("none");
+    if (uncategorized?.length) {
+      groups.push({
+        key: "none",
+        label: "No client",
+        count: uncategorized.reduce(
+          (sum, p) => sum + (projectTaskCounts.get(p.id) ?? 0),
+          0,
+        ),
+        projects: uncategorized,
+      });
+    }
+
+    return groups;
+  }, [clients, projectsWithTasks, projectTaskCounts]);
+
+  // Keep the selected project's client expanded.
+  useEffect(() => {
+    if (projectFilter === "all") return;
+    const project = projectById.get(projectFilter);
+    if (!project) return;
+    const key = project.client_id ?? "none";
+    setExpandedClientIds((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }, [projectFilter, projectById]);
+
+  const managerTabs = useMemo(() => {
+    if (!showProjectManagerUi(projectsWithTasks)) return [];
+    const ids = new Set<string>();
+    for (const p of projectsWithTasks) {
+      if (p.manager_person_id) ids.add(p.manager_person_id);
+    }
+    return state.people
+      .filter((person) => ids.has(person.id))
+      .sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+  }, [projectsWithTasks, state.people]);
+
+  const showManagers = managerTabs.length >= 2;
+
+  useEffect(() => {
+    if (managerFilter === "all") return;
+    if (!managerTabs.some((person) => person.id === managerFilter)) {
+      setManagerFilter("all");
+    }
+  }, [managerFilter, managerTabs]);
+
+  function toggleClientExpanded(key: string) {
+    setExpandedClientIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   }
 
   const scopedTasks = useMemo(() => {
     return state.tasks.filter((task) => {
       const project = projectById.get(task.project_id);
-      if (!projectMatchesClient(project, clientFilter)) return false;
+      if (!project) return false;
       if (projectFilter !== "all" && task.project_id !== projectFilter) {
+        return false;
+      }
+      if (
+        managerFilter !== "all" &&
+        project.manager_person_id !== managerFilter
+      ) {
         return false;
       }
       return true;
     });
-  }, [state.tasks, projectById, clientFilter, projectFilter]);
+  }, [state.tasks, projectById, projectFilter, managerFilter]);
 
   const overdueTasks = useMemo(
     () =>
@@ -501,76 +650,103 @@ export default function TasksReportPage() {
             </p>
           </div>
           <nav className="space-y-0.5 p-2" aria-label="Clients">
-            <ClientNavButton
-              active={clientFilter === "all"}
-              onClick={() => selectClient("all")}
-              label="All clients"
+            <AllProjectsNavButton
+              active={projectFilter === "all"}
+              onClick={() => setProjectFilter("all")}
               count={state.tasks.length}
             />
-            {sidebarClients.map((client) => (
-              <ClientNavButton
-                key={client.id}
-                active={clientFilter === client.id}
-                onClick={() => selectClient(client.id)}
-                label={client.name}
-                count={clientCounts.get(client.id) ?? 0}
-                color={client.color}
-              />
-            ))}
-            {(clientCounts.get("none") ?? 0) > 0 ? (
-              <ClientNavButton
-                active={clientFilter === "none"}
-                onClick={() => selectClient("none")}
-                label="No client"
-                count={clientCounts.get("none") ?? 0}
-              />
-            ) : null}
+            {sidebarGroups.map((group) => {
+              const expanded = expandedClientIds.has(group.key);
+              return (
+                <div key={group.key}>
+                  <ClientAccordionRow
+                    expanded={expanded}
+                    onToggle={() => toggleClientExpanded(group.key)}
+                    label={group.label}
+                    count={group.count}
+                    color={group.color}
+                  />
+                  {expanded
+                    ? group.projects.map((project) => (
+                        <ProjectNavButton
+                          key={project.id}
+                          active={projectFilter === project.id}
+                          onClick={() => setProjectFilter(project.id)}
+                          label={project.name}
+                          count={projectTaskCounts.get(project.id) ?? 0}
+                          color={projectDisplayColor(project, state.clients)}
+                        />
+                      ))
+                    : null}
+                </div>
+              );
+            })}
           </nav>
         </aside>
 
         <div className="min-w-0 flex-1 space-y-6 p-3 sm:p-5">
-          <div className="mb-1 flex gap-1 overflow-x-auto md:hidden">
-            <MobileClientChip
-              active={clientFilter === "all"}
-              onClick={() => selectClient("all")}
-              label="All"
+          <div className="mb-1 flex gap-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden">
+            <MobileProjectChip
+              active={projectFilter === "all"}
+              onClick={() => setProjectFilter("all")}
+              label="All projects"
             />
-            {sidebarClients.map((c) => (
-              <MobileClientChip
-                key={c.id}
-                active={clientFilter === c.id}
-                onClick={() => selectClient(c.id)}
-                label={c.name}
-                color={c.color}
+            {projectsWithTasks.map((project) => (
+              <MobileProjectChip
+                key={project.id}
+                active={projectFilter === project.id}
+                onClick={() => setProjectFilter(project.id)}
+                label={project.name}
+                color={projectDisplayColor(project, state.clients)}
               />
             ))}
-            {(clientCounts.get("none") ?? 0) > 0 ? (
-              <MobileClientChip
-                active={clientFilter === "none"}
-                onClick={() => selectClient("none")}
-                label="No Client"
-              />
-            ) : null}
           </div>
 
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block min-w-[12rem] flex-1 text-xs text-[var(--text-muted)] sm:max-w-xs">
-              Project
-              <Select
-                className="mt-1"
-                searchable
-                value={projectFilter}
-                onChange={setProjectFilter}
-                options={[
-                  { value: "all", label: "All projects" },
-                  ...projectsForFilter.map((p) => ({
-                    value: p.id,
-                    label: p.name,
-                  })),
-                ]}
-              />
-            </label>
-          </div>
+          {showManagers ? (
+            <section
+              className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
+              aria-label="Project managers"
+            >
+              <h2 className="mb-3 text-sm font-semibold">Project Manager</h2>
+              <ul className="flex flex-wrap gap-x-4 gap-y-2">
+                {managerTabs.map((person) => {
+                  const selected = managerFilter === person.id;
+                  return (
+                    <li key={person.id}>
+                      <div
+                        className={cn(
+                          "flex items-center gap-1 rounded-md border px-1.5 py-1 transition-colors",
+                          selected
+                            ? "border-[var(--text)] bg-[var(--bg-elevated)]"
+                            : "border-transparent hover:bg-[var(--row-hover)]",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={selected}
+                          onClick={() => setManagerFilter(person.id)}
+                          className="min-w-0 cursor-pointer text-left"
+                        >
+                          <ProjectManagerPerson person={person} />
+                        </button>
+                        {selected ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                            aria-label={`Clear ${person.name} filter`}
+                            onClick={() => setManagerFilter("all")}
+                          >
+                            <X size={14} strokeWidth={2} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ) : null}
 
           <section>
             <div className="mb-3 flex items-center gap-2">
