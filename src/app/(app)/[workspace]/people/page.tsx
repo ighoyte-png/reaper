@@ -380,6 +380,11 @@ function PeoplePageContent() {
       state.leave_days,
     );
     const level = capacityLevel(booked, available, available <= 0);
+    const personPods = podsForPerson(
+      person.id,
+      state.pods,
+      state.pod_members,
+    );
     return (
       <article
         key={person.id}
@@ -422,64 +427,79 @@ function PeoplePageContent() {
           />
           {formatHours(booked)} / {formatHours(available)} this week
         </div>
-        {canManage ? (
-          <div className="mt-3 flex items-center justify-end gap-0.5 border-t border-[var(--border)] pt-2.5">
-            {!person.profile_id ? (
-              <button
-                type="button"
-                className={actionIconClass}
-                title="Invite"
-                aria-label="Invite"
-                onClick={() => {
-                  if (person.email?.trim()) {
-                    void createInviteLink(person, {
-                      emailOverride: person.email,
-                    });
-                  } else {
-                    setInviteTarget(person);
-                    setInviteEmail("");
-                    setInviteUrl(null);
-                  }
-                }}
-              >
-                <Mail size={14} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={actionIconClass}
-                title="Resend invite"
-                aria-label="Resend invite"
-                disabled={inviteBusy}
-                onClick={() => setResendTarget(person)}
-              >
-                <Mail size={14} />
-              </button>
-            )}
-            <button
-              type="button"
-              className={actionIconClass}
-              title="Edit"
-              aria-label="Edit"
-              onClick={() => {
-                openEdit(person, false);
-              }}
-            >
-              <Pencil size={14} />
-            </button>
-            <button
-              type="button"
-              className={mutedActionIconClass}
-              title="Time off"
-              aria-label="Time off"
-              onClick={() => {
-                setLeaveTarget(person);
-                setLeaveDate(start);
-                setLeaveKind("vacation");
-              }}
-            >
-              <Clock size={14} />
-            </button>
+        {canManage || personPods.length > 0 ? (
+          <div className="mt-3 flex items-center gap-2 border-t border-[var(--border)] pt-2.5">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-1">
+              {personPods.map((pod) => (
+                <span
+                  key={pod.id}
+                  className="max-w-full truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+                  title={pod.name}
+                >
+                  {pod.name}
+                </span>
+              ))}
+            </div>
+            {canManage ? (
+              <div className="flex shrink-0 items-center justify-end gap-0.5">
+                {!person.profile_id ? (
+                  <button
+                    type="button"
+                    className={actionIconClass}
+                    title="Invite"
+                    aria-label="Invite"
+                    onClick={() => {
+                      if (person.email?.trim()) {
+                        void createInviteLink(person, {
+                          emailOverride: person.email,
+                        });
+                      } else {
+                        setInviteTarget(person);
+                        setInviteEmail("");
+                        setInviteUrl(null);
+                      }
+                    }}
+                  >
+                    <Mail size={14} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={actionIconClass}
+                    title="Resend invite"
+                    aria-label="Resend invite"
+                    disabled={inviteBusy}
+                    onClick={() => setResendTarget(person)}
+                  >
+                    <Mail size={14} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={actionIconClass}
+                  title="Edit"
+                  aria-label="Edit"
+                  onClick={() => {
+                    openEdit(person, false);
+                  }}
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  className={mutedActionIconClass}
+                  title="Time off"
+                  aria-label="Time off"
+                  onClick={() => {
+                    setLeaveTarget(person);
+                    setLeaveDate(start);
+                    setLeaveKind("vacation");
+                  }}
+                >
+                  <Clock size={14} />
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </article>

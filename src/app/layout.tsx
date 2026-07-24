@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
+import { NavigationProgress } from "@/components/nav/navigation-progress";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { ThemeScript } from "@/components/theme/theme-script";
 import { ToastProvider } from "@/components/toast/toast-provider";
@@ -44,7 +45,10 @@ export default function RootLayout({
       <body className="min-h-full antialiased" suppressHydrationWarning>
         <ThemeProvider>
           <DataProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              <NavigationProgress />
+              {children}
+            </ToastProvider>
           </DataProvider>
         </ThemeProvider>
       </body>

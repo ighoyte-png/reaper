@@ -190,6 +190,54 @@ function sortByOrder(tasks: Task[]): Task[] {
   );
 }
 
+/** Pulsing placeholder rows while project tasks load (schedule sidebar / hub). */
+function TaskBoardSkeleton({ compact = false }: { compact?: boolean }) {
+  const sections = compact
+    ? [
+        [0.92, 0.78, 0.64],
+        [0.86, 0.7],
+      ]
+    : [
+        [0.9, 0.75, 0.6, 0.82],
+        [0.88, 0.68, 0.74],
+      ];
+
+  return (
+    <div
+      className={cn("space-y-4", compact && "space-y-3")}
+      aria-busy="true"
+      aria-label="Loading tasks"
+    >
+      {sections.map((widths, sectionIdx) => (
+        <div key={sectionIdx} className="space-y-2">
+          <div
+            className={cn(
+              "animate-pulse rounded bg-[var(--bg-elevated)]",
+              compact ? "h-2.5 w-20" : "h-3 w-28",
+            )}
+            style={{ animationDelay: `${sectionIdx * 80}ms` }}
+          />
+          <div className={cn("space-y-1.5", !compact && "space-y-2")}>
+            {widths.map((w, i) => (
+              <div
+                key={i}
+                className={cn(
+                  "animate-pulse rounded-md bg-[var(--bg-elevated)]",
+                  compact ? "h-7" : "h-9",
+                )}
+                style={{
+                  width: `${w * 100}%`,
+                  animationDelay: `${sectionIdx * 80 + (i + 1) * 60}ms`,
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ProjectTaskBoard({
   projectId,
   readOnly = false,
@@ -214,6 +262,7 @@ export function ProjectTaskBoard({
     deleteTaskList,
     newId,
     ensureProjectData,
+    dataStatus,
   } = useData();
   const projectHref = useProjectHref();
   const project = state.projects.find((p) => p.id === projectId);
@@ -223,6 +272,15 @@ export function ProjectTaskBoard({
     if (!projectId) return;
     void ensureProjectData(projectId);
   }, [projectId, ensureProjectData]);
+
+  const projectDataReady =
+    isPublicShare ||
+    !projectId ||
+    dataStatus.projects[projectId] === "ready";
+  const projectDataLoading =
+    Boolean(projectId) &&
+    !projectDataReady &&
+    dataStatus.projects[projectId] !== "error";
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDraft, setBulkDraft] = useState<{
     status?: TaskStatus;
@@ -1005,6 +1063,10 @@ export function ProjectTaskBoard({
     toggleReaction: toggleTaskCommentReaction,
     mentionPeople,
   };
+
+  if (projectDataLoading) {
+    return <TaskBoardSkeleton compact={compact} />;
+  }
 
   if (view === "card" && allowCardView) {
     return (

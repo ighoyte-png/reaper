@@ -644,6 +644,10 @@ export default function SettingsPage() {
                 </Field>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Default Start Page">
+                    <p className="mt-0.5 text-[11px] font-normal leading-snug text-[var(--text-muted)]">
+                      Start page is used after login and when opening the app
+                      root.
+                    </p>
                     <Select
                       value={prefs.defaultStartPage}
                       onChange={(v) =>
@@ -656,6 +660,10 @@ export default function SettingsPage() {
                     />
                   </Field>
                   <Field label="Schedule View Offset">
+                    <p className="mt-0.5 text-[11px] font-normal leading-snug text-[var(--text-muted)]">
+                      Schedule offset shifts the first visible week earlier when
+                      you open the schedule.
+                    </p>
                     <Select
                       value={prefs.scheduleViewOffset}
                       onChange={(v) =>
@@ -669,6 +677,10 @@ export default function SettingsPage() {
                   </Field>
                 </div>
                 <Field label="Page Width">
+                  <p className="mt-0.5 text-[11px] font-normal leading-snug text-[var(--text-muted)]">
+                    Page width constrains most pages to 1400px or expands them;
+                    the schedule is always full width.
+                  </p>
                   <Select
                     value={prefs.contentWidth}
                     onChange={(v) =>
@@ -680,12 +692,6 @@ export default function SettingsPage() {
                     options={CONTENT_WIDTH_OPTIONS}
                   />
                 </Field>
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  Start page is used after login and when opening the app root.
-                  Schedule offset shifts the first visible week earlier when you
-                  open the schedule. Page width constrains most pages to 1400px
-                  or expands them; the schedule is always full width.
-                </p>
               </div>
 
               <div className="mt-4 flex items-center justify-end border-t border-[var(--border)] pt-3">
