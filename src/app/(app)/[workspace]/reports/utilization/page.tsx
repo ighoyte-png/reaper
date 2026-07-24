@@ -112,7 +112,7 @@ export default function UtilizationReportPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title={<ReportBreadcrumb current="Utilization" />} />
-      <div className="space-y-3 p-3 sm:p-5">
+      <div className="space-y-3 py-3 sm:py-5">
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">
             Team Utilization - Next 8 Weeks

@@ -658,7 +658,7 @@ export default function DashboardPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Dashboard" />
 
-      <div className="flex flex-col gap-4 p-3 sm:p-5 lg:grid lg:grid-cols-3 lg:items-start">
+      <div className="flex flex-col gap-4 py-3 sm:py-5 lg:grid lg:grid-cols-3 lg:items-start">
         {/*
           Mobile: `contents` flattens children into the parent flex so order-*
           can interleave identity / notifications / bulletin / rest.

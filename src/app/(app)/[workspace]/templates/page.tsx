@@ -66,13 +66,13 @@ export default function TemplatesPage() {
           </Button>
         }
       />
-      <p className="border-b border-[var(--border)] px-3 pb-3 pt-3 text-sm text-[var(--text-muted)] sm:px-5 sm:pt-4">
+      <p className="border-b border-[var(--border)] pb-3 pt-3 text-sm text-[var(--text-muted)] sm:pt-4">
         Reusable milestone and task structures. Edit a template like a project
         hub — only milestones and tasks are saved. Apply from a project or when
         creating one; applied work starts undated and unassigned.
       </p>
       {templates.length === 0 ? (
-        <div className="p-3 sm:p-5">
+        <div className="py-3 sm:py-5">
           <EmptyState
             title="No Project Templates Yet"
             cta="Create Your First Template"
@@ -80,7 +80,7 @@ export default function TemplatesPage() {
           />
         </div>
       ) : (
-        <div className="grid gap-3 p-3 sm:grid-cols-2 sm:p-5 lg:grid-cols-3">
+        <div className="grid gap-3 py-3 sm:grid-cols-2 sm:py-5 lg:grid-cols-3">
           {templates.map((t) => {
             const milestoneCount = state.template_milestones.filter(
               (m) => m.template_id === t.id,

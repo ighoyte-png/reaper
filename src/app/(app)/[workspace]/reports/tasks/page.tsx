@@ -652,8 +652,8 @@ function TasksReportContent() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title={<ReportBreadcrumb current="Tasks" />} />
-      <div className="flex flex-col md:flex-row">
-        <aside className="sticky top-3 mt-3 ml-3 hidden max-h-[calc(100dvh-5.5rem)] w-64 shrink-0 flex-col self-start overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 sm:ml-5 md:flex">
+      <div className="flex flex-col md:flex-row md:gap-5">
+        <aside className="sticky top-3 mt-3 hidden max-h-[calc(100dvh-5.5rem)] w-64 shrink-0 flex-col self-start overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex">
           <FavoritesSidebar />
           <div className="shrink-0 border-b border-[var(--border)] px-3 py-2">
             <p className="text-xs font-medium text-[var(--text-muted)]">
@@ -695,7 +695,7 @@ function TasksReportContent() {
           </nav>
         </aside>
 
-        <div className="min-w-0 flex-1 space-y-6 p-3 sm:p-5">
+        <div className="min-w-0 flex-1 space-y-6 py-3 sm:py-5">
           <div className="mb-1 flex gap-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden">
             <MobileProjectChip
               active={projectFilter === "all"}

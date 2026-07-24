@@ -390,7 +390,7 @@ export default function SettingsPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Settings" />
-      <div className="mx-auto flex max-w-5xl flex-col gap-4 p-3 sm:flex-row sm:items-start sm:gap-0 sm:p-5">
+      <div className="mx-auto flex max-w-5xl flex-col gap-4 py-3 sm:flex-row sm:items-start sm:gap-0 sm:py-5">
         <nav
           className="flex shrink-0 gap-1 overflow-x-auto border-b border-[var(--border)] pb-2 sm:w-44 sm:flex-col sm:gap-0.5 sm:overflow-visible sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3"
           aria-label="Settings sections"

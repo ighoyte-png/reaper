@@ -325,7 +325,7 @@ export default function PeoplePage() {
           ) : undefined
         }
       />
-      <div className="p-3 sm:p-5">
+      <div className="py-3 sm:py-5">
         {canManage ? (
           <p className="mb-4 text-sm text-[var(--text-muted)]">
             Add people with their work email — <strong>Add & Invite</strong>{" "}

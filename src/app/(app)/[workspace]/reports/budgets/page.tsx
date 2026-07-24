@@ -152,12 +152,12 @@ function BudgetsReportContent() {
     <PageContainer>
       <PageHeader title={<ReportBreadcrumb current="Budgets" />} />
       {state.projects.length === 0 ? (
-        <div className="p-5">
+        <div className="py-5">
           <p className="text-sm text-[var(--text-muted)]">No projects yet.</p>
         </div>
       ) : (
-        <div className="flex flex-col md:flex-row">
-          <aside className="sticky top-3 mt-3 ml-3 hidden max-h-[calc(100dvh-5.5rem)] w-64 shrink-0 flex-col self-start overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 sm:ml-5 md:flex">
+        <div className="flex flex-col md:flex-row md:gap-5">
+          <aside className="sticky top-3 mt-3 hidden max-h-[calc(100dvh-5.5rem)] w-64 shrink-0 flex-col self-start overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search
@@ -204,7 +204,7 @@ function BudgetsReportContent() {
             </nav>
           </aside>
 
-          <div className="min-w-0 flex-1 p-3 sm:p-5">
+          <div className="min-w-0 flex-1 py-3 sm:py-5">
             <ProjectManagerFilterBar
               className="mb-4"
               managerTabs={managerTabs}

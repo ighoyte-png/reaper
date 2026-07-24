@@ -306,7 +306,7 @@ function ClientsPageContent() {
           ) : undefined
         }
       />
-      <div className="p-3 sm:p-5">
+      <div className="py-3 sm:py-5">
         <div className="mb-4 flex gap-1">
           {(["active", "archived", "all"] as StatusFilter[]).map((f) => (
             <button

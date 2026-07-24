@@ -223,7 +223,7 @@ export default function ProjectBudgetDetailPage() {
     return (
       <PageContainer className="overflow-y-auto">
         <PageHeader title={project.name} onBack={goBack} />
-        <div className="p-5 text-sm text-[var(--text-muted)]">Loading budget…</div>
+        <div className="py-5 text-sm text-[var(--text-muted)]">Loading budget…</div>
       </PageContainer>
     );
   }
@@ -232,7 +232,7 @@ export default function ProjectBudgetDetailPage() {
     return (
       <PageContainer className="overflow-y-auto">
         <PageHeader title="Budget" onBack={goBack} />
-        <div className="p-5 text-sm text-[var(--text-muted)]">
+        <div className="py-5 text-sm text-[var(--text-muted)]">
           Project not found.{" "}
           <Link
             href={appHref("/reports/budgets")}
@@ -311,7 +311,7 @@ export default function ProjectBudgetDetailPage() {
         }
       />
 
-      <div className="w-full space-y-6 p-5">
+      <div className="w-full space-y-6 py-5">
         <div className="flex flex-wrap items-center gap-2">
           <ProjectColorBar
             color={projectDisplayColor(project, state.clients)}

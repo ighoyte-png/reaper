@@ -315,7 +315,7 @@ function ProjectsPageContent() {
         }
       />
       {visibleProjects.length === 0 ? (
-        <div className="p-3 sm:p-5">
+        <div className="py-3 sm:py-5">
           {canManage ? (
             <EmptyState
               title="No projects yet"
@@ -335,8 +335,8 @@ function ProjectsPageContent() {
           )}
         </div>
       ) : (
-        <div className="flex flex-col md:flex-row">
-          <aside className="sticky top-3 mt-3 ml-3 hidden w-64 shrink-0 flex-col self-start overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 sm:ml-5 md:flex">
+        <div className="flex flex-col md:flex-row md:gap-5">
+          <aside className="sticky top-3 mt-3 hidden w-64 shrink-0 flex-col self-start overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search
@@ -383,7 +383,7 @@ function ProjectsPageContent() {
             </nav>
           </aside>
 
-          <div className="min-w-0 p-3 sm:p-5 md:flex-1">
+          <div className="min-w-0 py-3 sm:py-5 md:flex-1">
             <ProjectManagerFilterBar
               className="mb-4"
               managerTabs={managerTabs}

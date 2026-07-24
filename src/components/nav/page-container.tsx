@@ -8,7 +8,8 @@ function isFullBleedChrome(child: ReactNode): boolean {
 
 /**
  * Full-width scrollport. PageHeader children span the viewport;
- * everything else stays in a centered 1400px column.
+ * everything else stays in a centered 1400px column with the same
+ * horizontal inset as PageHeader (px-4) so edges align.
  */
 export function PageContainer({
   children,
@@ -42,7 +43,9 @@ export function PageContainer({
     >
       {chrome}
       {body.length > 0 ? (
-        <div className="mx-auto w-full max-w-[1400px]">{body}</div>
+        <div className="px-4">
+          <div className="mx-auto w-full max-w-[1400px]">{body}</div>
+        </div>
       ) : null}
     </div>
   );

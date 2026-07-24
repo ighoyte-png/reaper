@@ -56,7 +56,7 @@ export default function TemplateDetailPage() {
           title="Template"
           onBack={() => router.push(appHref("/templates"))}
         />
-        <div className="p-3 text-sm text-[var(--text-muted)] sm:p-5">
+        <div className="py-3 text-sm text-[var(--text-muted)] sm:py-5">
           Template not found.{" "}
           <Link href={appHref("/templates")} className="text-[var(--accent)]">
             Back to templates
@@ -81,7 +81,7 @@ export default function TemplateDetailPage() {
         }
       />
 
-      <div className="p-3 sm:p-5">
+      <div className="py-3 sm:py-5">
         <div className="mb-4 space-y-2">
           <label className="block text-xs text-[var(--text-muted)]">
             Template Name

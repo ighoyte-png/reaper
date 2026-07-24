@@ -241,7 +241,7 @@ export default function ReportsPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Reports" />
-      <div className="grid gap-3 p-3 sm:p-5 md:grid-cols-2 md:items-stretch">
+      <div className="grid gap-3 py-3 sm:py-5 md:grid-cols-2 md:items-stretch">
         <div className="flex h-full min-h-0 flex-col gap-3">
           {reports
             .filter((r) => r.column === "left")

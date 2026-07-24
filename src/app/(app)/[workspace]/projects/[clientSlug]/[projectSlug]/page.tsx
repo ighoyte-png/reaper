@@ -213,7 +213,7 @@ export default function ProjectDetailPage() {
             }
           }}
         />
-        <div className="p-5 text-sm text-[var(--text-muted)]">
+        <div className="py-5 text-sm text-[var(--text-muted)]">
           Project not found.{" "}
           <Link href={appHref("/projects")} className="text-[var(--accent)]">
             Back to projects
@@ -230,7 +230,7 @@ export default function ProjectDetailPage() {
           title="Project"
           onBack={() => router.push(appHref("/projects"))}
         />
-        <div className="p-5 text-sm text-[var(--text-muted)]">
+        <div className="py-5 text-sm text-[var(--text-muted)]">
           You don&apos;t have access to this project.{" "}
           <Link href={appHref("/projects")} className="text-[var(--accent)]">
             Back to your projects
@@ -244,7 +244,7 @@ export default function ProjectDetailPage() {
     return (
       <PageContainer className="overflow-y-auto">
         <PageHeader title={project.name} onBack={() => router.push(appHref("/projects"))} />
-        <div className="p-5 text-sm text-[var(--text-muted)]">Loading project…</div>
+        <div className="py-5 text-sm text-[var(--text-muted)]">Loading project…</div>
       </PageContainer>
     );
   }
@@ -329,7 +329,7 @@ export default function ProjectDetailPage() {
         }
       />
 
-      <div className="p-5">
+      <div className="py-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h1 className="flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-[var(--text)]">
             <ProjectColorBar
