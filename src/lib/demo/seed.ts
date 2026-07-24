@@ -956,6 +956,8 @@ export function createDemoSeed(): DemoState {
     unread_bulletin_ids: [],
     unread_mentions: [],
     project_favorites: [],
+    pods: [],
+    pod_members: [],
     sessionProfileId: null,
   };
 }

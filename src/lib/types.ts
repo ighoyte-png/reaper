@@ -307,6 +307,21 @@ export interface ProjectFavorite {
   created_at: string;
 }
 
+/** Org-level people grouping for filters and dashboard scope. */
+export interface Pod {
+  id: string;
+  organization_id: string;
+  name: string;
+  manager_person_id: string | null;
+  sort_order: number;
+}
+
+export interface PodMember {
+  pod_id: string;
+  person_id: string;
+  organization_id: string;
+}
+
 export interface LeaveDay {
   id: string;
   organization_id: string;
@@ -345,6 +360,8 @@ export interface DemoState {
   unread_mentions: { comment_id: string; person_id: string }[];
   /** Current profile's starred projects (sort_order = nav tab order). */
   project_favorites: ProjectFavorite[];
+  pods: Pod[];
+  pod_members: PodMember[];
   project_templates: ProjectTemplate[];
   template_milestones: TemplateMilestone[];
   template_task_lists: TemplateTaskList[];

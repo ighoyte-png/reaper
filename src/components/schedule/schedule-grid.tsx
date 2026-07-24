@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { format, isWeekend, parseISO, addWeeks, subWeeks } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2 } from "lucide-react";
@@ -13,6 +13,14 @@ import { ProjectManagerPerson } from "@/components/projects/project-manager-pers
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
+import { PodFilterBar } from "@/components/people/pod-filter-bar";
+import { ManagerTag } from "@/components/projects/project-manager-person";
+import {
+  filterPeopleByPod,
+  scheduleProjectManagerPeople,
+  sortPods,
+  type PodFilter,
+} from "@/lib/domain/pods";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
@@ -183,6 +191,7 @@ export function ScheduleGrid() {
     project: "all",
     person: "all",
     zoom: "day",
+    pod: "all",
   });
   const zoom = (
     filters.zoom === "week" || filters.zoom === "month" || filters.zoom === "day"
@@ -191,13 +200,15 @@ export function ScheduleGrid() {
   ) as ScheduleZoom;
   const projectFilter = filters.project;
   const personFilter = filters.person;
+  const podFilter = filters.pod as PodFilter;
   const [anchor, setAnchor] = useState(() =>
     scheduleAnchorForOffset(readUserViewPrefs(null).scheduleViewOffset),
   );
   const scheduleOffsetAppliedRef = useRef(false);
 
   useEffect(() => {
-    const patch: { project?: string; person?: string; zoom?: string } = {};
+    const patch: { project?: string; person?: string; zoom?: string; pod?: string } =
+      {};
     if (
       projectFilter !== "all" &&
       !state.projects.some((p) => p.id === projectFilter)
@@ -211,6 +222,12 @@ export function ScheduleGrid() {
       patch.person = "all";
     }
     if (
+      podFilter !== "all" &&
+      !state.pods.some((p) => p.id === podFilter)
+    ) {
+      patch.pod = "all";
+    }
+    if (
       filters.zoom !== "day" &&
       filters.zoom !== "week" &&
       filters.zoom !== "month"
@@ -221,9 +238,11 @@ export function ScheduleGrid() {
   }, [
     projectFilter,
     personFilter,
+    podFilter,
     filters.zoom,
     state.projects,
     state.people,
+    state.pods,
     setFilters,
   ]);
 
@@ -520,19 +539,49 @@ export function ScheduleGrid() {
     }
     const showAll = canManage || isPublicShare;
     const base = showAll ? state.people : myPerson ? [myPerson] : [];
+    const podScoped = showAll
+      ? filterPeopleByPod(base, state.pods, state.pod_members, podFilter)
+      : base;
     const filtered =
       showAll && personFilter !== "all"
-        ? base.filter((p) => p.id === personFilter)
-        : base;
+        ? podScoped.filter((p) => p.id === personFilter)
+        : podScoped;
     return sortPeopleByName(filtered);
   }, [
     viewAsPersonId,
     canManage,
     isPublicShare,
     state.people,
+    state.pods,
+    state.pod_members,
     myPerson,
     personFilter,
+    podFilter,
   ]);
+
+  const showPodFilter =
+    (canManage || isPublicShare) &&
+    !viewAsPersonId &&
+    state.pods.length >= 1;
+
+  const podTabsForFilter = useMemo(() => sortPods(state.pods), [state.pods]);
+
+  const scheduleProjectManagers = useMemo(
+    () => scheduleProjectManagerPeople(visiblePeople, state.profiles),
+    [visiblePeople, state.profiles],
+  );
+
+  const scheduleMembers = useMemo(() => {
+    const pmIds = new Set(scheduleProjectManagers.map((p) => p.id));
+    return visiblePeople.filter((p) => !pmIds.has(p.id));
+  }, [visiblePeople, scheduleProjectManagers]);
+
+  /** Members first, then Project Managers — same list `visiblePeople`
+   * reorders into for rendering (a separator is inserted at the split). */
+  const scheduleRenderOrder = useMemo(
+    () => [...scheduleMembers, ...scheduleProjectManagers],
+    [scheduleMembers, scheduleProjectManagers],
+  );
 
   const peopleForFilter = useMemo(
     () => sortPeopleByName(state.people),
@@ -1889,6 +1938,16 @@ export function ScheduleGrid() {
           </div>
         </div>
 
+        {showPodFilter && (
+          <div className="border-b border-[var(--border)] px-3 py-2 sm:px-5">
+            <PodFilterBar
+              pods={podTabsForFilter}
+              podFilter={podFilter}
+              onSelect={(v) => setFilter("pod", v)}
+            />
+          </div>
+        )}
+
         {canManage && selectedBurn && selectedProject && (
           <div className="border-b border-[var(--border)] px-3 py-2 sm:px-5">
             <BurnBar burn={selectedBurn} />
@@ -2000,7 +2059,10 @@ export function ScheduleGrid() {
               </div>
             </div>
 
-            {visiblePeople.map((person) => {
+            {scheduleRenderOrder.map((person, personIndex) => {
+              const showPmSeparator =
+                scheduleProjectManagers.length > 0 &&
+                personIndex === scheduleMembers.length;
               const personProjects =
                 projectsByPersonId.get(person.id) ?? EMPTY_PROJECTS;
               const collapsed = collapsedPeople.has(person.id);
@@ -2027,8 +2089,18 @@ export function ScheduleGrid() {
                 .join("|");
 
               return (
+                <Fragment key={person.id}>
+                  {showPmSeparator && (
+                    <div className="flex border-b border-t border-[var(--border)] bg-[var(--bg-elevated)]/60">
+                      <div
+                        className="sticky left-0 z-20 flex items-center px-3 py-1.5"
+                        style={{ width: LABEL_PX }}
+                      >
+                        <ManagerTag>Project Managers</ManagerTag>
+                      </div>
+                    </div>
+                  )}
                 <PersonScheduleSection
-                  key={person.id}
                   person={person}
                   collapsed={collapsed}
                   bodyCollapsed={bodyCollapsed}
@@ -3401,6 +3473,7 @@ export function ScheduleGrid() {
                   </>
                   )}
                 </PersonScheduleSection>
+                </Fragment>
               );
             })}
           </div>

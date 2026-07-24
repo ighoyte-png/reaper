@@ -25,6 +25,7 @@ import {
   budgetHealth,
   formatHours,
 } from "@/lib/domain/budget";
+import { defaultPeopleScopeForViewer } from "@/lib/domain/pods";
 import type { BudgetBurn, Project } from "@/lib/types";
 import {
   availableHoursInRange,
@@ -81,6 +82,8 @@ type WeekUtilPoint = {
 export default function ReportsPage() {
   const {
     state,
+    profile,
+    myPerson,
     isPublicShare,
     ensureScheduleRange,
     fetchOrgTaskStatsRpc,
@@ -139,6 +142,31 @@ export default function ReportsPage() {
     };
   }, [mode, fetchOrgTaskStatsRpc, todayKey]);
 
+  /**
+   * Org-wide people scope: pod managers see only their pod(s), other
+   * managers/admins see everyone. Public share always sees the whole org.
+   */
+  const orgScopedPeople = useMemo(() => {
+    if (isPublicShare) return state.people;
+    return defaultPeopleScopeForViewer(
+      state.people,
+      state.pods,
+      state.pod_members,
+      {
+        role: profile?.role,
+        myPersonId: myPerson?.id ?? null,
+        orgWide: true,
+      },
+    );
+  }, [
+    isPublicShare,
+    state.people,
+    state.pods,
+    state.pod_members,
+    profile?.role,
+    myPerson?.id,
+  ]);
+
   const plannedHoursAcrossSchedule = useMemo(() => {
     let sum = 0;
     for (const p of state.projects) {
@@ -162,7 +190,7 @@ export default function ReportsPage() {
       const end = toDateKey(weekEnd(anchor));
       let booked = 0;
       let available = 0;
-      for (const person of state.people) {
+      for (const person of orgScopedPeople) {
         booked += personBookedHoursInRange(
           person.id,
           start,
@@ -195,7 +223,7 @@ export default function ReportsPage() {
     let near = 0;
     let over = 0;
     let unavailable = 0;
-    for (const person of state.people) {
+    for (const person of orgScopedPeople) {
       const booked = personBookedHoursInRange(
         person.id,
         thisStart,
@@ -223,9 +251,9 @@ export default function ReportsPage() {
       near,
       over,
       unavailable,
-      peopleCount: state.people.length,
+      peopleCount: orgScopedPeople.length,
     };
-  }, [state.people, state.assignments, state.leave_days, now]);
+  }, [orgScopedPeople, state.assignments, state.leave_days, now]);
 
   const budgets = useMemo(() => {
     let healthy = 0;

@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Mail, Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import { PodFilterBar } from "@/components/people/pod-filter-bar";
+import { PodsEditorModal } from "@/components/people/pods-editor-modal";
+import { ManagerTag } from "@/components/projects/project-manager-person";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
 import { formatHours } from "@/lib/domain/budget";
 import {
@@ -20,6 +24,14 @@ import {
   personBookedHoursInRange,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
+import {
+  filterPeopleByPod,
+  peopleInPod,
+  podsForPerson,
+  podsManagedBy,
+  sortPods,
+  type PodFilter,
+} from "@/lib/domain/pods";
 import { cn } from "@/lib/cn";
 import { isAdmin } from "@/lib/auth/roles";
 import type { LeaveKind, Person, Role } from "@/lib/types";
@@ -33,6 +45,8 @@ import {
   readFileAsDataUrl,
   uploadPersonAvatar,
 } from "@/lib/supabase/avatar";
+
+const PEOPLE_FILTER_DEFAULTS: { pod: string } = { pod: "all" };
 
 const actionIconClass =
   "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--accent)] hover:bg-[var(--row-hover)]";
@@ -68,6 +82,14 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
 });
 
 export default function PeoplePage() {
+  return (
+    <Suspense fallback={null}>
+      <PeoplePageContent />
+    </Suspense>
+  );
+}
+
+function PeoplePageContent() {
   const {
     state,
     profile,
@@ -75,6 +97,7 @@ export default function PeoplePage() {
     deletePerson,
     upsertLeave,
     updateProfileRole,
+    setPersonPods,
     newId,
     isPublicShare,
     mode,
@@ -92,6 +115,16 @@ export default function PeoplePage() {
   const start = toDateKey(weekStart(new Date()));
   const end = toDateKey(weekEnd(new Date()));
 
+  const { filters, setFilter } = useUrlFilters(PEOPLE_FILTER_DEFAULTS);
+  const pods = sortPods(state.pods);
+  const showPods = pods.length >= 1;
+  const podFilter: PodFilter = pods.some((p) => p.id === filters.pod)
+    ? filters.pod
+    : "all";
+  const selectedPod =
+    podFilter !== "all" ? pods.find((p) => p.id === podFilter) : undefined;
+  const [showPodsEditor, setShowPodsEditor] = useState(false);
+
   useEffect(() => {
     if (mode === "supabase") void ensureScheduleRange(start, end);
   }, [mode, ensureScheduleRange, start, end]);
@@ -102,6 +135,7 @@ export default function PeoplePage() {
   const [isNewPerson, setIsNewPerson] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [editAccessRole, setEditAccessRole] = useState<Role>("member");
+  const [selectedPodIds, setSelectedPodIds] = useState<string[]>([]);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -266,6 +300,7 @@ export default function PeoplePage() {
       }
       const row = { ...editing, email, avatar_url };
       await upsertPerson(row);
+      await setPersonPods(row.id, selectedPodIds);
 
       if (
         admin &&
@@ -307,6 +342,149 @@ export default function PeoplePage() {
       ? state.profiles.find((p) => p.id === person.profile_id)
       : undefined;
     setEditAccessRole(linked?.role ?? "member");
+    setSelectedPodIds(
+      podsForPerson(person.id, state.pods, state.pod_members).map(
+        (pod) => pod.id,
+      ),
+    );
+  }
+
+  const peopleCards: { person: Person; isManager: boolean }[] = selectedPod
+    ? (() => {
+        const manager = selectedPod.manager_person_id
+          ? state.people.find((p) => p.id === selectedPod.manager_person_id)
+          : undefined;
+        const members = peopleInPod(
+          selectedPod,
+          state.people,
+          state.pod_members,
+        ).filter((p) => p.id !== selectedPod.manager_person_id);
+        return [
+          ...(manager ? [{ person: manager, isManager: true }] : []),
+          ...members.map((person) => ({ person, isManager: false })),
+        ];
+      })()
+    : filterPeopleByPod(
+        state.people,
+        state.pods,
+        state.pod_members,
+        podFilter,
+      ).map((person) => ({ person, isManager: false }));
+
+  function renderPersonCard(person: Person, isManager: boolean) {
+    const booked = personBookedHoursInRange(
+      person.id,
+      start,
+      end,
+      state.assignments,
+      state.leave_days,
+    );
+    const available = availableHoursInRange(
+      person,
+      start,
+      end,
+      state.leave_days,
+    );
+    const level = capacityLevel(booked, available, available <= 0);
+    return (
+      <article
+        key={person.id}
+        className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
+      >
+        <div className="flex items-start gap-3">
+          <PersonAvatar avatarUrl={person.avatar_url} name={person.name} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="truncate text-sm font-semibold leading-tight">
+                {person.name}
+              </div>
+              {isManager ? <ManagerTag /> : null}
+            </div>
+            {person.role_title ? (
+              <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                {person.role_title}
+              </div>
+            ) : null}
+            <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+              {person.department || "—"} · {person.office || "—"}
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+          <span
+            className={cn(
+              "h-2 w-2 shrink-0 rounded-full",
+              level === "healthy" && "bg-[var(--status-healthy)]",
+              level === "near" && "bg-[var(--status-near)]",
+              level === "over" && "bg-[var(--status-over)]",
+              (level === "unavailable" || level === "low") &&
+                "bg-[var(--status-unavailable)]",
+            )}
+          />
+          {formatHours(booked)} / {formatHours(available)} this week
+        </div>
+        {canManage ? (
+          <div className="mt-3 flex items-center justify-end gap-0.5 border-t border-[var(--border)] pt-2.5">
+            {!person.profile_id ? (
+              <button
+                type="button"
+                className={actionIconClass}
+                title="Invite"
+                aria-label="Invite"
+                onClick={() => {
+                  if (person.email?.trim()) {
+                    void createInviteLink(person, {
+                      emailOverride: person.email,
+                    });
+                  } else {
+                    setInviteTarget(person);
+                    setInviteEmail("");
+                    setInviteUrl(null);
+                  }
+                }}
+              >
+                <Mail size={14} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={actionIconClass}
+                title="Resend invite"
+                aria-label="Resend invite"
+                disabled={inviteBusy}
+                onClick={() => setResendTarget(person)}
+              >
+                <Mail size={14} />
+              </button>
+            )}
+            <button
+              type="button"
+              className={actionIconClass}
+              title="Edit"
+              aria-label="Edit"
+              onClick={() => {
+                openEdit(person, false);
+              }}
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              type="button"
+              className={mutedActionIconClass}
+              title="Time off"
+              aria-label="Time off"
+              onClick={() => {
+                setLeaveTarget(person);
+                setLeaveDate(start);
+                setLeaveKind("vacation");
+              }}
+            >
+              <Clock size={14} />
+            </button>
+          </div>
+        ) : null}
+      </article>
+    );
   }
 
   return (
@@ -315,14 +493,19 @@ export default function PeoplePage() {
         title="People"
         actions={
           canManage ? (
-            <Button
-              variant="primary"
-              onClick={() => {
-                openEdit({ ...emptyPerson(), id: newId("person") }, true);
-              }}
-            >
-              Add Person
-            </Button>
+            <>
+              <Button variant="secondary" onClick={() => setShowPodsEditor(true)}>
+                Edit Pods
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  openEdit({ ...emptyPerson(), id: newId("person") }, true);
+                }}
+              >
+                Add Person
+              </Button>
+            </>
           ) : undefined
         }
       />
@@ -333,6 +516,14 @@ export default function PeoplePage() {
             emails them. <strong>Invite</strong> / Create Invite Link only gives
             you a copyable link. Members only see My Schedule.
           </p>
+        ) : null}
+        {showPods ? (
+          <PodFilterBar
+            pods={pods}
+            podFilter={podFilter}
+            onSelect={(next) => setFilter("pod", next)}
+            className="mb-4"
+          />
         ) : null}
         {state.people.length === 0 ? (
           canManage ? (
@@ -348,173 +539,15 @@ export default function PeoplePage() {
               No people yet
             </p>
           )
+        ) : peopleCards.length === 0 ? (
+          <p className="py-16 text-center text-sm text-[var(--text-muted)]">
+            No people in this pod yet.
+          </p>
         ) : (
-          <div className="overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--bg)]">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[var(--bg-elevated)] text-xs text-[var(--text-muted)]">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Name</th>
-                  <th className="px-3 py-2 font-medium">Role</th>
-                  {canManage ? (
-                    <th className="px-3 py-2 font-medium">Access</th>
-                  ) : null}
-                  <th className="px-3 py-2 font-medium">This week</th>
-                  {canManage ? (
-                    <th className="px-3 py-2 font-medium">Rates</th>
-                  ) : null}
-                  {canManage ? (
-                    <th className="px-3 py-2 font-medium" />
-                  ) : null}
-                </tr>
-              </thead>
-              <tbody>
-                {state.people.map((person) => {
-                  const booked = personBookedHoursInRange(
-                    person.id,
-                    start,
-                    end,
-                    state.assignments,
-                    state.leave_days,
-                  );
-                  const available = availableHoursInRange(
-                    person,
-                    start,
-                    end,
-                    state.leave_days,
-                  );
-                  const level = capacityLevel(booked, available, available <= 0);
-                  const linked = state.profiles.find(
-                    (p) => p.id === person.profile_id,
-                  );
-                  return (
-                    <tr
-                      key={person.id}
-                      className="border-t border-[var(--border)] hover:bg-[var(--row-hover)]"
-                    >
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2.5">
-                          <PersonAvatar
-                            avatarUrl={person.avatar_url}
-                            name={person.name}
-                            size="sm"
-                          />
-                          <div className="min-w-0">
-                            <div className="font-medium">{person.name}</div>
-                            <div className="text-xs text-[var(--text-muted)]">
-                              {person.department || "—"} · {person.office || "—"}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">{person.role_title || "—"}</td>
-                      {canManage ? (
-                        <td className="px-3 py-2.5">
-                          {linked ? (
-                            <span className="text-xs">
-                              <span className="font-medium text-[var(--status-healthy)]">
-                                {accessLabel(linked.role)}
-                              </span>
-                              {linked.email ? (
-                                <span className="text-[var(--text-muted)]">
-                                  {" "}
-                                  · {linked.email}
-                                </span>
-                              ) : null}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-[var(--text-muted)]">
-                              No login
-                            </span>
-                          )}
-                        </td>
-                      ) : null}
-                      <td className="px-3 py-2.5">
-                        <span className="inline-flex items-center gap-1.5">
-                          <span
-                            className={cn(
-                              "h-2 w-2 rounded-full",
-                              level === "healthy" && "bg-[var(--status-healthy)]",
-                              level === "near" && "bg-[var(--status-near)]",
-                              level === "over" && "bg-[var(--status-over)]",
-                              (level === "unavailable" || level === "low") &&
-                                "bg-[var(--status-unavailable)]",
-                            )}
-                          />
-                          {formatHours(booked)} / {formatHours(available)}
-                        </span>
-                      </td>
-                      {canManage ? (
-                        <td className="px-3 py-2.5 text-[var(--text-muted)]">
-                          ${person.cost_rate} / ${person.bill_rate}
-                        </td>
-                      ) : null}
-                      {canManage ? (
-                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center justify-end gap-0.5">
-                          {!person.profile_id ? (
-                            <button
-                              type="button"
-                              className={actionIconClass}
-                              title="Invite"
-                              aria-label="Invite"
-                              onClick={() => {
-                                if (person.email?.trim()) {
-                                  void createInviteLink(person, {
-                                    emailOverride: person.email,
-                                  });
-                                } else {
-                                  setInviteTarget(person);
-                                  setInviteEmail("");
-                                  setInviteUrl(null);
-                                }
-                              }}
-                            >
-                              <Mail size={14} />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className={actionIconClass}
-                              title="Resend invite"
-                              aria-label="Resend invite"
-                              disabled={inviteBusy}
-                              onClick={() => setResendTarget(person)}
-                            >
-                              <Mail size={14} />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className={actionIconClass}
-                            title="Edit"
-                            aria-label="Edit"
-                            onClick={() => {
-                              openEdit(person, false);
-                            }}
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className={mutedActionIconClass}
-                            title="Time off"
-                            aria-label="Time off"
-                            onClick={() => {
-                              setLeaveTarget(person);
-                              setLeaveDate(start);
-                              setLeaveKind("vacation");
-                            }}
-                          >
-                            <Clock size={14} />
-                          </button>
-                        </div>
-                      </td>
-                      ) : null}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {peopleCards.map(({ person, isManager }) =>
+              renderPersonCard(person, isManager),
+            )}
           </div>
         )}
       </div>
@@ -690,6 +723,54 @@ export default function PeoplePage() {
                 ]}
               />
             </Field>
+            {pods.length > 0 ? (
+              <Field label="Pods">
+                <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-[var(--border)] p-2">
+                  {pods.map((pod) => {
+                    const isPodManager = pod.manager_person_id === editing.id;
+                    const checked = isPodManager || selectedPodIds.includes(pod.id);
+                    return (
+                      <label
+                        key={pod.id}
+                        className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-[var(--row-hover)]"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={isPodManager}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            setSelectedPodIds((prev) =>
+                              on
+                                ? [...new Set([...prev, pod.id])]
+                                : prev.filter((id) => id !== pod.id),
+                            );
+                          }}
+                        />
+                        <span className="min-w-0 truncate">{pod.name}</span>
+                        {isPodManager ? (
+                          <span className="text-[10px] uppercase text-[var(--text-muted)]">
+                            Manager
+                          </span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </Field>
+            ) : null}
+            {(() => {
+              const managedPods = podsManagedBy(editing.id, state.pods);
+              if (managedPods.length === 0) return null;
+              return (
+                <p className="text-xs text-[var(--text-muted)]">
+                  Manages {managedPods.map((p) => p.name).join(", ")} — kept
+                  as a member of{" "}
+                  {managedPods.length === 1 ? "that pod" : "those pods"}{" "}
+                  automatically.
+                </p>
+              );
+            })()}
             <div className="grid grid-cols-3 gap-3">
               <Field label="Capacity hrs/week">
                 <input
@@ -982,6 +1063,10 @@ export default function PeoplePage() {
           </div>
         </Modal>
       )}
+
+      {canManage && showPodsEditor ? (
+        <PodsEditorModal onClose={() => setShowPodsEditor(false)} />
+      ) : null}
     </PageContainer>
   );
 }

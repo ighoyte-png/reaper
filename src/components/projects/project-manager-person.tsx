@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { cn } from "@/lib/cn";
 import type { Person } from "@/lib/types";
@@ -13,6 +14,26 @@ export function ProjectManagerTag({ className }: { className?: string }) {
       )}
     >
       Project Manager
+    </span>
+  );
+}
+
+/** Same chrome as Project Manager tag; used for pod managers / section labels. */
+export function ManagerTag({
+  className,
+  children = "Manager",
+}: {
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]",
+        className,
+      )}
+    >
+      {children}
     </span>
   );
 }

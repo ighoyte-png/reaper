@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { addWeeks, format } from "date-fns";
 import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
@@ -8,6 +8,7 @@ import { UtilizationHeatmap } from "@/components/heatmap/utilization-heatmap";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
+import { PodFilterBar } from "@/components/people/pod-filter-bar";
 import { panelClass } from "@/components/ui/panel";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
@@ -17,16 +18,63 @@ import {
   projectBookedHoursByProjectInRange,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
+import {
+  defaultPeopleScopeForViewer,
+  filterPeopleByPod,
+  sortPods,
+  type PodFilter,
+} from "@/lib/domain/pods";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 
 const WEEK_TITLES = ["This week", "Next week", "In 2 weeks"] as const;
 
+const UTILIZATION_FILTER_DEFAULTS: { pod: string } = { pod: "all" };
+
 export default function UtilizationReportPage() {
-  const { state, mode, ensureScheduleRange } = useData();
+  return (
+    <Suspense fallback={null}>
+      <UtilizationReportContent />
+    </Suspense>
+  );
+}
+
+function UtilizationReportContent() {
+  const { state, profile, myPerson, mode, ensureScheduleRange } = useData();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const now = useMemo(() => new Date(), []);
+
+  const { filters, setFilter } = useUrlFilters(UTILIZATION_FILTER_DEFAULTS);
+  const pods = sortPods(state.pods);
+  const podFilter: PodFilter = pods.some((p) => p.id === filters.pod)
+    ? filters.pod
+    : "all";
+
+  const scopedPeople = useMemo(() => {
+    if (podFilter !== "all") {
+      return filterPeopleByPod(state.people, state.pods, state.pod_members, podFilter);
+    }
+    return defaultPeopleScopeForViewer(state.people, state.pods, state.pod_members, {
+      role: profile?.role,
+      myPersonId: myPerson?.id ?? null,
+      orgWide: true,
+    });
+  }, [
+    podFilter,
+    state.people,
+    state.pods,
+    state.pod_members,
+    profile?.role,
+    myPerson?.id,
+  ]);
+
+  const scopedPersonIds = useMemo(() => {
+    if (podFilter !== "all") return scopedPeople.map((p) => p.id);
+    if (scopedPeople.length >= state.people.length) return null;
+    return scopedPeople.map((p) => p.id);
+  }, [podFilter, scopedPeople, state.people.length]);
 
   const weekAnchors = useMemo(
     () => Array.from({ length: 3 }, (_, i) => weekStart(addWeeks(now, i))),
@@ -74,7 +122,7 @@ export default function UtilizationReportPage() {
 
       const booked = slices.reduce((sum, s) => sum + s.hours, 0);
       let available = 0;
-      for (const person of state.people) {
+      for (const person of scopedPeople) {
         available += availableHoursInRange(
           person,
           start,
@@ -106,18 +154,28 @@ export default function UtilizationReportPage() {
     state.leave_days,
     state.projects,
     state.clients,
-    state.people,
+    scopedPeople,
   ]);
 
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title={<ReportBreadcrumb current="Utilization" />} />
       <div className="space-y-3 py-3 sm:py-5">
+        <PodFilterBar
+          pods={pods}
+          podFilter={podFilter}
+          onSelect={(next) => setFilter("pod", next)}
+        />
+
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">
             Team Utilization - Next 8 Weeks
           </h2>
-          <UtilizationHeatmap weeks={8} showTeamAverage />
+          <UtilizationHeatmap
+            weeks={8}
+            showTeamAverage
+            personIds={scopedPersonIds}
+          />
         </section>
 
         <section className="space-y-3 pt-2">

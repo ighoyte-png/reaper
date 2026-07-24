@@ -61,6 +61,7 @@ import {
 } from "@/lib/domain/dates";
 import { leaveBlockLabel } from "@/lib/domain/leave";
 import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
+import { defaultPeopleScopeForViewer } from "@/lib/domain/pods";
 import {
   expandAssignmentsInRange,
   occurrenceCoversDay,
@@ -170,6 +171,38 @@ export default function DashboardPage() {
   /** Members / View As: capacity + leave widgets scoped to one person. */
   const scopePersonalCapacity = !showingAsManager;
   const focusPerson = identityPerson;
+
+  /**
+   * Org-wide people scope for the viewer: pod managers see only their pod(s),
+   * other managers/admins see everyone. Public share always sees the whole
+   * org (no pod-manager narrowing, since there's no signed-in manager).
+   */
+  const orgScopedPeople = useMemo(() => {
+    if (isPublicShare) return sortPeopleByName(state.people);
+    return defaultPeopleScopeForViewer(
+      state.people,
+      state.pods,
+      state.pod_members,
+      {
+        role: profile?.role,
+        myPersonId: myPerson?.id ?? null,
+        orgWide: true,
+      },
+    );
+  }, [
+    isPublicShare,
+    state.people,
+    state.pods,
+    state.pod_members,
+    profile?.role,
+    myPerson?.id,
+  ]);
+
+  /** Ids for the heatmap: null means "all people" (no pod restriction). */
+  const orgScopedPersonIds = useMemo(() => {
+    if (orgScopedPeople.length >= state.people.length) return null;
+    return orgScopedPeople.map((p) => p.id);
+  }, [orgScopedPeople, state.people.length]);
 
   const todaysAssignments = useMemo(() => {
     const today = expandAssignmentsInRange(
@@ -355,7 +388,7 @@ export default function DashboardPage() {
       ? focusPerson
         ? [focusPerson]
         : []
-      : state.people;
+      : orgScopedPeople;
     return source
       .map((person) => {
         const booked = personBookedHoursInRange(
@@ -386,7 +419,7 @@ export default function DashboardPage() {
   }, [
     scopePersonalCapacity,
     focusPerson,
-    state.people,
+    orgScopedPeople,
     state.assignments,
     state.leave_days,
     start,
@@ -399,7 +432,7 @@ export default function DashboardPage() {
       ? focusPerson
         ? [focusPerson]
         : []
-      : state.people;
+      : orgScopedPeople;
     return people
       .flatMap((person) =>
         leaveBlocksInRange(
@@ -415,7 +448,7 @@ export default function DashboardPage() {
   }, [
     scopePersonalCapacity,
     focusPerson,
-    state.people,
+    orgScopedPeople,
     state.leave_days,
     start,
     leaveHorizonEnd,
@@ -423,10 +456,14 @@ export default function DashboardPage() {
 
   const approvedLeave = useMemo(() => {
     const approved = state.leave_days.filter((l) => l.status === "approved");
-    if (!scopePersonalCapacity) return approved;
+    if (!scopePersonalCapacity) {
+      if (!orgScopedPersonIds) return approved;
+      const ids = new Set(orgScopedPersonIds);
+      return approved.filter((l) => ids.has(l.person_id));
+    }
     if (!focusPerson) return [];
     return approved.filter((l) => l.person_id === focusPerson.id);
-  }, [state.leave_days, scopePersonalCapacity, focusPerson]);
+  }, [state.leave_days, scopePersonalCapacity, orgScopedPersonIds, focusPerson]);
 
   const leaveCalendarPeople = useMemo(
     () =>
@@ -434,8 +471,8 @@ export default function DashboardPage() {
         ? focusPerson
           ? [focusPerson]
           : []
-        : state.people,
-    [scopePersonalCapacity, focusPerson, state.people],
+        : orgScopedPeople,
+    [scopePersonalCapacity, focusPerson, orgScopedPeople],
   );
 
   const sortedPeople = sortPeopleByName(state.people);
@@ -467,7 +504,7 @@ export default function DashboardPage() {
 
   const teamUtilization = useMemo(() => {
     const people = showOrgDashboard
-      ? state.people
+      ? orgScopedPeople
       : focusPerson
         ? [focusPerson]
         : myPerson
@@ -536,7 +573,7 @@ export default function DashboardPage() {
     showOrgDashboard,
     focusPerson,
     myPerson,
-    state.people,
+    orgScopedPeople,
     state.assignments,
     state.leave_days,
     now,
@@ -882,7 +919,7 @@ export default function DashboardPage() {
               assignments={todaysAssignments}
               projects={state.projects}
               clients={state.clients}
-              people={sortedPeople}
+              people={orgScopedPeople}
               orgMode={showingAsManager}
               fallbackPerson={focusPerson}
               defaultPersonId={personalPersonId}
@@ -906,7 +943,7 @@ export default function DashboardPage() {
                 weeks={4}
                 personIds={
                   showingAsManager
-                    ? null
+                    ? orgScopedPersonIds
                     : focusPerson
                       ? [focusPerson.id]
                       : []

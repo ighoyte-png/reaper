@@ -17,6 +17,8 @@ import type {
   ProjectAsset,
   ProjectFavorite,
   ProjectMember,
+  Pod,
+  PodMember,
   ProjectTemplate,
   Task,
   TaskComment,
@@ -235,6 +237,26 @@ export function mapProjectFavorite(row: Record<string, unknown>): ProjectFavorit
   };
 }
 
+export function mapPod(row: Record<string, unknown>): Pod {
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    name: String(row.name ?? ""),
+    manager_person_id: row.manager_person_id
+      ? String(row.manager_person_id)
+      : null,
+    sort_order: num(row.sort_order),
+  };
+}
+
+export function mapPodMember(row: Record<string, unknown>): PodMember {
+  return {
+    pod_id: String(row.pod_id),
+    person_id: String(row.person_id),
+    organization_id: String(row.organization_id),
+  };
+}
+
 function mapProjectTemplate(row: Record<string, unknown>): ProjectTemplate {
   return {
     id: String(row.id),
@@ -364,6 +386,8 @@ function emptyWorkspace(): DemoState {
     unread_bulletin_ids: [],
     unread_mentions: [],
     project_favorites: [],
+    pods: [],
+    pod_members: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -525,6 +549,8 @@ export async function loadOrgBootstrap(
     bulletinUnreadsRes,
     mentionUnreadsRes,
     projectFavoritesRes,
+    podsRes,
+    podMembersRes,
     projectTemplatesRes,
     templateMilestonesRes,
     templateTaskListsRes,
@@ -564,6 +590,8 @@ export async function loadOrgBootstrap(
           data: [] as Record<string, unknown>[],
           error: null,
         }),
+    supabase.from("pods").select("*").eq("organization_id", orgId),
+    supabase.from("pod_members").select("*").eq("organization_id", orgId),
     supabase
       .from("project_templates")
       .select("*")
@@ -670,6 +698,38 @@ export async function loadOrgBootstrap(
       mapProjectFavorite(row as Record<string, unknown>),
     );
   }
+  let pods: Pod[] = [];
+  if (podsRes.error) {
+    if (
+      /relation .*pods.* does not exist/i.test(podsRes.error.message) ||
+      podsRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "pods missing — apply supabase/migrations/052_pods.sql",
+      );
+    }
+  } else {
+    pods = (podsRes.data ?? []).map((row) =>
+      mapPod(row as Record<string, unknown>),
+    );
+  }
+  let pod_members: PodMember[] = [];
+  if (podMembersRes.error) {
+    if (
+      /relation .*pod_members.* does not exist/i.test(
+        podMembersRes.error.message,
+      ) ||
+      podMembersRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "pod_members missing — apply supabase/migrations/052_pods.sql",
+      );
+    }
+  } else {
+    pod_members = (podMembersRes.data ?? []).map((row) =>
+      mapPodMember(row as Record<string, unknown>),
+    );
+  }
   const project_templates: ProjectTemplate[] = projectTemplatesRes.error
     ? []
     : (projectTemplatesRes.data ?? []).map((row) =>
@@ -740,6 +800,8 @@ export async function loadOrgBootstrap(
     unread_bulletin_ids,
     unread_mentions,
     project_favorites,
+    pods,
+    pod_members,
     project_templates,
     template_milestones,
     template_task_lists,
@@ -1623,6 +1685,79 @@ export async function reorderProjectFavoriteRows(
       }
       throw error;
     }
+  }
+}
+
+function missingPodsTable(message: string, code?: string): boolean {
+  return (
+    /relation .*pods.* does not exist/i.test(message) ||
+    /relation .*pod_members.* does not exist/i.test(message) ||
+    code === "42P01"
+  );
+}
+
+export async function upsertPodRow(supabase: SupabaseClient, pod: Pod) {
+  const { error } = await supabase.from("pods").upsert({
+    id: pod.id,
+    organization_id: pod.organization_id,
+    name: pod.name,
+    manager_person_id: pod.manager_person_id,
+    sort_order: pod.sort_order,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) {
+    if (missingPodsTable(error.message, error.code)) {
+      console.warn("pods missing — apply supabase/migrations/052_pods.sql");
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function deletePodRow(supabase: SupabaseClient, id: string) {
+  const { error } = await supabase.from("pods").delete().eq("id", id);
+  if (error) {
+    if (missingPodsTable(error.message, error.code)) {
+      console.warn("pods missing — apply supabase/migrations/052_pods.sql");
+      return;
+    }
+    throw error;
+  }
+}
+
+/** Replace membership for a pod (always includes manager when set). */
+export async function setPodMembersRows(
+  supabase: SupabaseClient,
+  podId: string,
+  organizationId: string,
+  personIds: string[],
+) {
+  const { error: delErr } = await supabase
+    .from("pod_members")
+    .delete()
+    .eq("pod_id", podId);
+  if (delErr) {
+    if (missingPodsTable(delErr.message, delErr.code)) {
+      console.warn("pods missing — apply supabase/migrations/052_pods.sql");
+      return;
+    }
+    throw delErr;
+  }
+  const unique = [...new Set(personIds.filter(Boolean))];
+  if (unique.length === 0) return;
+  const { error } = await supabase.from("pod_members").insert(
+    unique.map((person_id) => ({
+      pod_id: podId,
+      person_id,
+      organization_id: organizationId,
+    })),
+  );
+  if (error) {
+    if (missingPodsTable(error.message, error.code)) {
+      console.warn("pods missing — apply supabase/migrations/052_pods.sql");
+      return;
+    }
+    throw error;
   }
 }
 

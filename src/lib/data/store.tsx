@@ -81,6 +81,9 @@ import {
   updateOrganizationNameRow,
   updateOrganizationSlugRow,
   updateProfileRoleRow,
+  upsertPodRow,
+  deletePodRow,
+  setPodMembersRows,
   upsertProjectAssetRow,
   upsertProjectFavoriteRow,
   upsertProjectRow,
@@ -120,6 +123,8 @@ import type {
   Milestone,
   Person,
   Profile,
+  Pod,
+  PodMember,
   Project,
   ProjectAsset,
   ProjectFavorite,
@@ -269,6 +274,12 @@ function loadDemoState(): DemoState {
               typeof (f as ProjectFavorite).profile_id === "string",
           )
         : (seed.project_favorites ?? []),
+      pods: Array.isArray(parsed.pods)
+        ? (parsed.pods as Pod[])
+        : (seed.pods ?? []),
+      pod_members: Array.isArray(parsed.pod_members)
+        ? (parsed.pod_members as PodMember[])
+        : (seed.pod_members ?? []),
       project_templates: parsed.project_templates ?? seed.project_templates,
       template_milestones:
         parsed.template_milestones ?? seed.template_milestones,
@@ -303,6 +314,8 @@ function emptySupabaseState(): DemoState {
     unread_bulletin_ids: [],
     unread_mentions: [],
     project_favorites: [],
+    pods: [],
+    pod_members: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -392,6 +405,15 @@ interface DataContextValue {
     avatarUrl: string | null,
   ) => Promise<void>;
   deletePerson: (id: string) => void;
+  /** Create or update a pod (managers/admins). */
+  upsertPod: (
+    pod: Omit<Pod, "organization_id"> & { organization_id?: string },
+  ) => Promise<void>;
+  deletePod: (id: string) => Promise<void>;
+  /** Replace pod membership; always includes manager when set. */
+  setPodMembers: (podId: string, personIds: string[]) => Promise<void>;
+  /** Sync which pods a person belongs to (from person form). */
+  setPersonPods: (personId: string, podIds: string[]) => Promise<void>;
   upsertAssignment: (
     assignment: Omit<Assignment, "organization_id"> & {
       organization_id?: string;
@@ -2117,9 +2139,151 @@ export function DataProvider({ children }: { children: ReactNode }) {
           people: prev.people.filter((p) => p.id !== id),
           assignments: prev.assignments.filter((a) => a.person_id !== id),
           leave_days: prev.leave_days.filter((l) => l.person_id !== id),
+          pods: prev.pods.map((pod) =>
+            pod.manager_person_id === id
+              ? { ...pod, manager_person_id: null }
+              : pod,
+          ),
+          pod_members: prev.pod_members.filter((m) => m.person_id !== id),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() => deletePersonRow(supabaseRef.current!, id));
+        }
+      },
+      upsertPod: async (pod) => {
+        const row: Pod = {
+          id: pod.id,
+          organization_id: pod.organization_id ?? orgId,
+          name: pod.name,
+          manager_person_id: pod.manager_person_id ?? null,
+          sort_order: pod.sort_order ?? 0,
+        };
+        patch((prev) => {
+          const exists = prev.pods.some((p) => p.id === row.id);
+          let members = prev.pod_members;
+          if (row.manager_person_id) {
+            const hasManager = members.some(
+              (m) =>
+                m.pod_id === row.id && m.person_id === row.manager_person_id,
+            );
+            if (!hasManager) {
+              members = [
+                ...members,
+                {
+                  pod_id: row.id,
+                  person_id: row.manager_person_id,
+                  organization_id: row.organization_id,
+                },
+              ];
+            }
+          }
+          return {
+            ...prev,
+            pods: exists
+              ? prev.pods.map((p) => (p.id === row.id ? row : p))
+              : [...prev.pods, row],
+            pod_members: members,
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() => upsertPodRow(supabaseRef.current!, row));
+          if (row.manager_person_id) {
+            const currentIds = state.pod_members
+              .filter((m) => m.pod_id === row.id)
+              .map((m) => m.person_id);
+            const nextIds = [
+              ...new Set([...currentIds, row.manager_person_id]),
+            ];
+            await runRemote(() =>
+              setPodMembersRows(
+                supabaseRef.current!,
+                row.id,
+                row.organization_id,
+                nextIds,
+              ),
+            );
+          }
+        }
+      },
+      deletePod: async (id) => {
+        patch((prev) => ({
+          ...prev,
+          pods: prev.pods.filter((p) => p.id !== id),
+          pod_members: prev.pod_members.filter((m) => m.pod_id !== id),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() => deletePodRow(supabaseRef.current!, id));
+        }
+      },
+      setPodMembers: async (podId, personIds) => {
+        const orgId = state.organization.id;
+        if (!orgId) return;
+        const pod = state.pods.find((p) => p.id === podId);
+        const unique = [
+          ...new Set([
+            ...personIds.filter(Boolean),
+            ...(pod?.manager_person_id ? [pod.manager_person_id] : []),
+          ]),
+        ];
+        const rows: PodMember[] = unique.map((person_id) => ({
+          pod_id: podId,
+          person_id,
+          organization_id: orgId,
+        }));
+        patch((prev) => ({
+          ...prev,
+          pod_members: [
+            ...prev.pod_members.filter((m) => m.pod_id !== podId),
+            ...rows,
+          ],
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            setPodMembersRows(supabaseRef.current!, podId, orgId, unique),
+          );
+        }
+      },
+      setPersonPods: async (personId, podIds) => {
+        const orgId = state.organization.id;
+        if (!orgId) return;
+        const wanted = new Set(podIds);
+        // Always keep membership for pods this person manages.
+        for (const pod of state.pods) {
+          if (pod.manager_person_id === personId) wanted.add(pod.id);
+        }
+        patch((prev) => {
+          const kept = prev.pod_members.filter((m) => m.person_id !== personId);
+          const added: PodMember[] = [...wanted].map((pod_id) => ({
+            pod_id,
+            person_id: personId,
+            organization_id: orgId,
+          }));
+          return { ...prev, pod_members: [...kept, ...added] };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          // Sync each affected pod's full membership remotely.
+          const allPodIds = new Set([
+            ...state.pod_members
+              .filter((m) => m.person_id === personId)
+              .map((m) => m.pod_id),
+            ...wanted,
+          ]);
+          for (const podId of allPodIds) {
+            const pod = state.pods.find((p) => p.id === podId);
+            const others = state.pod_members
+              .filter((m) => m.pod_id === podId && m.person_id !== personId)
+              .map((m) => m.person_id);
+            const next = [
+              ...new Set([
+                ...others,
+                ...(wanted.has(podId) ? [personId] : []),
+                ...(pod?.manager_person_id ? [pod.manager_person_id] : []),
+              ]),
+            ];
+            await runRemote(() =>
+              setPodMembersRows(supabaseRef.current!, podId, orgId, next),
+            );
+          }
         }
       },
       upsertAssignment: (assignment) => {
