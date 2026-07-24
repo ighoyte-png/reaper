@@ -126,11 +126,11 @@ export function UtilizationHeatmap({
     [weeks],
   );
   const people = sortPeopleByName(
-    personIds && personIds.length > 0
-      ? state.people.filter(
+    personIds == null
+      ? state.people.filter((p) => !p.hide_from_schedule)
+      : state.people.filter(
           (p) => personIds.includes(p.id) && !p.hide_from_schedule,
-        )
-      : state.people.filter((p) => !p.hide_from_schedule),
+        ),
   );
 
   const [rpcCells, setRpcCells] = useState<Map<string, CellHours> | null>(
@@ -147,9 +147,11 @@ export function UtilizationHeatmap({
       const weekStartKey = toDateKey(anchors[0]!);
       const weekEndKey = toDateKey(weekEnd(anchors[anchors.length - 1]!));
       const ids =
-        personIds && personIds.length > 0
-          ? personIds
-          : state.people.map((p) => p.id);
+        personIds == null
+          ? state.people
+              .filter((p) => !p.hide_from_schedule)
+              .map((p) => p.id)
+          : personIds;
       const rows = await fetchPersonUtilizationWeeksRpc(
         weekStartKey,
         weeks,

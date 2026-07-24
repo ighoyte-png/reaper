@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { addWeeks, format } from "date-fns";
 import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
@@ -26,11 +26,8 @@ import {
 import { scheduleVisiblePeople } from "@/lib/domain/people";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
-import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 
 const WEEK_TITLES = ["This week", "Next week", "In 2 weeks"] as const;
-
-const UTILIZATION_FILTER_DEFAULTS: { pod: string } = { pod: "all" };
 
 export default function UtilizationReportPage() {
   return (
@@ -46,13 +43,15 @@ function UtilizationReportContent() {
   const projectHref = useProjectHref();
   const now = useMemo(() => new Date(), []);
 
-  const { filters, setFilter } = useUrlFilters(UTILIZATION_FILTER_DEFAULTS);
   const pods = sortPods(state.pods);
-  const podFilter: PodFilter = pods.some((p) => p.id === filters.pod)
-    ? filters.pod
-    : "all";
+  const [podFilter, setPodFilter] = useState<PodFilter>("all");
 
-  /** Default: all schedule-visible people. Pod chip narrows the set. */
+  useEffect(() => {
+    if (podFilter === "all") return;
+    if (!pods.some((p) => p.id === podFilter)) setPodFilter("all");
+  }, [podFilter, pods]);
+
+  /** Default: everyone on the schedule. Pod chips optionally narrow. */
   const scopedPeople = useMemo(() => {
     const visible = scheduleVisiblePeople(state.people);
     if (podFilter === "all") return visible;
@@ -64,10 +63,10 @@ function UtilizationReportContent() {
     );
   }, [podFilter, state.people, state.pods, state.pod_members]);
 
-  const scopedPersonIds = useMemo(() => {
-    if (podFilter === "all") return null;
-    return scopedPeople.map((p) => p.id);
-  }, [podFilter, scopedPeople]);
+  const scopedPersonIds = useMemo(
+    () => scopedPeople.map((p) => p.id),
+    [scopedPeople],
+  );
 
   const weekAnchors = useMemo(
     () => Array.from({ length: 3 }, (_, i) => weekStart(addWeeks(now, i))),
@@ -158,8 +157,9 @@ function UtilizationReportContent() {
           className="mb-1"
           pods={pods}
           podFilter={podFilter}
-          onSelect={(next) => setFilter("pod", next)}
-          showAllOption={false}
+          onSelect={setPodFilter}
+          showAllOption
+          allLabel="All People"
         />
 
         <section className="space-y-3">

@@ -25,7 +25,7 @@ import {
   budgetHealth,
   formatHours,
 } from "@/lib/domain/budget";
-import { defaultPeopleScopeForViewer } from "@/lib/domain/pods";
+import { scheduleVisiblePeople } from "@/lib/domain/people";
 import type { BudgetBurn, Project } from "@/lib/types";
 import {
   availableHoursInRange,
@@ -82,8 +82,6 @@ type WeekUtilPoint = {
 export default function ReportsPage() {
   const {
     state,
-    profile,
-    myPerson,
     isPublicShare,
     ensureScheduleRange,
     fetchOrgTaskStatsRpc,
@@ -143,29 +141,13 @@ export default function ReportsPage() {
   }, [mode, fetchOrgTaskStatsRpc, todayKey]);
 
   /**
-   * Org-wide people scope: pod managers see only their pod(s), other
-   * managers/admins see everyone. Public share always sees the whole org.
+   * Utilization overview on the reports hub: all schedule-visible people
+   * (pod filtering lives on the Utilization report itself).
    */
-  const orgScopedPeople = useMemo(() => {
-    if (isPublicShare) return state.people;
-    return defaultPeopleScopeForViewer(
-      state.people,
-      state.pods,
-      state.pod_members,
-      {
-        role: profile?.role,
-        myPersonId: myPerson?.id ?? null,
-        orgWide: true,
-      },
-    );
-  }, [
-    isPublicShare,
-    state.people,
-    state.pods,
-    state.pod_members,
-    profile?.role,
-    myPerson?.id,
-  ]);
+  const orgScopedPeople = useMemo(
+    () => scheduleVisiblePeople(state.people),
+    [state.people],
+  );
 
   const plannedHoursAcrossSchedule = useMemo(() => {
     let sum = 0;
