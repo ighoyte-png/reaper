@@ -158,6 +158,7 @@ type BoardCtx = {
   addSubtask: (listId: string, parentId: string) => void;
   expanded: Set<string>;
   toggleExpand: (id: string) => void;
+  collapseExpanded: (ids: string[]) => void;
   childrenMap: Map<string, Task[]>;
   addComment: (taskId: string, html: string, mentionedPersonIds: string[]) => void;
   editComment: (
@@ -313,6 +314,18 @@ export function ProjectTaskBoard({
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  }
+
+  function collapseExpanded(ids: string[]) {
+    if (ids.length === 0) return;
+    setExpanded((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (next.delete(id)) changed = true;
+      }
+      return changed ? next : prev;
     });
   }
 
@@ -879,6 +892,7 @@ export function ProjectTaskBoard({
     addSubtask,
     expanded,
     toggleExpand,
+    collapseExpanded,
     childrenMap,
     addComment,
     editComment,
@@ -1387,6 +1401,9 @@ function ListSection({
   const allSelected =
     selectableIds.length > 0 && selectedCount === selectableIds.length;
   const someSelected = selectedCount > 0 && !allSelected;
+  const hasExpandedTasks =
+    !ctx.readOnly &&
+    selectableIds.some((id) => ctx.expanded.has(id));
 
   return (
     <section
@@ -1481,6 +1498,18 @@ function ListSection({
               <Trash2 size={14} />
             </button>
           </div>
+        ) : null}
+        {hasExpandedTasks ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => ctx.collapseExpanded(selectableIds)}
+            aria-label={`Collapse all open tasks in ${list.name}`}
+            title="Collapse all"
+          >
+            Collapse all
+          </Button>
         ) : null}
         {ctx.allowSelect && selectableIds.length > 0 ? (
           <Checkbox
