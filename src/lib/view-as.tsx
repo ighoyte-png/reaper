@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { canManage as roleCanManage } from "@/lib/auth/roles";
 import { useData } from "@/lib/data/store";
 import {
   VIEW_AS_STORAGE_KEY,
@@ -29,8 +30,9 @@ type ViewAsContextValue = {
   /** When true, managers see all tasks (no view-as). */
   showingAsManager: boolean;
   /**
-   * Manage capability for UI/data scoping. False while Viewing As so the app
-   * matches a member experience. Raw canManage stays true for Exit / picker.
+   * Manage capability for UI/data scoping. While Viewing As, matches the
+   * viewed person's linked profile role (manager/admin vs member). Raw
+   * canManage stays true for Exit / picker.
    */
   effectiveCanManage: boolean;
 };
@@ -87,6 +89,12 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
   const resolvedViewAsId =
     canViewAs && viewAsPersonId && viewedPerson ? viewAsPersonId : null;
 
+  const viewedPersonCanManage = useMemo(() => {
+    if (!viewedPerson?.profile_id) return false;
+    const profile = state.profiles.find((p) => p.id === viewedPerson.profile_id);
+    return roleCanManage(profile?.role);
+  }, [viewedPerson, state.profiles]);
+
   const value = useMemo<ViewAsContextValue>(() => {
     // Public org share uses the same org-wide scope as managers (read-only).
     const orgWide = canManage || isPublicShare;
@@ -94,7 +102,9 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     const effectivePersonId = orgWide
       ? resolvedViewAsId
       : myPerson?.id ?? null;
-    const effectiveCanManage = canManage && !resolvedViewAsId;
+    const effectiveCanManage = resolvedViewAsId
+      ? viewedPersonCanManage
+      : canManage;
     return {
       viewAsPersonId: resolvedViewAsId,
       setViewAsPersonId,
@@ -112,6 +122,7 @@ export function ViewAsProvider({ children }: { children: ReactNode }) {
     setViewAsPersonId,
     clearViewAs,
     viewedPerson,
+    viewedPersonCanManage,
   ]);
 
   return (

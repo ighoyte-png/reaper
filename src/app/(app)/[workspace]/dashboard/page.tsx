@@ -830,9 +830,17 @@ export default function DashboardPage() {
             <div
               className={cn(
                 "grid grid-cols-2 gap-3",
-                showOrgKpis ? "xl:grid-cols-3" : "xl:grid-cols-2",
+                showOrgKpis
+                  ? showPmHealthKpi
+                    ? "xl:grid-cols-4"
+                    : "xl:grid-cols-3"
+                  : "xl:grid-cols-2",
               )}
             >
+              {showOrgKpis && showPmHealthKpi ? (
+                <ActiveProjectsHealthCard stats={projectHealthStats} />
+              ) : null}
+
               {showOrgKpis ? (
                 <KpiCard title="Team Utilization Rate">
                   <div className="flex items-center justify-between gap-2">
@@ -887,38 +895,9 @@ export default function DashboardPage() {
               </KpiCard>
             </div>
 
-            {showPmHealthKpi ? (
-              <KpiCard title="Active Projects / Health">
-                <div className="text-sm font-semibold tabular-nums">
-                  {projectHealthStats.total} Active
-                  {projectHealthStats.total > 0 ? (
-                    <span className="font-normal text-[var(--text-muted)]">
-                      {" "}
-                      | {projectHealthStats.onTrackPct}% On Track
-                    </span>
-                  ) : null}
-                </div>
-                <SegmentBar
-                  segments={[
-                    {
-                      value: projectHealthStats.healthy,
-                      className: "bg-[var(--status-healthy)]",
-                    },
-                    {
-                      value: projectHealthStats.near,
-                      className: "bg-[var(--status-near)]",
-                    },
-                    {
-                      value: projectHealthStats.over,
-                      className: "bg-[var(--status-over)]",
-                    },
-                    {
-                      value: projectHealthStats.none,
-                      className: "bg-[var(--status-unavailable)]",
-                    },
-                  ]}
-                />
-              </KpiCard>
+            {/* Members (non-org KPI strip): full-width when this is the only extra KPI. */}
+            {!showOrgKpis && showPmHealthKpi ? (
+              <ActiveProjectsHealthCard stats={projectHealthStats} />
             ) : null}
 
             <TodaySchedule
@@ -984,6 +963,53 @@ function KpiCard({
       </h3>
       <div className="space-y-2">{children}</div>
     </section>
+  );
+}
+
+function ActiveProjectsHealthCard({
+  stats,
+}: {
+  stats: {
+    total: number;
+    onTrackPct: number;
+    healthy: number;
+    near: number;
+    over: number;
+    none: number;
+  };
+}) {
+  return (
+    <KpiCard title="Active Projects / Health">
+      <div className="text-sm font-semibold tabular-nums">
+        {stats.total} Active
+        {stats.total > 0 ? (
+          <span className="font-normal text-[var(--text-muted)]">
+            {" "}
+            | {stats.onTrackPct}% On Track
+          </span>
+        ) : null}
+      </div>
+      <SegmentBar
+        segments={[
+          {
+            value: stats.healthy,
+            className: "bg-[var(--status-healthy)]",
+          },
+          {
+            value: stats.near,
+            className: "bg-[var(--status-near)]",
+          },
+          {
+            value: stats.over,
+            className: "bg-[var(--status-over)]",
+          },
+          {
+            value: stats.none,
+            className: "bg-[var(--status-unavailable)]",
+          },
+        ]}
+      />
+    </KpiCard>
   );
 }
 

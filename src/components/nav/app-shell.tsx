@@ -13,7 +13,7 @@ import { useAppHref } from "@/lib/hooks/use-app-href";
 import { loginPathWithNext, stripWorkspacePrefix } from "@/lib/paths";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 
-/** Paths members cannot access — redirect here while Viewing As. */
+/** Paths members cannot access — redirect here while Viewing As a member. */
 function isManageOnlyPath(pathname: string, workspaceSlug: string): boolean {
   const path = stripWorkspacePrefix(pathname, workspaceSlug);
   return (
@@ -24,10 +24,13 @@ function isManageOnlyPath(pathname: string, workspaceSlug: string): boolean {
     path === "/people" ||
     path.startsWith("/people/") ||
     path === "/templates" ||
-    path.startsWith("/templates/") ||
-    path === "/settings" ||
-    path.startsWith("/settings/")
+    path.startsWith("/templates/")
   );
+}
+
+function isSettingsPath(pathname: string, workspaceSlug: string): boolean {
+  const path = stripWorkspacePrefix(pathname, workspaceSlug);
+  return path === "/settings" || path.startsWith("/settings/");
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -143,16 +146,31 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 function ViewAsRouteGuard() {
   const pathname = usePathname();
   const router = useRouter();
-  const { viewAsPersonId } = useViewAs();
+  const { viewAsPersonId, effectiveCanManage } = useViewAs();
   const { state } = useData();
   const appHref = useAppHref();
 
   useEffect(() => {
     if (!viewAsPersonId) return;
-    if (isManageOnlyPath(pathname, state.organization.slug)) {
+    // Always keep Settings on the signed-in account — never the View As target.
+    if (isSettingsPath(pathname, state.organization.slug)) {
+      router.replace(appHref("/dashboard"));
+      return;
+    }
+    if (
+      !effectiveCanManage &&
+      isManageOnlyPath(pathname, state.organization.slug)
+    ) {
       router.replace(appHref("/dashboard"));
     }
-  }, [viewAsPersonId, pathname, router, state.organization.slug, appHref]);
+  }, [
+    viewAsPersonId,
+    effectiveCanManage,
+    pathname,
+    router,
+    state.organization.slug,
+    appHref,
+  ]);
 
   return null;
 }
