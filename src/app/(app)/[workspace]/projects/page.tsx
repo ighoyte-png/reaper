@@ -6,6 +6,7 @@ import { format, startOfDay } from "date-fns";
 import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { FavoritesSidebar } from "@/components/nav/favorites-sidebar";
 import { ProjectForm } from "@/components/projects/project-form";
 import {
   ProjectManagerFilterBar,
@@ -304,6 +305,7 @@ export default function ProjectsPage() {
                 />
               </label>
             </div>
+            <FavoritesSidebar />
             <nav className="space-y-0.5 p-2" aria-label="Clients">
               <ClientNavButton
                 active={clientFilter === "all"}

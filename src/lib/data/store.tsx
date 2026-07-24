@@ -40,6 +40,7 @@ import {
   deleteMilestoneRow,
   deletePersonRow,
   deleteProjectAssetRow,
+  deleteProjectFavoriteRow,
   deleteProjectRow,
   deleteProjectTemplateRow,
   deleteTaskCommentRow,
@@ -74,7 +75,9 @@ import {
   updateOrganizationSlugRow,
   updateProfileRoleRow,
   upsertProjectAssetRow,
+  upsertProjectFavoriteRow,
   upsertProjectRow,
+  reorderProjectFavoriteRows,
   setProjectMembersRows,
   upsertProjectTemplateRow,
   upsertTaskCommentRow,
@@ -112,6 +115,7 @@ import type {
   Profile,
   Project,
   ProjectAsset,
+  ProjectFavorite,
   ProjectTemplate,
   Role,
   Task,
@@ -248,6 +252,16 @@ function loadDemoState(): DemoState {
               typeof (r as { person_id?: unknown }).person_id === "string",
           )
         : (seed.unread_mentions ?? []),
+      project_favorites: Array.isArray(parsed.project_favorites)
+        ? parsed.project_favorites.filter(
+            (f): f is ProjectFavorite =>
+              Boolean(f) &&
+              typeof f === "object" &&
+              typeof (f as ProjectFavorite).id === "string" &&
+              typeof (f as ProjectFavorite).project_id === "string" &&
+              typeof (f as ProjectFavorite).profile_id === "string",
+          )
+        : (seed.project_favorites ?? []),
       project_templates: parsed.project_templates ?? seed.project_templates,
       template_milestones:
         parsed.template_milestones ?? seed.template_milestones,
@@ -281,6 +295,7 @@ function emptySupabaseState(): DemoState {
     bulletins: [],
     unread_bulletin_ids: [],
     unread_mentions: [],
+    project_favorites: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -357,6 +372,10 @@ interface DataContextValue {
     personIds: string[],
   ) => Promise<void>;
   deleteProject: (id: string) => void;
+  /** Star / unstar a project for the current profile. */
+  toggleProjectFavorite: (projectId: string) => void;
+  /** Persist nav-tab order (array of project ids for current profile). */
+  reorderProjectFavorites: (projectIds: string[]) => void;
   upsertPerson: (
     person: Omit<Person, "organization_id"> & { organization_id?: string },
   ) => Promise<void>;
@@ -1788,9 +1807,85 @@ export function DataProvider({ children }: { children: ReactNode }) {
             (m) => m.project_id !== id,
           ),
           milestones: prev.milestones.filter((m) => m.project_id !== id),
+          project_favorites: prev.project_favorites.filter(
+            (f) => f.project_id !== id,
+          ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() => deleteProjectRow(supabaseRef.current!, id));
+        }
+      },
+      toggleProjectFavorite: (projectId) => {
+        const profileId = state.sessionProfileId;
+        if (!profileId || !state.organization.id) return;
+        const existing = state.project_favorites.find(
+          (f) => f.profile_id === profileId && f.project_id === projectId,
+        );
+        if (existing) {
+          patch((prev) => ({
+            ...prev,
+            project_favorites: prev.project_favorites.filter(
+              (f) => f.id !== existing.id,
+            ),
+          }));
+          if (mode === "supabase" && supabaseRef.current) {
+            runRemoteSoft(() =>
+              deleteProjectFavoriteRow(supabaseRef.current!, existing.id),
+            );
+          }
+          return;
+        }
+        const maxOrder = state.project_favorites
+          .filter((f) => f.profile_id === profileId)
+          .reduce((max, f) => Math.max(max, f.sort_order), -1);
+        const row: ProjectFavorite = {
+          id: uid("pfav"),
+          organization_id: state.organization.id,
+          profile_id: profileId,
+          project_id: projectId,
+          sort_order: maxOrder + 1,
+          created_at: new Date().toISOString(),
+        };
+        patch((prev) => ({
+          ...prev,
+          project_favorites: [...prev.project_favorites, row],
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            upsertProjectFavoriteRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      reorderProjectFavorites: (projectIds) => {
+        const profileId = state.sessionProfileId;
+        if (!profileId) return;
+        const byProject = new Map(
+          state.project_favorites
+            .filter((f) => f.profile_id === profileId)
+            .map((f) => [f.project_id, f]),
+        );
+        const nextRows: ProjectFavorite[] = [];
+        projectIds.forEach((projectId, index) => {
+          const existing = byProject.get(projectId);
+          if (!existing) return;
+          nextRows.push({ ...existing, sort_order: index });
+          byProject.delete(projectId);
+        });
+        // Keep any leftovers at the end (shouldn't happen in normal UI).
+        for (const leftover of byProject.values()) {
+          nextRows.push({ ...leftover, sort_order: nextRows.length });
+        }
+        patch((prev) => ({
+          ...prev,
+          project_favorites: [
+            ...prev.project_favorites.filter((f) => f.profile_id !== profileId),
+            ...nextRows,
+          ],
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          runRemoteSoft(() =>
+            reorderProjectFavoriteRows(supabaseRef.current!, nextRows),
+          );
         }
       },
       upsertPerson: async (person) => {

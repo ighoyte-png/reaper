@@ -206,6 +206,8 @@ export function PublicShareProvider({
       deleteBulletin: () => {},
       dismissBulletin: () => {},
       dismissMention: () => {},
+      toggleProjectFavorite: () => {},
+      reorderProjectFavorites: () => {},
       upsertProjectTemplate: () => {},
       deleteProjectTemplate: () => {},
       upsertTemplateMilestone: () => {},

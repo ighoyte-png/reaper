@@ -15,6 +15,7 @@ import {
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
+import { FavoritesSidebar } from "@/components/nav/favorites-sidebar";
 import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
@@ -625,6 +626,7 @@ export default function TasksReportPage() {
       <PageHeader title={<ReportBreadcrumb current="Tasks" />} />
       <div className="flex flex-col md:flex-row">
         <aside className="sticky top-3 mt-3 ml-3 hidden max-h-[calc(100dvh-5.5rem)] w-64 shrink-0 flex-col self-start overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 sm:ml-5 md:flex">
+          <FavoritesSidebar />
           <div className="shrink-0 border-b border-[var(--border)] px-3 py-2">
             <p className="text-xs font-medium text-[var(--text-muted)]">
               Clients

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { format, parseISO, startOfDay } from "date-fns";
-import { ChevronDown, ChevronRight, Copy, ExternalLink, Link2, Pencil, Plus, RefreshCw, Unlink } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, ExternalLink, Link2, Pencil, Plus, RefreshCw, Star, Unlink } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -35,6 +35,7 @@ import {
   projectTeamPersonIds,
   showProjectManagerUi,
 } from "@/lib/domain/project-access";
+import { isProjectFavorited } from "@/lib/domain/project-favorites";
 import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sorting";
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
@@ -79,8 +80,10 @@ export default function ProjectDetailPage() {
     applyProjectTemplate,
     exportProjectAsTemplate,
     updateProjectShare,
+    toggleProjectFavorite,
     newId,
     isPublicShare,
+    profile,
     myPerson,
     ensureProjectData,
     setActiveRealtimeProjectIds,
@@ -185,6 +188,11 @@ export default function ProjectDetailPage() {
   const manager = project
     ? projectManagerPerson(project, state.people)
     : null;
+  const favorited = Boolean(
+    project &&
+      profile &&
+      isProjectFavorited(state.project_favorites, profile.id, project.id),
+  );
   const teamWithoutManager = useMemo(() => {
     if (!manager) return team;
     return team.filter((p) => p.id !== manager.id);
@@ -332,9 +340,35 @@ export default function ProjectDetailPage() {
               {client?.name ? `${client.name} – ${project.name}` : project.name}
             </span>
           </h1>
-          <span className={cn(projectStatusPillClass(project.status), "shrink-0")}>
-            {project.status.replace("_", " ")}
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            {profile && !isPublicShare ? (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md transition-colors",
+                  favorited
+                    ? "text-[var(--accent)] hover:bg-[var(--row-hover)]"
+                    : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                )}
+                aria-pressed={favorited}
+                aria-label={
+                  favorited ? "Remove from favorites" : "Add to favorites"
+                }
+                onClick={() => toggleProjectFavorite(project.id)}
+              >
+                <Star
+                  size={18}
+                  strokeWidth={1.75}
+                  fill={favorited ? "currentColor" : "none"}
+                />
+              </button>
+            ) : null}
+            <span
+              className={cn(projectStatusPillClass(project.status), "shrink-0")}
+            >
+              {project.status.replace("_", " ")}
+            </span>
+          </div>
         </div>
         {project.notes ? (
           <p className="mb-4 text-sm text-[var(--text-muted)]">{project.notes}</p>

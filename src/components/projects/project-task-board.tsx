@@ -223,6 +223,14 @@ export function ProjectTaskBoard({
     name: string;
   } | null>(null);
   const [view, setView] = useState<"list" | "card">("list");
+
+  function setTaskView(next: "list" | "card") {
+    if (next === "card") {
+      setEditingTaskId(null);
+      setDraftingListId(null);
+    }
+    setView(next);
+  }
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
@@ -889,7 +897,7 @@ export function ProjectTaskBoard({
             </h3>
             <ViewToggle
               view={view}
-              setView={setView}
+              setView={setTaskView}
               allowCardView={allowCardView}
             />
           </div>
@@ -925,18 +933,6 @@ export function ProjectTaskBoard({
                       <KanbanBoard
                         tasks={listParents}
                         manageLists={manageLists}
-                        people={state.people}
-                        editingTaskId={
-                          readOnly || isPublicShare ? null : editingTaskId
-                        }
-                        onEdit={
-                          readOnly || isPublicShare
-                            ? undefined
-                            : setEditingTask
-                        }
-                        onSaveEdit={saveEditingTask}
-                        onDeleteEdit={deleteEditingTask}
-                        onCancelEdit={() => setEditingTaskId(null)}
                         onMove={moveTaskToColumn}
                       />
                     )}
@@ -963,7 +959,7 @@ export function ProjectTaskBoard({
         <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
           Tasks
         </h3>
-        <ViewToggle view={view} setView={setView} allowCardView={allowCardView} />
+        <ViewToggle view={view} setView={setTaskView} allowCardView={allowCardView} />
         {manageLists ? (
           <div className="ml-auto flex items-center gap-1">
             <button
@@ -2428,22 +2424,10 @@ function statusCardTone(status: TaskStatus) {
 function KanbanBoard({
   tasks,
   manageLists,
-  people,
-  editingTaskId,
-  onEdit,
-  onSaveEdit,
-  onDeleteEdit,
-  onCancelEdit,
   onMove,
 }: {
   tasks: Task[];
   manageLists: boolean;
-  people: Person[];
-  editingTaskId: string | null;
-  onEdit?: (task: Task) => void;
-  onSaveEdit: (taskId: string, draft: InlineTaskDraft) => void;
-  onDeleteEdit: (taskId: string) => void;
-  onCancelEdit: () => void;
   onMove: (taskId: string, destStatus: TaskStatus, destIndex: number) => void;
 }) {
   const sensors = useSensors(
@@ -2503,12 +2487,6 @@ function KanbanBoard({
               .filter((t) => t.status === status)
               .sort((a, b) => a.sort_order - b.sort_order)}
             manageLists={manageLists}
-            people={people}
-            editingTaskId={editingTaskId}
-            onEdit={onEdit}
-            onSaveEdit={onSaveEdit}
-            onDeleteEdit={onDeleteEdit}
-            onCancelEdit={onCancelEdit}
             activeId={activeId}
           />
         ))}
@@ -2526,23 +2504,11 @@ function KanbanColumn({
   status,
   tasks,
   manageLists,
-  people,
-  editingTaskId,
-  onEdit,
-  onSaveEdit,
-  onDeleteEdit,
-  onCancelEdit,
   activeId,
 }: {
   status: TaskStatus;
   tasks: Task[];
   manageLists: boolean;
-  people: Person[];
-  editingTaskId: string | null;
-  onEdit?: (task: Task) => void;
-  onSaveEdit: (taskId: string, draft: InlineTaskDraft) => void;
-  onDeleteEdit: (taskId: string) => void;
-  onCancelEdit: () => void;
   activeId: string | null;
 }) {
   const { setNodeRef } = useDroppable({
@@ -2577,34 +2543,14 @@ function KanbanColumn({
         {tasks.length === 0 ? (
           <div className="min-h-8" aria-hidden />
         ) : (
-          tasks.map((t) =>
-            editingTaskId === t.id ? (
-              <InlineTaskForm
-                key={t.id}
-                people={people}
-                status={t.status}
-                submitLabel="Save"
-                initial={{
-                  title: t.title,
-                  assignee_person_id: t.assignee_person_id,
-                  start_date: t.start_date,
-                  due_date: t.due_date,
-                  notes: t.notes,
-                }}
-                onCancel={onCancelEdit}
-                onSubmit={(draft) => onSaveEdit(t.id, draft)}
-                onDelete={() => onDeleteEdit(t.id)}
-              />
-            ) : (
-              <KanbanCard
-                key={t.id}
-                task={t}
-                manageLists={manageLists}
-                onEdit={onEdit}
-                isOverlaySource={activeId === t.id}
-              />
-            ),
-          )
+          tasks.map((t) => (
+            <KanbanCard
+              key={t.id}
+              task={t}
+              manageLists={manageLists}
+              isOverlaySource={activeId === t.id}
+            />
+          ))
         )}
       </SortableContext>
     </div>
@@ -2614,24 +2560,11 @@ function KanbanColumn({
 function KanbanCardFace({
   task,
   dragging = false,
-  onEdit,
 }: {
   task: Task;
   dragging?: boolean;
-  onEdit?: (task: Task) => void;
 }) {
   const tone = statusCardTone(task.status);
-  const title = (
-    <span
-      className={cn(
-        "block w-full text-left",
-        task.status === "complete" &&
-          "text-[var(--task-complete-fg)] line-through",
-      )}
-    >
-      {task.title}
-    </span>
-  );
 
   return (
     <div
@@ -2645,17 +2578,15 @@ function KanbanCardFace({
         className={cn("absolute inset-y-0 left-0 w-1", tone.bar)}
         aria-hidden
       />
-      {onEdit ? (
-        <button
-          type="button"
-          className="block w-full cursor-pointer text-left"
-          onClick={() => onEdit(task)}
-        >
-          {title}
-        </button>
-      ) : (
-        title
-      )}
+      <span
+        className={cn(
+          "block w-full text-left",
+          task.status === "complete" &&
+            "text-[var(--task-complete-fg)] line-through",
+        )}
+      >
+        {task.title}
+      </span>
       {task.due_date ? (
         <div
           className={cn(
@@ -2675,12 +2606,10 @@ function KanbanCardFace({
 function KanbanCard({
   task,
   manageLists,
-  onEdit,
   isOverlaySource,
 }: {
   task: Task;
   manageLists: boolean;
-  onEdit?: (task: Task) => void;
   isOverlaySource: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -2702,7 +2631,7 @@ function KanbanCard({
       {...attributes}
       {...listeners}
     >
-      <KanbanCardFace task={task} onEdit={onEdit} />
+      <KanbanCardFace task={task} />
     </div>
   );
 }

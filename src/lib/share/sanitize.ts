@@ -60,6 +60,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     sessionProfileId: null,
     unread_bulletin_ids: [],
     unread_mentions: [],
+    project_favorites: [],
     clients,
     projects,
     assignments,

@@ -6,6 +6,7 @@ import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
+import { FavoritesSidebar } from "@/components/nav/favorites-sidebar";
 import { BudgetCard } from "@/components/budgets/budget-card";
 import {
   ProjectManagerFilterBar,
@@ -146,6 +147,7 @@ function BudgetsReportContent() {
                 />
               </label>
             </div>
+            <FavoritesSidebar />
             <nav className="space-y-0.5 p-2" aria-label="Clients">
               <ClientNavButton
                 active={clientFilter === "all"}

@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Globe,
+  Mail,
+  Phone,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
@@ -21,6 +28,66 @@ import { cn } from "@/lib/cn";
 import type { Client, ClientStatus, Project } from "@/lib/types";
 
 type StatusFilter = "active" | "archived" | "all";
+
+function IconInput({
+  icon: Icon,
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"input"> & { icon: LucideIcon }) {
+  return (
+    <span className="relative block">
+      <Icon
+        size={14}
+        strokeWidth={1.75}
+        className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+        aria-hidden
+      />
+      <input className={cn(inputClass, "pl-8", className)} {...props} />
+    </span>
+  );
+}
+
+function ContactLine({
+  icon: Icon,
+  children,
+  href,
+  external,
+}: {
+  icon: LucideIcon;
+  children: ReactNode;
+  href?: string;
+  external?: boolean;
+}) {
+  const content = (
+    <>
+      <Icon
+        size={12}
+        strokeWidth={1.75}
+        className="mt-0.5 shrink-0 text-[var(--text-muted)]"
+        aria-hidden
+      />
+      <span className="min-w-0 truncate">{children}</span>
+    </>
+  );
+  if (href) {
+    return (
+      <a
+        href={href}
+        {...(external
+          ? { target: "_blank", rel: "noopener noreferrer" }
+          : {})}
+        className="flex min-w-0 items-start gap-1.5 hover:text-[var(--text)]"
+      >
+        {content}
+      </a>
+    );
+  }
+  return (
+    <p className="flex min-w-0 items-start gap-1.5 text-[var(--text)]">
+      {content}
+    </p>
+  );
+}
 
 function emptyProject(
   id: string,
@@ -293,36 +360,31 @@ export default function ClientsPage() {
 
                   <div className="mt-auto space-y-1.5 text-xs text-[var(--text-muted)]">
                     {pocName ? (
-                      <p className="truncate text-[var(--text)]">{pocName}</p>
+                      <ContactLine icon={User}>{pocName}</ContactLine>
                     ) : null}
                     {client.contact_email?.trim() ? (
-                      <a
+                      <ContactLine
+                        icon={Mail}
                         href={`mailto:${client.contact_email.trim()}`}
-                        className="block truncate hover:text-[var(--text)]"
                       >
                         {client.contact_email.trim()}
-                      </a>
+                      </ContactLine>
                     ) : null}
                     {client.contact_phone?.trim() ? (
-                      <a
+                      <ContactLine
+                        icon={Phone}
                         href={`tel:${client.contact_phone.trim()}`}
-                        className="block truncate hover:text-[var(--text)]"
                       >
                         {client.contact_phone.trim()}
-                      </a>
+                      </ContactLine>
                     ) : null}
                     {site ? (
-                      <a
-                        href={site}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block truncate hover:text-[var(--text)]"
-                      >
+                      <ContactLine icon={Globe} href={site} external>
                         {(client.company_website || site).replace(
                           /^https?:\/\//i,
                           "",
                         )}
-                      </a>
+                      </ContactLine>
                     ) : null}
                     {client.notes?.trim() ? (
                       <p className="line-clamp-2 pt-0.5">{client.notes}</p>
@@ -417,8 +479,8 @@ export default function ClientsPage() {
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="First name">
-                  <input
-                    className={inputClass}
+                  <IconInput
+                    icon={User}
                     value={editing.contact_first_name}
                     onChange={(e) =>
                       setEditing({
@@ -429,8 +491,8 @@ export default function ClientsPage() {
                   />
                 </Field>
                 <Field label="Last name">
-                  <input
-                    className={inputClass}
+                  <IconInput
+                    icon={User}
                     value={editing.contact_last_name}
                     onChange={(e) =>
                       setEditing({
@@ -443,9 +505,9 @@ export default function ClientsPage() {
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field label="Email">
-                  <input
+                  <IconInput
+                    icon={Mail}
                     type="email"
-                    className={inputClass}
                     value={editing.contact_email}
                     onChange={(e) =>
                       setEditing({
@@ -456,9 +518,9 @@ export default function ClientsPage() {
                   />
                 </Field>
                 <Field label="Phone">
-                  <input
+                  <IconInput
+                    icon={Phone}
                     type="tel"
-                    className={inputClass}
                     value={editing.contact_phone}
                     onChange={(e) =>
                       setEditing({
@@ -471,9 +533,9 @@ export default function ClientsPage() {
               </div>
               <div className="mt-3">
                 <Field label="Company website">
-                  <input
+                  <IconInput
+                    icon={Globe}
                     type="url"
-                    className={inputClass}
                     placeholder="https://"
                     value={editing.company_website}
                     onChange={(e) =>

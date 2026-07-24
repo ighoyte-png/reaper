@@ -944,6 +944,7 @@ export function createDemoSeed(): DemoState {
     ],
     unread_bulletin_ids: [],
     unread_mentions: [],
+    project_favorites: [],
     sessionProfileId: null,
   };
 }

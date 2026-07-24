@@ -285,6 +285,16 @@ export interface ProjectMember {
   organization_id: string;
 }
 
+/** Per-user starred project (nav tabs + sidebars). */
+export interface ProjectFavorite {
+  id: string;
+  organization_id: string;
+  profile_id: string;
+  project_id: string;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface LeaveDay {
   id: string;
   organization_id: string;
@@ -321,6 +331,8 @@ export interface DemoState {
   unread_bulletin_ids: string[];
   /** Unread @mention inbox rows (comment_id + mentioned person_id). */
   unread_mentions: { comment_id: string; person_id: string }[];
+  /** Current profile's starred projects (sort_order = nav tab order). */
+  project_favorites: ProjectFavorite[];
   project_templates: ProjectTemplate[];
   template_milestones: TemplateMilestone[];
   template_task_lists: TemplateTaskList[];

@@ -15,6 +15,7 @@ import type {
   Profile,
   Project,
   ProjectAsset,
+  ProjectFavorite,
   ProjectMember,
   ProjectTemplate,
   Task,
@@ -209,6 +210,17 @@ export function mapBulletin(row: Record<string, unknown>): Bulletin {
   };
 }
 
+export function mapProjectFavorite(row: Record<string, unknown>): ProjectFavorite {
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    profile_id: String(row.profile_id),
+    project_id: String(row.project_id),
+    sort_order: num(row.sort_order),
+    created_at: String(row.created_at ?? ""),
+  };
+}
+
 function mapProjectTemplate(row: Record<string, unknown>): ProjectTemplate {
   return {
     id: String(row.id),
@@ -337,6 +349,7 @@ function emptyWorkspace(): DemoState {
     bulletins: [],
     unread_bulletin_ids: [],
     unread_mentions: [],
+    project_favorites: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -472,6 +485,7 @@ export async function loadOrgBootstrap(
     bulletinsRes,
     bulletinUnreadsRes,
     mentionUnreadsRes,
+    projectFavoritesRes,
     projectTemplatesRes,
     templateMilestonesRes,
     templateTaskListsRes,
@@ -500,6 +514,17 @@ export async function loadOrgBootstrap(
       .from("mention_unreads")
       .select("comment_id, person_id")
       .eq("organization_id", orgId),
+    sessionProfileId
+      ? supabase
+          .from("project_favorites")
+          .select("*")
+          .eq("organization_id", orgId)
+          .eq("profile_id", sessionProfileId)
+          .order("sort_order", { ascending: true })
+      : Promise.resolve({
+          data: [] as Record<string, unknown>[],
+          error: null,
+        }),
     supabase
       .from("project_templates")
       .select("*")
@@ -589,6 +614,23 @@ export async function loadOrgBootstrap(
       }))
       .filter((r) => r.comment_id && r.person_id);
   }
+  let project_favorites: ProjectFavorite[] = [];
+  if (projectFavoritesRes.error) {
+    if (
+      /relation .*project_favorites.* does not exist/i.test(
+        projectFavoritesRes.error.message,
+      ) ||
+      projectFavoritesRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "project_favorites missing — apply supabase/migrations/049_project_favorites.sql",
+      );
+    }
+  } else {
+    project_favorites = (projectFavoritesRes.data ?? []).map((row) =>
+      mapProjectFavorite(row as Record<string, unknown>),
+    );
+  }
   const project_templates: ProjectTemplate[] = projectTemplatesRes.error
     ? []
     : (projectTemplatesRes.data ?? []).map((row) =>
@@ -658,6 +700,7 @@ export async function loadOrgBootstrap(
     bulletins,
     unread_bulletin_ids,
     unread_mentions,
+    project_favorites,
     project_templates,
     template_milestones,
     template_task_lists,
@@ -1318,6 +1361,81 @@ export async function upsertProjectRow(
 export async function deleteProjectRow(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("projects").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function upsertProjectFavoriteRow(
+  supabase: SupabaseClient,
+  favorite: ProjectFavorite,
+) {
+  const payload = {
+    id: favorite.id,
+    organization_id: favorite.organization_id,
+    profile_id: favorite.profile_id,
+    project_id: favorite.project_id,
+    sort_order: favorite.sort_order,
+    created_at: favorite.created_at || undefined,
+  };
+  const { error } = await supabase.from("project_favorites").upsert(payload);
+  if (error) {
+    if (
+      /relation .*project_favorites.* does not exist/i.test(error.message) ||
+      error.code === "42P01"
+    ) {
+      console.warn(
+        "project_favorites missing — apply supabase/migrations/049_project_favorites.sql",
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function deleteProjectFavoriteRow(
+  supabase: SupabaseClient,
+  id: string,
+) {
+  const { error } = await supabase
+    .from("project_favorites")
+    .delete()
+    .eq("id", id);
+  if (error) {
+    if (
+      /relation .*project_favorites.* does not exist/i.test(error.message) ||
+      error.code === "42P01"
+    ) {
+      console.warn(
+        "project_favorites missing — apply supabase/migrations/049_project_favorites.sql",
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+/** Persist nav-tab order for the current profile's favorites. */
+export async function reorderProjectFavoriteRows(
+  supabase: SupabaseClient,
+  favorites: ProjectFavorite[],
+) {
+  for (const favorite of favorites) {
+    const { error } = await supabase
+      .from("project_favorites")
+      .update({ sort_order: favorite.sort_order })
+      .eq("id", favorite.id)
+      .eq("profile_id", favorite.profile_id);
+    if (error) {
+      if (
+        /relation .*project_favorites.* does not exist/i.test(error.message) ||
+        error.code === "42P01"
+      ) {
+        console.warn(
+          "project_favorites missing — apply supabase/migrations/049_project_favorites.sql",
+        );
+        return;
+      }
+      throw error;
+    }
+  }
 }
 
 /** Replace the explicit team roster for a project. */

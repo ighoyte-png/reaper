@@ -144,7 +144,7 @@ export function AppNavbar() {
           <BrandLockup showVersion compact />
         </button>
         <nav
-          className="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto md:flex"
+          className="hidden shrink-0 items-center gap-0.5 md:flex"
           aria-label="Main"
         >
           {links.map(({ href, label, icon: Icon }) => {
