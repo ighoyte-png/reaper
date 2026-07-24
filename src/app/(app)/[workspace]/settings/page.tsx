@@ -73,6 +73,7 @@ export default function SettingsPage() {
   const admin = isAdmin(profile?.role);
   const { prefs, setPrefs, savePrefs } = useUserViewPrefs(profile?.id);
   const [tab, setTab] = useState<SettingsTab>("account");
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [prefsBusy, setPrefsBusy] = useState(false);
   const [savedPrefs, setSavedPrefs] = useState<UserViewPrefs>(() =>
@@ -119,6 +120,23 @@ export default function SettingsPage() {
   useEffect(() => {
     setThemeDraft(theme);
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/platform/me");
+        if (!res.ok) return;
+        const body = (await res.json()) as { isPlatformAdmin?: boolean };
+        if (!cancelled) setIsPlatformAdmin(Boolean(body.isPlatformAdmin));
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const fromStore = readUserViewPrefs(profile?.id);
@@ -176,6 +194,11 @@ export default function SettingsPage() {
     state.organization.share_token,
   ]);
 
+  const showAdvancedTab =
+    (mode === "demo" && state.profiles.length > 1) ||
+    canManage ||
+    isPlatformAdmin;
+
   const tabs = useMemo(() => {
     const items: { id: SettingsTab; label: string }[] = [
       { id: "account", label: "Account" },
@@ -187,9 +210,11 @@ export default function SettingsPage() {
         { id: "holidays", label: "Holidays" },
       );
     }
-    items.push({ id: "advanced", label: "Advanced" });
+    if (showAdvancedTab) {
+      items.push({ id: "advanced", label: "Advanced" });
+    }
     return items;
-  }, [canManage]);
+  }, [canManage, showAdvancedTab]);
 
   useEffect(() => {
     if (!tabs.some((t) => t.id === tab)) setTab("account");
@@ -987,19 +1012,21 @@ export default function SettingsPage() {
                 </Panel>
               ) : null}
 
-              <Panel>
-                <h2 className="text-sm font-semibold">Backend</h2>
-                <p className="mt-1 text-sm text-[var(--text-muted)]">
-                  {mode === "supabase"
-                    ? "Using Supabase. Invites need SUPABASE_SERVICE_ROLE_KEY in .env (server-only)."
-                    : "Local demo store. Set Supabase env vars for real auth + invites."}
-                </p>
-                {authError ? (
-                  <p className="mt-2 text-sm text-[var(--status-over)]">
-                    {authError}
+              {isPlatformAdmin ? (
+                <Panel>
+                  <h2 className="text-sm font-semibold">Backend</h2>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">
+                    {mode === "supabase"
+                      ? "Using Supabase. Invites need SUPABASE_SERVICE_ROLE_KEY in .env (server-only)."
+                      : "Local demo store. Set Supabase env vars for real auth + invites."}
                   </p>
-                ) : null}
-              </Panel>
+                  {authError ? (
+                    <p className="mt-2 text-sm text-[var(--status-over)]">
+                      {authError}
+                    </p>
+                  ) : null}
+                </Panel>
+              ) : null}
             </>
           ) : null}
         </div>
