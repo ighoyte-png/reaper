@@ -282,6 +282,8 @@ export function createDemoSeed(): DemoState {
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
         avatar_url: null,
+        hide_from_schedule: false,
+        avatar_color: "#673AB7",
       },
       {
         id: "person-2",
@@ -298,6 +300,8 @@ export function createDemoSeed(): DemoState {
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
         avatar_url: null,
+        hide_from_schedule: false,
+        avatar_color: "#F48FB1",
       },
       {
         id: "person-3",
@@ -314,6 +318,8 @@ export function createDemoSeed(): DemoState {
         timezone: "America/Denver",
         holiday_calendar_id: "cal-us",
         avatar_url: null,
+        hide_from_schedule: false,
+        avatar_color: "#00ACC1",
       },
       {
         id: "person-4",
@@ -330,6 +336,8 @@ export function createDemoSeed(): DemoState {
         timezone: "America/Chicago",
         holiday_calendar_id: "cal-ca",
         avatar_url: null,
+        hide_from_schedule: false,
+        avatar_color: "#00796B",
       },
       {
         id: "person-5",
@@ -346,6 +354,8 @@ export function createDemoSeed(): DemoState {
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
         avatar_url: null,
+        hide_from_schedule: false,
+        avatar_color: "#8D6E63",
       },
     ],
     assignments: [

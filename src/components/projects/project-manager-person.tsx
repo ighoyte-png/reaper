@@ -46,7 +46,7 @@ export function ProjectManagerPerson({
   className,
   nameClassName,
 }: {
-  person: Pick<Person, "name" | "role_title" | "avatar_url">;
+  person: Pick<Person, "name" | "role_title" | "avatar_url" | "avatar_color">;
   size?: "team" | "row" | "sm" | "lg";
   /** Show the shared “Project Manager” pill below the person. */
   showTag?: boolean;
@@ -61,6 +61,7 @@ export function ProjectManagerPerson({
           name={person.name}
           size={size}
           fallback="initials"
+          color={person.avatar_color}
         />
         <div className="min-w-0 text-left">
           <div

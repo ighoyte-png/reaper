@@ -250,6 +250,13 @@ export interface Person {
   holiday_calendar_id: string | null;
   /** Public URL for profile photo (Storage or data URL in demo). */
   avatar_url: string | null;
+  /**
+   * When true, omit from schedule rows and from capacity/utilization aggregates
+   * (management-only accounts that should not skew team load).
+   */
+  hide_from_schedule: boolean;
+  /** Initials circle background when avatar_url is empty (client palette hex). */
+  avatar_color: string | null;
 }
 
 export interface HolidayCalendar {

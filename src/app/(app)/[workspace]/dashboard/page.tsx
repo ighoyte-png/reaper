@@ -1238,6 +1238,11 @@ function DashboardIdentityCard({
           avatarUrl={isPublicIdentity ? null : identityPerson?.avatar_url}
           name={displayName}
           size="xl"
+          color={
+            identityPerson
+              ? identityPerson.avatar_color
+              : null
+          }
         />
         <div className="w-full min-w-0">
           <div className="text-sm font-semibold">{displayName}</div>
@@ -1409,6 +1414,7 @@ function TaskRow({
                 name={assignee?.name}
                 size="xs"
                 fallback="initials"
+                color={assignee?.avatar_color}
               />
               <span className="truncate">
                 {assignee?.name ?? "Unassigned"}

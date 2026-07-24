@@ -30,6 +30,7 @@ import {
   projectDateProgress,
 } from "@/lib/domain/progress";
 import {
+  canEditProject,
   projectIdsForPerson,
   projectManagerPerson,
   projectTeamPersonIds,
@@ -120,6 +121,11 @@ export default function ProjectDetailPage() {
     params.clientSlug,
     params.projectSlug,
   );
+
+  const canEdit = canEditProject(project, {
+    canManage,
+    myPersonId: myPerson?.id ?? effectivePersonId ?? null,
+  });
 
   useEffect(() => {
     if (!project?.id) return;
@@ -304,7 +310,7 @@ export default function ProjectDetailPage() {
             >
               Schedule
             </Link>
-            {canManage ? (
+            {canEdit ? (
               <button
                 type="button"
                 className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
@@ -428,7 +434,7 @@ export default function ProjectDetailPage() {
               allowCardView
               focusTaskId={focusTaskId}
               templatesSlot={
-                canManage ? (
+                canEdit ? (
                   <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                     <button
                       type="button"
@@ -513,7 +519,7 @@ export default function ProjectDetailPage() {
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">Progress</h2>
-                {canManage ? (
+                {canEdit ? (
                   <button
                     type="button"
                     className={cn(
@@ -553,7 +559,7 @@ export default function ProjectDetailPage() {
                     <h3 className="text-xs font-semibold text-[var(--text-muted)]">
                       Milestones
                     </h3>
-                    {canManage && progressEditMode ? (
+                    {canEdit && progressEditMode ? (
                       <button
                         type="button"
                         className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
@@ -586,7 +592,7 @@ export default function ProjectDetailPage() {
                       milestones={milestones}
                       project={project}
                       today={today}
-                      canManage={canManage && progressEditMode}
+                      canManage={canEdit && progressEditMode}
                       formatDisplayDate={formatDisplayDate}
                       onReorder={(reordered) => {
                         reordered.forEach((m, i) => {
@@ -626,13 +632,13 @@ export default function ProjectDetailPage() {
               </Link>
             </section>
 
-            {canManage || (isPublicShare && shareResult) ? (
+            {canEdit || (isPublicShare && shareResult) ? (
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <Link2 size={14} className="text-[var(--text-muted)]" />
                   <h2 className="text-sm font-semibold">Client Portal</h2>
                 </div>
-                {canManage ? (
+                {canEdit ? (
                   shareResult ? (
                     <div className="space-y-2">
                       <code className="block truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
@@ -741,7 +747,7 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {canManage && editing && draft && (
+      {canEdit && editing && draft && (
         <Modal
           title="Edit project"
           className="max-w-3xl"
@@ -799,7 +805,7 @@ export default function ProjectDetailPage() {
         </Modal>
       )}
 
-      {canManage && editingMilestone && (
+      {canEdit && editingMilestone && (
         <Modal
           title="Edit milestone"
           onClose={() => {

@@ -322,6 +322,8 @@ function mapPerson(row: Record<string, unknown>): Person {
       ? String(row.holiday_calendar_id)
       : null,
     avatar_url: row.avatar_url ? String(row.avatar_url) : null,
+    hide_from_schedule: Boolean(row.hide_from_schedule),
+    avatar_color: row.avatar_color ? String(row.avatar_color) : null,
   };
 }
 
@@ -1816,6 +1818,8 @@ export async function upsertPersonRow(
     timezone: person.timezone,
     holiday_calendar_id: person.holiday_calendar_id,
     avatar_url: person.avatar_url,
+    hide_from_schedule: Boolean(person.hide_from_schedule),
+    avatar_color: person.avatar_color || null,
   };
   const { error } = await supabase.from("people").upsert(payload);
   if (!error) return;
@@ -1829,10 +1833,28 @@ export async function upsertPersonRow(
   const missingAvatarCol =
     /Could not find the 'avatar_url' column/i.test(error.message) ||
     (error.code === "PGRST204" && /avatar_url/i.test(error.message));
+  const missingHideCol =
+    /Could not find the 'hide_from_schedule' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /hide_from_schedule/i.test(error.message));
+  const missingColorCol =
+    /Could not find the 'avatar_color' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /avatar_color/i.test(error.message));
 
-  if (missingEmailCol || missingCalCol || missingAvatarCol) {
-    const { email: _e, holiday_calendar_id: _c, avatar_url: _a, ...rest } =
-      payload;
+  if (
+    missingEmailCol ||
+    missingCalCol ||
+    missingAvatarCol ||
+    missingHideCol ||
+    missingColorCol
+  ) {
+    const {
+      email: _e,
+      holiday_calendar_id: _c,
+      avatar_url: _a,
+      hide_from_schedule: _h,
+      avatar_color: _ac,
+      ...rest
+    } = payload;
     const retryPayload = {
       ...rest,
       ...(missingEmailCol ? {} : { email: payload.email }),
@@ -1840,6 +1862,10 @@ export async function upsertPersonRow(
         ? {}
         : { holiday_calendar_id: payload.holiday_calendar_id }),
       ...(missingAvatarCol ? {} : { avatar_url: payload.avatar_url }),
+      ...(missingHideCol
+        ? {}
+        : { hide_from_schedule: payload.hide_from_schedule }),
+      ...(missingColorCol ? {} : { avatar_color: payload.avatar_color }),
     };
     const retry = await supabase.from("people").upsert(retryPayload);
     if (retry.error) throw retry.error;
@@ -1856,6 +1882,11 @@ export async function upsertPersonRow(
     if (missingAvatarCol) {
       console.warn(
         "people.avatar_url missing — apply supabase/migrations/019_people_avatar_url.sql",
+      );
+    }
+    if (missingHideCol || missingColorCol) {
+      console.warn(
+        "people hide_from_schedule/avatar_color missing — apply supabase/migrations/053_people_schedule_avatar_pm_edit.sql",
       );
     }
     return;
@@ -2837,6 +2868,8 @@ export async function seedDemoWorkspace(
       ? remapId(ids, p.holiday_calendar_id)
       : null,
     avatar_url: p.avatar_url,
+    hide_from_schedule: Boolean(p.hide_from_schedule),
+    avatar_color: p.avatar_color,
   }));
 
   const calendars = seed.holiday_calendars.map((c) => ({

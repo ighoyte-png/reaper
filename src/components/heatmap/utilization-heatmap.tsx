@@ -127,8 +127,10 @@ export function UtilizationHeatmap({
   );
   const people = sortPeopleByName(
     personIds && personIds.length > 0
-      ? state.people.filter((p) => personIds.includes(p.id))
-      : state.people,
+      ? state.people.filter(
+          (p) => personIds.includes(p.id) && !p.hide_from_schedule,
+        )
+      : state.people.filter((p) => !p.hide_from_schedule),
   );
 
   const [rpcCells, setRpcCells] = useState<Map<string, CellHours> | null>(

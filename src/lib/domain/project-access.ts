@@ -70,3 +70,56 @@ export function projectManagerPerson(
   if (!project.manager_person_id) return null;
   return people.find((p) => p.id === project.manager_person_id) ?? null;
 }
+
+/** Explicit Team roster person ids (project_members), plus project manager when set. */
+export function projectRosterPersonIds(
+  projectId: string,
+  projectMembers: ProjectMember[],
+  managerPersonId?: string | null,
+): Set<string> {
+  const ids = new Set<string>();
+  for (const m of projectMembers) {
+    if (m.project_id === projectId) ids.add(m.person_id);
+  }
+  if (managerPersonId) ids.add(managerPersonId);
+  return ids;
+}
+
+/** People selectable as task assignees for a project (roster only). */
+export function projectAssigneePeople(
+  projectId: string,
+  people: Person[],
+  projectMembers: ProjectMember[],
+  opts?: {
+    managerPersonId?: string | null;
+    /** Keep current assignee visible even if removed from roster. */
+    includePersonId?: string | null;
+  },
+): Person[] {
+  const ids = projectRosterPersonIds(
+    projectId,
+    projectMembers,
+    opts?.managerPersonId,
+  );
+  if (opts?.includePersonId) ids.add(opts.includePersonId);
+  return people
+    .filter((p) => ids.has(p.id))
+    .sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
+}
+
+/** Org managers, or the person set as Project Manager on this project. */
+export function canEditProject(
+  project: Project | null | undefined,
+  opts: {
+    canManage: boolean;
+    myPersonId: string | null | undefined;
+  },
+): boolean {
+  if (!project) return false;
+  if (opts.canManage) return true;
+  return Boolean(
+    opts.myPersonId && project.manager_person_id === opts.myPersonId,
+  );
+}

@@ -24,6 +24,7 @@ import {
   sortPods,
   type PodFilter,
 } from "@/lib/domain/pods";
+import { scheduleVisiblePeople } from "@/lib/domain/people";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
@@ -54,7 +55,9 @@ function UtilizationReportContent() {
 
   const scopedPeople = useMemo(() => {
     if (podFilter !== "all") {
-      return filterPeopleByPod(state.people, state.pods, state.pod_members, podFilter);
+      return scheduleVisiblePeople(
+        filterPeopleByPod(state.people, state.pods, state.pod_members, podFilter),
+      );
     }
     return defaultPeopleScopeForViewer(state.people, state.pods, state.pod_members, {
       role: profile?.role,

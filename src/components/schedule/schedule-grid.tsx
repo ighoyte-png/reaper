@@ -97,6 +97,7 @@ import {
   projectManagerPerson,
   showProjectManagerUi,
 } from "@/lib/domain/project-access";
+import { personAvatarColor } from "@/lib/domain/people";
 import {
   isFullDayLeave,
   leaveBlockLabel,
@@ -538,7 +539,8 @@ export function ScheduleGrid() {
       return person ? [person] : [];
     }
     const showAll = canManage || isPublicShare;
-    const base = showAll ? state.people : myPerson ? [myPerson] : [];
+    const directory = state.people.filter((p) => !p.hide_from_schedule);
+    const base = showAll ? directory : myPerson ? [myPerson] : [];
     const podScoped = showAll
       ? filterPeopleByPod(base, state.pods, state.pod_members, podFilter)
       : base;
@@ -584,7 +586,8 @@ export function ScheduleGrid() {
   );
 
   const peopleForFilter = useMemo(
-    () => sortPeopleByName(state.people),
+    () =>
+      sortPeopleByName(state.people.filter((p) => !p.hide_from_schedule)),
     [state.people],
   );
 
@@ -4329,6 +4332,7 @@ const PersonScheduleSection = memo(function PersonScheduleSection({
                 name={person.name}
                 size="row"
                 fallback="initials"
+                color={personAvatarColor(person)}
               />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium leading-tight">

@@ -67,7 +67,8 @@ import {
 import { notesHasContent, notesPreviewText } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
-import { projectTeamPersonIds } from "@/lib/domain/project-access";
+import { projectTeamPersonIds, projectAssigneePeople, canEditProject } from "@/lib/domain/project-access";
+import { personAvatarColor } from "@/lib/domain/people";
 import {
   dueDateToneClass,
   emptyTaskAuditFields,
@@ -119,6 +120,7 @@ function InitialsAvatar({ person }: { person: Person }) {
       name={person.name}
       size="xs"
       fallback="initials"
+      color={personAvatarColor(person)}
       className="ring-1 ring-[var(--border)]"
     />
   );
@@ -127,6 +129,8 @@ function InitialsAvatar({ person }: { person: Person }) {
 /** Shared read-only-ish context threaded through row/list/comment sub-components. */
 type BoardCtx = {
   people: Person[];
+  /** Full org directory (for keeping orphan assignees visible when editing). */
+  allPeople: Person[];
   profiles: Profile[];
   comments: TaskComment[];
   profileId: string | null;
@@ -241,9 +245,15 @@ export function ProjectTaskBoard({
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const didRestoreCreateDraft = useRef(false);
 
-  const viewerCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
+  const orgCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
   const viewerPersonId =
     viewAs?.effectivePersonId ?? myPerson?.id ?? null;
+  const viewerCanManage =
+    orgCanManage ||
+    canEditProject(project, {
+      canManage: false,
+      myPersonId: viewerPersonId,
+    });
 
   const manageLists = viewerCanManage && !readOnly && !isPublicShare;
   const allowSelect =
@@ -559,6 +569,22 @@ export function ProjectTaskBoard({
     projectId,
   ]);
 
+  const assigneePeople = useMemo(
+    () =>
+      projectAssigneePeople(
+        projectId,
+        state.people,
+        state.project_members,
+        { managerPersonId: project?.manager_person_id },
+      ),
+    [
+      projectId,
+      state.people,
+      state.project_members,
+      project?.manager_person_id,
+    ],
+  );
+
   useEffect(() => {
     if (!focusTaskId) return;
     const focused =
@@ -864,7 +890,8 @@ export function ProjectTaskBoard({
   }
 
   const ctx: BoardCtx = {
-    people: state.people,
+    people: assigneePeople,
+    allPeople: state.people,
     profiles: state.profiles,
     comments: state.task_comments,
     profileId: profile?.id ?? null,
@@ -1073,7 +1100,7 @@ export function ProjectTaskBoard({
                   options={[
                     { value: "", label: "Choose..." },
                     { value: "__none__", label: "Unassigned" },
-                    ...sortPeopleByName(state.people).map((p) => ({
+                    ...sortPeopleByName(assigneePeople).map((p) => ({
                       value: p.id,
                       label: p.name,
                     })),
@@ -1610,6 +1637,7 @@ function ListTaskDropZone({
 
 function InlineTaskForm({
   people,
+  allPeople,
   initial,
   status = "upcoming",
   submitLabel,
@@ -1620,6 +1648,7 @@ function InlineTaskForm({
   depth = 0,
 }: {
   people: Person[];
+  allPeople?: Person[];
   initial?: InlineTaskDraft;
   status?: TaskStatus;
   submitLabel: string;
@@ -1640,6 +1669,16 @@ function InlineTaskForm({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const onDraftChangeRef = useRef(onDraftChange);
   onDraftChangeRef.current = onDraftChange;
+
+  const assigneeOptions = useMemo(() => {
+    const byId = new Map(people.map((p) => [p.id, p]));
+    const currentId = initial?.assignee_person_id;
+    if (currentId && !byId.has(currentId)) {
+      const extra = (allPeople ?? []).find((p) => p.id === currentId);
+      if (extra) byId.set(extra.id, extra);
+    }
+    return sortPeopleByName([...byId.values()]);
+  }, [people, allPeople, initial?.assignee_person_id]);
 
   useEffect(() => {
     onDraftChangeRef.current?.({
@@ -1710,7 +1749,7 @@ function InlineTaskForm({
               onChange={setAssigneeId}
               options={[
                 { value: "", label: "Unassigned" },
-                ...sortPeopleByName(people).map((p) => ({
+                ...assigneeOptions.map((p) => ({
                   value: p.id,
                   label: p.name,
                 })),
@@ -1836,6 +1875,7 @@ function TaskRow({
       >
         <InlineTaskForm
           people={ctx.people}
+          allPeople={ctx.allPeople}
           status={task.status}
           depth={0}
           submitLabel="Save"

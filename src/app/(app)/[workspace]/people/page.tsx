@@ -40,6 +40,7 @@ import {
   leaveKindLabel,
   normalizeLeaveKind,
 } from "@/lib/domain/leave";
+import { personAvatarColor, randomAvatarColor } from "@/lib/domain/people";
 import { createClient } from "@/lib/supabase/client";
 import {
   readFileAsDataUrl,
@@ -79,6 +80,8 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   timezone: "America/Los_Angeles",
   holiday_calendar_id: null,
   avatar_url: null,
+  hide_from_schedule: false,
+  avatar_color: null,
 });
 
 export default function PeoplePage() {
@@ -298,15 +301,17 @@ function PeoplePageContent() {
           avatar_url = await readFileAsDataUrl(avatarFile);
         }
       }
-      const row = { ...editing, email, avatar_url };
+      const avatar_color = editing.avatar_color ?? randomAvatarColor();
+      const row = { ...editing, email, avatar_url, avatar_color };
       await upsertPerson(row);
       await setPersonPods(row.id, selectedPodIds);
 
       if (
-        admin &&
+        (admin || canManage) &&
         row.profile_id &&
         editingLinkedProfile &&
-        editAccessRole !== editingLinkedProfile.role
+        editAccessRole !== editingLinkedProfile.role &&
+        (admin || editAccessRole !== "admin")
       ) {
         await updateProfileRole(row.profile_id, editAccessRole);
       }
@@ -392,7 +397,12 @@ function PeoplePageContent() {
         className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
       >
         <div className="flex items-start gap-3">
-          <PersonAvatar avatarUrl={person.avatar_url} name={person.name} size="lg" />
+          <PersonAvatar
+            avatarUrl={person.avatar_url}
+            name={person.name}
+            color={personAvatarColor(person)}
+            size="lg"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
               <div className="truncate text-sm font-semibold leading-tight">
@@ -500,7 +510,14 @@ function PeoplePageContent() {
               <Button
                 variant="primary"
                 onClick={() => {
-                  openEdit({ ...emptyPerson(), id: newId("person") }, true);
+                  openEdit(
+                    {
+                      ...emptyPerson(),
+                      id: newId("person"),
+                      avatar_color: randomAvatarColor(),
+                    },
+                    true,
+                  );
                 }}
               >
                 Add Person
@@ -531,7 +548,14 @@ function PeoplePageContent() {
               title="No people yet"
               cta="Add Your First Person"
               onClick={() => {
-                openEdit({ ...emptyPerson(), id: newId("person") }, true);
+                openEdit(
+                  {
+                    ...emptyPerson(),
+                    id: newId("person"),
+                    avatar_color: randomAvatarColor(),
+                  },
+                  true,
+                );
               }}
             />
           ) : (
@@ -568,6 +592,7 @@ function PeoplePageContent() {
                 <PersonAvatar
                   avatarUrl={avatarPreview}
                   name={editing.name}
+                  color={personAvatarColor(editing)}
                   size="lg"
                 />
                 <div className="flex flex-col gap-1.5">
@@ -668,6 +693,20 @@ function PeoplePageContent() {
                       </p>
                     )}
                   </>
+                ) : canManage && editingLinkedProfile.role !== "admin" ? (
+                  <>
+                    <Select
+                      value={editAccessRole}
+                      onChange={(v) => setEditAccessRole(v as Role)}
+                      options={[
+                        { value: "member", label: "Member" },
+                        { value: "manager", label: "Manager" },
+                      ]}
+                    />
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Controls what this login can manage in the app.
+                    </p>
+                  </>
                 ) : (
                   <p className="text-sm">
                     {accessLabel(editingLinkedProfile.role)}
@@ -723,6 +762,26 @@ function PeoplePageContent() {
                 ]}
               />
             </Field>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={Boolean(editing.hide_from_schedule)}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    hide_from_schedule: e.target.checked,
+                  })
+                }
+              />
+              <span>
+                Hide from schedule &amp; capacity
+                <span className="block text-xs text-[var(--text-muted)]">
+                  Management-only accounts stay off the schedule and out of
+                  utilization capacity.
+                </span>
+              </span>
+            </label>
             {pods.length > 0 ? (
               <Field label="Pods">
                 <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-[var(--border)] p-2">

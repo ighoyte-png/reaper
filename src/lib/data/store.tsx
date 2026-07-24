@@ -1857,9 +1857,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       updateProfileRole: async (profileId, role) => {
-        if (!admin) return;
+        if (!manage) return;
         const target = state.profiles.find((p) => p.id === profileId);
         if (!target) return;
+        // Managers may only toggle member ↔ manager (not touch admins / grant admin).
+        if (!admin) {
+          if (target.role === "admin" || role === "admin") {
+            throw new Error("Only admins can change admin access");
+          }
+          if (role !== "member" && role !== "manager") return;
+        }
         if (target.role === "admin" && role !== "admin") {
           const adminCount = state.profiles.filter((p) => p.role === "admin").length;
           if (adminCount <= 1) {

@@ -13,6 +13,16 @@ function personInitials(name: string): string {
     .toUpperCase();
 }
 
+function contrastText(hex: string): string {
+  const raw = hex.replace("#", "");
+  if (raw.length !== 6) return "#ffffff";
+  const r = parseInt(raw.slice(0, 2), 16);
+  const g = parseInt(raw.slice(2, 4), 16);
+  const b = parseInt(raw.slice(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.62 ? "#1a1a1a" : "#ffffff";
+}
+
 const SIZE_CLASS = {
   xs: "h-5 w-5 text-[9px]",
   team: "h-6 w-6 text-[10px]",
@@ -30,6 +40,7 @@ export function PersonAvatar({
   size = "md",
   fallback = "initials",
   title,
+  color,
 }: {
   avatarUrl: string | null | undefined;
   name?: string;
@@ -38,6 +49,8 @@ export function PersonAvatar({
   /** initials = letter circle when no photo (default). hidden = render nothing. */
   fallback?: "hidden" | "initials";
   title?: string;
+  /** Initials circle background (client palette hex). */
+  color?: string | null;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const sizeClass = SIZE_CLASS[size];
@@ -68,14 +81,19 @@ export function PersonAvatar({
 
   if (fallback === "hidden" || !label) return null;
 
+  const bg = color?.trim() || undefined;
   return (
     <span
       title={title ?? label}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full bg-[var(--bg-elevated)] font-semibold text-[var(--text-muted)]",
+        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
+        !bg && "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
         sizeClass,
         className,
       )}
+      style={
+        bg ? { backgroundColor: bg, color: contrastText(bg) } : undefined
+      }
     >
       {personInitials(label)}
     </span>
