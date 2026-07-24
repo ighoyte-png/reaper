@@ -12,7 +12,7 @@ import {
   readUserViewPrefs,
   resolveDefaultStartPage,
 } from "@/lib/user-view-prefs";
-import { workspacePath } from "@/lib/paths";
+import { safeAuthNextPath, workspacePath } from "@/lib/paths";
 
 function LoginForm() {
   const {
@@ -88,6 +88,11 @@ function LoginForm() {
       if (isPlatformOnly) router.replace("/admin");
       return;
     }
+    const next = safeAuthNextPath(searchParams.get("next"));
+    if (next) {
+      router.replace(next);
+      return;
+    }
     const prefs = readUserViewPrefs(profile?.id);
     router.replace(
       workspacePath(
@@ -103,6 +108,7 @@ function LoginForm() {
     canManage,
     router,
     state.organization.slug,
+    searchParams,
   ]);
 
   async function onSubmit(e: React.FormEvent) {

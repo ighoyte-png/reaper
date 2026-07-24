@@ -12,6 +12,7 @@ import { Panel } from "@/components/ui/panel";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
+import { loginPathWithNext } from "@/lib/paths";
 import { cn } from "@/lib/cn";
 
 type WorkspaceRow = {
@@ -86,7 +87,7 @@ export default function PlatformAdminPage() {
   useEffect(() => {
     if (!ready) return;
     if (!isAuthenticated) {
-      router.replace("/login");
+      router.replace(loginPathWithNext("/admin"));
       return;
     }
     void load();

@@ -10,6 +10,37 @@ export function normalizeAppPath(path: string): string {
 }
 
 /**
+ * Validate a `?next=` redirect target after login.
+ * Only same-app relative paths are allowed (no protocol-relative / absolute URLs).
+ */
+export function safeAuthNextPath(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let value = raw.trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)) return null;
+  if (
+    value === "/login" ||
+    value.startsWith("/login/") ||
+    value.startsWith("/login?")
+  ) {
+    return null;
+  }
+  return value;
+}
+
+/** `/login` or `/login?next=…` for post-auth return. */
+export function loginPathWithNext(nextPath: string): string {
+  const safe = safeAuthNextPath(nextPath);
+  if (!safe) return "/login";
+  return `/login?next=${encodeURIComponent(safe)}`;
+}
+
+/**
  * Prefix an in-app path with the workspace slug.
  * `workspacePath("northstar", "/dashboard")` → `/northstar/dashboard`
  */

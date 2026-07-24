@@ -10,7 +10,7 @@ import { ViewAsBanner } from "@/components/nav/view-as-banner";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
-import { stripWorkspacePrefix } from "@/lib/paths";
+import { loginPathWithNext, stripWorkspacePrefix } from "@/lib/paths";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 
 /** Paths members cannot access — redirect here while Viewing As. */
@@ -47,7 +47,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!ready) return;
     if (!isAuthenticated && !pathname.startsWith("/login")) {
-      router.replace("/login");
+      const search =
+        typeof window !== "undefined" ? window.location.search : "";
+      router.replace(loginPathWithNext(`${pathname}${search}`));
     }
   }, [ready, isAuthenticated, pathname, router]);
 

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -1708,22 +1708,24 @@ function InlineTaskForm({
             <SimpleRichTextEditor value={notes} onChange={setNotes} />
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!title.trim()}
-            onClick={submit}
-          >
-            {submitLabel}
-          </button>
-          <button
-            type="button"
-            className="h-8 cursor-pointer rounded-md px-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!title.trim()}
+              onClick={submit}
+            >
+              {submitLabel}
+            </button>
+            <button
+              type="button"
+              className="h-8 cursor-pointer rounded-md px-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+              onClick={onCancel}
+            >
+              Cancel
+            </button>
+          </div>
           {onDelete ? (
             <button
               type="button"
@@ -1868,8 +1870,16 @@ function TaskRow({
           "group flex items-center gap-1.5 px-2 py-1 text-sm",
           task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "bg-[var(--accent)]/10",
+          !ctx.readOnly && "cursor-pointer",
         )}
         style={{ paddingLeft: 8 }}
+        onClick={
+          ctx.readOnly
+            ? undefined
+            : () => {
+                ctx.toggleExpand(task.id);
+              }
+        }
       >
         {ctx.manageLists ? (
           <button
@@ -1882,6 +1892,7 @@ function TaskRow({
             title="Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
             {...attributes}
             {...listeners}
+            onClick={(e) => e.stopPropagation()}
           >
             <GripVertical size={14} />
           </button>
@@ -1902,7 +1913,8 @@ function TaskRow({
           title={taskStatusLabel(task.status)}
           aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
           disabled={!canEditStatus}
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             if (!canEditStatus) return;
             ctx.cycleStatus(task);
           }}
@@ -1912,6 +1924,7 @@ function TaskRow({
             <Link
               href={ctx.hubTaskHref(task.id)}
               className="min-w-0 truncate hover:underline"
+              onClick={(e) => e.stopPropagation()}
             >
               <span
                 className={cn(
@@ -1921,7 +1934,7 @@ function TaskRow({
                 {task.title}
               </span>
             </Link>
-          ) : ctx.readOnly ? (
+          ) : (
             <span
               className={cn(
                 "min-w-0 truncate",
@@ -1930,17 +1943,6 @@ function TaskRow({
             >
               {task.title}
             </span>
-          ) : (
-            <button
-              type="button"
-              className={cn(
-                "min-w-0 cursor-pointer truncate text-left hover:underline",
-                task.status === "complete" && "line-through",
-              )}
-              onClick={() => ctx.toggleExpand(task.id)}
-            >
-              {task.title}
-            </button>
           )}
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
           {task.due_date ? (
@@ -1971,26 +1973,26 @@ function TaskRow({
             </Tooltip>
           ) : null}
           {!ctx.readOnly ? (
-            <button
-              type="button"
+            <span
               className={cn(
-                "inline-flex shrink-0 cursor-pointer items-center gap-0.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text)]",
+                "inline-flex shrink-0 items-center gap-0.5 text-[10px] text-[var(--text-muted)]",
                 taskComments.length === 0 && "opacity-0 group-hover:opacity-100",
               )}
-              title="Comments"
-              aria-label="Toggle comments"
-              onClick={() => ctx.toggleExpand(task.id)}
+              aria-hidden
             >
               <MessageSquare size={16} />
               {taskComments.length > 0 ? taskComments.length : null}
               {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-            </button>
+            </span>
           ) : null}
           {ctx.canManage && !ctx.readOnly ? (
             <button
               type="button"
               className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
-              onClick={() => ctx.setEditingTask(task)}
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.setEditingTask(task);
+              }}
               aria-label="Edit task"
               title="Edit task"
             >
@@ -2002,7 +2004,10 @@ function TaskRow({
           <button
             type="button"
             className="inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
-            onClick={() => ctx.addSubtask(task.list_id, task.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              ctx.addSubtask(task.list_id, task.id);
+            }}
             aria-label="Add subtask"
             title="Add subtask"
           >
@@ -2013,6 +2018,7 @@ function TaskRow({
           <Checkbox
             checked={isSelected}
             onChange={() => ctx.toggleSelect(task.id)}
+            onClick={(e) => e.stopPropagation()}
             aria-label={`Select ${task.title}`}
           />
         ) : null}
@@ -2026,7 +2032,6 @@ function TaskRow({
             <span className="w-4 shrink-0" aria-hidden />
             <span className="w-2.5 shrink-0" aria-hidden />
             <div className="min-w-0 flex-1 space-y-8">
-              <TaskActivityMeta task={task} ctx={ctx} />
               {hasNotes ? (
                 <div className="py-2">
                   <RichNotesHtml
@@ -2040,6 +2045,7 @@ function TaskRow({
                 comments={taskComments}
                 ctx={ctx}
               />
+              <TaskActivityMeta task={task} ctx={ctx} />
             </div>
           </div>
         </div>
@@ -2092,48 +2098,62 @@ function TaskActivityMeta({ task, ctx }: { task: Task; ctx: BoardCtx }) {
     ? formatTaskActivityTime(task.status_changed_at)
     : null;
 
-  if (!createdAt && !editedAt && !changedAt) return null;
+  const parts: ReactNode[] = [];
+  if (createdAt) {
+    parts.push(
+      <span key="created">
+        Created {createdAt}
+        {createdBy ? (
+          <>
+            {" "}
+            by <span className="text-[var(--text)]">{createdBy}</span>
+          </>
+        ) : null}
+      </span>,
+    );
+  }
+  if (editedAt) {
+    parts.push(
+      <span key="edited">
+        Edited {editedAt}
+        {editedBy ? (
+          <>
+            {" "}
+            by <span className="text-[var(--text)]">{editedBy}</span>
+          </>
+        ) : null}
+      </span>,
+    );
+  }
+  if (changedAt) {
+    parts.push(
+      <span key="status">
+        Status set to{" "}
+        <span className="text-[var(--text)]">
+          {taskStatusLabel(task.status)}
+        </span>{" "}
+        {changedAt}
+        {changedBy ? (
+          <>
+            {" "}
+            by <span className="text-[var(--text)]">{changedBy}</span>
+          </>
+        ) : null}
+      </span>,
+    );
+  }
+
+  if (parts.length === 0) return null;
 
   return (
-    <div className="space-y-1 text-xs text-[var(--text-muted)]">
-      {createdAt ? (
-        <p>
-          Created {createdAt}
-          {createdBy ? (
-            <>
-              {" "}
-              by <span className="text-[var(--text)]">{createdBy}</span>
-            </>
-          ) : null}
-        </p>
-      ) : null}
-      {editedAt ? (
-        <p>
-          Edited {editedAt}
-          {editedBy ? (
-            <>
-              {" "}
-              by <span className="text-[var(--text)]">{editedBy}</span>
-            </>
-          ) : null}
-        </p>
-      ) : null}
-      {changedAt ? (
-        <p>
-          Status set to{" "}
-          <span className="text-[var(--text)]">
-            {taskStatusLabel(task.status)}
-          </span>{" "}
-          {changedAt}
-          {changedBy ? (
-            <>
-              {" "}
-              by <span className="text-[var(--text)]">{changedBy}</span>
-            </>
-          ) : null}
-        </p>
-      ) : null}
-    </div>
+    <p className="text-xs text-[var(--text-muted)]">
+      {parts.map((part, i) => (
+        <Fragment key={i}>
+          {i > 0 ? <span aria-hidden> · </span> : null}
+          {part}
+        </Fragment>
+      ))}
+    </p>
   );
 }
 
@@ -2285,19 +2305,10 @@ function CommentItem({
           </span>
           <span className="shrink-0 text-xs tabular-nums text-[var(--text-muted)]">
             {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
-            {wasEdited ? (
-              <span
-                className="ml-1 italic"
-                title={
-                  comment.updated_at
-                    ? format(
-                        parseISO(comment.updated_at),
-                        "MMM d, yyyy · h:mm a",
-                      )
-                    : undefined
-                }
-              >
-                · edited
+            {wasEdited && comment.updated_at ? (
+              <span className="ml-1 italic">
+                · edited{" "}
+                {format(parseISO(comment.updated_at), "MMM d, yyyy · h:mm a")}
               </span>
             ) : null}
           </span>
