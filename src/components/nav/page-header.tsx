@@ -1,7 +1,10 @@
 "use client";
 
 import { ChevronLeft } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { useData } from "@/lib/data/store";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
+import { useLiveUserViewPrefs } from "@/lib/user-view-prefs";
 
 export function PageHeader({
   title,
@@ -15,13 +18,21 @@ export function PageHeader({
   actions?: React.ReactNode;
   onBack?: () => void;
 }) {
+  const { profile } = useData();
+  const { contentWidth } = useLiveUserViewPrefs(profile?.id);
+  const constrained = contentWidth !== "full";
   const tabTitle =
     documentTitle ?? (typeof title === "string" ? title : undefined);
   useDocumentTitle(tabTitle);
 
   return (
     <header className="flex h-11 w-full shrink-0 items-center border-b border-[var(--border)] bg-[var(--bg)] px-4">
-      <div className="mx-auto flex h-full w-full max-w-[1400px] items-center justify-between gap-3">
+      <div
+        className={cn(
+          "mx-auto flex h-full w-full items-center justify-between gap-3",
+          constrained && "max-w-[1400px]",
+        )}
+      >
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {onBack ? (
             <button

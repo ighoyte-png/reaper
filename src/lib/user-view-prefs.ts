@@ -14,14 +14,18 @@ export type DefaultStartPage =
 
 export type ScheduleViewOffset = "none" | "one_week" | "two_weeks";
 
+export type ContentWidth = "constrained" | "full";
+
 export type UserViewPrefs = {
   defaultStartPage: DefaultStartPage;
   scheduleViewOffset: ScheduleViewOffset;
+  contentWidth: ContentWidth;
 };
 
 export const DEFAULT_USER_VIEW_PREFS: UserViewPrefs = {
   defaultStartPage: "/dashboard",
   scheduleViewOffset: "none",
+  contentWidth: "constrained",
 };
 
 export const SCHEDULE_VIEW_OFFSET_OPTIONS: {
@@ -32,6 +36,17 @@ export const SCHEDULE_VIEW_OFFSET_OPTIONS: {
   { value: "one_week", label: "One Week" },
   { value: "two_weeks", label: "Two Weeks" },
 ];
+
+export const CONTENT_WIDTH_OPTIONS: {
+  value: ContentWidth;
+  label: string;
+}[] = [
+  { value: "constrained", label: "Constrained (1400px)" },
+  { value: "full", label: "Full Width" },
+];
+
+/** Dispatched after prefs are written so mounted layouts can re-read. */
+export const USER_VIEW_PREFS_EVENT = "reaper-view-prefs";
 
 const START_PAGE_VALUES = new Set<string>(
   primaryNavLinks.map((l) => l.href),
@@ -51,6 +66,10 @@ function isScheduleViewOffset(value: unknown): value is ScheduleViewOffset {
   );
 }
 
+function isContentWidth(value: unknown): value is ContentWidth {
+  return value === "constrained" || value === "full";
+}
+
 export function readUserViewPrefs(profileId: string | null | undefined): UserViewPrefs {
   if (!profileId || typeof window === "undefined") {
     return { ...DEFAULT_USER_VIEW_PREFS };
@@ -66,6 +85,9 @@ export function readUserViewPrefs(profileId: string | null | undefined): UserVie
       scheduleViewOffset: isScheduleViewOffset(parsed.scheduleViewOffset)
         ? parsed.scheduleViewOffset
         : DEFAULT_USER_VIEW_PREFS.scheduleViewOffset,
+      contentWidth: isContentWidth(parsed.contentWidth)
+        ? parsed.contentWidth
+        : DEFAULT_USER_VIEW_PREFS.contentWidth,
     };
   } catch {
     return { ...DEFAULT_USER_VIEW_PREFS };
@@ -78,6 +100,27 @@ export function writeUserViewPrefs(
 ): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(storageKey(profileId), JSON.stringify(prefs));
+  window.dispatchEvent(new Event(USER_VIEW_PREFS_EVENT));
+}
+
+/** Live prefs for layout chrome — updates after save (same tab) and storage (other tabs). */
+export function useLiveUserViewPrefs(profileId: string | null | undefined) {
+  const [prefs, setPrefs] = useState<UserViewPrefs>(DEFAULT_USER_VIEW_PREFS);
+
+  useEffect(() => {
+    function sync() {
+      setPrefs(readUserViewPrefs(profileId));
+    }
+    sync();
+    window.addEventListener(USER_VIEW_PREFS_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener(USER_VIEW_PREFS_EVENT, sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, [profileId]);
+
+  return prefs;
 }
 
 /** Start pages the user is allowed to land on given manage access. */

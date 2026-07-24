@@ -25,10 +25,12 @@ import {
 import { isAdmin } from "@/lib/auth/roles";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 import {
+  CONTENT_WIDTH_OPTIONS,
   SCHEDULE_VIEW_OFFSET_OPTIONS,
   readUserViewPrefs,
   startPageOptions,
   useUserViewPrefs,
+  type ContentWidth,
   type DefaultStartPage,
   type ScheduleViewOffset,
   type UserViewPrefs,
@@ -223,7 +225,8 @@ export default function SettingsPage() {
   const prefsDirty =
     themeDraft !== theme ||
     prefs.defaultStartPage !== savedPrefs.defaultStartPage ||
-    prefs.scheduleViewOffset !== savedPrefs.scheduleViewOffset;
+    prefs.scheduleViewOffset !== savedPrefs.scheduleViewOffset ||
+    prefs.contentWidth !== savedPrefs.contentWidth;
 
   function savePreferences() {
     setPrefsBusy(true);
@@ -665,10 +668,23 @@ export default function SettingsPage() {
                     />
                   </Field>
                 </div>
+                <Field label="Page Width">
+                  <Select
+                    value={prefs.contentWidth}
+                    onChange={(v) =>
+                      setPrefs((prev) => ({
+                        ...prev,
+                        contentWidth: v as ContentWidth,
+                      }))
+                    }
+                    options={CONTENT_WIDTH_OPTIONS}
+                  />
+                </Field>
                 <p className="text-[11px] text-[var(--text-muted)]">
                   Start page is used after login and when opening the app root.
                   Schedule offset shifts the first visible week earlier when you
-                  open the schedule.
+                  open the schedule. Page width constrains most pages to 1400px
+                  or expands them; the schedule is always full width.
                 </p>
               </div>
 
