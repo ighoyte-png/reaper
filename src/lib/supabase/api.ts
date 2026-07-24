@@ -105,6 +105,11 @@ function mapClient(row: Record<string, unknown>): Client {
     color: String(row.color ?? "#64748B"),
     status,
     hide_from_public_share: Boolean(row.hide_from_public_share),
+    contact_first_name: String(row.contact_first_name ?? ""),
+    contact_last_name: String(row.contact_last_name ?? ""),
+    contact_email: String(row.contact_email ?? ""),
+    contact_phone: String(row.contact_phone ?? ""),
+    company_website: String(row.company_website ?? ""),
   };
 }
 
@@ -1048,10 +1053,24 @@ export async function upsertClientRow(
     ...withStatus,
     hide_from_public_share: Boolean(client.hide_from_public_share),
   };
+  const withContact = {
+    ...withHide,
+    contact_first_name: client.contact_first_name ?? "",
+    contact_last_name: client.contact_last_name ?? "",
+    contact_email: client.contact_email ?? "",
+    contact_phone: client.contact_phone ?? "",
+    company_website: client.company_website ?? "",
+  };
 
-  let { error } = await supabase.from("clients").upsert(withHide);
+  let { error } = await supabase.from("clients").upsert(withContact);
   if (!error) return;
 
+  const missingContact =
+    /Could not find the 'contact_/i.test(error.message) ||
+    /Could not find the 'company_website' column/i.test(error.message) ||
+    (error.code === "PGRST204" &&
+      (/contact_/i.test(error.message) ||
+        /company_website/i.test(error.message)));
   const missingHide =
     /Could not find the 'hide_from_public_share' column/i.test(error.message) ||
     (error.code === "PGRST204" && /hide_from_public_share/i.test(error.message));
@@ -1061,6 +1080,14 @@ export async function upsertClientRow(
   const missingStatus =
     /Could not find the 'status' column/i.test(error.message) ||
     (error.code === "PGRST204" && /status/i.test(error.message));
+
+  if (missingContact) {
+    console.warn(
+      "clients contact columns missing — apply supabase/migrations/048_client_contact.sql",
+    );
+    ({ error } = await supabase.from("clients").upsert(withHide));
+    if (!error) return;
+  }
 
   if (missingHide) {
     console.warn(
@@ -2308,6 +2335,11 @@ export async function seedDemoWorkspace(
     color: c.color,
     status: c.status,
     hide_from_public_share: Boolean(c.hide_from_public_share),
+    contact_first_name: c.contact_first_name ?? "",
+    contact_last_name: c.contact_last_name ?? "",
+    contact_email: c.contact_email ?? "",
+    contact_phone: c.contact_phone ?? "",
+    company_website: c.company_website ?? "",
   }));
 
   const projects = seed.projects.map((p) => ({

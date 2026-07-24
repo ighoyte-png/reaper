@@ -58,6 +58,11 @@ export interface Client {
   status: ClientStatus;
   /** When true, omit from org-wide public share (and hide this client's projects). */
   hide_from_public_share: boolean;
+  contact_first_name: string;
+  contact_last_name: string;
+  contact_email: string;
+  contact_phone: string;
+  company_website: string;
 }
 
 export interface Project {

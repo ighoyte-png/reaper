@@ -180,6 +180,11 @@ function loadDemoState(): DemoState {
         color: c.color ?? "#64748B",
         status: c.status ?? "active",
         hide_from_public_share: Boolean(c.hide_from_public_share),
+        contact_first_name: c.contact_first_name ?? "",
+        contact_last_name: c.contact_last_name ?? "",
+        contact_email: c.contact_email ?? "",
+        contact_phone: c.contact_phone ?? "",
+        company_website: c.company_website ?? "",
       })),
       milestones: (parsed.milestones ?? seed.milestones).map((m, idx) => ({
         ...m,

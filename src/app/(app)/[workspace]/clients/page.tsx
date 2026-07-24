@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
+import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,33 @@ function emptyProject(
     manager_person_id: null,
     hide_from_public_share: false,
   };
+}
+
+function normalizeClientContact(
+  client: Omit<Client, "organization_id">,
+): Omit<Client, "organization_id"> {
+  return {
+    ...client,
+    contact_first_name: client.contact_first_name ?? "",
+    contact_last_name: client.contact_last_name ?? "",
+    contact_email: client.contact_email ?? "",
+    contact_phone: client.contact_phone ?? "",
+    company_website: client.company_website ?? "",
+  };
+}
+
+function contactDisplayName(client: Client): string {
+  return [client.contact_first_name, client.contact_last_name]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function websiteHref(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
 }
 
 export default function ClientsPage() {
@@ -86,10 +114,18 @@ export default function ClientsPage() {
   }, [clients, statusFilter]);
 
   const archivedCount = clients.filter((c) => c.status === "archived").length;
+  const projectCountByClient = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of state.projects) {
+      if (!p.client_id) continue;
+      map.set(p.client_id, (map.get(p.client_id) ?? 0) + 1);
+    }
+    return map;
+  }, [state.projects]);
 
   useEffect(() => {
     if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
-  }, [canManage, isPublicShare, router]);
+  }, [canManage, isPublicShare, router, appHref]);
 
   if (!canManage && !isPublicShare) {
     return (
@@ -108,12 +144,18 @@ export default function ClientsPage() {
       color: "#3498DB",
       status: "active",
       hide_from_public_share: false,
+      contact_first_name: "",
+      contact_last_name: "",
+      contact_email: "",
+      contact_phone: "",
+      company_website: "",
     };
   }
 
   function toggleArchive(client: Client) {
-    const next: ClientStatus = client.status === "archived" ? "active" : "archived";
-    upsertClient({ ...client, status: next });
+    const next: ClientStatus =
+      client.status === "archived" ? "active" : "archived";
+    upsertClient({ ...normalizeClientContact(client), status: next });
     push(next === "archived" ? "Client archived" : "Client restored");
   }
 
@@ -187,7 +229,9 @@ export default function ClientsPage() {
               )}
             >
               {f}
-              {f === "archived" && archivedCount > 0 ? ` (${archivedCount})` : ""}
+              {f === "archived" && archivedCount > 0
+                ? ` (${archivedCount})`
+                : ""}
             </button>
           ))}
         </div>
@@ -209,40 +253,27 @@ export default function ClientsPage() {
             No {statusFilter} clients.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-md border border-[var(--border)] bg-[var(--bg)]">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[var(--bg-elevated)] text-xs text-[var(--text-muted)]">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Client</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Projects</th>
-                  <th className="px-3 py-2 font-medium">Notes</th>
-                  {canManage ? (
-                    <th className="px-3 py-2 font-medium" />
-                  ) : null}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredClients.map((client) => {
-                  const count = state.projects.filter(
-                    (p) => p.client_id === client.id,
-                  ).length;
-                  const archived = client.status === "archived";
-                  return (
-                    <tr
-                      key={client.id}
-                      className={cn(
-                        "border-t border-[var(--border)] hover:bg-[var(--row-hover)]",
-                        archived && "opacity-60",
-                      )}
-                    >
-                      <td className="px-3 py-2.5 font-medium">
-                        <span className="inline-flex items-center gap-2">
-                          <ProjectColorBar color={client.color} />
-                          {client.name}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {filteredClients.map((client) => {
+              const count = projectCountByClient.get(client.id) ?? 0;
+              const archived = client.status === "archived";
+              const pocName = contactDisplayName(client);
+              const site = websiteHref(client.company_website ?? "");
+              return (
+                <article
+                  key={client.id}
+                  className={cn(
+                    "flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+                    archived && "opacity-60",
+                  )}
+                >
+                  <div className="mb-3 flex min-w-0 items-start gap-2">
+                    <ProjectColorBar color={client.color} className="mt-1" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold leading-tight">
+                        {client.name}
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <span
                           className={cn(
                             "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
@@ -253,34 +284,91 @@ export default function ClientsPage() {
                         >
                           {client.status ?? "active"}
                         </span>
-                      </td>
-                      <td className="px-3 py-2.5">{count}</td>
-                      <td className="px-3 py-2.5 text-[var(--text-muted)]">
-                        {client.notes || "—"}
-                      </td>
-                      {canManage ? (
-                        <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
-                            onClick={() => toggleArchive(client)}
-                          >
-                            {archived ? "Unarchive" : "Archive"}
-                          </button>
-                          <button
-                            type="button"
-                            className="ml-3 cursor-pointer text-xs text-[var(--accent)]"
-                            onClick={() => setEditing(client)}
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      ) : null}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <span className="text-xs text-[var(--text-muted)]">
+                          {count} {count === 1 ? "project" : "projects"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-auto space-y-1.5 text-xs text-[var(--text-muted)]">
+                    {pocName ? (
+                      <p className="truncate text-[var(--text)]">{pocName}</p>
+                    ) : null}
+                    {client.contact_email?.trim() ? (
+                      <a
+                        href={`mailto:${client.contact_email.trim()}`}
+                        className="block truncate hover:text-[var(--text)]"
+                      >
+                        {client.contact_email.trim()}
+                      </a>
+                    ) : null}
+                    {client.contact_phone?.trim() ? (
+                      <a
+                        href={`tel:${client.contact_phone.trim()}`}
+                        className="block truncate hover:text-[var(--text)]"
+                      >
+                        {client.contact_phone.trim()}
+                      </a>
+                    ) : null}
+                    {site ? (
+                      <a
+                        href={site}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate hover:text-[var(--text)]"
+                      >
+                        {(client.company_website || site).replace(
+                          /^https?:\/\//i,
+                          "",
+                        )}
+                      </a>
+                    ) : null}
+                    {client.notes?.trim() ? (
+                      <p className="line-clamp-2 pt-0.5">{client.notes}</p>
+                    ) : null}
+                  </div>
+
+                  {canManage ? (
+                    <div className="mt-3 flex items-center justify-end gap-3 border-t border-[var(--border)] pt-2.5">
+                      <button
+                        type="button"
+                        className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
+                        onClick={() => toggleArchive(client)}
+                      >
+                        {archived ? "Unarchive" : "Archive"}
+                      </button>
+                      <button
+                        type="button"
+                        className="cursor-pointer text-xs text-[var(--accent)]"
+                        onClick={() =>
+                          setEditing(normalizeClientContact(client))
+                        }
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+            {canManage ? (
+              <CardGridPlaceholders
+                count={filteredClients.length}
+                smColumns={2}
+                xlColumns={4}
+                className="min-h-[11rem]"
+                onAdd={() => setEditing(emptyClient())}
+                addLabel="Add Client"
+              />
+            ) : (
+              <CardGridPlaceholders
+                count={filteredClients.length}
+                smColumns={2}
+                xlColumns={4}
+                className="min-h-[11rem]"
+              />
+            )}
           </div>
         )}
       </div>
@@ -288,6 +376,7 @@ export default function ClientsPage() {
       {canManage && editing && (
         <Modal
           title={editing.name ? "Edit Client" : "Add Client"}
+          className="max-w-xl"
           onClose={() => setEditing(null)}
         >
           <div className="grid gap-3">
@@ -295,7 +384,9 @@ export default function ClientsPage() {
               <input
                 className={inputClass}
                 value={editing.name}
-                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                onChange={(e) =>
+                  setEditing({ ...editing, name: e.target.value })
+                }
               />
             </Field>
             <Field label="Status">
@@ -319,6 +410,83 @@ export default function ClientsPage() {
                 onChange={(color) => setEditing({ ...editing, color })}
               />
             </Field>
+
+            <div className="border-t border-[var(--border)] pt-3">
+              <p className="mb-2 text-xs font-medium text-[var(--text-muted)]">
+                Main point of contact
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="First name">
+                  <input
+                    className={inputClass}
+                    value={editing.contact_first_name}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        contact_first_name: e.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Last name">
+                  <input
+                    className={inputClass}
+                    value={editing.contact_last_name}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        contact_last_name: e.target.value,
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field label="Email">
+                  <input
+                    type="email"
+                    className={inputClass}
+                    value={editing.contact_email}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        contact_email: e.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Phone">
+                  <input
+                    type="tel"
+                    className={inputClass}
+                    value={editing.contact_phone}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        contact_phone: e.target.value,
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="mt-3">
+                <Field label="Company website">
+                  <input
+                    type="url"
+                    className={inputClass}
+                    placeholder="https://"
+                    value={editing.company_website}
+                    onChange={(e) =>
+                      setEditing({
+                        ...editing,
+                        company_website: e.target.value,
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
+
             <Field label="Notes">
               <textarea
                 className={`${inputClass} h-24 py-2`}
@@ -369,11 +537,18 @@ export default function ClientsPage() {
                   size="lg"
                   onClick={() => {
                     if (!editing.name.trim()) return;
-                    const isNew = !state.clients.some((c) => c.id === editing.id);
-                    const saved = {
+                    const isNew = !state.clients.some(
+                      (c) => c.id === editing.id,
+                    );
+                    const saved = normalizeClientContact({
                       ...editing,
                       name: editing.name.trim(),
-                    };
+                      contact_first_name: editing.contact_first_name.trim(),
+                      contact_last_name: editing.contact_last_name.trim(),
+                      contact_email: editing.contact_email.trim(),
+                      contact_phone: editing.contact_phone.trim(),
+                      company_website: editing.company_website.trim(),
+                    });
                     upsertClient(saved);
                     setEditing(null);
                     push("Client saved");

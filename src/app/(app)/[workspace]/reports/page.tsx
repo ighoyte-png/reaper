@@ -16,7 +16,7 @@ import { BurnBar } from "@/components/ui/burn-bar";
 import { buttonClass } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { useData } from "@/lib/data/store";
-import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { useViewAs } from "@/lib/view-as";
 import {
@@ -25,7 +25,7 @@ import {
   budgetHealth,
   formatHours,
 } from "@/lib/domain/budget";
-import type { BudgetBurn } from "@/lib/types";
+import type { BudgetBurn, Project } from "@/lib/types";
 import {
   availableHoursInRange,
   capacityLevel,
@@ -84,6 +84,7 @@ export default function ReportsPage() {
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
+  const budgetHref = useBudgetHref();
   const router = useRouter();
   const now = useMemo(() => new Date(), []);
   const todayKey = toDateKey(now);
@@ -194,6 +195,7 @@ export default function ReportsPage() {
         const client = state.clients.find((c) => c.id === p.client_id);
         return {
           id: p.id,
+          project: p,
           name: client?.name ? `${client.name} · ${p.name}` : p.name,
           pct: burn.pct,
           health,
@@ -271,6 +273,7 @@ export default function ReportsPage() {
                   <BudgetsOverview
                     data={budgets}
                     plannedHours={plannedHoursAcrossSchedule}
+                    budgetHref={budgetHref}
                   />
                 }
               />
@@ -547,6 +550,7 @@ function UtilizationOverview({
 function BudgetsOverview({
   data,
   plannedHours,
+  budgetHref,
 }: {
   data: {
     tracked: number;
@@ -555,6 +559,7 @@ function BudgetsOverview({
     over: number;
     rows: {
       id: string;
+      project: Project;
       name: string;
       pct: number;
       health: string;
@@ -562,6 +567,7 @@ function BudgetsOverview({
     }[];
   };
   plannedHours: number;
+  budgetHref: (project: Pick<Project, "client_id" | "slug">) => string;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -580,7 +586,11 @@ function BudgetsOverview({
       {data.rows.length > 0 ? (
         <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
           {data.rows.map((row) => (
-            <div key={row.id} className="space-y-1">
+            <Link
+              key={row.id}
+              href={budgetHref(row.project)}
+              className="block space-y-1 rounded-md px-1 py-0.5 -mx-1 hover:bg-[var(--row-hover)]"
+            >
               <div className="flex justify-between gap-2 text-[11px]">
                 <span className="truncate text-[var(--text-muted)]">
                   {row.name}
@@ -590,7 +600,7 @@ function BudgetsOverview({
                 </span>
               </div>
               <BurnBar burn={row.burn} compact />
-            </div>
+            </Link>
           ))}
         </div>
       ) : (
