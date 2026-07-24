@@ -3,14 +3,22 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { LogOut, Menu, Settings } from "lucide-react";
+import {
+  Building2,
+  ChevronDown,
+  LogOut,
+  Menu,
+  Moon,
+  Settings,
+  Sun,
+} from "lucide-react";
 import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
 import { PlatformAdminNavLink } from "@/components/nav/platform-admin-link";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { ThemeToggle } from "@/components/theme/theme-toggle";
+import { useTheme } from "@/components/theme/theme-provider";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -27,10 +35,20 @@ function navLinkClass(active: boolean) {
   );
 }
 
+function menuItemClass(active?: boolean) {
+  return cn(
+    "flex w-full cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors",
+    active
+      ? "bg-[var(--bg-elevated)] text-[var(--text)]"
+      : "text-[var(--text)] hover:bg-[var(--row-hover)]",
+  );
+}
+
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { logout, state, myPerson, profile, shareBasePath } = useData();
+  const { theme, toggleTheme } = useTheme();
   const appHref = useAppHref();
   const pathForNav = shareBasePath
     ? pathname.startsWith(shareBasePath)
@@ -75,6 +93,9 @@ export function AppNavbar() {
   const accountRole = profile?.role
     ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
     : "";
+  const identitySubtitle = [accountTitle, accountRole]
+    .filter(Boolean)
+    .join(" · ");
 
   useEffect(() => {
     if (!accountOpen) return;
@@ -123,6 +144,14 @@ export function AppNavbar() {
     profile?.id,
   ]);
 
+  async function signOut() {
+    setAccountOpen(false);
+    setOpen(false);
+    clearViewAs();
+    await logout();
+    router.push("/login");
+  }
+
   return (
     <>
       <header className="flex h-11 w-full shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--sidebar)] px-2 sm:px-3">
@@ -170,101 +199,136 @@ export function AppNavbar() {
             );
           })}
         </nav>
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+        <div className="ml-auto flex shrink-0 items-center">
           {accountName ? (
-            <div ref={accountMenuRef} className="relative mr-1">
+            <div ref={accountMenuRef} className="relative">
               <button
                 type="button"
                 className={cn(
-                  "flex max-w-[9.5rem] cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-[var(--row-hover)] sm:max-w-[12rem]",
-                  accountOpen && "bg-[var(--row-hover)]",
+                  "flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-full border border-transparent py-0.5 pl-0.5 pr-1.5 transition-colors hover:border-[var(--border)] hover:bg-[var(--row-hover)] sm:max-w-[14rem]",
+                  accountOpen &&
+                    "border-[var(--border)] bg-[var(--row-hover)]",
                 )}
-                aria-label={`Signed in as ${accountName}`}
+                aria-label={`Account menu for ${accountName}`}
                 aria-expanded={accountOpen}
-                aria-haspopup="dialog"
-                onClick={() => setAccountOpen((open) => !open)}
+                aria-haspopup="menu"
+                onClick={() => setAccountOpen((v) => !v)}
               >
                 <PersonAvatar
                   avatarUrl={myPerson?.avatar_url}
                   name={accountName}
                   size="team"
                 />
-                <span className="truncate text-xs font-medium leading-none text-[var(--text)]">
+                <span className="min-w-0 truncate text-xs font-medium leading-none text-[var(--text)]">
                   {accountName}
                 </span>
+                <ChevronDown
+                  size={14}
+                  strokeWidth={1.75}
+                  className={cn(
+                    "shrink-0 text-[var(--text-muted)] transition-transform duration-150",
+                    accountOpen && "rotate-180",
+                  )}
+                />
               </button>
               {accountOpen ? (
                 <div
-                  role="dialog"
+                  role="menu"
                   aria-label="Account"
-                  className="absolute right-0 top-[calc(100%+0.35rem)] z-50 w-56 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 shadow-md"
+                  className="absolute right-0 top-[calc(100%+0.4rem)] z-50 w-[17.5rem] origin-top-right overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--bg)] shadow-[0_12px_40px_-12px_rgba(0,0,0,0.28)]"
                 >
-                  <div className="space-y-2.5">
-                    {accountTitle ? (
-                      <div>
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                          Title
+                  <div className="border-b border-[var(--border)] bg-[var(--bg-elevated)]/50 px-3.5 py-3.5">
+                    <div className="flex items-start gap-3">
+                      <PersonAvatar
+                        avatarUrl={myPerson?.avatar_url}
+                        name={accountName}
+                        size="sm"
+                        className="mt-0.5 ring-2 ring-[var(--bg)]"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold leading-tight text-[var(--text)]">
+                          {accountName}
                         </p>
-                        <p className="mt-1 truncate text-sm font-medium text-[var(--text)]">
-                          {accountTitle}
+                        {identitySubtitle ? (
+                          <p className="mt-0.5 truncate text-xs leading-snug text-[var(--text-muted)]">
+                            {identitySubtitle}
+                          </p>
+                        ) : null}
+                        <p className="mt-1.5 flex items-center gap-1 truncate text-[11px] leading-none text-[var(--text-muted)]">
+                          <Building2
+                            size={11}
+                            strokeWidth={1.75}
+                            className="shrink-0 opacity-70"
+                          />
+                          <span className="truncate">{workspaceName}</span>
                         </p>
                       </div>
-                    ) : null}
-                    {accountRole ? (
-                      <div>
-                        <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                          Role
-                        </p>
-                        <p className="mt-1 truncate text-sm font-medium text-[var(--text)]">
-                          {accountRole}
-                        </p>
-                      </div>
-                    ) : null}
-                    <div>
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                        Workspace
-                      </p>
-                      <p className="mt-1 truncate text-sm font-medium text-[var(--text)]">
-                        {workspaceName}
-                      </p>
                     </div>
+                  </div>
+
+                  <div className="space-y-0.5 p-1.5">
+                    {showSettings ? (
+                      <Link
+                        role="menuitem"
+                        href={appHref("/settings")}
+                        className={menuItemClass(settingsActive)}
+                        onClick={() => setAccountOpen(false)}
+                      >
+                        <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                          <Settings size={14} strokeWidth={1.75} />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          Settings
+                        </span>
+                      </Link>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={menuItemClass()}
+                      onClick={() => toggleTheme()}
+                    >
+                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                        {theme === "dark" ? (
+                          <Sun size={14} strokeWidth={1.75} />
+                        ) : (
+                          <Moon size={14} strokeWidth={1.75} />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        Appearance
+                      </span>
+                    </button>
+
+                    <PlatformAdminNavLink
+                      variant="menu"
+                      onNavigate={() => setAccountOpen(false)}
+                    />
+                  </div>
+
+                  <div className="border-t border-[var(--border)] p-1.5">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={cn(
+                        menuItemClass(),
+                        "text-[var(--text-muted)] hover:text-[var(--text)]",
+                      )}
+                      onClick={() => void signOut()}
+                    >
+                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                        <LogOut size={14} strokeWidth={1.75} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        Sign out
+                      </span>
+                    </button>
                   </div>
                 </div>
               ) : null}
             </div>
           ) : null}
-          <ThemeToggle
-            className={cn(
-              navLinkClass(false),
-              "hidden h-auto w-auto border-0 bg-transparent sm:inline-flex",
-            )}
-          />
-          <PlatformAdminNavLink
-            className={cn(navLinkClass(false), "hidden sm:inline-flex")}
-          />
-          {showSettings ? (
-            <Link
-              href={appHref("/settings")}
-              className={cn(navLinkClass(settingsActive), "hidden sm:inline-flex")}
-              aria-label="Settings"
-              title="Settings"
-            >
-              <Settings size={15} strokeWidth={1.75} />
-            </Link>
-          ) : null}
-          <button
-            type="button"
-            className={cn(navLinkClass(false), "hidden sm:inline-flex")}
-            aria-label="Sign out"
-            title="Sign out"
-            onClick={async () => {
-              clearViewAs();
-              await logout();
-              router.push("/login");
-            }}
-          >
-            <LogOut size={15} strokeWidth={1.75} />
-          </button>
         </div>
       </header>
 
@@ -338,44 +402,6 @@ export function AppNavbar() {
               );
             })}
           </nav>
-          <div className="space-y-0.5 border-t border-[var(--border)] p-2">
-            <div className="flex items-center justify-between gap-2 rounded-md px-2.5 py-2">
-              <span className="text-sm text-[var(--text-muted)]">Theme</span>
-              <ThemeToggle />
-            </div>
-            <PlatformAdminNavLink
-              onNavigate={() => setOpen(false)}
-              className="flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-            />
-            {showSettings ? (
-              <Link
-                href={appHref("/settings")}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
-                  settingsActive
-                    ? "bg-[var(--bg-elevated)] text-[var(--text)]"
-                    : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
-                )}
-              >
-                <Settings size={16} strokeWidth={1.75} />
-                Settings
-              </Link>
-            ) : null}
-            <button
-              type="button"
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-              onClick={async () => {
-                setOpen(false);
-                clearViewAs();
-                await logout();
-                router.push("/login");
-              }}
-            >
-              <LogOut size={16} strokeWidth={1.75} />
-              Sign out
-            </button>
-          </div>
         </div>
       </div>
       {aboutOpen ? <AboutDialog onClose={() => setAboutOpen(false)} /> : null}

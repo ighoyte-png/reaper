@@ -1421,8 +1421,16 @@ function ListSection({
           type="button"
           className="cursor-pointer text-[var(--text-muted)]"
           onClick={onToggleCollapse}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand list" : "Collapse list"}
         >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          <ChevronDown
+            size={14}
+            className={cn(
+              "transition-transform duration-200 ease-out motion-reduce:transition-none",
+              collapsed && "-rotate-90",
+            )}
+          />
         </button>
         {ctx.manageLists ? (
           <input
@@ -1487,8 +1495,7 @@ function ListSection({
           />
         ) : null}
       </div>
-      {!collapsed ? (
-        <>
+      <ExpandPanel open={!collapsed}>
           {parents.length === 0 ? (
             <ListTaskDropZone listId={list.id} disabled={!ctx.manageLists}>
               {!ctx.manageLists ? (
@@ -1539,8 +1546,7 @@ function ListSection({
               )}
             </ListTaskDropZone>
           ) : null}
-        </>
-      ) : null}
+      </ExpandPanel>
     </section>
   );
 }
@@ -1749,6 +1755,51 @@ function InlineTaskForm({
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function ExpandPanel({
+  open,
+  children,
+}: {
+  open: boolean;
+  children: ReactNode;
+}) {
+  const [rendered, setRendered] = useState(open);
+  const [expanded, setExpanded] = useState(open);
+
+  useEffect(() => {
+    if (open) {
+      setRendered(true);
+      const id = requestAnimationFrame(() => {
+        requestAnimationFrame(() => setExpanded(true));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    setExpanded(false);
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      setRendered(false);
+      return;
+    }
+    const t = window.setTimeout(() => setRendered(false), 220);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  if (!rendered) return null;
+
+  return (
+    <div
+      className={cn(
+        "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+        expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+      )}
+      aria-hidden={!open}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -1982,7 +2033,13 @@ function TaskRow({
             >
               <MessageSquare size={16} />
               {taskComments.length > 0 ? taskComments.length : null}
-              {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+              <ChevronDown
+                size={10}
+                className={cn(
+                  "transition-transform duration-200 ease-out motion-reduce:transition-none",
+                  isExpanded ? "rotate-0" : "-rotate-90",
+                )}
+              />
             </span>
           ) : null}
           {ctx.canManage && !ctx.readOnly ? (
@@ -2023,32 +2080,31 @@ function TaskRow({
           />
         ) : null}
       </div>
-      {!ctx.readOnly && isExpanded ? (
-        <div
-          className="pb-3 pr-2 pt-3"
-          style={{ paddingLeft: 8 }}
-        >
-          <div className="flex gap-1.5">
-            <span className="w-4 shrink-0" aria-hidden />
-            <span className="w-2.5 shrink-0" aria-hidden />
-            <div className="min-w-0 flex-1 space-y-8">
-              {hasNotes ? (
-                <div className="py-2">
-                  <RichNotesHtml
-                    html={task.notes}
-                    className="text-sm text-[var(--text)]"
-                  />
-                </div>
-              ) : null}
-              <CommentThread
-                task={task}
-                comments={taskComments}
-                ctx={ctx}
-              />
-              <TaskActivityMeta task={task} ctx={ctx} />
+      {!ctx.readOnly ? (
+        <ExpandPanel open={isExpanded}>
+          <div className="pb-3 pr-2 pt-3" style={{ paddingLeft: 8 }}>
+            <div className="flex gap-1.5">
+              <span className="w-4 shrink-0" aria-hidden />
+              <span className="w-2.5 shrink-0" aria-hidden />
+              <div className="min-w-0 flex-1 space-y-8">
+                {hasNotes ? (
+                  <div className="py-2">
+                    <RichNotesHtml
+                      html={task.notes}
+                      className="text-sm text-[var(--text)]"
+                    />
+                  </div>
+                ) : null}
+                <CommentThread
+                  task={task}
+                  comments={taskComments}
+                  ctx={ctx}
+                />
+                <TaskActivityMeta task={task} ctx={ctx} />
+              </div>
             </div>
           </div>
-        </div>
+        </ExpandPanel>
       ) : null}
       </div>
       {depth === 0 && kids.length > 0 ? (
