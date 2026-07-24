@@ -38,6 +38,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
+import { Button } from "@/components/ui/button";
 import { ExpandPanel } from "@/components/ui/expand-panel";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1394,7 +1395,7 @@ function ListSection({
         transition,
         opacity: isDragging ? 0.6 : 1,
       }}
-      className="mb-3 overflow-hidden rounded-md border border-[var(--divider)]"
+      className="group/list mb-3 overflow-hidden rounded-md border border-[var(--divider)]"
     >
       {/* Measure only the header so tall lists don't block drops at the top. */}
       <div
@@ -1535,14 +1536,16 @@ function ListSection({
                   onSubmit={onCreateDraft}
                 />
               ) : (
-                <div className="px-2 py-1.5 text-left">
-                  <button
+                <div className="px-2 py-1.5 text-left opacity-0 transition-opacity group-hover/list:opacity-100 focus-within:opacity-100">
+                  <Button
                     type="button"
-                    className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--accent)] hover:underline"
+                    variant="secondary"
+                    size="sm"
                     onClick={onStartDraft}
                   >
-                    <Plus size={12} /> Add task
-                  </button>
+                    <Plus size={12} strokeWidth={1.75} />
+                    Add task
+                  </Button>
                 </div>
               )}
             </ListTaskDropZone>
