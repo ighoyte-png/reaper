@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { Star } from "lucide-react";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { cn } from "@/lib/cn";
@@ -11,12 +12,27 @@ import {
   orderedFavoriteProjects,
 } from "@/lib/domain/project-favorites";
 import { projectDisplayColor } from "@/lib/domain/sorting";
-import { useProjectHref } from "@/lib/hooks/use-app-href";
+import {
+  isFavoriteProjectActive,
+  useFavoriteProjectHref,
+  usePathForNav,
+} from "@/lib/hooks/use-app-href";
 
 /** Favorites list for client-filter sidebars (Projects / Budgets / Tasks). */
 export function FavoritesSidebar({ className }: { className?: string }) {
+  return (
+    <Suspense fallback={null}>
+      <FavoritesSidebarInner className={className} />
+    </Suspense>
+  );
+}
+
+function FavoritesSidebarInner({ className }: { className?: string }) {
   const { state, profile, isPublicShare } = useData();
-  const projectHref = useProjectHref();
+  const favoriteHref = useFavoriteProjectHref();
+  const pathForNav = usePathForNav();
+  const searchParams = useSearchParams();
+  const tasksProjectParam = searchParams.get("project");
 
   const favorites = useMemo(
     () =>
@@ -47,11 +63,22 @@ export function FavoritesSidebar({ className }: { className?: string }) {
       <nav className="space-y-0.5" aria-label="Favorite projects">
         {favorites.map((project) => {
           const label = favoriteProjectLabel(project, state.clients);
+          const active = isFavoriteProjectActive(
+            project,
+            pathForNav,
+            state.clients,
+            tasksProjectParam,
+          );
           return (
             <Link
               key={project.id}
-              href={projectHref(project)}
-              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-[var(--text)] transition-colors hover:bg-[var(--row-hover)]"
+              href={favoriteHref(project)}
+              className={cn(
+                "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                active
+                  ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                  : "text-[var(--text)] hover:bg-[var(--row-hover)]",
+              )}
               title={label}
             >
               <ProjectColorBar

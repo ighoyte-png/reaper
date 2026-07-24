@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDown,
@@ -22,10 +23,11 @@ import {
 } from "@/components/projects/project-manager-filter-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
-import { useProjectHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { toDateKey } from "@/lib/domain/dates";
 import { dueDateToneClass, taskStatusLabel } from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
+import { tasksReportRelativePath } from "@/lib/paths";
 import { cn } from "@/lib/cn";
 import type { Client, Person, Project, Task } from "@/lib/types";
 
@@ -463,8 +465,20 @@ function MobileProjectChip({
 }
 
 export default function TasksReportPage() {
+  return (
+    <Suspense fallback={null}>
+      <TasksReportContent />
+    </Suspense>
+  );
+}
+
+function TasksReportContent() {
   const { state, mode, ensureOrgHeavyData } = useData();
   const projectHref = useProjectHref();
+  const appHref = useAppHref();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectParam = searchParams.get("project");
   const todayKey = toDateKey(new Date());
   const [projectFilter, setProjectFilter] = useState<ProjectFilter>("all");
   const [expandedClientIds, setExpandedClientIds] = useState<Set<string>>(
@@ -474,6 +488,28 @@ export default function TasksReportPage() {
   useEffect(() => {
     if (mode === "supabase") void ensureOrgHeavyData();
   }, [mode, ensureOrgHeavyData]);
+
+  // Deep link / favorite: ?project= scopes the report like the sidebar.
+  useEffect(() => {
+    if (!projectParam) {
+      setProjectFilter("all");
+      return;
+    }
+    if (state.projects.some((p) => p.id === projectParam)) {
+      setProjectFilter(projectParam);
+    }
+  }, [projectParam, state.projects]);
+
+  function selectProjectFilter(next: ProjectFilter) {
+    setProjectFilter(next);
+    router.replace(
+      appHref(
+        next === "all"
+          ? tasksReportRelativePath()
+          : tasksReportRelativePath(next),
+      ),
+    );
+  }
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
@@ -635,7 +671,7 @@ export default function TasksReportPage() {
           <nav className="space-y-0.5 p-2" aria-label="Clients">
             <AllProjectsNavButton
               active={projectFilter === "all"}
-              onClick={() => setProjectFilter("all")}
+              onClick={() => selectProjectFilter("all")}
               count={state.tasks.length}
             />
             {sidebarGroups.map((group) => {
@@ -654,7 +690,7 @@ export default function TasksReportPage() {
                         <ProjectNavButton
                           key={project.id}
                           active={projectFilter === project.id}
-                          onClick={() => setProjectFilter(project.id)}
+                          onClick={() => selectProjectFilter(project.id)}
                           label={project.name}
                           count={projectTaskCounts.get(project.id) ?? 0}
                           color={projectDisplayColor(project, state.clients)}
@@ -671,14 +707,14 @@ export default function TasksReportPage() {
           <div className="mb-1 flex gap-1 overflow-x-auto overflow-y-hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:hidden">
             <MobileProjectChip
               active={projectFilter === "all"}
-              onClick={() => setProjectFilter("all")}
+              onClick={() => selectProjectFilter("all")}
               label="All projects"
             />
             {projectsWithTasks.map((project) => (
               <MobileProjectChip
                 key={project.id}
                 active={projectFilter === project.id}
-                onClick={() => setProjectFilter(project.id)}
+                onClick={() => selectProjectFilter(project.id)}
                 label={project.name}
                 color={projectDisplayColor(project, state.clients)}
               />

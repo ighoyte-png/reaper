@@ -54,6 +54,31 @@ export function budgetRelativePath(
   return `/reports/budgets/${clientSlug}/${project.slug || "project"}`;
 }
 
+/** Tasks report path, optionally scoped to a project. */
+export function tasksReportRelativePath(projectId?: string): string {
+  if (!projectId) return "/reports/tasks";
+  return `/reports/tasks?project=${encodeURIComponent(projectId)}`;
+}
+
+/** Where favorite project links should go based on the current app path. */
+export type FavoriteNavContext = "project" | "budget" | "tasks";
+
+export function favoriteNavContext(pathForNav: string): FavoriteNavContext {
+  if (
+    pathForNav === "/reports/tasks" ||
+    pathForNav.startsWith("/reports/tasks/")
+  ) {
+    return "tasks";
+  }
+  if (
+    pathForNav === "/reports/budgets" ||
+    pathForNav.startsWith("/reports/budgets/")
+  ) {
+    return "budget";
+  }
+  return "project";
+}
+
 export function projectPath(
   workspaceSlug: string,
   project: Pick<Project, "client_id" | "slug">,

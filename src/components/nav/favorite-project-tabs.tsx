@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -30,8 +31,11 @@ import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { orderedFavoriteProjects } from "@/lib/domain/project-favorites";
 import { clientNameOf, projectDisplayColor } from "@/lib/domain/sorting";
-import { useProjectHref } from "@/lib/hooks/use-app-href";
-import { projectRelativePath, stripWorkspacePrefix } from "@/lib/paths";
+import {
+  isFavoriteProjectActive,
+  useFavoriteProjectHref,
+  usePathForNav,
+} from "@/lib/hooks/use-app-href";
 import type { Project } from "@/lib/types";
 
 function FavoriteTab({
@@ -132,21 +136,24 @@ function ScrollArrow({
 
 /** Bottom navbar of starred projects — only renders when favorites exist. */
 export function FavoritesBottomNav() {
-  const pathname = usePathname();
-  const { state, profile, isPublicShare, shareBasePath, reorderProjectFavorites } =
-    useData();
-  const projectHref = useProjectHref();
+  return (
+    <Suspense fallback={null}>
+      <FavoritesBottomNavInner />
+    </Suspense>
+  );
+}
+
+function FavoritesBottomNavInner() {
+  const { state, profile, isPublicShare, reorderProjectFavorites } = useData();
+  const favoriteHref = useFavoriteProjectHref();
+  const pathForNav = usePathForNav();
+  const searchParams = useSearchParams();
+  const tasksProjectParam = searchParams.get("project");
   const [dragging, setDragging] = useState(false);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
   const suppressClickRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  const pathForNav = shareBasePath
-    ? pathname.startsWith(shareBasePath)
-      ? pathname.slice(shareBasePath.length) || "/"
-      : pathname
-    : stripWorkspacePrefix(pathname, state.organization.slug);
 
   const favorites = useMemo(
     () =>
@@ -258,14 +265,17 @@ export function FavoritesBottomNav() {
           >
             <ul className="ml-auto flex w-max min-w-full items-center justify-end gap-0.5 py-1">
               {favorites.map((project) => {
-                const rel = projectRelativePath(project, state.clients);
-                const active =
-                  pathForNav === rel || pathForNav.startsWith(`${rel}/`);
+                const active = isFavoriteProjectActive(
+                  project,
+                  pathForNav,
+                  state.clients,
+                  tasksProjectParam,
+                );
                 return (
                   <li key={project.id} className="shrink-0">
                     <FavoriteTab
                       project={project}
-                      href={projectHref(project)}
+                      href={favoriteHref(project)}
                       clientName={clientNameOf(project, state.clients)}
                       active={active}
                       color={projectDisplayColor(project, state.clients)}
