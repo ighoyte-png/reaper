@@ -67,6 +67,10 @@ function UtilizationReportContent() {
     () => scopedPeople.map((p) => p.id),
     [scopedPeople],
   );
+  const scopedPersonIdSet = useMemo(
+    () => new Set(scopedPersonIds),
+    [scopedPersonIds],
+  );
 
   const weekAnchors = useMemo(
     () => Array.from({ length: 3 }, (_, i) => weekStart(addWeeks(now, i))),
@@ -91,6 +95,8 @@ function UtilizationReportContent() {
         end,
         state.assignments,
         state.leave_days,
+        true,
+        scopedPersonIdSet,
       );
 
       const slices: SchedulePieSlice[] = [...byProject.entries()]
@@ -147,6 +153,7 @@ function UtilizationReportContent() {
     state.projects,
     state.clients,
     scopedPeople,
+    scopedPersonIdSet,
   ]);
 
   return (

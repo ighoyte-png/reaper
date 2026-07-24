@@ -128,6 +128,7 @@ export function buildBookedHoursByPersonDay(
 /**
  * Booked assignment hours per project over [startKey, endKey], excluding
  * weekends and full-day leave (same rules as personBookedHoursOnDay).
+ * When `personIds` is set, only assignments for those people are counted.
  */
 export function projectBookedHoursByProjectInRange(
   startKey: string,
@@ -135,12 +136,14 @@ export function projectBookedHoursByProjectInRange(
   assignments: Assignment[],
   leaveDays: LeaveDay[],
   includeTentative = true,
+  personIds?: ReadonlySet<string> | null,
 ): Map<string, number> {
   const byProject = new Map<string, number>();
   if (endKey < startKey) return byProject;
 
   const occs = expandAssignmentsInRange(assignments, startKey, endKey);
   for (const occ of occs) {
+    if (personIds && !personIds.has(occ.person_id)) continue;
     if (!includeTentative && occ.status !== "confirmed") continue;
     const rangeStart = occ.start_date > startKey ? occ.start_date : startKey;
     const rangeEnd = occ.end_date < endKey ? occ.end_date : endKey;
