@@ -128,7 +128,10 @@ function ProjectsPageContent() {
   const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
 
   const visibleProjects = useMemo(() => {
-    if (showingAsManager) return state.projects;
+    // Public org share is org-wide unless Viewing As a person.
+    if (showingAsManager || (isPublicShare && !scopePersonId)) {
+      return state.projects;
+    }
     if (!scopePersonId) return [];
     const ids = projectIdsForPerson(
       scopePersonId,
@@ -140,6 +143,7 @@ function ProjectsPageContent() {
     return state.projects.filter((p) => ids.has(p.id));
   }, [
     showingAsManager,
+    isPublicShare,
     scopePersonId,
     state.projects,
     state.assignments,

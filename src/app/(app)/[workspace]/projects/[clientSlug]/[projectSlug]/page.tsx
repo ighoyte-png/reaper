@@ -135,7 +135,9 @@ export default function ProjectDetailPage() {
   }, [project?.id, ensureProjectData, setActiveRealtimeProjectIds]);
 
   const projectDataReady =
-    !project?.id || dataStatus.projects[project.id] === "ready";
+    isPublicShare ||
+    !project?.id ||
+    dataStatus.projects[project.id] === "ready";
   const projectDataLoading =
     Boolean(project?.id) &&
     !projectDataReady &&
@@ -145,7 +147,7 @@ export default function ProjectDetailPage() {
 
   const memberCanAccess = useMemo(() => {
     if (!project) return true;
-    if (showingAsManager) return true;
+    if (showingAsManager || (isPublicShare && !scopePersonId)) return true;
     if (!scopePersonId) return false;
     return projectIdsForPerson(
       scopePersonId,
@@ -156,6 +158,7 @@ export default function ProjectDetailPage() {
     ).has(project.id);
   }, [
     showingAsManager,
+    isPublicShare,
     project,
     scopePersonId,
     state.assignments,

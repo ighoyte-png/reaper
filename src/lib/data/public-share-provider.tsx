@@ -227,7 +227,10 @@ export function PublicShareProvider({
       dataStatus: {
         orgTasks: "ready",
         mentionComments: "ready",
-        projects: {},
+        // Share payload already includes project rows; hubs wait on this map.
+        projects: Object.fromEntries(
+          state.projects.map((p) => [p.id, "ready" as const]),
+        ),
         scheduleRange: null,
       },
       ensureOrgTasks: async () => {},

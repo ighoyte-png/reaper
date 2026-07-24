@@ -31,7 +31,8 @@ export function useProjectBurnsMap(): {
           new Map(rows.map((r) => [r.project_id, burnFromRpcRow(r)])),
         );
       } else {
-        setRpcBurns(new Map());
+        // Soft-fail (incl. public share stub): use client-side burn math.
+        setRpcBurns(null);
       }
       setReady(true);
     }
