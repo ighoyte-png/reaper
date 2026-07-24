@@ -21,7 +21,7 @@ import {
   applyRealtimeTableEvent,
   realtimeEchoId,
 } from "@/lib/data/realtime-patch";
-import { orderTasksParentsFirst } from "@/lib/domain/tasks";
+import { emptyTaskAuditFields, orderTasksParentsFirst } from "@/lib/domain/tasks";
 import {
   bulletinUnreadRecipientProfileIds,
   clearLegacyDismissedBulletinIds,
@@ -2517,10 +2517,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       upsertTask: (task) => {
         // Managers can edit any task. Members may fully edit tasks assigned to
         // them, and may change status on any task (UI gates other fields).
+        const existing = state.tasks.find((t) => t.id === task.id);
         if (!manage && myPerson) {
           const isAssignee = task.assignee_person_id === myPerson.id;
           if (!isAssignee) {
-            const existing = state.tasks.find((t) => t.id === task.id);
             if (!existing) return;
             const statusOnly =
               task.status !== existing.status &&
@@ -2536,7 +2536,41 @@ export function DataProvider({ children }: { children: ReactNode }) {
             if (!statusOnly) return;
           }
         }
-        const row = withOrg(task) as Task;
+        const now = new Date().toISOString();
+        const actorId = profile?.id ?? null;
+        let row = withOrg(task) as Task;
+        if (!existing) {
+          row = {
+            ...row,
+            created_at: row.created_at || now,
+            created_by_profile_id: row.created_by_profile_id ?? actorId,
+            edited_at: null,
+            edited_by_profile_id: null,
+            status_changed_at: row.status_changed_at ?? null,
+            status_changed_by_profile_id:
+              row.status_changed_by_profile_id ?? null,
+          };
+        } else {
+          const statusChanged = existing.status !== row.status;
+          row = {
+            ...row,
+            created_at: existing.created_at || row.created_at || now,
+            created_by_profile_id:
+              existing.created_by_profile_id ??
+              row.created_by_profile_id ??
+              null,
+            edited_at: now,
+            edited_by_profile_id: actorId,
+            status_changed_at: statusChanged
+              ? now
+              : (existing.status_changed_at ?? row.status_changed_at ?? null),
+            status_changed_by_profile_id: statusChanged
+              ? actorId
+              : (existing.status_changed_by_profile_id ??
+                row.status_changed_by_profile_id ??
+                null),
+          };
+        }
         patch((prev) => {
           const exists = prev.tasks.some((t) => t.id === row.id);
           return {
@@ -3018,6 +3052,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
             due_date: null,
             notes: t.notes,
             sort_order: t.sort_order,
+            ...emptyTaskAuditFields(),
+            created_by_profile_id: profile?.id ?? null,
           })),
         );
 
@@ -3056,6 +3092,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 notes: t.notes,
                 due_date: t.due_date,
                 sort_order: t.sort_order,
+                created_by_profile_id: t.created_by_profile_id,
               })),
             }),
           );

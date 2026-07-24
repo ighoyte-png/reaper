@@ -68,6 +68,7 @@ import { cn } from "@/lib/cn";
 import { projectTeamPersonIds } from "@/lib/domain/project-access";
 import {
   dueDateToneClass,
+  emptyTaskAuditFields,
   parentTasks,
   sortTaskLists,
   taskStatusLabel,
@@ -416,6 +417,7 @@ export function ProjectTaskBoard({
       due_date: null,
       notes: "",
       sort_order: siblings.length,
+      ...emptyTaskAuditFields(),
     };
     upsertTask(task);
   }
@@ -440,6 +442,7 @@ export function ProjectTaskBoard({
       due_date: draft.due_date,
       notes: draft.notes,
       sort_order: siblings.length,
+      ...emptyTaskAuditFields(),
     };
     upsertTask(task);
     clearTaskCreateDraft(profile?.id, listId);
@@ -2023,6 +2026,7 @@ function TaskRow({
             <span className="w-4 shrink-0" aria-hidden />
             <span className="w-2.5 shrink-0" aria-hidden />
             <div className="min-w-0 flex-1 space-y-8">
+              <TaskActivityMeta task={task} ctx={ctx} />
               {hasNotes ? (
                 <div className="py-2">
                   <RichNotesHtml
@@ -2051,6 +2055,83 @@ function TaskRow({
             <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />
           ))}
         </SortableContext>
+      ) : null}
+    </div>
+  );
+}
+
+function profileDisplayName(
+  profileId: string | null | undefined,
+  ctx: BoardCtx,
+): string | null {
+  if (!profileId) return null;
+  const author = ctx.profiles.find((p) => p.id === profileId);
+  const authorPerson = ctx.people.find((p) => p.profile_id === profileId);
+  return author?.full_name || authorPerson?.name || null;
+}
+
+function formatTaskActivityTime(iso: string): string {
+  try {
+    return format(parseISO(iso), "MMM d, yyyy · h:mm a");
+  } catch {
+    return iso;
+  }
+}
+
+function TaskActivityMeta({ task, ctx }: { task: Task; ctx: BoardCtx }) {
+  const createdBy = profileDisplayName(task.created_by_profile_id, ctx);
+  const editedBy = profileDisplayName(task.edited_by_profile_id, ctx);
+  const changedBy = profileDisplayName(task.status_changed_by_profile_id, ctx);
+  const createdAt = task.created_at
+    ? formatTaskActivityTime(task.created_at)
+    : null;
+  const editedAt = task.edited_at
+    ? formatTaskActivityTime(task.edited_at)
+    : null;
+  const changedAt = task.status_changed_at
+    ? formatTaskActivityTime(task.status_changed_at)
+    : null;
+
+  if (!createdAt && !editedAt && !changedAt) return null;
+
+  return (
+    <div className="space-y-1 text-xs text-[var(--text-muted)]">
+      {createdAt ? (
+        <p>
+          Created {createdAt}
+          {createdBy ? (
+            <>
+              {" "}
+              by <span className="text-[var(--text)]">{createdBy}</span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {editedAt ? (
+        <p>
+          Edited {editedAt}
+          {editedBy ? (
+            <>
+              {" "}
+              by <span className="text-[var(--text)]">{editedBy}</span>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {changedAt ? (
+        <p>
+          Status set to{" "}
+          <span className="text-[var(--text)]">
+            {taskStatusLabel(task.status)}
+          </span>{" "}
+          {changedAt}
+          {changedBy ? (
+            <>
+              {" "}
+              by <span className="text-[var(--text)]">{changedBy}</span>
+            </>
+          ) : null}
+        </p>
       ) : null}
     </div>
   );

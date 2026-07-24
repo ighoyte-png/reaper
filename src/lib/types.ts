@@ -147,6 +147,18 @@ export interface Task {
   due_date: string | null;
   notes: string;
   sort_order: number;
+  /** When the task row was created (ISO). */
+  created_at: string;
+  /** Profile that created the task; null for legacy rows. */
+  created_by_profile_id: string | null;
+  /** Latest edit time (ISO); null until the task is first updated. */
+  edited_at: string | null;
+  /** Profile that made the latest edit. */
+  edited_by_profile_id: string | null;
+  /** Latest status change time (ISO); null until status first changes. */
+  status_changed_at: string | null;
+  /** Profile that made the latest status change. */
+  status_changed_by_profile_id: string | null;
 }
 
 export interface TaskComment {

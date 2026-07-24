@@ -171,6 +171,20 @@ export function mapTask(row: Record<string, unknown>): Task {
     due_date: row.due_date ? String(row.due_date) : null,
     notes: String(row.notes ?? ""),
     sort_order: num(row.sort_order),
+    created_at: String(row.created_at ?? new Date().toISOString()),
+    created_by_profile_id: row.created_by_profile_id
+      ? String(row.created_by_profile_id)
+      : null,
+    edited_at: row.edited_at ? String(row.edited_at) : null,
+    edited_by_profile_id: row.edited_by_profile_id
+      ? String(row.edited_by_profile_id)
+      : null,
+    status_changed_at: row.status_changed_at
+      ? String(row.status_changed_at)
+      : null,
+    status_changed_by_profile_id: row.status_changed_by_profile_id
+      ? String(row.status_changed_by_profile_id)
+      : null,
   };
 }
 
@@ -1908,6 +1922,12 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     due_date: task.due_date,
     notes: task.notes,
     sort_order: task.sort_order,
+    created_at: task.created_at,
+    created_by_profile_id: task.created_by_profile_id,
+    edited_at: task.edited_at,
+    edited_by_profile_id: task.edited_by_profile_id,
+    status_changed_at: task.status_changed_at,
+    status_changed_by_profile_id: task.status_changed_by_profile_id,
   };
   const { data, error: updateError } = await supabase
     .from("tasks")
@@ -2374,6 +2394,7 @@ export async function applyProjectTemplateRows(
       notes: string;
       due_date: string | null;
       sort_order: number;
+      created_by_profile_id?: string | null;
     }[];
   },
 ) {
@@ -2398,6 +2419,7 @@ export async function applyProjectTemplateRows(
     sort_order: l.sort_order,
     archived: false,
   }));
+  const now = new Date().toISOString();
   const taskRows = orderTasksParentsFirst(
     args.tasks.map((t) => ({
       id: t.id,
@@ -2412,6 +2434,12 @@ export async function applyProjectTemplateRows(
       due_date: t.due_date,
       notes: t.notes,
       sort_order: t.sort_order,
+      created_at: now,
+      created_by_profile_id: t.created_by_profile_id ?? null,
+      edited_at: null as string | null,
+      edited_by_profile_id: null as string | null,
+      status_changed_at: null as string | null,
+      status_changed_by_profile_id: null as string | null,
     })),
   );
 

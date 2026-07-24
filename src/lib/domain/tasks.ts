@@ -1,5 +1,25 @@
 import type { Task, TaskList, TaskStatus } from "@/lib/types";
 
+/** Default audit fields for newly constructed Task objects (store stamps actor on upsert). */
+export function emptyTaskAuditFields(): Pick<
+  Task,
+  | "created_at"
+  | "created_by_profile_id"
+  | "edited_at"
+  | "edited_by_profile_id"
+  | "status_changed_at"
+  | "status_changed_by_profile_id"
+> {
+  return {
+    created_at: new Date().toISOString(),
+    created_by_profile_id: null,
+    edited_at: null,
+    edited_by_profile_id: null,
+    status_changed_at: null,
+    status_changed_by_profile_id: null,
+  };
+}
+
 export function sortTaskLists(lists: TaskList[]): TaskList[] {
   return [...lists].sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 }

@@ -760,7 +760,18 @@ export function createDemoSeed(): DemoState {
         notes: "",
         sort_order: 1,
       },
-    ],
+    ].map((t) => ({
+      ...t,
+      created_at: dt(-14, week),
+      created_by_profile_id: "profile-admin" as string | null,
+      edited_at: t.status === "upcoming" ? null : dt(-1, week),
+      edited_by_profile_id:
+        t.status === "upcoming" ? null : ("profile-manager" as string | null),
+      status_changed_at:
+        t.status === "upcoming" ? null : dt(-2, week),
+      status_changed_by_profile_id:
+        t.status === "upcoming" ? null : ("profile-manager" as string | null),
+    })) as DemoState["tasks"],
     task_comments: [
       {
         id: "comment-1",
