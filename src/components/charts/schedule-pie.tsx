@@ -60,10 +60,18 @@ export function SchedulePie({
   slices,
   totalHours,
   className,
+  compact = false,
+  centerValue,
+  centerLabel = "booked",
 }: {
   slices: SchedulePieSlice[];
   totalHours: number;
   className?: string;
+  /** Smaller footprint for KPI / inline cards. */
+  compact?: boolean;
+  /** Override center primary text (defaults to formatted totalHours). */
+  centerValue?: string;
+  centerLabel?: string;
 }) {
   const total = slices.reduce((s, x) => s + x.hours, 0);
   const size = 100;
@@ -89,10 +97,14 @@ export function SchedulePie({
     }
   }
 
+  const primary = centerValue ?? formatHours(totalHours);
+
   return (
     <div
       className={cn(
-        "relative size-[13rem] shrink-0 sm:size-[14.5rem]",
+        compact
+          ? "relative size-14 shrink-0"
+          : "relative size-[13rem] shrink-0 sm:size-[14.5rem]",
         className,
       )}
       role="img"
@@ -122,10 +134,22 @@ export function SchedulePie({
         )}
       </svg>
       <div className="pointer-events-none absolute inset-[26%] flex flex-col items-center justify-center rounded-full bg-[var(--bg)] text-center">
-        <span className="text-sm font-semibold tabular-nums tracking-tight">
-          {formatHours(totalHours)}
+        <span
+          className={cn(
+            "font-semibold tabular-nums tracking-tight",
+            compact ? "text-[10px] leading-none" : "text-sm",
+          )}
+        >
+          {primary}
         </span>
-        <span className="text-[10px] text-[var(--text-muted)]">booked</span>
+        <span
+          className={cn(
+            "text-[var(--text-muted)]",
+            compact ? "text-[7px] leading-none" : "text-[10px]",
+          )}
+        >
+          {centerLabel}
+        </span>
       </div>
     </div>
   );

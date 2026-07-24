@@ -3,6 +3,20 @@
 import { Check } from "lucide-react";
 import { cn } from "@/lib/cn";
 
+/** Same format as ProjectManagerTag — green for milestone client approval. */
+export function MilestoneApprovedTag({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded bg-[var(--status-healthy)]/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--status-healthy)]",
+        className,
+      )}
+    >
+      Approved
+    </span>
+  );
+}
+
 export function ProgressBar({
   pct,
   label,
@@ -26,13 +40,9 @@ export function ProgressBar({
       <div className="min-w-0 flex-1 space-y-1">
         {label ? (
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="min-w-0 truncate font-medium">
-              {approved ? (
-                <span className="mr-1.5 font-semibold text-[var(--status-healthy)]">
-                  Approved
-                </span>
-              ) : null}
-              {label}
+            <span className="flex min-w-0 items-center gap-1.5">
+              {approved ? <MilestoneApprovedTag /> : null}
+              <span className="min-w-0 truncate font-medium">{label}</span>
             </span>
             <span className="shrink-0 text-[var(--text-muted)]">{clamped}%</span>
           </div>

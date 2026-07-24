@@ -126,8 +126,10 @@ type BoardCtx = {
   allowSelect: boolean;
   listsEditMode: boolean;
   compact: boolean;
-  /** Status changes only - no edit modal or comments (e.g. schedule sidebar). */
+  /** Hide edit/drag/comments (e.g. schedule sidebar). */
   readOnly: boolean;
+  /** Click status chip to cycle upcoming → active → complete. */
+  allowStatusEdit: boolean;
   /**
    * When set (schedule sidebar / compact), task titles link to the project hub
    * with ?task= for highlight scroll — same deep-link as the dashboard.
@@ -458,7 +460,9 @@ export function ProjectTaskBoard({
   }
 
   function cycleStatus(task: Task) {
-    if (readOnly || isPublicShare) return;
+    if (isPublicShare) return;
+    // Schedule compact sidebar stays otherwise read-only; status cycling is allowed.
+    if (readOnly && !compact) return;
     const next =
       task.status === "upcoming"
         ? "active"
@@ -787,6 +791,7 @@ export function ProjectTaskBoard({
     listsEditMode,
     compact,
     readOnly: readOnly || isPublicShare,
+    allowStatusEdit: !isPublicShare && (!readOnly || compact),
     hubTaskHref:
       compact && project
         ? (taskId: string) => projectHref(project, `task=${taskId}`)
@@ -1590,20 +1595,29 @@ function InlineTaskForm({
             />
           </div>
           <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
-            <span className="text-sm text-[var(--text-muted)]">Start</span>
-            <DateInput
-              className={cn(inputClass, "mt-0 h-8")}
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
-            <span className="text-sm text-[var(--text-muted)]">End</span>
-            <DateInput
-              className={cn(inputClass, "mt-0 h-8")}
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-            />
+            <span className="text-sm text-[var(--text-muted)]">Dates</span>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="min-w-0">
+                <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                  Start
+                </span>
+                <DateInput
+                  className={cn(inputClass, "mt-0 h-8")}
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
+              </label>
+              <label className="min-w-0">
+                <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                  End
+                </span>
+                <DateInput
+                  className={cn(inputClass, "mt-0 h-8")}
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </label>
+            </div>
           </div>
           <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
             <span className="pt-1.5 text-sm text-[var(--text-muted)]">Notes</span>
@@ -1679,7 +1693,7 @@ function TaskRow({
   const kids = depth === 0 ? ctx.childrenMap.get(task.id) ?? [] : [];
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
-  const canEditStatus = !ctx.readOnly;
+  const canEditStatus = ctx.allowStatusEdit;
   const isFocused = ctx.focusTaskId === task.id;
   const isEditing = ctx.editingTaskId === task.id;
   const nestIndent = depth * 16;
@@ -1803,7 +1817,11 @@ function TaskRow({
           )}
           title={taskStatusLabel(task.status)}
           aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
-          onClick={() => ctx.cycleStatus(task)}
+          disabled={!canEditStatus}
+          onClick={() => {
+            if (!canEditStatus) return;
+            ctx.cycleStatus(task);
+          }}
         />
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {ctx.hubTaskHref ? (

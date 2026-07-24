@@ -217,9 +217,9 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
                   : "text-[var(--text-muted)]",
               )}
               onClick={toggleEditMode}
-              aria-label={editMode ? "Done editing assets" : "Edit assets"}
+              aria-label={editMode ? "Done editing Essentials" : "Edit Essentials"}
               aria-pressed={editMode}
-              title={editMode ? "Done editing assets" : "Edit assets"}
+              title={editMode ? "Done editing Essentials" : "Edit Essentials"}
             >
               <Pencil size={16} />
             </button>
@@ -330,7 +330,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
       ) : null}
 
       {assets.length === 0 ? (
-        <p className="text-sm text-[var(--text-muted)]">No assets yet.</p>
+        <p className="text-sm text-[var(--text-muted)]">No Essentials yet.</p>
       ) : (
         <DndContext
           sensors={sensors}

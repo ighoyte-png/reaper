@@ -572,10 +572,6 @@ function BudgetsOverview({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="shrink-0 space-y-1.5">
-        <MetricRow
-          label="Planned across schedule"
-          value={formatHours(plannedHours)}
-        />
         <MetricRow label="Tracked projects" value={String(data.tracked)} />
         <MetricRow
           label="Over budget"
@@ -606,6 +602,12 @@ function BudgetsOverview({
       ) : (
         <p className="text-xs text-[var(--text-muted)]">No budgeted projects.</p>
       )}
+      <div className="shrink-0 border-t border-[var(--border)] pt-2">
+        <MetricRow
+          label="Planned across schedule"
+          value={formatHours(plannedHours)}
+        />
+      </div>
     </div>
   );
 }

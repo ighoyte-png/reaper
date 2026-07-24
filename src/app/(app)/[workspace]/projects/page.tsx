@@ -1,12 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { format, startOfDay } from "date-fns";
-import { Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
+import {
+  ProjectManagerFilterBar,
+  useProjectManagerFilter,
+} from "@/components/projects/project-manager-filter-bar";
 import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
@@ -21,10 +25,7 @@ import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
-import {
-  projectIdsForPerson,
-  showProjectManagerUi,
-} from "@/lib/domain/project-access";
+import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { projectDateProgress } from "@/lib/domain/progress";
 import {
   projectStatusPillClass,
@@ -57,7 +58,6 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
 
 type ClientFilter = "all" | "none" | string;
 type StatusFilter = ProjectStatus | "all";
-type ManagerFilter = "all" | string;
 
 const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "active", label: "Active" },
@@ -93,7 +93,6 @@ export default function ProjectsPage() {
   const [query, setQuery] = useState("");
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
-  const [managerFilter, setManagerFilter] = useState<ManagerFilter>("all");
 
   const scopePersonId = effectivePersonId ?? myPerson?.id ?? null;
 
@@ -121,29 +120,10 @@ export default function ProjectsPage() {
     return visibleProjects.filter((p) => p.status === statusFilter);
   }, [visibleProjects, statusFilter]);
 
-  const managerTabs = useMemo(() => {
-    // Build from all visible projects (not status-scoped) so the filter
-    // stays available when a status tab has no PM-assigned projects.
-    if (!showProjectManagerUi(visibleProjects)) return [];
-    const ids = new Set<string>();
-    for (const p of visibleProjects) {
-      if (p.manager_person_id) ids.add(p.manager_person_id);
-    }
-    return state.people
-      .filter((person) => ids.has(person.id))
-      .sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-      );
-  }, [visibleProjects, state.people]);
-
-  const showManagers = managerTabs.length >= 2;
-
-  useEffect(() => {
-    if (managerFilter === "all") return;
-    if (!managerTabs.some((person) => person.id === managerFilter)) {
-      setManagerFilter("all");
-    }
-  }, [managerFilter, managerTabs]);
+  // From all visible projects (not status-scoped) so the filter stays
+  // available when a status tab has no PM-assigned projects. Hidden unless ≥2.
+  const { showManagers, managerTabs, managerFilter, setManagerFilter } =
+    useProjectManagerFilter(visibleProjects, state.people);
 
   const projects = sortProjectsByClientThenName(
     statusScopedProjects,
@@ -353,51 +333,12 @@ export default function ProjectsPage() {
           </aside>
 
           <div className="min-w-0 p-3 sm:p-5 md:flex-1">
-            {showManagers ? (
-              <section
-                className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
-                aria-label="Project managers"
-              >
-                <h2 className="mb-3 text-sm font-semibold">Project Manager</h2>
-                <ul className="flex flex-wrap gap-x-4 gap-y-2">
-                  {managerTabs.map((person) => {
-                    const selected = managerFilter === person.id;
-                    return (
-                      <li key={person.id}>
-                        <div
-                          className={cn(
-                            "flex items-center gap-1 rounded-md border px-1.5 py-1 transition-colors",
-                            selected
-                              ? "border-[var(--text)] bg-[var(--bg-elevated)]"
-                              : "border-transparent hover:bg-[var(--row-hover)]",
-                          )}
-                        >
-                          <button
-                            type="button"
-                            role="tab"
-                            aria-selected={selected}
-                            onClick={() => setManagerFilter(person.id)}
-                            className="min-w-0 cursor-pointer text-left"
-                          >
-                            <ProjectManagerPerson person={person} />
-                          </button>
-                          {selected ? (
-                            <button
-                              type="button"
-                              className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                              aria-label={`Clear ${person.name} filter`}
-                              onClick={() => setManagerFilter("all")}
-                            >
-                              <X size={14} strokeWidth={2} />
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ) : null}
+            <ProjectManagerFilterBar
+              className="mb-4"
+              managerTabs={managerTabs}
+              managerFilter={managerFilter}
+              onSelect={setManagerFilter}
+            />
 
             <div className="mb-4 flex flex-wrap gap-1">
               {STATUS_TABS.map((tab) => (

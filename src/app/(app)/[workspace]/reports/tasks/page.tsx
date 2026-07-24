@@ -11,24 +11,24 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  X,
 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
-import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
+import {
+  ProjectManagerFilterBar,
+  useProjectManagerFilter,
+} from "@/components/projects/project-manager-filter-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { toDateKey } from "@/lib/domain/dates";
-import { showProjectManagerUi } from "@/lib/domain/project-access";
 import { dueDateToneClass, taskStatusLabel } from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Client, Person, Project, Task } from "@/lib/types";
 
 type ProjectFilter = "all" | string;
-type ManagerFilter = "all" | string;
 type SortKey =
   | "title"
   | "project"
@@ -466,7 +466,6 @@ export default function TasksReportPage() {
   const projectHref = useProjectHref();
   const todayKey = toDateKey(new Date());
   const [projectFilter, setProjectFilter] = useState<ProjectFilter>("all");
-  const [managerFilter, setManagerFilter] = useState<ManagerFilter>("all");
   const [expandedClientIds, setExpandedClientIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -569,27 +568,9 @@ export default function TasksReportPage() {
     });
   }, [projectFilter, projectById]);
 
-  const managerTabs = useMemo(() => {
-    if (!showProjectManagerUi(projectsWithTasks)) return [];
-    const ids = new Set<string>();
-    for (const p of projectsWithTasks) {
-      if (p.manager_person_id) ids.add(p.manager_person_id);
-    }
-    return state.people
-      .filter((person) => ids.has(person.id))
-      .sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-      );
-  }, [projectsWithTasks, state.people]);
-
-  const showManagers = managerTabs.length >= 2;
-
-  useEffect(() => {
-    if (managerFilter === "all") return;
-    if (!managerTabs.some((person) => person.id === managerFilter)) {
-      setManagerFilter("all");
-    }
-  }, [managerFilter, managerTabs]);
+  // Same ≥2 assigned-PM gate as Projects / Budgets (org-wide assignments).
+  const { managerTabs, managerFilter, setManagerFilter } =
+    useProjectManagerFilter(state.projects, state.people);
 
   function toggleClientExpanded(key: string) {
     setExpandedClientIds((prev) => {
@@ -702,51 +683,11 @@ export default function TasksReportPage() {
             ))}
           </div>
 
-          {showManagers ? (
-            <section
-              className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
-              aria-label="Project managers"
-            >
-              <h2 className="mb-3 text-sm font-semibold">Project Manager</h2>
-              <ul className="flex flex-wrap gap-x-4 gap-y-2">
-                {managerTabs.map((person) => {
-                  const selected = managerFilter === person.id;
-                  return (
-                    <li key={person.id}>
-                      <div
-                        className={cn(
-                          "flex items-center gap-1 rounded-md border px-1.5 py-1 transition-colors",
-                          selected
-                            ? "border-[var(--text)] bg-[var(--bg-elevated)]"
-                            : "border-transparent hover:bg-[var(--row-hover)]",
-                        )}
-                      >
-                        <button
-                          type="button"
-                          role="tab"
-                          aria-selected={selected}
-                          onClick={() => setManagerFilter(person.id)}
-                          className="min-w-0 cursor-pointer text-left"
-                        >
-                          <ProjectManagerPerson person={person} />
-                        </button>
-                        {selected ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                            aria-label={`Clear ${person.name} filter`}
-                            onClick={() => setManagerFilter("all")}
-                          >
-                            <X size={14} strokeWidth={2} />
-                          </button>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          ) : null}
+          <ProjectManagerFilterBar
+            managerTabs={managerTabs}
+            managerFilter={managerFilter}
+            onSelect={setManagerFilter}
+          />
 
           <section>
             <div className="mb-3 flex items-center gap-2">

@@ -103,11 +103,14 @@ export function UtilizationHeatmap({
   weeks = 8,
   personIds,
   showLegend = true,
+  showTeamAverage = false,
 }: {
   weeks?: number;
   /** When set, only these people are shown (member / View As scoping). */
   personIds?: string[] | null;
   showLegend?: boolean;
+  /** Footer row with combined booked/available across all shown people. */
+  showTeamAverage?: boolean;
 }) {
   const {
     state,
@@ -277,6 +280,50 @@ export function UtilizationHeatmap({
               })}
             </div>
           ))}
+
+          {showTeamAverage && people.length > 0 ? (
+            <div className="contents">
+              <div className="sticky left-0 z-[1] flex items-center border-t-4 border-[var(--border)] bg-[var(--bg)] px-3 py-2.5">
+                <div className="truncate text-sm font-semibold leading-tight">
+                  Team Utilization
+                </div>
+              </div>
+              {anchors.map((anchor) => {
+                const start = toDateKey(anchor);
+                const end = toDateKey(weekEnd(anchor));
+                let booked = 0;
+                let available = 0;
+                for (const person of people) {
+                  const rpc = rpcCells?.get(`${person.id}:${start}`);
+                  booked +=
+                    rpc?.booked ??
+                    personBookedHoursInRange(
+                      person.id,
+                      start,
+                      end,
+                      state.assignments,
+                      state.leave_days,
+                    );
+                  available +=
+                    rpc?.available ??
+                    availableHoursInRange(
+                      person,
+                      start,
+                      end,
+                      state.leave_days,
+                    );
+                }
+                return (
+                  <div
+                    key={`team-${start}`}
+                    className="border-l border-t-4 border-[var(--border)] px-2 py-2"
+                  >
+                    <UtilizationPill booked={booked} available={available} />
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

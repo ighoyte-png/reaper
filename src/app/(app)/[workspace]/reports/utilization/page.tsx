@@ -113,18 +113,24 @@ export default function UtilizationReportPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader title={<ReportBreadcrumb current="Utilization" />} />
       <div className="space-y-3 p-3 sm:p-5">
-        <p className="text-sm text-[var(--text-muted)]">
-          Green healthy · yellow near full · red overbooked · gray unavailable
-        </p>
-        <UtilizationHeatmap weeks={8} />
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold">
+            Team Utilization - Next 8 Weeks
+          </h2>
+          <UtilizationHeatmap weeks={8} showTeamAverage />
+        </section>
 
-        <div className="grid gap-3 pt-2 lg:grid-cols-3">
+        <section className="space-y-3 pt-2">
+          <h2 className="text-sm font-semibold">
+            Total Hours By Projects - Next 3 Weeks
+          </h2>
+          <div className="grid gap-3 lg:grid-cols-3">
           {weekBreakdowns.map((week) => {
             const pieTotal = week.slices.reduce((s, x) => s + x.hours, 0);
             return (
               <section key={week.key} className={panelClass()}>
                 <div className="mb-3 min-w-0">
-                  <h2 className="text-sm font-semibold">{week.title}</h2>
+                  <h3 className="text-sm font-semibold">{week.title}</h3>
                   <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                     {week.rangeLabel} · hours by project
                   </p>
@@ -190,7 +196,8 @@ export default function UtilizationReportPage() {
               </section>
             );
           })}
-        </div>
+          </div>
+        </section>
       </div>
     </PageContainer>
   );

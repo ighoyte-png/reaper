@@ -13,7 +13,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { SchedulePie } from "@/components/charts/schedule-pie";
+import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
 import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
@@ -448,7 +448,14 @@ export default function DashboardPage() {
         : myPerson
           ? [myPerson]
           : [];
-    if (people.length === 0) return { avg: 0, series: [] as number[] };
+    if (people.length === 0) {
+      return {
+        avg: 0,
+        series: [] as number[],
+        thisWeekBooked: 0,
+        thisWeekAvailable: 0,
+      };
+    }
 
     const weekAvgs: number[] = [];
     for (let i = 5; i >= 0; i -= 1) {
@@ -478,7 +485,28 @@ export default function DashboardPage() {
       weekAvgs.push(n > 0 ? sum / n : 0);
     }
     const avg = weekAvgs[weekAvgs.length - 1] ?? 0;
-    return { avg, series: weekAvgs };
+
+    const thisStart = toDateKey(weekStart(now));
+    const thisEnd = toDateKey(weekEnd(now));
+    let thisWeekBooked = 0;
+    let thisWeekAvailable = 0;
+    for (const person of people) {
+      thisWeekBooked += personBookedHoursInRange(
+        person.id,
+        thisStart,
+        thisEnd,
+        state.assignments,
+        state.leave_days,
+      );
+      thisWeekAvailable += availableHoursInRange(
+        person,
+        thisStart,
+        thisEnd,
+        state.leave_days,
+      );
+    }
+
+    return { avg, series: weekAvgs, thisWeekBooked, thisWeekAvailable };
   }, [
     showOrgDashboard,
     focusPerson,
@@ -488,6 +516,30 @@ export default function DashboardPage() {
     state.leave_days,
     now,
   ]);
+
+  const teamUtilizationPieSlices = useMemo((): SchedulePieSlice[] => {
+    const booked = teamUtilization.thisWeekBooked;
+    const available = teamUtilization.thisWeekAvailable;
+    const free = Math.max(0, available - booked);
+    const slices: SchedulePieSlice[] = [];
+    if (booked > 0.01) {
+      slices.push({
+        projectId: "__booked__",
+        hours: booked,
+        color: "var(--accent)",
+        label: "Booked",
+      });
+    }
+    if (free > 0.01) {
+      slices.push({
+        projectId: "__free__",
+        hours: free,
+        color: "#94a3b8",
+        label: "Available",
+      });
+    }
+    return slices;
+  }, [teamUtilization.thisWeekBooked, teamUtilization.thisWeekAvailable]);
 
   const upcomingDueTasks = useMemo(() => {
     const groups = ["today", "tomorrow", "three_days"] as const;
@@ -659,15 +711,17 @@ export default function DashboardPage() {
           </div>
 
           <div className="order-5 space-y-4 lg:order-none">
-            <ProjectHealthBudget
-              canManage={showOrgDashboard}
-              atRisk={atRisk}
-              upcoming={upcomingDueTasks}
-              projectById={projectById}
-              appHref={appHref}
-              projectHref={projectHref}
-              clients={state.clients}
-            />
+            {showOrgDashboard ? (
+              <ProjectHealthBudget
+                canManage={showOrgDashboard}
+                atRisk={atRisk}
+                upcoming={upcomingDueTasks}
+                projectById={projectById}
+                appHref={appHref}
+                projectHref={projectHref}
+                clients={state.clients}
+              />
+            ) : null}
             <DashboardCapacityLeave
               canManage={showOrgDashboard}
               peopleLoad={peopleLoad}
@@ -746,11 +800,27 @@ export default function DashboardPage() {
                   </KpiCard>
 
                   <KpiCard title="Team Utilization Rate">
-                    <div className="flex items-end justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-semibold tabular-nums">
                         {Math.round(teamUtilization.avg)}% Avg
                       </div>
-                      <Sparkline values={teamUtilization.series} />
+                      <SchedulePie
+                        compact
+                        slices={teamUtilizationPieSlices}
+                        totalHours={teamUtilization.thisWeekBooked}
+                        centerValue={`${Math.round(
+                          teamUtilization.thisWeekAvailable <= 0
+                            ? 0
+                            : Math.min(
+                                200,
+                                utilizationPct(
+                                  teamUtilization.thisWeekBooked,
+                                  teamUtilization.thisWeekAvailable,
+                                ),
+                              ),
+                        )}%`}
+                        centerLabel="this week"
+                      />
                     </div>
                   </KpiCard>
                 </>
@@ -890,40 +960,6 @@ function SegmentBar({
         />
       ))}
     </div>
-  );
-}
-
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) return null;
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const range = Math.max(max - min, 1);
-  const w = 64;
-  const h = 24;
-  const points = values
-    .map((v, i) => {
-      const x = (i / (values.length - 1)) * w;
-      const y = h - ((v - min) / range) * (h - 2) - 1;
-      return `${x},${y}`;
-    })
-    .join(" ");
-  return (
-    <svg
-      width={w}
-      height={h}
-      viewBox={`0 0 ${w} ${h}`}
-      className="shrink-0 text-[var(--text)]"
-      aria-hidden
-    >
-      <polyline
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        points={points}
-      />
-    </svg>
   );
 }
 

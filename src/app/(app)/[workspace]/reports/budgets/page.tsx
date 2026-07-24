@@ -7,6 +7,10 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { BudgetCard } from "@/components/budgets/budget-card";
+import {
+  ProjectManagerFilterBar,
+  useProjectManagerFilter,
+} from "@/components/projects/project-manager-filter-bar";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
@@ -45,6 +49,9 @@ function BudgetsReportContent() {
   );
   const clients = sortClientsByName(state.clients);
 
+  const { managerTabs, managerFilter, setManagerFilter } =
+    useProjectManagerFilter(state.projects, state.people);
+
   // Legacy deep link (?project=) → dedicated budget detail page.
   useEffect(() => {
     if (!projectParam) return;
@@ -64,6 +71,12 @@ function BudgetsReportContent() {
       ) {
         return false;
       }
+      if (
+        managerFilter !== "all" &&
+        project.manager_person_id !== managerFilter
+      ) {
+        return false;
+      }
       if (!q) return true;
       const client = state.clients.find((c) => c.id === project.client_id);
       const haystack = [
@@ -77,7 +90,7 @@ function BudgetsReportContent() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [projects, clientFilter, query, state.clients]);
+  }, [projects, clientFilter, managerFilter, query, state.clients]);
 
   const groups = useMemo(() => {
     const byClient = new Map<string | null, Project[]>();
@@ -162,6 +175,13 @@ function BudgetsReportContent() {
           </aside>
 
           <div className="min-w-0 flex-1 p-3 sm:p-5">
+            <ProjectManagerFilterBar
+              className="mb-4"
+              managerTabs={managerTabs}
+              managerFilter={managerFilter}
+              onSelect={setManagerFilter}
+            />
+
             <label className="relative mb-4 block md:hidden">
               <Search
                 size={16}
