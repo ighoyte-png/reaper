@@ -9,9 +9,14 @@ const TRICKLE_MS = 320;
 const FINISH_MS = 220;
 const SAFETY_MS = 12_000;
 
+/** Schedule outside React's insertion/layout phase (Next may call history APIs there). */
+function defer(fn: () => void) {
+  queueMicrotask(fn);
+}
+
 /**
  * Thin top-of-viewport bar during App Router navigations (GitHub-style).
- * Starts on same-origin link clicks / back-forward; completes when the URL commits.
+ * Starts on same-origin link clicks / back-forward; completes when the route commits.
  */
 export function NavigationProgress() {
   const pathname = usePathname();
@@ -26,6 +31,7 @@ export function NavigationProgress() {
   const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishRef = useRef<() => void>(() => {});
+  const pathBootRef = useRef(true);
 
   useEffect(() => {
     function clearStartAndTrickle() {
@@ -69,7 +75,7 @@ export function NavigationProgress() {
       }, FINISH_MS);
     }
 
-    finishRef.current = finish;
+    finishRef.current = () => defer(finish);
 
     function beginVisible() {
       if (activeRef.current) return;
@@ -131,20 +137,6 @@ export function NavigationProgress() {
       start();
     }
 
-    const pushState = history.pushState.bind(history);
-    const replaceState = history.replaceState.bind(history);
-
-    history.pushState = function (...args) {
-      const result = pushState(...args);
-      finish();
-      return result;
-    };
-    history.replaceState = function (...args) {
-      const result = replaceState(...args);
-      finish();
-      return result;
-    };
-
     document.addEventListener("click", onClick, true);
     window.addEventListener("popstate", onPopState);
 
@@ -153,13 +145,15 @@ export function NavigationProgress() {
       if (finishTimerRef.current) clearTimeout(finishTimerRef.current);
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("popstate", onPopState);
-      history.pushState = pushState;
-      history.replaceState = replaceState;
       activeRef.current = false;
     };
   }, []);
 
   useEffect(() => {
+    if (pathBootRef.current) {
+      pathBootRef.current = false;
+      return;
+    }
     finishRef.current();
   }, [pathname]);
 

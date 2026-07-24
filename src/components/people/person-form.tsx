@@ -196,26 +196,15 @@ export function PersonForm({
                   }
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Department">
-                  <input
-                    className={inputClass}
-                    value={person.department}
-                    onChange={(e) =>
-                      onChange({ ...person, department: e.target.value })
-                    }
-                  />
-                </Field>
-                <Field label="Office">
-                  <input
-                    className={inputClass}
-                    value={person.office}
-                    onChange={(e) =>
-                      onChange({ ...person, office: e.target.value })
-                    }
-                  />
-                </Field>
-              </div>
+              <Field label="Office">
+                <input
+                  className={inputClass}
+                  value={person.office}
+                  onChange={(e) =>
+                    onChange({ ...person, office: e.target.value })
+                  }
+                />
+              </Field>
             </>
           ) : null}
 
