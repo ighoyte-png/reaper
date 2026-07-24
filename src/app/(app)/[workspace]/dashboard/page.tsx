@@ -806,20 +806,9 @@ export default function DashboardPage() {
                       </div>
                       <SchedulePie
                         compact
+                        showCenter={false}
                         slices={teamUtilizationPieSlices}
                         totalHours={teamUtilization.thisWeekBooked}
-                        centerValue={`${Math.round(
-                          teamUtilization.thisWeekAvailable <= 0
-                            ? 0
-                            : Math.min(
-                                200,
-                                utilizationPct(
-                                  teamUtilization.thisWeekBooked,
-                                  teamUtilization.thisWeekAvailable,
-                                ),
-                              ),
-                        )}%`}
-                        centerLabel="this week"
                       />
                     </div>
                   </KpiCard>

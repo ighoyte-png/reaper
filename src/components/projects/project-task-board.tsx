@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -49,6 +49,19 @@ import {
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
+import {
+  clearCommentDraft,
+  readCommentDraft,
+  taskIdsWithCommentDrafts,
+  writeCommentDraft,
+} from "@/lib/comment-drafts";
+import {
+  clearTaskCreateDraft,
+  listTaskCreateDrafts,
+  readTaskCreateDraft,
+  writeTaskCreateDraft,
+  type TaskCreateDraft,
+} from "@/lib/task-create-drafts";
 import { notesHasContent, notesPreviewText } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
@@ -71,13 +84,7 @@ import type {
   TaskStatus,
 } from "@/lib/types";
 
-type InlineTaskDraft = {
-  title: string;
-  assignee_person_id: string | null;
-  start_date: string | null;
-  due_date: string | null;
-  notes: string;
-};
+type InlineTaskDraft = TaskCreateDraft;
 
 type Props = {
   projectId: string;
@@ -220,6 +227,7 @@ export function ProjectTaskBoard({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
+  const didRestoreCreateDraft = useRef(false);
 
   const viewerCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
   const viewerPersonId =
@@ -426,6 +434,7 @@ export function ProjectTaskBoard({
       sort_order: siblings.length,
     };
     upsertTask(task);
+    clearTaskCreateDraft(profile?.id, listId);
     setDraftingListId(null);
   }
 
@@ -551,6 +560,55 @@ export function ProjectTaskBoard({
     }, 150);
     return () => window.clearTimeout(t);
   }, [focusTaskId, visibleTasks, state.tasks, projectId]);
+
+  // Re-open comment panels that have an unfinished local reply draft.
+  useEffect(() => {
+    const profileId = profile?.id ?? null;
+    if (!profileId) return;
+    const draftTaskIds = taskIdsWithCommentDrafts(profileId);
+    if (draftTaskIds.length === 0) return;
+    const onBoard = new Set(
+      state.tasks
+        .filter((t) => t.project_id === projectId)
+        .map((t) => t.id),
+    );
+    setExpanded((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of draftTaskIds) {
+        if (!onBoard.has(id) || next.has(id)) continue;
+        next.add(id);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [profile?.id, projectId, state.tasks]);
+
+  // Re-open the newest unfinished create-task form for a list on this board.
+  useEffect(() => {
+    didRestoreCreateDraft.current = false;
+  }, [projectId]);
+
+  useEffect(() => {
+    if (didRestoreCreateDraft.current) return;
+    const profileId = profile?.id ?? null;
+    if (!profileId || !manageLists) return;
+    if (allLists.length === 0) return;
+    didRestoreCreateDraft.current = true;
+    const listIds = new Set(allLists.map((l) => l.id));
+    const match = listTaskCreateDrafts(profileId).find((d) =>
+      listIds.has(d.listId),
+    );
+    if (!match) return;
+    setEditingTaskId(null);
+    setDraftingListId(match.listId);
+    setCollapsedLists((prev) => {
+      if (!prev.has(match.listId)) return prev;
+      const next = new Set(prev);
+      next.delete(match.listId);
+      return next;
+    });
+  }, [profile?.id, projectId, manageLists, allLists]);
 
   function moveTaskToColumn(taskId: string, destStatus: TaskStatus, destIndex: number) {
     const task = state.tasks.find((t) => t.id === taskId);
@@ -1106,7 +1164,10 @@ export function ProjectTaskBoard({
                     setEditingTaskId(null);
                     setDraftingListId(list.id);
                   }}
-                  onCancelDraft={() => setDraftingListId(null)}
+                  onCancelDraft={() => {
+                    clearTaskCreateDraft(profile?.id, list.id);
+                    setDraftingListId(null);
+                  }}
                   onCreateDraft={(draft) => createTaskFromDraft(list.id, draft)}
                   onArchive={() =>
                     upsertTaskList({ ...list, archived: true })
@@ -1187,7 +1248,10 @@ export function ProjectTaskBoard({
                         setEditingTaskId(null);
                         setDraftingListId(list.id);
                       }}
-                      onCancelDraft={() => setDraftingListId(null)}
+                      onCancelDraft={() => {
+                        clearTaskCreateDraft(profile?.id, list.id);
+                        setDraftingListId(null);
+                      }}
                       onCreateDraft={(draft) =>
                         createTaskFromDraft(list.id, draft)
                       }
@@ -1452,8 +1516,14 @@ function ListSection({
               {drafting ? (
                 <InlineTaskForm
                   people={ctx.people}
+                  initial={
+                    readTaskCreateDraft(ctx.profileId, list.id) ?? undefined
+                  }
                   status="upcoming"
                   submitLabel="Add task"
+                  onDraftChange={(draft) =>
+                    writeTaskCreateDraft(ctx.profileId, list.id, draft)
+                  }
                   onCancel={onCancelDraft}
                   onSubmit={onCreateDraft}
                 />
@@ -1508,6 +1578,7 @@ function InlineTaskForm({
   onCancel,
   onSubmit,
   onDelete,
+  onDraftChange,
   depth = 0,
 }: {
   people: Person[];
@@ -1517,6 +1588,8 @@ function InlineTaskForm({
   onCancel: () => void;
   onSubmit: (draft: InlineTaskDraft) => void;
   onDelete?: () => void;
+  /** When set (create flow), persist field changes as a local draft. */
+  onDraftChange?: (draft: InlineTaskDraft) => void;
   depth?: number;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -1527,6 +1600,18 @@ function InlineTaskForm({
   const [dueDate, setDueDate] = useState(initial?.due_date ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+
+  useEffect(() => {
+    onDraftChangeRef.current?.({
+      title,
+      assignee_person_id: assigneeId || null,
+      start_date: startDate || null,
+      due_date: dueDate || null,
+      notes,
+    });
+  }, [title, assigneeId, startDate, dueDate, notes]);
 
   function submit() {
     const trimmed = title.trim();
@@ -1990,9 +2075,23 @@ function CommentThread({
     a.created_at.localeCompare(b.created_at),
   );
 
+  useEffect(() => {
+    if (!ctx.profileId) return;
+    const stored = readCommentDraft(ctx.profileId, task.id);
+    if (!notesHasContent(stored)) return;
+    setDraft(stored);
+    setReplying(true);
+  }, [ctx.profileId, task.id]);
+
+  function updateDraft(html: string) {
+    setDraft(html);
+    writeCommentDraft(ctx.profileId, task.id, html);
+  }
+
   function cancelReply() {
     setDraft("");
     setReplying(false);
+    clearCommentDraft(ctx.profileId, task.id);
   }
 
   function submitReply() {
@@ -2000,6 +2099,7 @@ function CommentThread({
     ctx.addComment(task.id, draft, extractMentionPersonIds(draft));
     setDraft("");
     setReplying(false);
+    clearCommentDraft(ctx.profileId, task.id);
   }
 
   return (
@@ -2016,7 +2116,7 @@ function CommentThread({
           <div className="space-y-2.5">
             <SimpleRichTextEditor
               value={draft}
-              onChange={setDraft}
+              onChange={updateDraft}
               placeholder="Add a comment... Use @ to mention"
               mentionPeople={ctx.mentionPeople}
             />

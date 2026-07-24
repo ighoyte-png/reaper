@@ -61,6 +61,7 @@ export function SchedulePie({
   totalHours,
   className,
   compact = false,
+  showCenter = true,
   centerValue,
   centerLabel = "booked",
 }: {
@@ -69,6 +70,8 @@ export function SchedulePie({
   className?: string;
   /** Smaller footprint for KPI / inline cards. */
   compact?: boolean;
+  /** When false, keep the donut hole but hide center labels. */
+  showCenter?: boolean;
   /** Override center primary text (defaults to formatted totalHours). */
   centerValue?: string;
   centerLabel?: string;
@@ -133,23 +136,30 @@ export function SchedulePie({
           ))
         )}
       </svg>
-      <div className="pointer-events-none absolute inset-[26%] flex flex-col items-center justify-center rounded-full bg-[var(--bg)] text-center">
-        <span
-          className={cn(
-            "font-semibold tabular-nums tracking-tight",
-            compact ? "text-[10px] leading-none" : "text-sm",
-          )}
-        >
-          {primary}
-        </span>
-        <span
-          className={cn(
-            "text-[var(--text-muted)]",
-            compact ? "text-[7px] leading-none" : "text-[10px]",
-          )}
-        >
-          {centerLabel}
-        </span>
+      <div
+        className="pointer-events-none absolute inset-[26%] flex flex-col items-center justify-center rounded-full bg-[var(--bg)] text-center"
+        aria-hidden={!showCenter}
+      >
+        {showCenter ? (
+          <>
+            <span
+              className={cn(
+                "font-semibold tabular-nums tracking-tight",
+                compact ? "text-[10px] leading-none" : "text-sm",
+              )}
+            >
+              {primary}
+            </span>
+            <span
+              className={cn(
+                "text-[var(--text-muted)]",
+                compact ? "text-[7px] leading-none" : "text-[10px]",
+              )}
+            >
+              {centerLabel}
+            </span>
+          </>
+        ) : null}
       </div>
     </div>
   );
