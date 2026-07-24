@@ -902,6 +902,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ) {
                 continue;
               }
+            } else if (
+              ev.table === "task_comment_reactions" ||
+              ev.table === "task_comment_mentions"
+            ) {
+              const commentId = String(
+                (ev.newRecord ?? ev.oldRecord)?.comment_id ?? "",
+              );
+              const comment = next.task_comments.find((c) => c.id === commentId);
+              if (!comment) continue;
+              const task = next.tasks.find((t) => t.id === comment.task_id);
+              if (!task) continue;
+              if (
+                !active.has(task.project_id) &&
+                !projectReadyRef.current.has(task.project_id)
+              ) {
+                continue;
+              }
             } else {
               const taskId = String(
                 (ev.newRecord ?? ev.oldRecord)?.task_id ?? "",

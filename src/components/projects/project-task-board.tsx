@@ -159,6 +159,8 @@ type BoardCtx = {
   setEditingTask: (task: Task | null) => void;
   saveEditingTask: (taskId: string, draft: InlineTaskDraft) => void;
   deleteEditingTask: (taskId: string) => void;
+  exitingTaskIds: Set<string>;
+  onTaskExitComplete: (taskId: string) => void;
   addSubtask: (listId: string, parentId: string) => void;
   expanded: Set<string>;
   toggleExpand: (id: string) => void;
@@ -244,6 +246,9 @@ export function ProjectTaskBoard({
   const [listsEditMode, setListsEditMode] = useState(false);
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const didRestoreCreateDraft = useRef(false);
+  const [exitingTaskIds, setExitingTaskIds] = useState<Set<string>>(new Set());
+  const pendingDeleteRootsRef = useRef<Set<string>>(new Set());
+  const exitHandledRef = useRef<Set<string>>(new Set());
 
   const orgCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
   const viewerPersonId =
@@ -344,6 +349,73 @@ export function ProjectTaskBoard({
     setBulkDraft({});
   }
 
+  function beginDeleteTasks(rootIds: string[]) {
+    const roots = [
+      ...new Set(
+        rootIds.filter(
+          (id) =>
+            Boolean(state.tasks.find((t) => t.id === id)) &&
+            !pendingDeleteRootsRef.current.has(id),
+        ),
+      ),
+    ];
+    if (roots.length === 0) return;
+
+    const newlyExiting = new Set<string>();
+    for (const id of roots) {
+      pendingDeleteRootsRef.current.add(id);
+      exitHandledRef.current.delete(id);
+      newlyExiting.add(id);
+      for (const child of childrenMap.get(id) ?? []) {
+        exitHandledRef.current.delete(child.id);
+        newlyExiting.add(child.id);
+      }
+    }
+    setExitingTaskIds((prev) => {
+      const next = new Set(prev);
+      for (const id of newlyExiting) next.add(id);
+      return next;
+    });
+    setEditingTaskId((prev) => (prev && newlyExiting.has(prev) ? null : prev));
+    setSelected((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of newlyExiting) {
+        if (next.delete(id)) changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }
+
+  function onTaskExitComplete(taskId: string) {
+    if (exitHandledRef.current.has(taskId)) return;
+    exitHandledRef.current.add(taskId);
+
+    setExitingTaskIds((prev) => {
+      if (!prev.has(taskId)) return prev;
+      const next = new Set(prev);
+      next.delete(taskId);
+      return next;
+    });
+
+    if (!pendingDeleteRootsRef.current.has(taskId)) return;
+    pendingDeleteRootsRef.current.delete(taskId);
+    const childIds = state.tasks
+      .filter((t) => t.parent_id === taskId)
+      .map((t) => t.id);
+    deleteTask(taskId);
+    if (childIds.length === 0) return;
+    setExitingTaskIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of childIds) {
+        if (next.delete(id)) changed = true;
+        exitHandledRef.current.add(id);
+      }
+      return changed ? next : prev;
+    });
+  }
+
   function deleteSelectedTasks() {
     if (!manageLists || selected.size === 0) return;
     // Delete parents first so child cleanup in deleteTask doesn't fight
@@ -355,9 +427,7 @@ export function ProjectTaskBoard({
     const orphans = selectedTasks.filter(
       (t) => t.parent_id && !selected.has(t.parent_id),
     );
-    for (const task of [...parents, ...orphans]) {
-      deleteTask(task.id);
-    }
+    beginDeleteTasks([...parents, ...orphans].map((t) => t.id));
     setConfirmBulkDelete(false);
     clearSelection();
   }
@@ -500,8 +570,8 @@ export function ProjectTaskBoard({
   }
 
   function deleteEditingTask(taskId: string) {
-    deleteTask(taskId);
     setEditingTaskId(null);
+    beginDeleteTasks([taskId]);
   }
 
   function cycleStatus(task: Task) {
@@ -916,6 +986,8 @@ export function ProjectTaskBoard({
     setEditingTask,
     saveEditingTask,
     deleteEditingTask,
+    exitingTaskIds,
+    onTaskExitComplete,
     addSubtask,
     expanded,
     toggleExpand,
@@ -1840,6 +1912,7 @@ function TaskRow({
   depth: number;
   ctx: BoardCtx;
 }) {
+  const isExiting = ctx.exitingTaskIds.has(task.id);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: task.id,
@@ -1848,8 +1921,23 @@ function TaskRow({
         listId: task.list_id,
         parentId: task.parent_id,
       } satisfies TaskDragData,
-      disabled: !ctx.manageLists || ctx.editingTaskId === task.id,
+      disabled:
+        !ctx.manageLists || ctx.editingTaskId === task.id || isExiting,
     });
+
+  useEffect(() => {
+    if (!isExiting) return;
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const ms = reduced ? 180 : 320;
+    const timer = window.setTimeout(() => {
+      ctx.onTaskExitComplete(task.id);
+    }, ms);
+    return () => window.clearTimeout(timer);
+    // Intentionally omit ctx — completion is idempotent via exitHandledRef.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- exit once per isExiting
+  }, [isExiting, task.id]);
 
   const assignee = ctx.people.find((p) => p.id === task.assignee_person_id);
   const taskComments = ctx.comments.filter((c) => c.task_id === task.id);
@@ -1859,7 +1947,7 @@ function TaskRow({
   const isSelected = ctx.selected.has(task.id);
   const canEditStatus = ctx.allowStatusEdit;
   const isFocused = ctx.focusTaskId === task.id;
-  const isEditing = ctx.editingTaskId === task.id;
+  const isEditing = ctx.editingTaskId === task.id && !isExiting;
   const nestIndent = depth * 16;
   const nestLineLeft =
     depth > 0
@@ -1909,15 +1997,18 @@ function TaskRow({
     <div
       id={`task-row-${task.id}`}
       style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.6 : 1,
+        transform: isExiting
+          ? undefined
+          : CSS.Transform.toString(transform),
+        transition: isExiting ? undefined : transition,
+        opacity: isDragging ? 0.6 : undefined,
         ...(nestIndent ? { marginLeft: nestIndent } : {}),
       }}
       className={cn(
         "relative my-0.5 py-0.5",
         // Named group only on subtasks so parent hover doesn't clear nest lines.
         depth > 0 && "group/subtask",
+        isExiting && "pointer-events-none",
       )}
     >
       {depth > 0 ? (
@@ -1935,12 +2026,19 @@ function TaskRow({
       <div
         className={cn(
           "relative rounded-md py-0.5 transition-colors",
-          isFocused
-            ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25"
-            : isExpanded
-              ? "bg-[var(--row-hover)]"
-              : "hover:bg-[var(--row-hover)]",
+          isExiting
+            ? "task-row-exiting"
+            : isFocused
+              ? "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25"
+              : isExpanded
+                ? "bg-[var(--row-hover)]"
+                : "hover:bg-[var(--row-hover)]",
         )}
+        onAnimationEnd={(e) => {
+          if (!isExiting) return;
+          if (e.target !== e.currentTarget) return;
+          ctx.onTaskExitComplete(task.id);
+        }}
       >
       {/* Measure only the row so parents with subtasks don't block top drops. */}
       <div

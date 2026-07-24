@@ -173,3 +173,37 @@ a.rich-notes-link {
     color-mix(in srgb, var(--border) 80%, transparent) 5px
   );
 }
+
+@keyframes task-row-exit {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+    background-color: transparent;
+  }
+  30% {
+    background-color: color-mix(in srgb, var(--status-over) 22%, transparent);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(2rem);
+    background-color: color-mix(in srgb, var(--status-over) 18%, transparent);
+  }
+}
+
+@keyframes task-row-exit-reduced {
+  to {
+    opacity: 0;
+  }
+}
+
+.task-row-exiting {
+  pointer-events: none;
+  overflow: hidden;
+  animation: task-row-exit 280ms ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-row-exiting {
+    animation: task-row-exit-reduced 140ms ease-out forwards;
+  }
+}
