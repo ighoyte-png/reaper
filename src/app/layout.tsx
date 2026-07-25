@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist_Mono } from "next/font/google";
 import { NavigationProgress } from "@/components/nav/navigation-progress";
 import { ThemeProvider } from "@/components/theme/theme-provider";
@@ -46,7 +47,9 @@ export default function RootLayout({
         <ThemeProvider>
           <DataProvider>
             <ToastProvider>
-              <NavigationProgress />
+              <Suspense fallback={null}>
+                <NavigationProgress />
+              </Suspense>
               {children}
             </ToastProvider>
           </DataProvider>

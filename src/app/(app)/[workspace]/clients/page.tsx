@@ -420,7 +420,7 @@ function ClientsPageContent() {
                     <div className="mt-3 flex items-center justify-end gap-1 border-t border-[var(--border)] pt-2.5">
                       <button
                         type="button"
-                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
                         onClick={() => toggleArchive(client)}
                         aria-label={
                           archived
@@ -437,7 +437,7 @@ function ClientsPageContent() {
                       </button>
                       <button
                         type="button"
-                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
                         onClick={() =>
                           setEditing(normalizeClientContact(client))
                         }

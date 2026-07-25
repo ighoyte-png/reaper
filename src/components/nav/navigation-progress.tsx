@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/cn";
 
 const START_DELAY_MS = 100;
@@ -16,10 +16,14 @@ function defer(fn: () => void) {
 
 /**
  * Thin top-of-viewport bar during App Router navigations (GitHub-style).
- * Starts on same-origin link clicks / back-forward; completes when the route commits.
+ * Starts on same-origin link clicks / `[data-nav-progress]` controls;
+ * completes when pathname or search commits.
  */
 export function NavigationProgress() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const routeKey = `${pathname}?${searchParams.toString()}`;
+
   const [active, setActive] = useState(false);
   const [progress, setProgress] = useState(0);
   const [exiting, setExiting] = useState(false);
@@ -31,7 +35,7 @@ export function NavigationProgress() {
   const finishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const finishRef = useRef<() => void>(() => {});
-  const pathBootRef = useRef(true);
+  const routeBootRef = useRef(true);
 
   useEffect(() => {
     function clearStartAndTrickle() {
@@ -100,6 +104,17 @@ export function NavigationProgress() {
       }, START_DELAY_MS);
     }
 
+    /**
+     * Browser / router.back() fires popstate after the URL has already
+     * committed — starting a long trickle here leaves the bar stuck until
+     * the safety timeout. Complete any in-flight bar instead.
+     */
+    function onPopState() {
+      if (startTimerRef.current || activeRef.current) {
+        finish();
+      }
+    }
+
     function onClick(e: MouseEvent) {
       if (
         e.defaultPrevented ||
@@ -111,7 +126,14 @@ export function NavigationProgress() {
       ) {
         return;
       }
-      const anchor = (e.target as Element | null)?.closest?.("a");
+
+      const target = e.target as Element | null;
+      if (target?.closest?.("[data-nav-progress]")) {
+        start();
+        return;
+      }
+
+      const anchor = target?.closest?.("a");
       if (!(anchor instanceof HTMLAnchorElement)) return;
       if (anchor.target && anchor.target !== "_self") return;
       if (anchor.hasAttribute("download")) return;
@@ -133,10 +155,6 @@ export function NavigationProgress() {
       start();
     }
 
-    function onPopState() {
-      start();
-    }
-
     document.addEventListener("click", onClick, true);
     window.addEventListener("popstate", onPopState);
 
@@ -150,12 +168,12 @@ export function NavigationProgress() {
   }, []);
 
   useEffect(() => {
-    if (pathBootRef.current) {
-      pathBootRef.current = false;
+    if (routeBootRef.current) {
+      routeBootRef.current = false;
       return;
     }
     finishRef.current();
-  }, [pathname]);
+  }, [routeKey]);
 
   if (!active && progress === 0) return null;
 

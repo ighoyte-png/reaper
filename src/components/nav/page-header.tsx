@@ -38,6 +38,7 @@ export function PageHeader({
             <button
               type="button"
               onClick={onBack}
+              data-nav-progress=""
               className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-md px-1.5 text-sm text-[var(--text-muted)] transition-colors hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
               aria-label="Back"
             >
