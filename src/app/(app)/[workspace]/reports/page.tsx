@@ -112,6 +112,7 @@ export default function ReportsPage() {
     overdue: number;
     noDue: number;
     upcoming: number;
+    inProgress: number;
     complete: number;
     open: number;
   } | null>(null);
@@ -132,6 +133,7 @@ export default function ReportsPage() {
         overdue: stats.overdue_count,
         noDue: stats.no_due_count,
         upcoming: stats.upcoming_count,
+        inProgress: stats.in_progress_count,
         complete: stats.complete_count,
         open: stats.open_count,
       });
@@ -275,19 +277,30 @@ export default function ReportsPage() {
 
   const tasks = useMemo(() => {
     if (taskStats) return taskStats;
-    const open = state.tasks.filter((t) => t.status !== "complete");
-    const overdue = open.filter((t) => t.due_date && t.due_date < todayKey);
-    const noDue = open.filter((t) => !t.due_date);
-    const upcoming = open.filter(
-      (t) => t.due_date && t.due_date >= todayKey,
+    const openTasks = state.tasks.filter((t) => t.status !== "complete");
+    const overdue = openTasks.filter((t) => t.due_date && t.due_date < todayKey);
+    const inProgress = openTasks.filter(
+      (t) =>
+        t.status === "active" &&
+        (!t.due_date || t.due_date >= todayKey),
+    );
+    const noDue = openTasks.filter(
+      (t) => t.status !== "active" && !t.due_date,
+    );
+    const upcoming = openTasks.filter(
+      (t) =>
+        t.status !== "active" &&
+        t.due_date &&
+        t.due_date >= todayKey,
     );
     const complete = state.tasks.filter((t) => t.status === "complete");
     return {
       overdue: overdue.length,
       noDue: noDue.length,
       upcoming: upcoming.length,
+      inProgress: inProgress.length,
       complete: complete.length,
-      open: open.length,
+      open: openTasks.length,
     };
   }, [taskStats, state.tasks, todayKey]);
 
@@ -680,6 +693,7 @@ function TasksOverview({
     overdue: number;
     noDue: number;
     upcoming: number;
+    inProgress: number;
     complete: number;
     open: number;
   };
@@ -691,6 +705,12 @@ function TasksOverview({
         hours: data.overdue,
         color: "var(--status-over)",
         label: "Overdue",
+      },
+      {
+        projectId: "in-progress",
+        hours: data.inProgress,
+        color: "var(--task-active-fg)",
+        label: "In Progress",
       },
       {
         projectId: "no-due",
@@ -707,7 +727,8 @@ function TasksOverview({
     ] as const
   ).filter((s) => s.hours > 0);
 
-  const openMix = data.overdue + data.noDue + data.upcoming;
+  const openMix =
+    data.overdue + data.inProgress + data.noDue + data.upcoming;
 
   return (
     <div className="space-y-3">

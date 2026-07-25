@@ -450,6 +450,7 @@ export type OrgTaskStats = {
   overdue_count: number;
   no_due_count: number;
   upcoming_count: number;
+  in_progress_count: number;
 };
 
 export type OrgForecastRow = {
@@ -1214,6 +1215,7 @@ export async function rpcOrgTaskStats(
       overdue_count: 0,
       no_due_count: 0,
       upcoming_count: 0,
+      in_progress_count: 0,
     };
   }
   const r = row as Record<string, unknown>;
@@ -1223,6 +1225,7 @@ export async function rpcOrgTaskStats(
     overdue_count: num(r.overdue_count),
     no_due_count: num(r.no_due_count),
     upcoming_count: num(r.upcoming_count),
+    in_progress_count: num(r.in_progress_count),
   };
 }
 
