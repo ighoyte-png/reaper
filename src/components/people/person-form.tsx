@@ -122,7 +122,7 @@ export function PersonForm({
           {activeTab === "details" ? (
             <>
               <Field label="Photo">
-                <div className="flex items-center gap-3">
+                <div className="mt-2 flex items-center gap-3">
                   <PersonAvatar
                     avatarUrl={avatarPreview}
                     name={person.name}

@@ -590,7 +590,7 @@ function PeoplePageContent() {
       {canManage && editing && (
         <Modal
           title={isNewPerson ? "Add Person" : "Edit Person"}
-          className="max-w-4xl"
+          className="max-w-[996px]"
           onClose={() => {
             setEditing(null);
             setIsNewPerson(false);
