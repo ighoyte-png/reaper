@@ -50,10 +50,10 @@ import {
 const PEOPLE_FILTER_DEFAULTS: { pod: string } = { pod: "all" };
 
 const actionIconClass =
-  "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--accent)] hover:bg-[var(--row-hover)]";
+  "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]";
 
 const mutedActionIconClass =
-  "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]";
+  "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]";
 
 const emptyPerson = (): Omit<Person, "organization_id"> => ({
   id: "",
