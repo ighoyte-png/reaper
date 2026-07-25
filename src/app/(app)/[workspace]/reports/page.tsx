@@ -12,9 +12,11 @@ import {
 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
+import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { buttonClass } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
+import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
@@ -682,58 +684,69 @@ function TasksOverview({
     open: number;
   };
 }) {
-  const total = Math.max(1, data.overdue + data.noDue + data.upcoming);
+  const slices: SchedulePieSlice[] = (
+    [
+      {
+        projectId: "overdue",
+        hours: data.overdue,
+        color: "var(--status-over)",
+        label: "Overdue",
+      },
+      {
+        projectId: "no-due",
+        hours: data.noDue,
+        color: "#94a3b8",
+        label: "No due date",
+      },
+      {
+        projectId: "upcoming",
+        hours: data.upcoming,
+        color: "var(--accent)",
+        label: "Upcoming",
+      },
+    ] as const
+  ).filter((s) => s.hours > 0);
+
+  const openMix = data.overdue + data.noDue + data.upcoming;
+
   return (
-    <div>
-      <div className="space-y-1">
-        <MetricRow
-          label="Overdue"
-          value={String(data.overdue)}
-          tone={data.overdue > 0 ? "over" : "healthy"}
-        />
-        <MetricRow label="No due date" value={String(data.noDue)} />
-        <MetricRow label="Open" value={String(data.open)} />
-      </div>
-      <div className="mt-2 flex h-3 overflow-hidden rounded-full bg-[var(--border)]">
-        {(
-          [
-            {
-              value: data.overdue,
-              className: "bg-[var(--status-over)]",
-              title: `Overdue: ${data.overdue}`,
-            },
-            {
-              value: data.noDue,
-              className: "bg-[var(--text-muted)]/40",
-              title: `No due date: ${data.noDue}`,
-            },
-            {
-              value: data.upcoming,
-              className: "bg-[var(--accent)]",
-              title: `Upcoming: ${data.upcoming}`,
-            },
-          ] as const
-        )
-          .map((s, i) => ({ ...s, i }))
-          .filter((s) => s.value > 0)
-          .map((s, idx, visible) => (
-            <div
-              key={s.i}
-              className={cn(
-                s.className,
-                visible.length === 1 && "rounded-full",
-                visible.length > 1 && idx === 0 && "rounded-l-full",
-                visible.length > 1 &&
-                  idx === visible.length - 1 &&
-                  "rounded-r-full",
-              )}
-              style={{ width: `${(s.value / total) * 100}%` }}
-              title={s.title}
+    <div className="space-y-3">
+      {openMix <= 0 ? (
+        <p className="text-sm text-[var(--text-muted)]">No open tasks.</p>
+      ) : (
+        <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2">
+          <div className="mx-auto aspect-square w-full max-w-[12rem] sm:max-w-none">
+            <SchedulePie
+              slices={slices}
+              totalHours={openMix}
+              centerValue={String(openMix)}
+              centerLabel="open"
+              centerScale={2}
+              className="!size-full max-w-none"
             />
-          ))}
-      </div>
-      <p className="mt-1.5 text-[11px] text-[var(--text-muted)]">
-        {data.complete} completed · open mix above
+          </div>
+          <ul className="min-w-0 space-y-1.5">
+            {slices.map((slice) => {
+              const pct =
+                openMix > 0 ? Math.round((slice.hours / openMix) * 100) : 0;
+              return (
+                <li key={slice.projectId}>
+                  <span className="flex items-center gap-2 text-sm">
+                    <ProjectColorBar color={slice.color} />
+                    <span className="min-w-0 flex-1 truncate">{slice.label}</span>
+                    <span className="shrink-0 tabular-nums text-xs text-[var(--text-muted)]">
+                      {slice.hours}
+                      <span className="ml-1 opacity-70">· {pct}%</span>
+                    </span>
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      <p className="text-[11px] text-[var(--text-muted)]">
+        {data.complete} completed
       </p>
     </div>
   );

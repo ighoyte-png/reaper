@@ -64,6 +64,7 @@ export function SchedulePie({
   showCenter = true,
   centerValue,
   centerLabel = "booked",
+  centerScale = 1,
 }: {
   slices: SchedulePieSlice[];
   totalHours: number;
@@ -75,6 +76,8 @@ export function SchedulePie({
   /** Override center primary text (defaults to formatted totalHours). */
   centerValue?: string;
   centerLabel?: string;
+  /** Scale center labels (e.g. 2 = double default size). */
+  centerScale?: 1 | 2;
 }) {
   const total = slices.reduce((s, x) => s + x.hours, 0);
   const size = 100;
@@ -101,6 +104,20 @@ export function SchedulePie({
   }
 
   const primary = centerValue ?? formatHours(totalHours);
+  const valueClass = compact
+    ? centerScale === 2
+      ? "text-[20px] leading-none"
+      : "text-[10px] leading-none"
+    : centerScale === 2
+      ? "text-2xl leading-none"
+      : "text-sm";
+  const labelClass = compact
+    ? centerScale === 2
+      ? "text-[14px] leading-none"
+      : "text-[7px] leading-none"
+    : centerScale === 2
+      ? "text-[20px] leading-tight"
+      : "text-[10px]";
 
   return (
     <div
@@ -145,17 +162,12 @@ export function SchedulePie({
             <span
               className={cn(
                 "font-semibold tabular-nums tracking-tight",
-                compact ? "text-[10px] leading-none" : "text-sm",
+                valueClass,
               )}
             >
               {primary}
             </span>
-            <span
-              className={cn(
-                "text-[var(--text-muted)]",
-                compact ? "text-[7px] leading-none" : "text-[10px]",
-              )}
-            >
+            <span className={cn("text-[var(--text-muted)]", labelClass)}>
               {centerLabel}
             </span>
           </>

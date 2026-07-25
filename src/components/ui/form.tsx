@@ -76,11 +76,15 @@ export function Modal({
   const mounted = useMounted();
   if (!mounted) return null;
 
+  // clsx doesn't dedupe Tailwind conflicts — omit default max-w when caller sets one.
+  const hasCustomMaxWidth = Boolean(className && /\bmax-w-/.test(className));
+
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div
         className={cn(
-          "max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-[var(--radius-md)]",
+          "max-h-[90dvh] w-full overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-[var(--radius-md)]",
+          !hasCustomMaxWidth && "max-w-lg",
           className,
         )}
       >

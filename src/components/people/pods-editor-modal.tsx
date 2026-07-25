@@ -152,7 +152,7 @@ export function PodsEditorModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="Edit Pods" onClose={onClose} className="max-w-[868px]">
+    <Modal title="Edit Pods" onClose={onClose} className="max-w-[650px]">
       <div className="flex min-h-[22rem] flex-col">
         <div className="flex min-h-0 flex-1 flex-col gap-3 sm:flex-row sm:gap-0">
           <nav
