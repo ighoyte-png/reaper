@@ -714,8 +714,8 @@ function TasksOverview({
       {openMix <= 0 ? (
         <p className="text-sm text-[var(--text-muted)]">No open tasks.</p>
       ) : (
-        <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2">
-          <div className="mx-auto aspect-square w-full max-w-[12rem] sm:max-w-none">
+        <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <div className="mx-auto aspect-square w-full max-w-[10rem] sm:max-w-none">
             <SchedulePie
               slices={slices}
               totalHours={openMix}
