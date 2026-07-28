@@ -103,25 +103,18 @@ export function MentionDesktopListener() {
           color: authorPerson ? personAvatarColor(authorPerson) : null,
         });
 
-        showDesktopNotification(authorName, {
+        const href =
+          project && task
+            ? projectHref(project, `task=${task.id}`)
+            : appHref("/dashboard");
+
+        void showDesktopNotification(authorName, {
           body: bodyParts.join("\n"),
           tag: `mention-comment-${commentId}`,
           icon,
+          href,
           onClick: () => {
-            const latest = stateRef.current;
-            const c =
-              latest.task_comments.find((x) => x.id === commentId) ?? comment;
-            const t = c
-              ? (latest.tasks.find((x) => x.id === c.task_id) ?? task)
-              : task;
-            const p = t
-              ? (latest.projects.find((x) => x.id === t.project_id) ?? project)
-              : project;
-            if (p && t) {
-              router.push(projectHref(p, `task=${t.id}`));
-            } else {
-              router.push(appHref("/dashboard"));
-            }
+            router.push(href);
           },
         });
       }
@@ -155,7 +148,13 @@ export function MentionDesktopListener() {
           avatarUrl: detail.authorAvatarUrl,
           color: detail.authorColor,
         });
-        showDesktopNotification(authorName, {
+        const project = stateRef.current.projects.find(
+          (p) => p.id === detail.projectId,
+        );
+        const href = project
+          ? projectHref(project, `task=${detail.taskId}`)
+          : appHref("/dashboard");
+        void showDesktopNotification(authorName, {
           body: [
             orgName,
             detail.taskTitle
@@ -164,15 +163,9 @@ export function MentionDesktopListener() {
           ].join("\n"),
           tag: `mention-task-${detail.taskId}`,
           icon,
+          href,
           onClick: () => {
-            const project = stateRef.current.projects.find(
-              (p) => p.id === detail.projectId,
-            );
-            if (project) {
-              router.push(projectHref(project, `task=${detail.taskId}`));
-            } else {
-              router.push(appHref("/dashboard"));
-            }
+            router.push(href);
           },
         });
       })();

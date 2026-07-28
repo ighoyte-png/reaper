@@ -1,7 +1,13 @@
--- Manual / CI checklist for migration 057 (run against a staging project).
--- Not executed automatically; documents the two-agency matrix.
-
--- Setup: create org A and org B with admin/manager/member each.
+-- Two-agency RLS matrix for migration 057.
+-- Prefer the automated runner (creates ephemeral orgs, asserts, cleans up):
+--
+--   npm run security:rls
+--
+-- Requires NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+-- and SUPABASE_SERVICE_ROLE_KEY (staging recommended).
+-- Set SECURITY_RLS_KEEP=1 to keep fixtures after a failure for debugging.
+--
+-- Manual equivalent (run against a staging project with org A / org B):
 -- As member of A:
 --   UPDATE profiles SET role = 'admin' WHERE id = auth.uid();           -- must fail
 --   UPDATE profiles SET organization_id = '<org-b>' WHERE id = auth.uid(); -- must fail

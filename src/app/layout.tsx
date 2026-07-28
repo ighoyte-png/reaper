@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { headers } from "next/headers";
 import { Geist_Mono } from "next/font/google";
 import { NavigationProgress } from "@/components/nav/navigation-progress";
+import { PwaProvider } from "@/components/pwa/pwa-provider";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { ThemeScript } from "@/components/theme/theme-script";
 import { ToastProvider } from "@/components/toast/toast-provider";
@@ -63,6 +64,7 @@ export default async function RootLayout({
               <Suspense fallback={null}>
                 <NavigationProgress />
               </Suspense>
+              <PwaProvider />
               {children}
             </ToastProvider>
           </DataProvider>

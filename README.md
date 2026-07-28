@@ -44,7 +44,7 @@ Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
 
 8. **Platform admin** (optional): set `PLATFORM_ADMIN_EMAILS` to your email(s), run [`039_platform_admin.sql`](supabase/migrations/039_platform_admin.sql). Create the user in Supabase **Authentication → Users** (email + password) — do **not** use Create workspace. In **Authentication → Users → user → App Metadata**, set `{ "platform_admin": true }` (or temporarily `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true`). Sign in on `/login`; you land on `/admin` with no personal workspace. **Enter** attaches you to a workspace when you need the full app.
 
-9. **Security hardening**: after pulling latest, apply [`057_security_hardening.sql`](supabase/migrations/057_security_hardening.sql). Run `npm run security:check` for share/HTML/URL self-checks. See [`supabase/tests/database/security_hardening_checklist.sql`](supabase/tests/database/security_hardening_checklist.sql) for the live two-agency RLS matrix.
+9. **Security hardening**: after pulling latest, apply [`057_security_hardening.sql`](supabase/migrations/057_security_hardening.sql). Run `npm run security:check` for share/HTML/URL self-checks. Run `npm run security:rls` against staging (needs service role) for the two-agency RLS matrix — see [`supabase/tests/database/security_hardening_checklist.sql`](supabase/tests/database/security_hardening_checklist.sql).
 
 With env vars set, the UI switches from local demo login to real Supabase auth and persists schedule/projects/people in Postgres.
 

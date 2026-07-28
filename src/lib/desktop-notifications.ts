@@ -1,4 +1,4 @@
-/** Browser desktop notifications for @mentions (projects comments / task notes). */
+/** Browser / PWA desktop notifications for @mentions. */
 
 export function desktopNotificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
@@ -37,6 +37,11 @@ function absoluteUrl(pathOrUrl: string): string {
   } catch {
     return pathOrUrl;
   }
+}
+
+/** Prefer PWA icon PNG over SVG for OS notification chrome / badge. */
+export function reaperNotificationBadgeUrl(): string {
+  return absoluteUrl("/pwa-icons/192");
 }
 
 function initialsFromName(name: string): string {
@@ -83,7 +88,7 @@ export async function notificationPortraitIcon(opts: {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
-  if (!ctx) return absoluteUrl("/reaper_logo.svg");
+  if (!ctx) return reaperNotificationBadgeUrl();
 
   const avatarUrl = opts.avatarUrl?.trim() || null;
   if (avatarUrl) {
@@ -114,7 +119,28 @@ export async function notificationPortraitIcon(opts: {
   return canvas.toDataURL("image/png");
 }
 
-export function showDesktopNotification(
+async function showViaServiceWorker(
+  title: string,
+  options: NotificationOptions,
+): Promise<boolean> {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+    return false;
+  }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (!reg?.showNotification) return false;
+    await reg.showNotification(title, options);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Show an OS notification. Prefers the service worker path so an *installed*
+ * PWA can brand the toast as Reaper; falls back to `new Notification`.
+ */
+export async function showDesktopNotification(
   title: string,
   opts?: {
     body?: string;
@@ -123,21 +149,41 @@ export function showDesktopNotification(
     icon?: string;
     /** Small badge (Android); falls back to Reaper mark. */
     badge?: string;
+    /** Path or URL opened on click (preferred for SW notifications). */
+    href?: string;
     onClick?: () => void;
   },
-): Notification | null {
-  if (!desktopNotificationsSupported()) return null;
-  if (Notification.permission !== "granted") return null;
+): Promise<void> {
+  if (!desktopNotificationsSupported()) return;
+  if (Notification.permission !== "granted") return;
+
+  const icon = opts?.icon
+    ? absoluteUrl(opts.icon)
+    : reaperNotificationBadgeUrl();
+  const badge = opts?.badge
+    ? absoluteUrl(opts.badge)
+    : reaperNotificationBadgeUrl();
+  const href = opts?.href ? absoluteUrl(opts.href) : absoluteUrl("/");
+
+  const swOptions: NotificationOptions = {
+    body: opts?.body,
+    tag: opts?.tag,
+    icon,
+    badge,
+    data: { href },
+  };
+
+  if (await showViaServiceWorker(title, swOptions)) {
+    return;
+  }
+
   try {
-    const icon = opts?.icon ? absoluteUrl(opts.icon) : absoluteUrl("/reaper_logo.svg");
-    const badge = opts?.badge
-      ? absoluteUrl(opts.badge)
-      : absoluteUrl("/reaper_logo.svg");
     const notification = new Notification(title, {
       body: opts?.body,
       tag: opts?.tag,
       icon,
       badge,
+      data: { href },
     });
     notification.onclick = () => {
       try {
@@ -145,12 +191,15 @@ export function showDesktopNotification(
       } catch {
         /* ignore */
       }
-      opts?.onClick?.();
+      if (opts?.onClick) {
+        opts.onClick();
+      } else if (opts?.href) {
+        window.location.assign(href);
+      }
       notification.close();
     };
-    return notification;
   } catch {
-    return null;
+    /* ignore */
   }
 }
 
