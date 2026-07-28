@@ -67,13 +67,19 @@ export function searchDemoState(
     });
   }
   clients.sort((a, b) => b.hit_rank - a.hit_rank || a.title.localeCompare(b.title));
+  const matchedClientHits = clients.slice(0, per);
+  const matchedClientIds = new Set(
+    matchedClientHits.map((c) => c.client_id).filter(Boolean) as string[],
+  );
 
   const projects: SearchHit[] = [];
+  const projectLim = Math.min(limit, 40);
   for (const p of state.projects) {
     const notes = notesPlainText(p.notes);
     const nameHit = matches(p.name, q);
     const notesHit = matches(notes, q);
-    if (!nameHit && !notesHit) continue;
+    const viaClient = Boolean(p.client_id && matchedClientIds.has(p.client_id));
+    if (!nameHit && !notesHit && !viaClient) continue;
     const client = p.client_id ? clientsById.get(p.client_id) : null;
     projects.push({
       kind: "project",
@@ -84,7 +90,8 @@ export function searchDemoState(
       project_id: p.id,
       task_id: null,
       client_id: p.client_id,
-      hit_rank: (nameHit ? 3 : 0) + (notesHit ? 1 : 0),
+      hit_rank:
+        (nameHit ? 3 : 0) + (notesHit ? 1 : 0) + (viaClient ? 2 : 0),
     });
   }
   projects.sort((a, b) => b.hit_rank - a.hit_rank || a.title.localeCompare(b.title));
@@ -131,8 +138,8 @@ export function searchDemoState(
   comments.sort((a, b) => b.hit_rank - a.hit_rank || a.title.localeCompare(b.title));
 
   return [
-    ...clients.slice(0, per),
-    ...projects.slice(0, per),
+    ...matchedClientHits,
+    ...projects.slice(0, projectLim),
     ...tasks.slice(0, per),
     ...comments.slice(0, per),
   ]
