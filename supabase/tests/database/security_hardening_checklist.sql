@@ -14,7 +14,15 @@
 --   UPDATE people SET cost_rate = 1 WHERE profile_id = auth.uid();      -- must fail
 --   UPDATE tasks SET title = 'x' WHERE id = '<roster-task>';            -- must fail
 --   UPDATE tasks SET status = 'complete' WHERE id = '<roster-task>';    -- must succeed if on roster
---   SELECT * FROM bulletins WHERE audience = 'people' AND NOT (current_person_id() = ANY(audience_person_ids));
+--   SELECT * FROM bulletins WHERE audience = 'people'
+--     AND NOT (current_person_id() = ANY(audience_person_ids))
+--     AND NOT EXISTS (
+--       SELECT 1 FROM pods p
+--       WHERE p.id = ANY(audience_pod_ids)
+--         AND (p.manager_person_id = current_person_id()
+--              OR EXISTS (SELECT 1 FROM pod_members pm
+--                         WHERE pm.pod_id = p.id AND pm.person_id = current_person_id()))
+--     );
 --     -- must return 0 rows for members
 -- Disable org A (set disabled_at): subsequent SELECT on projects must return 0 for that user.
 -- Insert assignment with organization_id = A and person_id from B: must fail same-org trigger.

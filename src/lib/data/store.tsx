@@ -268,6 +268,9 @@ function loadDemoState(): DemoState {
         audience_person_ids: Array.isArray(b.audience_person_ids)
           ? b.audience_person_ids
           : [],
+        audience_pod_ids: Array.isArray(b.audience_pod_ids)
+          ? b.audience_pod_ids
+          : [],
       })),
       unread_bulletin_ids: Array.isArray(parsed.unread_bulletin_ids)
         ? parsed.unread_bulletin_ids.filter(
@@ -3301,10 +3304,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           runRemoteSoft(async () => {
             await upsertBulletinRow(client, row);
             if (!isNew) return;
+            const audienceCtx = {
+              pods: state.pods,
+              podMembers: state.pod_members,
+            };
             const recipients = bulletinUnreadRecipientProfileIds(
               row,
               state.people,
               state.profiles,
+              audienceCtx,
             );
             const unreadRows = recipients.map((profile_id) => ({
               bulletin_id: row.id,
@@ -3319,6 +3327,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               row,
               state.people,
               state.profiles,
+              { pods: state.pods, podMembers: state.pod_members },
             );
             if (myId && recipients.includes(myId)) {
               patch((prev) =>
@@ -3339,6 +3348,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             row,
             state.people,
             state.profiles,
+            { pods: state.pods, podMembers: state.pod_members },
           );
           const myId = state.sessionProfileId;
           if (myId && recipients.includes(myId)) {

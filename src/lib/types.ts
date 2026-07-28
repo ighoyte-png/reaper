@@ -188,9 +188,10 @@ export interface Bulletin {
   title: string;
   body: string;
   pinned: boolean;
-  /** all = everyone; people = audience_person_ids only */
+  /** all = everyone; people = audience_person_ids and/or audience_pod_ids */
   audience: "all" | "people";
   audience_person_ids: string[];
+  audience_pod_ids: string[];
   created_by_profile_id: string | null;
   created_at: string;
 }

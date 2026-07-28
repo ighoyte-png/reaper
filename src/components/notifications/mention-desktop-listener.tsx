@@ -221,6 +221,8 @@ export function MentionDesktopListener() {
         if (
           !isUnreadBulletin(bulletin, personId, profile.id, unreadSet, {
             manageWithoutPerson,
+            pods: snap.pods,
+            podMembers: snap.pod_members,
           })
         ) {
           continue;

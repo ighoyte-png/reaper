@@ -72,6 +72,7 @@ import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
 import {
   defaultPeopleScopeForViewer,
   podsForPerson,
+  sortPods,
 } from "@/lib/domain/pods";
 import {
   expandAssignmentsInRange,
@@ -365,16 +366,26 @@ export default function DashboardPage() {
     pulseHighPriorityTasks.length;
 
   const bulletins = useMemo(() => {
+    const audienceCtx = {
+      pods: state.pods,
+      podMembers: state.pod_members,
+    };
     const filtered = showingAsManager
       ? state.bulletins
       : state.bulletins.filter((b) =>
-          bulletinVisibleToPerson(b, personalPersonId),
+          bulletinVisibleToPerson(b, personalPersonId, audienceCtx),
         );
     return [...filtered].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.created_at.localeCompare(a.created_at);
     });
-  }, [state.bulletins, showingAsManager, personalPersonId]);
+  }, [
+    state.bulletins,
+    state.pods,
+    state.pod_members,
+    showingAsManager,
+    personalPersonId,
+  ]);
 
   const atRisk = showOrgDashboard
     ? state.projects
@@ -657,19 +668,25 @@ export default function DashboardPage() {
 
   const unreadBulletinCount = useMemo(() => {
     if (!mentionPersonId && !manageWithoutPerson) return 0;
+    const audienceCtx = {
+      pods: state.pods,
+      podMembers: state.pod_members,
+    };
     return state.bulletins.filter((b) =>
       isUnreadBulletin(
         b,
         mentionPersonId,
         profile?.id ?? null,
         unreadBulletins,
-        { manageWithoutPerson },
+        { manageWithoutPerson, ...audienceCtx },
       ),
     ).length;
   }, [
     mentionPersonId,
     manageWithoutPerson,
     state.bulletins,
+    state.pods,
+    state.pod_members,
     profile?.id,
     unreadBulletins,
   ]);
@@ -765,6 +782,7 @@ export default function DashboardPage() {
               bulletins={bulletins}
               profiles={state.profiles}
               people={sortedPeople}
+              pods={state.pods}
               canEdit={effectiveCanManage && !isPublicShare}
               profileId={profile?.id ?? null}
               isUnread={(b) =>
@@ -773,7 +791,11 @@ export default function DashboardPage() {
                   mentionPersonId,
                   profile?.id ?? null,
                   unreadBulletins,
-                  { manageWithoutPerson },
+                  {
+                    manageWithoutPerson,
+                    pods: state.pods,
+                    podMembers: state.pod_members,
+                  },
                 )
               }
               unreadCount={unreadBulletinCount}
@@ -1852,6 +1874,7 @@ function emptyBulletin(id: string, profileId: string | null): BulletinDraft {
     pinned: false,
     audience: "all",
     audience_person_ids: [],
+    audience_pod_ids: [],
     created_by_profile_id: profileId,
     created_at: new Date().toISOString(),
   };
@@ -1861,6 +1884,7 @@ function BulletinBoard({
   bulletins,
   profiles,
   people,
+  pods,
   canEdit,
   profileId,
   isUnread,
@@ -1874,6 +1898,7 @@ function BulletinBoard({
   bulletins: Bulletin[];
   profiles: Profile[];
   people: Person[];
+  pods: Pod[];
   canEdit: boolean;
   profileId: string | null;
   isUnread?: (b: Bulletin) => boolean;
@@ -1887,6 +1912,21 @@ function BulletinBoard({
   const [editing, setEditing] = useState<BulletinDraft | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const visible = compact ? bulletins.slice(0, 4) : bulletins.slice(0, 8);
+  const sortedPodList = useMemo(() => sortPods(pods), [pods]);
+
+  function audienceSummary(b: Bulletin): string {
+    if (b.audience !== "people") return "Everyone";
+    const parts: string[] = [];
+    const podCount = b.audience_pod_ids?.length ?? 0;
+    const peopleCount = b.audience_person_ids.length;
+    if (podCount > 0) {
+      parts.push(`${podCount} pod${podCount === 1 ? "" : "s"}`);
+    }
+    if (peopleCount > 0) {
+      parts.push(`${peopleCount} ${peopleCount === 1 ? "person" : "people"}`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : "No recipients";
+  }
 
   return (
     <section className={panelClass()}>
@@ -1961,9 +2001,7 @@ function BulletinBoard({
                     <div className="mt-1 text-[11px] text-[var(--text-muted)]">
                       {b.created_at.slice(0, 10)}
                       {author ? ` · ${author.full_name}` : ""}
-                      {b.audience === "people"
-                        ? ` · ${b.audience_person_ids.length} people`
-                        : " · Everyone"}
+                      {` · ${audienceSummary(b)}`}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-start gap-1">
@@ -1993,6 +2031,7 @@ function BulletinBoard({
                               pinned: b.pinned,
                               audience: b.audience,
                               audience_person_ids: [...b.audience_person_ids],
+                              audience_pod_ids: [...(b.audience_pod_ids ?? [])],
                               created_by_profile_id: b.created_by_profile_id,
                               created_at: b.created_at,
                             })
@@ -2066,45 +2105,86 @@ function BulletinBoard({
                     audience,
                     audience_person_ids:
                       audience === "all" ? [] : editing.audience_person_ids,
+                    audience_pod_ids:
+                      audience === "all" ? [] : editing.audience_pod_ids,
                   });
                 }}
                 options={[
                   { value: "all", label: "All users" },
-                  { value: "people", label: "Selected people" },
+                  { value: "people", label: "Selected pods & people" },
                 ]}
               />
             </Field>
             {editing.audience === "people" ? (
-              <Field label="People">
-                <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-[var(--border)] p-2">
-                  {people.map((p) => {
-                    const checked = editing.audience_person_ids.includes(p.id);
-                    return (
-                      <label
-                        key={p.id}
-                        className="flex cursor-pointer items-center gap-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const ids = e.target.checked
-                              ? [...editing.audience_person_ids, p.id]
-                              : editing.audience_person_ids.filter(
-                                  (id) => id !== p.id,
-                                );
-                            setEditing({
-                              ...editing,
-                              audience_person_ids: ids,
-                            });
-                          }}
-                        />
-                        {p.name}
-                      </label>
-                    );
-                  })}
-                </div>
-              </Field>
+              <>
+                {sortedPodList.length > 0 ? (
+                  <Field label="Pods">
+                    <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-[var(--border)] p-2">
+                      {sortedPodList.map((pod) => {
+                        const checked = (
+                          editing.audience_pod_ids ?? []
+                        ).includes(pod.id);
+                        return (
+                          <label
+                            key={pod.id}
+                            className="flex cursor-pointer items-center gap-2 text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const ids = e.target.checked
+                                  ? [
+                                      ...(editing.audience_pod_ids ?? []),
+                                      pod.id,
+                                    ]
+                                  : (editing.audience_pod_ids ?? []).filter(
+                                      (id) => id !== pod.id,
+                                    );
+                                setEditing({
+                                  ...editing,
+                                  audience_pod_ids: ids,
+                                });
+                              }}
+                            />
+                            {pod.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </Field>
+                ) : null}
+                <Field label="People">
+                  <div className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-[var(--border)] p-2">
+                    {people.map((p) => {
+                      const checked = editing.audience_person_ids.includes(p.id);
+                      return (
+                        <label
+                          key={p.id}
+                          className="flex cursor-pointer items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const ids = e.target.checked
+                                ? [...editing.audience_person_ids, p.id]
+                                : editing.audience_person_ids.filter(
+                                    (id) => id !== p.id,
+                                  );
+                              setEditing({
+                                ...editing,
+                                audience_person_ids: ids,
+                              });
+                            }}
+                          />
+                          {p.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </Field>
+              </>
             ) : null}
             <div className="flex justify-end gap-2 pt-2">
               <Button
@@ -2121,13 +2201,15 @@ function BulletinBoard({
                   if (!editing.title.trim()) return;
                   if (
                     editing.audience === "people" &&
-                    editing.audience_person_ids.length === 0
+                    editing.audience_person_ids.length === 0 &&
+                    (editing.audience_pod_ids ?? []).length === 0
                   ) {
                     return;
                   }
                   onSave({
                     ...editing,
                     title: editing.title.trim(),
+                    audience_pod_ids: editing.audience_pod_ids ?? [],
                     created_by_profile_id:
                       editing.created_by_profile_id ?? profileId,
                   });

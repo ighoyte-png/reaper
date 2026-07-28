@@ -212,6 +212,9 @@ export function mapBulletin(row: Record<string, unknown>): Bulletin {
   const ids = Array.isArray(row.audience_person_ids)
     ? (row.audience_person_ids as unknown[]).map(String)
     : [];
+  const podIds = Array.isArray(row.audience_pod_ids)
+    ? (row.audience_pod_ids as unknown[]).map(String)
+    : [];
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -221,6 +224,7 @@ export function mapBulletin(row: Record<string, unknown>): Bulletin {
     pinned: Boolean(row.pinned),
     audience,
     audience_person_ids: ids,
+    audience_pod_ids: podIds,
     created_by_profile_id: row.created_by_profile_id
       ? String(row.created_by_profile_id)
       : null,
@@ -2503,20 +2507,37 @@ export async function upsertBulletinRow(
     pinned: bulletin.pinned,
     audience: bulletin.audience,
     audience_person_ids: bulletin.audience_person_ids,
+    audience_pod_ids: bulletin.audience_pod_ids,
     created_by_profile_id: bulletin.created_by_profile_id,
     created_at: bulletin.created_at,
   };
   const { error } = await supabase.from("bulletins").upsert(payload);
   if (!error) return;
 
+  const missingPods =
+    /Could not find the 'audience_pod_ids'/i.test(error.message) ||
+    (error.code === "PGRST204" && /audience_pod_ids/i.test(error.message));
+  if (missingPods) {
+    const { audience_pod_ids: _pods, ...withoutPods } = payload;
+    const retryPods = await supabase.from("bulletins").upsert(withoutPods);
+    if (!retryPods.error) {
+      console.warn(
+        "bulletins.audience_pod_ids missing — apply supabase/migrations/059_bulletin_audience_pods.sql",
+      );
+      return;
+    }
+  }
+
   const missingAudience =
     /Could not find the 'audience'/i.test(error.message) ||
     /audience_person_ids/i.test(error.message) ||
+    /audience_pod_ids/i.test(error.message) ||
     (error.code === "PGRST204" && /audience/i.test(error.message));
   if (missingAudience) {
     const {
       audience: _a,
       audience_person_ids: _ids,
+      audience_pod_ids: _pods,
       ...rest
     } = payload;
     const retry = await supabase.from("bulletins").upsert(rest);
@@ -2985,6 +3006,9 @@ export async function seedDemoWorkspace(
     pinned: b.pinned,
     audience: b.audience ?? "all",
     audience_person_ids: (b.audience_person_ids ?? []).map((pid) =>
+      remapId(ids, pid),
+    ),
+    audience_pod_ids: (b.audience_pod_ids ?? []).map((pid) =>
       remapId(ids, pid),
     ),
     // Demo authors are not real profiles in a fresh org — omit attribution.

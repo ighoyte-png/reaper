@@ -141,7 +141,11 @@ export function AppNavbar() {
         mentionPersonId,
         profile?.id ?? null,
         unreadBulletins,
-        { manageWithoutPerson },
+        {
+          manageWithoutPerson,
+          pods: state.pods,
+          podMembers: state.pod_members,
+        },
       ),
     );
   }, [
@@ -149,6 +153,8 @@ export function AppNavbar() {
     manageWithoutPerson,
     state.task_comments,
     state.bulletins,
+    state.pods,
+    state.pod_members,
     unreadMentions,
     unreadBulletins,
     profile?.id,
