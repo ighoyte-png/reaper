@@ -16,6 +16,10 @@ import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 /** Paths members cannot access — redirect here while Viewing As a member. */
 function isManageOnlyPath(pathname: string, workspaceSlug: string): boolean {
   const path = stripWorkspacePrefix(pathname, workspaceSlug);
+  // Members may open Tasks report as "My Tasks"; other reports stay manage-only.
+  if (path === "/reports/tasks" || path.startsWith("/reports/tasks/")) {
+    return false;
+  }
   return (
     path === "/reports" ||
     path.startsWith("/reports/") ||

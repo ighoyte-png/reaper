@@ -2,14 +2,17 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { addDays } from "date-fns";
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  CalendarClock,
   CalendarOff,
   CheckCircle2,
   ChevronDown,
+  X,
 } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
@@ -19,6 +22,7 @@ import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
+import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ExpandPanel } from "@/components/ui/expand-panel";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
@@ -27,8 +31,11 @@ import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { toDateKey } from "@/lib/domain/dates";
 import { dueDateToneClass, taskStatusLabel } from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
+import { useViewAs } from "@/lib/view-as";
 import { cn } from "@/lib/cn";
 import type { Client, Person, Project, Task } from "@/lib/types";
+
+const EMPTY_SECTION = "Huzzah! Nothing here to worry about!";
 
 type ProjectFilter = "all" | string;
 type SortKey =
@@ -153,6 +160,7 @@ function TaskTable({
   tasks,
   projectById,
   clientById,
+  clients,
   peopleById,
   projectHref,
   emptyLabel,
@@ -162,6 +170,7 @@ function TaskTable({
   tasks: Task[];
   projectById: Map<string, Project>;
   clientById: Map<string, Client>;
+  clients: Client[];
   peopleById: Map<string, Person>;
   projectHref: (project: Project, search?: string) => string;
   emptyLabel: string;
@@ -261,16 +270,29 @@ function TaskTable({
                 className="border-t border-[var(--border)] hover:bg-[var(--row-hover)]"
               >
                 <td className="px-3 py-2.5 font-medium">
-                  {project ? (
-                    <Link
-                      href={projectHref(project, `task=${task.id}`)}
-                      className="text-[var(--text)] hover:text-[var(--accent)] hover:underline"
-                    >
-                      {task.title}
-                    </Link>
-                  ) : (
-                    task.title
-                  )}
+                  <div className="flex items-start gap-2">
+                    <ProjectColorBar
+                      color={
+                        project
+                          ? projectDisplayColor(project, clients)
+                          : "var(--border)"
+                      }
+                      size="sm"
+                      className="mt-1"
+                    />
+                    <span className="min-w-0">
+                      {project ? (
+                        <Link
+                          href={projectHref(project, `task=${task.id}`)}
+                          className="text-[var(--text)] hover:text-[var(--accent)] hover:underline"
+                        >
+                          {task.title}
+                        </Link>
+                      ) : (
+                        task.title
+                      )}
+                    </span>
+                  </div>
                 </td>
                 <td className="px-3 py-2.5">
                   {project ? (
@@ -469,14 +491,29 @@ export default function TasksReportPage() {
 }
 
 function TasksReportContent() {
-  const { state, mode, ensureOrgTasks } = useData();
+  const { state, mode, ensureOrgTasks, myPerson } = useData();
+  const { effectiveCanManage, effectivePersonId, showingAsManager } =
+    useViewAs();
   const projectHref = useProjectHref();
-  const todayKey = toDateKey(new Date());
+  const today = useMemo(() => new Date(), []);
+  const todayKey = toDateKey(today);
+  const tomorrowKey = toDateKey(addDays(today, 1));
+  const dueSoonEndKey = toDateKey(addDays(today, 3));
   const { filters, setFilter, setFilters } = useUrlFilters({
     project: "",
     pm: "all",
+    mine: "0",
   });
   const projectFilter: ProjectFilter = filters.project || "all";
+  // Members (and View As member) force My Tasks. Org-wide public share stays All/PM.
+  const forceMyTasks = !effectiveCanManage && !showingAsManager;
+  const myTasksMode = forceMyTasks || filters.mine === "1";
+  const assigneePersonId = effectivePersonId ?? myPerson?.id ?? null;
+  const myTasksPerson =
+    (assigneePersonId
+      ? state.people.find((p) => p.id === assigneePersonId)
+      : null) ?? myPerson;
+  const showMyTasksChip = effectiveCanManage && Boolean(myTasksPerson);
   const [expandedClientIds, setExpandedClientIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -497,6 +534,14 @@ function TasksReportContent() {
     setFilter("project", next === "all" ? "" : next);
   }
 
+  function selectMyTasks(on: boolean) {
+    if (on) {
+      setFilters({ mine: "1", pm: "all" });
+      return;
+    }
+    setFilter("mine", "0");
+  }
+
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
     [state.projects],
@@ -514,13 +559,24 @@ function TasksReportContent() {
     [state.clients],
   );
 
+  // Tasks for count/sidebar: assignee-scoped when My Tasks is on.
+  const scopeBaseTasks = useMemo(() => {
+    if (!myTasksMode || !assigneePersonId) return state.tasks;
+    return state.tasks.filter((t) => t.assignee_person_id === assigneePersonId);
+  }, [state.tasks, myTasksMode, assigneePersonId]);
+
   const projectTaskCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const task of state.tasks) {
+    for (const task of scopeBaseTasks) {
       counts.set(task.project_id, (counts.get(task.project_id) ?? 0) + 1);
     }
     return counts;
-  }, [state.tasks]);
+  }, [scopeBaseTasks]);
+
+  const allowedProjectIds = useMemo(() => {
+    if (!myTasksMode) return null;
+    return new Set(projectTaskCounts.keys());
+  }, [myTasksMode, projectTaskCounts]);
 
   const projectsWithTasks = useMemo(() => {
     return state.projects
@@ -591,11 +647,21 @@ function TasksReportContent() {
     });
   }, [projectFilter, projectById]);
 
+  // Clear project filter if it falls outside assignee-scoped allowlist.
+  useEffect(() => {
+    if (!allowedProjectIds || !filters.project) return;
+    if (!allowedProjectIds.has(filters.project)) {
+      setFilters({ project: "" });
+    }
+  }, [allowedProjectIds, filters.project, setFilters]);
+
   // Same ≥2 assigned-PM gate as Projects / Budgets (org-wide assignments).
   const { managerTabs, managerFilter, setManagerFilter } =
     useProjectManagerFilter(state.projects, state.people, {
       value: filters.pm,
-      onChange: (next) => setFilter("pm", next),
+      onChange: (next) => {
+        setFilters({ pm: next, mine: next === "all" ? filters.mine : "0" });
+      },
     });
 
   function toggleClientExpanded(key: string) {
@@ -608,13 +674,14 @@ function TasksReportContent() {
   }
 
   const scopedTasks = useMemo(() => {
-    return state.tasks.filter((task) => {
+    return scopeBaseTasks.filter((task) => {
       const project = projectById.get(task.project_id);
       if (!project) return false;
       if (projectFilter !== "all" && task.project_id !== projectFilter) {
         return false;
       }
       if (
+        !myTasksMode &&
         managerFilter !== "all" &&
         project.manager_person_id !== managerFilter
       ) {
@@ -622,7 +689,13 @@ function TasksReportContent() {
       }
       return true;
     });
-  }, [state.tasks, projectById, projectFilter, managerFilter]);
+  }, [
+    scopeBaseTasks,
+    projectById,
+    projectFilter,
+    managerFilter,
+    myTasksMode,
+  ]);
 
   const overdueTasks = useMemo(
     () =>
@@ -630,6 +703,38 @@ function TasksReportContent() {
         (t) => t.status !== "complete" && t.due_date && t.due_date < todayKey,
       ),
     [scopedTasks, todayKey],
+  );
+
+  const dueTodayTasks = useMemo(
+    () =>
+      scopedTasks.filter(
+        (t) =>
+          t.status !== "complete" && t.due_date && t.due_date === todayKey,
+      ),
+    [scopedTasks, todayKey],
+  );
+
+  const dueTomorrowTasks = useMemo(
+    () =>
+      scopedTasks.filter(
+        (t) =>
+          t.status !== "complete" &&
+          t.due_date &&
+          t.due_date === tomorrowKey,
+      ),
+    [scopedTasks, tomorrowKey],
+  );
+
+  const dueSoonTasks = useMemo(
+    () =>
+      scopedTasks.filter(
+        (t) =>
+          t.status !== "complete" &&
+          t.due_date &&
+          t.due_date > tomorrowKey &&
+          t.due_date <= dueSoonEndKey,
+      ),
+    [scopedTasks, tomorrowKey, dueSoonEndKey],
   );
 
   const noDueDateTasks = useMemo(
@@ -646,12 +751,33 @@ function TasksReportContent() {
     [scopedTasks],
   );
 
+  const showPmBar =
+    (effectiveCanManage || showingAsManager) && managerTabs.length >= 2;
+  const showFilterRow = showMyTasksChip || showPmBar;
+
+  const tableProps = {
+    projectById,
+    clientById,
+    clients: state.clients,
+    peopleById,
+    projectHref,
+    todayKey,
+  };
+
   return (
     <PageContainer className="overflow-y-auto">
-      <PageHeader title={<ReportBreadcrumb current="Tasks" />} />
+      <PageHeader
+        title={
+          effectiveCanManage ? (
+            <ReportBreadcrumb current="Tasks" />
+          ) : (
+            "My Tasks"
+          )
+        }
+      />
       <div className="flex flex-col md:flex-row md:gap-5">
         <aside className="sticky top-3 mt-3 hidden max-h-[calc(100dvh-5.5rem)] w-64 shrink-0 flex-col self-start overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex">
-          <FavoritesSidebar />
+          <FavoritesSidebar projectIds={allowedProjectIds} />
           <div className="shrink-0 border-b border-[var(--border)] px-3 py-2">
             <p className="text-xs font-medium text-[var(--text-muted)]">
               Clients
@@ -661,7 +787,7 @@ function TasksReportContent() {
             <AllProjectsNavButton
               active={projectFilter === "all"}
               onClick={() => selectProjectFilter("all")}
-              count={state.tasks.length}
+              count={scopeBaseTasks.length}
             />
             {sidebarGroups.map((group) => {
               const expanded = expandedClientIds.has(group.key);
@@ -712,11 +838,64 @@ function TasksReportContent() {
             ))}
           </div>
 
-          <ProjectManagerFilterBar
-            managerTabs={managerTabs}
-            managerFilter={managerFilter}
-            onSelect={setManagerFilter}
-          />
+          {showFilterRow ? (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-stretch">
+              {showMyTasksChip && myTasksPerson ? (
+                <section
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
+                  aria-label="My Tasks"
+                >
+                  <h2 className="mb-3 text-sm font-semibold">My Tasks</h2>
+                  <ul className="flex flex-wrap gap-x-4 gap-y-2">
+                    <li>
+                      <div
+                        className={cn(
+                          "flex items-center gap-1 rounded-md border px-1.5 py-1 transition-colors",
+                          myTasksMode
+                            ? "border-[var(--text)] bg-[var(--bg-elevated)]"
+                            : "border-transparent hover:bg-[var(--row-hover)]",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={myTasksMode}
+                          onClick={() => selectMyTasks(true)}
+                          className="min-w-0 cursor-pointer text-left"
+                        >
+                          <ProjectManagerPerson person={myTasksPerson} />
+                        </button>
+                        {myTasksMode ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                            aria-label="Clear My Tasks filter"
+                            onClick={() => selectMyTasks(false)}
+                          >
+                            <X size={14} strokeWidth={2} />
+                          </button>
+                        ) : null}
+                      </div>
+                    </li>
+                  </ul>
+                </section>
+              ) : null}
+              {showMyTasksChip && showPmBar ? (
+                <div
+                  className="hidden w-px shrink-0 self-stretch bg-[var(--border)] sm:block"
+                  aria-hidden
+                />
+              ) : null}
+              {showPmBar ? (
+                <ProjectManagerFilterBar
+                  className="min-w-0 flex-1"
+                  managerTabs={managerTabs}
+                  managerFilter={myTasksMode ? "all" : managerFilter}
+                  onSelect={setManagerFilter}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
           <section>
             <div className="mb-3 flex items-center gap-2">
@@ -727,38 +906,97 @@ function TasksReportContent() {
               </h2>
             </div>
             <TaskTable
+              {...tableProps}
               tasks={overdueTasks}
-              projectById={projectById}
-              clientById={clientById}
-              peopleById={peopleById}
-              projectHref={projectHref}
-              emptyLabel="Nothing overdue — nice work."
-              todayKey={todayKey}
+              emptyLabel={EMPTY_SECTION}
               defaultSortKey="end"
             />
           </section>
 
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <CalendarOff size={14} className="text-[var(--text-muted)]" />
-              <h2 className="text-sm font-semibold">
-                No Due Date
-                {noDueDateTasks.length > 0
-                  ? ` (${noDueDateTasks.length})`
-                  : ""}
-              </h2>
-            </div>
-            <TaskTable
-              tasks={noDueDateTasks}
-              projectById={projectById}
-              clientById={clientById}
-              peopleById={peopleById}
-              projectHref={projectHref}
-              emptyLabel="Every open task has a due date."
-              todayKey={todayKey}
-              defaultSortKey="title"
-            />
-          </section>
+          {myTasksMode ? (
+            <>
+              <section>
+                <div className="mb-3 flex items-center gap-2">
+                  <CalendarClock
+                    size={14}
+                    className="text-[var(--text-muted)]"
+                  />
+                  <h2 className="text-sm font-semibold">
+                    Tasks Due Today
+                    {dueTodayTasks.length > 0
+                      ? ` (${dueTodayTasks.length})`
+                      : ""}
+                  </h2>
+                </div>
+                <TaskTable
+                  {...tableProps}
+                  tasks={dueTodayTasks}
+                  emptyLabel={EMPTY_SECTION}
+                  defaultSortKey="title"
+                />
+              </section>
+
+              <section>
+                <div className="mb-3 flex items-center gap-2">
+                  <CalendarClock
+                    size={14}
+                    className="text-[var(--text-muted)]"
+                  />
+                  <h2 className="text-sm font-semibold">
+                    Tasks Due Tomorrow
+                    {dueTomorrowTasks.length > 0
+                      ? ` (${dueTomorrowTasks.length})`
+                      : ""}
+                  </h2>
+                </div>
+                <TaskTable
+                  {...tableProps}
+                  tasks={dueTomorrowTasks}
+                  emptyLabel={EMPTY_SECTION}
+                  defaultSortKey="title"
+                />
+              </section>
+
+              <section>
+                <div className="mb-3 flex items-center gap-2">
+                  <CalendarClock
+                    size={14}
+                    className="text-[var(--text-muted)]"
+                  />
+                  <h2 className="text-sm font-semibold">
+                    Tasks Due Soon
+                    {dueSoonTasks.length > 0
+                      ? ` (${dueSoonTasks.length})`
+                      : ""}
+                  </h2>
+                </div>
+                <TaskTable
+                  {...tableProps}
+                  tasks={dueSoonTasks}
+                  emptyLabel={EMPTY_SECTION}
+                  defaultSortKey="end"
+                />
+              </section>
+            </>
+          ) : (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <CalendarOff size={14} className="text-[var(--text-muted)]" />
+                <h2 className="text-sm font-semibold">
+                  No Due Date
+                  {noDueDateTasks.length > 0
+                    ? ` (${noDueDateTasks.length})`
+                    : ""}
+                </h2>
+              </div>
+              <TaskTable
+                {...tableProps}
+                tasks={noDueDateTasks}
+                emptyLabel={EMPTY_SECTION}
+                defaultSortKey="title"
+              />
+            </section>
+          )}
 
           <section>
             <div className="mb-3 flex items-center gap-2">
@@ -769,13 +1007,9 @@ function TasksReportContent() {
               <h2 className="text-sm font-semibold">Recently Completed</h2>
             </div>
             <TaskTable
+              {...tableProps}
               tasks={recentlyCompleted}
-              projectById={projectById}
-              clientById={clientById}
-              peopleById={peopleById}
-              projectHref={projectHref}
-              emptyLabel="No completed tasks yet."
-              todayKey={todayKey}
+              emptyLabel={EMPTY_SECTION}
               defaultSortKey="end"
             />
           </section>

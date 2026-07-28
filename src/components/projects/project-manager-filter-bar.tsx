@@ -64,11 +64,13 @@ export function ProjectManagerFilterBar({
   managerFilter,
   onSelect,
   className,
+  title = "Project Manager (assigner)",
 }: {
   managerTabs: Person[];
   managerFilter: ManagerFilter;
   onSelect: (next: ManagerFilter) => void;
   className?: string;
+  title?: string;
 }) {
   if (managerTabs.length < 2) return null;
 
@@ -78,9 +80,9 @@ export function ProjectManagerFilterBar({
         "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
         className,
       )}
-      aria-label="Project managers"
+      aria-label={title}
     >
-      <h2 className="mb-3 text-sm font-semibold">Project Manager</h2>
+      <h2 className="mb-3 text-sm font-semibold">{title}</h2>
       <ul className="flex flex-wrap gap-x-4 gap-y-2">
         {managerTabs.map((person) => {
           const selected = managerFilter === person.id;

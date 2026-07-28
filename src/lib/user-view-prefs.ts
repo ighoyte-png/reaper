@@ -9,6 +9,7 @@ export type DefaultStartPage =
   | "/schedule"
   | "/projects"
   | "/reports"
+  | "/reports/tasks"
   | "/clients"
   | "/people";
 
@@ -129,7 +130,10 @@ export function startPageOptions(canManage: boolean): {
   label: string;
 }[] {
   return primaryNavLinks
-    .filter((l) => canManage || !l.manageOnly)
+    .filter((l) => {
+      if (l.memberOnly) return !canManage;
+      return canManage || !l.manageOnly;
+    })
     .map((l) => ({
       value: l.href as DefaultStartPage,
       label: l.label,

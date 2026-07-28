@@ -76,7 +76,10 @@ export function AppNavbar() {
     [state.unread_bulletin_ids],
   );
   const { open, setOpen, toggle } = useMobileNav();
-  const links = primaryNavLinks.filter((l) => effectiveCanManage || !l.manageOnly);
+  const links = primaryNavLinks.filter((l) => {
+    if (l.memberOnly) return !effectiveCanManage;
+    return effectiveCanManage || !l.manageOnly;
+  });
   const showSettings = !viewAsPersonId;
   const settingsActive =
     pathForNav === "/settings" || pathForNav.startsWith("/settings/");

@@ -19,30 +19,43 @@ import {
 } from "@/lib/hooks/use-app-href";
 
 /** Favorites list for client-filter sidebars (Projects / Budgets / Tasks). */
-export function FavoritesSidebar({ className }: { className?: string }) {
+export function FavoritesSidebar({
+  className,
+  projectIds,
+}: {
+  className?: string;
+  /** When set, only favorites in this set are shown. */
+  projectIds?: ReadonlySet<string> | null;
+}) {
   return (
     <Suspense fallback={null}>
-      <FavoritesSidebarInner className={className} />
+      <FavoritesSidebarInner className={className} projectIds={projectIds} />
     </Suspense>
   );
 }
 
-function FavoritesSidebarInner({ className }: { className?: string }) {
+function FavoritesSidebarInner({
+  className,
+  projectIds,
+}: {
+  className?: string;
+  projectIds?: ReadonlySet<string> | null;
+}) {
   const { state, profile, isPublicShare } = useData();
   const favoriteHref = useFavoriteProjectHref();
   const pathForNav = usePathForNav();
   const searchParams = useSearchParams();
   const tasksProjectParam = searchParams.get("project");
 
-  const favorites = useMemo(
-    () =>
-      orderedFavoriteProjects(
-        state.project_favorites,
-        state.projects,
-        profile?.id,
-      ),
-    [state.project_favorites, state.projects, profile?.id],
-  );
+  const favorites = useMemo(() => {
+    const all = orderedFavoriteProjects(
+      state.project_favorites,
+      state.projects,
+      profile?.id,
+    );
+    if (!projectIds) return all;
+    return all.filter((p) => projectIds.has(p.id));
+  }, [state.project_favorites, state.projects, profile?.id, projectIds]);
 
   if (isPublicShare || !profile || favorites.length === 0) return null;
 
