@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import { Star } from "lucide-react";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { cn } from "@/lib/cn";
@@ -27,25 +26,9 @@ export function FavoritesSidebar({
   /** When set, only favorites in this set are shown. */
   projectIds?: ReadonlySet<string> | null;
 }) {
-  return (
-    <Suspense fallback={null}>
-      <FavoritesSidebarInner className={className} projectIds={projectIds} />
-    </Suspense>
-  );
-}
-
-function FavoritesSidebarInner({
-  className,
-  projectIds,
-}: {
-  className?: string;
-  projectIds?: ReadonlySet<string> | null;
-}) {
   const { state, profile, isPublicShare } = useData();
   const favoriteHref = useFavoriteProjectHref();
   const pathForNav = usePathForNav();
-  const searchParams = useSearchParams();
-  const tasksProjectParam = searchParams.get("project");
 
   const favorites = useMemo(() => {
     const all = orderedFavoriteProjects(
@@ -80,7 +63,6 @@ function FavoritesSidebarInner({
             project,
             pathForNav,
             state.clients,
-            tasksProjectParam,
           );
           return (
             <Link

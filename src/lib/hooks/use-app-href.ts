@@ -4,11 +4,9 @@ import { usePathname } from "next/navigation";
 import { useData } from "@/lib/data/store";
 import {
   budgetRelativePath,
-  favoriteNavContext,
   normalizeAppPath,
   projectRelativePath,
   stripWorkspacePrefix,
-  tasksReportRelativePath,
   workspacePath,
 } from "@/lib/paths";
 import type { Client, Project } from "@/lib/types";
@@ -60,42 +58,21 @@ export function useBudgetHref(): (
 }
 
 /**
- * Favorite link target depends on where you are:
- * - Tasks report → that project's tasks filter
- * - Budgets report → that project's budget detail
- * - Elsewhere → project hub
+ * Favorite project links always go to the project hub (not Tasks/Budgets filters).
  */
 export function useFavoriteProjectHref(): (
   project: Pick<Project, "id" | "client_id" | "slug">,
 ) => string {
-  const appHref = useAppHref();
   const projectHref = useProjectHref();
-  const budgetHref = useBudgetHref();
-  const pathForNav = usePathForNav();
-  const context = favoriteNavContext(pathForNav);
-
-  return (project) => {
-    if (context === "tasks") return appHref(tasksReportRelativePath(project.id));
-    if (context === "budget") return budgetHref(project);
-    return projectHref(project);
-  };
+  return (project) => projectHref(project);
 }
 
-/** Whether a favorite matches the current project in the current nav context. */
+/** Whether a favorite matches the current project hub route. */
 export function isFavoriteProjectActive(
   project: Pick<Project, "id" | "client_id" | "slug">,
   pathForNav: string,
   clients: Pick<Client, "id" | "slug">[],
-  tasksProjectParam: string | null,
 ): boolean {
-  const context = favoriteNavContext(pathForNav);
-  if (context === "tasks") {
-    return tasksProjectParam === project.id;
-  }
-  if (context === "budget") {
-    const rel = budgetRelativePath(project, clients);
-    return pathForNav === rel || pathForNav.startsWith(`${rel}/`);
-  }
   const rel = projectRelativePath(project, clients);
   return pathForNav === rel || pathForNav.startsWith(`${rel}/`);
 }

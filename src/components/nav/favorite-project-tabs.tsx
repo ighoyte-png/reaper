@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import {
   Suspense,
   useEffect,
@@ -147,8 +146,6 @@ function FavoritesBottomNavInner() {
   const { state, profile, isPublicShare, reorderProjectFavorites } = useData();
   const favoriteHref = useFavoriteProjectHref();
   const pathForNav = usePathForNav();
-  const searchParams = useSearchParams();
-  const tasksProjectParam = searchParams.get("project");
   const [dragging, setDragging] = useState(false);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
@@ -269,7 +266,6 @@ function FavoritesBottomNavInner() {
                   project,
                   pathForNav,
                   state.clients,
-                  tasksProjectParam,
                 );
                 return (
                   <li key={project.id} className="shrink-0">

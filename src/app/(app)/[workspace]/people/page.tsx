@@ -6,7 +6,7 @@ import { Clock, Mail, Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { PersonForm } from "@/components/people/person-form";
+import { PersonForm, accessLabel } from "@/components/people/person-form";
 import { PodFilterBar } from "@/components/people/pod-filter-bar";
 import { PodsEditorModal } from "@/components/people/pods-editor-modal";
 import { ManagerTag } from "@/components/projects/project-manager-person";
@@ -385,6 +385,9 @@ function PeoplePageContent() {
       state.pods,
       state.pod_members,
     );
+    const linkedProfile = person.profile_id
+      ? state.profiles.find((p) => p.id === person.profile_id)
+      : undefined;
     return (
       <article
         key={person.id}
@@ -412,6 +415,11 @@ function PeoplePageContent() {
             {person.office ? (
               <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
                 {person.office}
+              </div>
+            ) : null}
+            {linkedProfile ? (
+              <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                {accessLabel(linkedProfile.role)}
               </div>
             ) : null}
           </div>

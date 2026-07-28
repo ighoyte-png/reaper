@@ -9,6 +9,7 @@ import {
   Mail,
   Pencil,
   Phone,
+  Search,
   User,
   type LucideIcon,
 } from "lucide-react";
@@ -39,7 +40,10 @@ import type { Client, ClientStatus, Project } from "@/lib/types";
 
 type StatusFilter = "active" | "archived" | "all";
 
-const CLIENT_FILTER_DEFAULTS: { status: string } = { status: "active" };
+const CLIENT_FILTER_DEFAULTS: { status: string; q: string } = {
+  status: "active",
+  q: "",
+};
 const VALID_CLIENT_STATUS = new Set<string>(["active", "archived", "all"]);
 
 function IconInput({
@@ -202,10 +206,14 @@ function ClientsPageContent() {
     hours: number;
     project: Omit<Project, "organization_id">;
   } | null>(null);
-  const { filters, setFilter, setFilters } = useUrlFilters(CLIENT_FILTER_DEFAULTS);
+  const { filters, setFilter, setFilters } = useUrlFilters(
+    CLIENT_FILTER_DEFAULTS,
+    { debounceMs: { q: 250 } },
+  );
   const statusFilter = (
     VALID_CLIENT_STATUS.has(filters.status) ? filters.status : "active"
   ) as StatusFilter;
+  const query = filters.q;
 
   useEffect(() => {
     if (!VALID_CLIENT_STATUS.has(filters.status)) {
@@ -216,9 +224,27 @@ function ClientsPageContent() {
   const clients = sortClientsByName(state.clients);
 
   const filteredClients = useMemo(() => {
-    if (statusFilter === "all") return clients;
-    return clients.filter((c) => (c.status ?? "active") === statusFilter);
-  }, [clients, statusFilter]);
+    const q = query.trim().toLowerCase();
+    return clients.filter((c) => {
+      if (statusFilter !== "all" && (c.status ?? "active") !== statusFilter) {
+        return false;
+      }
+      if (!q) return true;
+      const haystack = [
+        c.name,
+        c.status ?? "active",
+        c.notes ?? "",
+        c.contact_email ?? "",
+        c.contact_first_name ?? "",
+        c.contact_last_name ?? "",
+        c.contact_phone ?? "",
+        c.company_website ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [clients, statusFilter, query]);
 
   const archivedCount = clients.filter((c) => c.status === "archived").length;
   const projectCountByClient = useMemo(() => {
@@ -391,25 +417,42 @@ function ClientsPageContent() {
         }
       />
       <div className="py-3 sm:py-5">
-        <div className="mb-4 flex gap-1">
-          {(["active", "archived", "all"] as StatusFilter[]).map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFilter("status", f)}
-              className={cn(
-                "inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs capitalize transition-colors",
-                statusFilter === f
-                  ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
-                  : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
-              )}
-            >
-              {f}
-              {f === "archived" && archivedCount > 0
-                ? ` (${archivedCount})`
-                : ""}
-            </button>
-          ))}
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <label className="relative block w-full min-w-[12rem] max-w-xs sm:w-56">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setFilter("q", e.target.value)}
+              placeholder="Search…"
+              className={cn(inputClass, "h-8 pl-8 text-sm")}
+              aria-label="Search clients"
+            />
+          </label>
+          <div className="flex gap-1 overflow-x-auto">
+            {(["active", "archived", "all"] as StatusFilter[]).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter("status", f)}
+                className={cn(
+                  "inline-flex h-8 shrink-0 cursor-pointer items-center rounded-md border px-3 text-xs capitalize transition-colors",
+                  statusFilter === f
+                    ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                    : "border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
+                )}
+              >
+                {f}
+                {f === "archived" && archivedCount > 0
+                  ? ` (${archivedCount})`
+                  : ""}
+              </button>
+            ))}
+          </div>
         </div>
 
         {state.clients.length === 0 ? (
@@ -426,7 +469,9 @@ function ClientsPageContent() {
           )
         ) : filteredClients.length === 0 ? (
           <p className="py-16 text-center text-sm text-[var(--text-muted)]">
-            No {statusFilter} clients.
+            {query.trim()
+              ? "No clients match your search."
+              : `No ${statusFilter} clients.`}
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -439,13 +484,13 @@ function ClientsPageContent() {
                 <article
                   key={client.id}
                   className={cn(
-                    "flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+                    "flex gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
                     archived && "opacity-60",
                   )}
                 >
-                  <div className="mb-3 flex min-w-0 items-start gap-2">
-                    <ProjectColorBar color={client.color} className="mt-1" />
-                    <div className="min-w-0 flex-1">
+                  <ProjectColorBar color={client.color} size="stretch" />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <div className="mb-3 min-w-0">
                       <div className="truncate text-sm font-semibold leading-tight">
                         {client.name}
                       </div>
@@ -465,73 +510,73 @@ function ClientsPageContent() {
                         </span>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="mt-auto space-y-1.5 text-xs text-[var(--text-muted)]">
-                    {pocName ? (
-                      <ContactLine icon={User}>{pocName}</ContactLine>
-                    ) : null}
-                    {client.contact_email?.trim() ? (
-                      <ContactLine
-                        icon={Mail}
-                        href={`mailto:${client.contact_email.trim()}`}
-                      >
-                        {client.contact_email.trim()}
-                      </ContactLine>
-                    ) : null}
-                    {client.contact_phone?.trim() ? (
-                      <ContactLine
-                        icon={Phone}
-                        href={`tel:${client.contact_phone.trim()}`}
-                      >
-                        {client.contact_phone.trim()}
-                      </ContactLine>
-                    ) : null}
-                    {site ? (
-                      <ContactLine icon={Globe} href={site} external>
-                        {(client.company_website || site).replace(
-                          /^https?:\/\//i,
-                          "",
-                        )}
-                      </ContactLine>
-                    ) : null}
-                    {client.notes?.trim() ? (
-                      <p className="line-clamp-2 pt-0.5">{client.notes}</p>
-                    ) : null}
-                  </div>
-
-                  {canManage ? (
-                    <div className="mt-3 flex items-center justify-end gap-1 border-t border-[var(--border)] pt-2.5">
-                      <button
-                        type="button"
-                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                        onClick={() => toggleArchive(client)}
-                        aria-label={
-                          archived
-                            ? `Unarchive ${client.name}`
-                            : `Archive ${client.name}`
-                        }
-                        title={archived ? "Unarchive" : "Archive"}
-                      >
-                        {archived ? (
-                          <ArchiveRestore size={14} strokeWidth={1.75} />
-                        ) : (
-                          <Archive size={14} strokeWidth={1.75} />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                        onClick={() =>
-                          setEditing(normalizeClientContact(client))
-                        }
-                        aria-label={`Edit ${client.name}`}
-                        title="Edit"
-                      >
-                        <Pencil size={14} strokeWidth={1.75} />
-                      </button>
+                    <div className="mt-auto space-y-1.5 text-xs text-[var(--text-muted)]">
+                      {pocName ? (
+                        <ContactLine icon={User}>{pocName}</ContactLine>
+                      ) : null}
+                      {client.contact_email?.trim() ? (
+                        <ContactLine
+                          icon={Mail}
+                          href={`mailto:${client.contact_email.trim()}`}
+                        >
+                          {client.contact_email.trim()}
+                        </ContactLine>
+                      ) : null}
+                      {client.contact_phone?.trim() ? (
+                        <ContactLine
+                          icon={Phone}
+                          href={`tel:${client.contact_phone.trim()}`}
+                        >
+                          {client.contact_phone.trim()}
+                        </ContactLine>
+                      ) : null}
+                      {site ? (
+                        <ContactLine icon={Globe} href={site} external>
+                          {(client.company_website || site).replace(
+                            /^https?:\/\//i,
+                            "",
+                          )}
+                        </ContactLine>
+                      ) : null}
+                      {client.notes?.trim() ? (
+                        <p className="line-clamp-2 pt-0.5">{client.notes}</p>
+                      ) : null}
                     </div>
-                  ) : null}
+
+                    {canManage ? (
+                      <div className="mt-3 flex items-center justify-end gap-1 border-t border-[var(--border)] pt-2.5">
+                        <button
+                          type="button"
+                          className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                          onClick={() => toggleArchive(client)}
+                          aria-label={
+                            archived
+                              ? `Unarchive ${client.name}`
+                              : `Archive ${client.name}`
+                          }
+                          title={archived ? "Unarchive" : "Archive"}
+                        >
+                          {archived ? (
+                            <ArchiveRestore size={14} strokeWidth={1.75} />
+                          ) : (
+                            <Archive size={14} strokeWidth={1.75} />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                          onClick={() =>
+                            setEditing(normalizeClientContact(client))
+                          }
+                          aria-label={`Edit ${client.name}`}
+                          title="Edit"
+                        >
+                          <Pencil size={14} strokeWidth={1.75} />
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 </article>
               );
             })}

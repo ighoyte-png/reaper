@@ -29,6 +29,8 @@ function accessLabel(role: Role): string {
   }
 }
 
+export { accessLabel };
+
 export function PersonForm({
   person,
   isNew,
@@ -196,7 +198,7 @@ export function PersonForm({
                   }
                 />
               </Field>
-              <Field label="Office">
+              <Field label="City">
                 <input
                   className={inputClass}
                   value={person.office}

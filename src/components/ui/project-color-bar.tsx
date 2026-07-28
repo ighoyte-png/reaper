@@ -7,6 +7,8 @@ const SIZE_CLASS = {
   md: "h-3.5 w-1.5",
   /** Schedule person/project row marker */
   lg: "h-5 w-1.5",
+  /** Stretch to parent flex row height (client cards, etc.) */
+  stretch: "w-1.5 self-stretch",
 } as const;
 
 export type ProjectColorBarSize = keyof typeof SIZE_CLASS;
