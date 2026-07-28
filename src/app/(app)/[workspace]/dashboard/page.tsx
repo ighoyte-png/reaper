@@ -69,7 +69,10 @@ import {
 } from "@/lib/domain/dates";
 import { leaveBlockLabel } from "@/lib/domain/leave";
 import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
-import { defaultPeopleScopeForViewer } from "@/lib/domain/pods";
+import {
+  defaultPeopleScopeForViewer,
+  podsForPerson,
+} from "@/lib/domain/pods";
 import {
   expandAssignmentsInRange,
   occurrenceCoversDay,
@@ -83,6 +86,8 @@ import type {
   LeaveDay,
   LeaveKind,
   Person,
+  Pod,
+  PodMember,
   Profile,
   Project,
   Task,
@@ -90,9 +95,9 @@ import type {
 } from "@/lib/types";
 
 const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
-  { key: "today", label: "Due today" },
-  { key: "tomorrow", label: "Due tomorrow" },
-  { key: "three_days", label: "Due in 3 days" },
+  { key: "today", label: "Due Today" },
+  { key: "tomorrow", label: "Due Tomorrow" },
+  { key: "three_days", label: "Due Soon" },
   { key: "week", label: "Due this week" },
 ];
 
@@ -159,6 +164,10 @@ export default function DashboardPage() {
 
   /** Task Pulse + Today's Schedule: always the signed-in (or View As) person. */
   const personalPersonId = viewAsPerson?.id ?? myPerson?.id ?? null;
+
+  const myTasksHref = appHref(
+    effectiveCanManage ? "/reports/tasks?mine=1" : "/reports/tasks",
+  );
 
   useEffect(() => {
     if (mode !== "supabase") return;
@@ -748,6 +757,8 @@ export default function DashboardPage() {
               profile={profile}
               publicView={isPublicShare}
               organizationName={state.organization.name}
+              pods={state.pods}
+              podMembers={state.pod_members}
               viewAsControl={viewAsControl}
               showViewingAsHint={
                 Boolean(viewAsPerson) && (canManage || isPublicShare)
@@ -830,6 +841,7 @@ export default function DashboardPage() {
               peopleById={peopleById}
               showAssignee={isPublicShare}
               projectHref={projectHref}
+              viewAllHref={myTasksHref}
               compact
             />
           </div>
@@ -888,6 +900,7 @@ export default function DashboardPage() {
               <KpiCard
                 title="Overdue / Critical Tasks"
                 icon={AlertTriangle}
+                href={myTasksHref}
                 className={
                   pulseOverdueTasks.length > 0
                     ? "!border-0 bg-[var(--status-over)]/20"
@@ -981,26 +994,39 @@ function KpiCard({
   icon: Icon,
   children,
   className,
+  href,
 }: {
   title: string;
   icon: LucideIcon;
   children: ReactNode;
   className?: string;
+  href?: string;
 }) {
-  return (
-    <section
-      className={cn(
-        panelClass({ padded: false, className: "p-3" }),
-        className,
-      )}
-    >
+  const body = (
+    <>
       <h3 className="mb-2 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
         <Icon size={12} strokeWidth={1.75} className="shrink-0" aria-hidden />
         {title}
       </h3>
       <div className="space-y-2">{children}</div>
-    </section>
+    </>
   );
+
+  const shellClass = cn(
+    panelClass({ padded: false, className: "p-3" }),
+    href && "transition-colors hover:bg-[var(--row-hover)]",
+    className,
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={cn(shellClass, "block")}>
+        {body}
+      </Link>
+    );
+  }
+
+  return <section className={shellClass}>{body}</section>;
 }
 
 function ActiveProjectsHealthCard({
@@ -1273,6 +1299,8 @@ function DashboardIdentityCard({
   profile,
   publicView = false,
   organizationName,
+  pods,
+  podMembers,
   viewAsControl,
   showViewingAsHint,
 }: {
@@ -1281,6 +1309,8 @@ function DashboardIdentityCard({
   profile: Profile | null;
   publicView?: boolean;
   organizationName?: string;
+  pods: Pod[];
+  podMembers: PodMember[];
   viewAsControl: ReactNode;
   showViewingAsHint?: boolean;
 }) {
@@ -1300,6 +1330,9 @@ function DashboardIdentityCard({
         : profile?.role
           ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1)
           : null;
+  const personPods = identityPerson
+    ? podsForPerson(identityPerson.id, pods, podMembers)
+    : [];
   const showIdentity = Boolean(
     identityPerson || profile || viewAsControl || isPublicIdentity,
   );
@@ -1307,7 +1340,7 @@ function DashboardIdentityCard({
 
   return (
     <section className={panelClass()}>
-      <div className="flex flex-col items-start gap-3">
+      <div className="flex items-start gap-3">
         <PersonAvatar
           avatarUrl={isPublicIdentity ? null : identityPerson?.avatar_url}
           name={displayName}
@@ -1318,11 +1351,21 @@ function DashboardIdentityCard({
               : null
           }
         />
-        <div className="w-full min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold">{displayName}</div>
           {displayTitle ? (
-            <div className="text-xs text-[var(--text-muted)]">
+            <div className="mt-0.5 text-xs text-[var(--text-muted)]">
               {displayTitle}
+            </div>
+          ) : null}
+          {!isPublicIdentity && identityPerson?.office ? (
+            <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+              {identityPerson.office}
+            </div>
+          ) : null}
+          {!isPublicIdentity && personPods.length > 0 ? (
+            <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Pod: {personPods.map((p) => p.name).join(", ")}
             </div>
           ) : null}
           {isPublicIdentity ? (
@@ -1726,6 +1769,7 @@ function TaskPulse({
   peopleById,
   showAssignee,
   projectHref,
+  viewAllHref,
   compact = false,
 }: {
   overdue: Task[];
@@ -1737,6 +1781,7 @@ function TaskPulse({
   peopleById: Map<string, Person>;
   showAssignee?: boolean;
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
+  viewAllHref: string;
   compact?: boolean;
 }) {
   function row(task: Task, overdueRow: boolean) {
@@ -1767,19 +1812,27 @@ function TaskPulse({
 
   return (
     <section className={panelClass()}>
-      <div className="mb-3 flex items-center gap-2">
-        <Pin
-          size={14}
-          strokeWidth={1.75}
-          className="shrink-0 text-[var(--text-muted)]"
-          aria-hidden
-        />
-        <h2 className="text-sm font-semibold">Task Pulse</h2>
-        {total > 0 ? (
-          <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
-            {total}
-          </span>
-        ) : null}
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Pin
+            size={14}
+            strokeWidth={1.75}
+            className="shrink-0 text-[var(--text-muted)]"
+            aria-hidden
+          />
+          <h2 className="text-sm font-semibold">Task Pulse</h2>
+          {total > 0 ? (
+            <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
+              {total}
+            </span>
+          ) : null}
+        </div>
+        <Link
+          href={viewAllHref}
+          className={buttonClass({ variant: "secondary", size: "sm" })}
+        >
+          View All
+        </Link>
       </div>
       {total === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
