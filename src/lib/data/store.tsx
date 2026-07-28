@@ -2875,8 +2875,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const newLeaves: LeaveDay[] = [];
           const upsertMap = new Map<string, Assignment>();
           const deleteSet = new Set<string>();
-          const leaveByPersonDate = new Map(
-            leave_days.map((l) => [`${l.person_id}|${l.date}`, l] as const),
+          const leaveByPersonDate = new Map<string, LeaveDay>(
+            leave_days.map((l) => [`${l.person_id}|${l.date}`, l]),
           );
 
           function applyTrim(personId: string, date: string) {
