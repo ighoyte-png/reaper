@@ -15,6 +15,8 @@ import {
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ProjectForm } from "@/components/projects/project-form";
+import { applyProjectManagerScheduleTime } from "@/components/projects/apply-pm-schedule";
+import { PmSchedulePromptModal } from "@/components/projects/pm-schedule-prompt-modal";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
@@ -27,6 +29,10 @@ import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
+import {
+  findPmProjectAssignments,
+  resolvePmScheduleIntent,
+} from "@/lib/domain/project-manager-schedule";
 import { sortClientsByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Client, ClientStatus, Project } from "@/lib/types";
@@ -163,6 +169,9 @@ function ClientsPageContent() {
     upsertProject,
     setProjectMembers,
     applyProjectTemplate,
+    upsertAssignment,
+    deleteAssignment,
+    ensureScheduleRange,
     newId,
     isPublicShare,
   } = useData();
@@ -187,6 +196,12 @@ function ClientsPageContent() {
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [createTemplateId, setCreateTemplateId] = useState("");
   const [pendingCreateApply, setPendingCreateApply] = useState(false);
+  const [pmDailyHours, setPmDailyHours] = useState<number | null>(null);
+  const [pmPrompt, setPmPrompt] = useState<{
+    kind: "overwrite" | "align";
+    hours: number;
+    project: Omit<Project, "organization_id">;
+  } | null>(null);
   const { filters, setFilter, setFilters } = useUrlFilters(CLIENT_FILTER_DEFAULTS);
   const statusFilter = (
     VALID_CLIENT_STATUS.has(filters.status) ? filters.status : "active"
@@ -255,7 +270,34 @@ function ClientsPageContent() {
     setMemberIds([]);
     setCreateTemplateId("");
     setPendingCreateApply(false);
+    setPmDailyHours(null);
     setProjectDraft(emptyProject(newId("proj"), clientId));
+  }
+
+  async function applyPmSchedule(
+    project: Omit<Project, "organization_id">,
+    hours: number,
+  ) {
+    if (!project.manager_person_id || !project.start_date || !project.end_date) {
+      return;
+    }
+    const result = await applyProjectManagerScheduleTime({
+      organizationId: state.organization.id,
+      projectId: project.id,
+      managerPersonId: project.manager_person_id,
+      startDate: project.start_date,
+      endDate: project.end_date,
+      hoursPerDay: hours,
+      assignments: state.assignments,
+      leaveDays: state.leave_days,
+      newId,
+      upsertAssignment,
+      deleteAssignment,
+      ensureScheduleRange,
+    });
+    if (!result.created && result.reason) {
+      push(result.reason, "warning");
+    }
   }
 
   async function saveFollowUpProject(
@@ -279,9 +321,51 @@ function ClientsPageContent() {
       if (templateToApply) {
         await applyProjectTemplate(saved.id, templateToApply);
       }
-      setProjectDraft(null);
-      setMemberIds([]);
-      setCreateTemplateId("");
+
+      const managerId = project.manager_person_id;
+      const existing = managerId
+        ? findPmProjectAssignments(state.assignments, managerId, saved.id)
+        : [];
+      const hoursForIntent =
+        pmDailyHours != null && pmDailyHours > 0 ? pmDailyHours : null;
+      const intent = resolvePmScheduleIntent({
+        pmDailyHours: hoursForIntent,
+        managerPersonId: managerId,
+        startDate: project.start_date,
+        endDate: project.end_date,
+        existing,
+        datesChanged: false,
+      });
+
+      const finish = () => {
+        setProjectDraft(null);
+        setMemberIds([]);
+        setCreateTemplateId("");
+        setPmDailyHours(null);
+      };
+
+      if (intent.kind === "need_dates") {
+        push(
+          "Set start and completion dates to book project manager schedule time",
+          "warning",
+        );
+      } else if (intent.kind === "overwrite" || intent.kind === "align") {
+        finish();
+        setPmPrompt({
+          kind: intent.kind,
+          hours: intent.hours,
+          project: { ...project, id: saved.id },
+        });
+        push(
+          templateToApply ? "Project created from template" : "Project saved",
+        );
+        router.push(projectHref(saved));
+        return;
+      } else if (intent.kind === "create") {
+        await applyPmSchedule({ ...project, id: saved.id }, intent.hours);
+      }
+
+      finish();
       push(
         templateToApply ? "Project created from template" : "Project saved",
       );
@@ -712,9 +796,13 @@ function ClientsPageContent() {
             project={projectDraft}
             clients={state.clients}
             people={state.people}
+            pods={state.pods}
+            podMembers={state.pod_members}
             memberIds={memberIds}
             onMemberIdsChange={setMemberIds}
             onChange={setProjectDraft}
+            pmDailyHours={pmDailyHours}
+            onPmDailyHoursChange={setPmDailyHours}
             showTemplateSelect
             templates={state.project_templates}
             templateId={createTemplateId}
@@ -749,6 +837,7 @@ function ClientsPageContent() {
               setMemberIds([]);
               setCreateTemplateId("");
               setPendingCreateApply(false);
+              setPmDailyHours(null);
             }}
           />
         </Modal>
@@ -763,6 +852,19 @@ function ClientsPageContent() {
             const templateToApply = createTemplateId;
             setPendingCreateApply(false);
             void saveFollowUpProject(projectDraft, memberIds, templateToApply);
+          }}
+        />
+      ) : null}
+
+      {pmPrompt ? (
+        <PmSchedulePromptModal
+          kind={pmPrompt.kind}
+          onSkip={() => setPmPrompt(null)}
+          onConfirm={async () => {
+            const pending = pmPrompt;
+            setPmPrompt(null);
+            await applyPmSchedule(pending.project, pending.hours);
+            push("Project manager schedule updated");
           }}
         />
       ) : null}

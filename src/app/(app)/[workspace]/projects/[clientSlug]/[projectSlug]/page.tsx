@@ -23,6 +23,8 @@ import {
 } from "@/components/templates/apply-template-dialog";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { ProjectForm } from "@/components/projects/project-form";
+import { applyProjectManagerScheduleTime } from "@/components/projects/apply-pm-schedule";
+import { PmSchedulePromptModal } from "@/components/projects/pm-schedule-prompt-modal";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useViewAs } from "@/lib/view-as";
@@ -37,6 +39,12 @@ import {
   showProjectManagerUi,
 } from "@/lib/domain/project-access";
 import { isProjectFavorited } from "@/lib/domain/project-favorites";
+import {
+  existingPmDailyHours,
+  findPmProjectAssignments,
+  projectTimelineDatesChanged,
+  resolvePmScheduleIntent,
+} from "@/lib/domain/project-manager-schedule";
 import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sorting";
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
@@ -82,6 +90,9 @@ export default function ProjectDetailPage() {
     exportProjectAsTemplate,
     updateProjectShare,
     toggleProjectFavorite,
+    upsertAssignment,
+    deleteAssignment,
+    ensureScheduleRange,
     newId,
     isPublicShare,
     profile,
@@ -99,6 +110,16 @@ export default function ProjectDetailPage() {
     null,
   );
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [pmDailyHours, setPmDailyHours] = useState<number | null>(null);
+  const [pmBaselineDates, setPmBaselineDates] = useState<{
+    start_date: string | null;
+    end_date: string | null;
+  } | null>(null);
+  const [pmPrompt, setPmPrompt] = useState<{
+    kind: "overwrite" | "align";
+    hours: number;
+    project: Omit<Project, "organization_id">;
+  } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [templateId, setTemplateId] = useState("");
   const [exportName, setExportName] = useState("");
@@ -327,6 +348,19 @@ export default function ProjectDetailPage() {
                     state.project_members
                       .filter((m) => m.project_id === project.id)
                       .map((m) => m.person_id),
+                  );
+                  setPmBaselineDates({
+                    start_date: project.start_date,
+                    end_date: project.end_date,
+                  });
+                  setPmDailyHours(
+                    project.manager_person_id
+                      ? existingPmDailyHours(
+                          state.assignments,
+                          project.manager_person_id,
+                          project.id,
+                        )
+                      : null,
                   );
                   setEditing(true);
                 }}
@@ -758,15 +792,21 @@ export default function ProjectDetailPage() {
             setEditing(false);
             setDraft(null);
             setMemberIds([]);
+            setPmDailyHours(null);
+            setPmBaselineDates(null);
           }}
         >
           <ProjectForm
             project={draft}
             clients={state.clients}
             people={state.people}
+            pods={state.pods}
+            podMembers={state.pod_members}
             memberIds={memberIds}
             onMemberIdsChange={setMemberIds}
             onChange={setDraft}
+            pmDailyHours={pmDailyHours}
+            onPmDailyHoursChange={setPmDailyHours}
             onSave={async () => {
               if (!draft.name.trim()) return;
               if (!draft.client_id) {
@@ -786,9 +826,91 @@ export default function ProjectDetailPage() {
                       : false,
                 });
                 await setProjectMembers(draft.id, memberIds);
-                setEditing(false);
-                setDraft(null);
-                setMemberIds([]);
+
+                const managerId = draft.manager_person_id;
+                const existing = managerId
+                  ? findPmProjectAssignments(
+                      state.assignments,
+                      managerId,
+                      draft.id,
+                    )
+                  : [];
+                const hoursForIntent =
+                  pmDailyHours != null && pmDailyHours > 0
+                    ? pmDailyHours
+                    : null;
+                const intent = resolvePmScheduleIntent({
+                  pmDailyHours: hoursForIntent,
+                  managerPersonId: managerId,
+                  startDate: draft.start_date,
+                  endDate: draft.end_date,
+                  existing,
+                  datesChanged: projectTimelineDatesChanged(
+                    pmBaselineDates,
+                    draft,
+                  ),
+                });
+
+                const closeEdit = () => {
+                  setEditing(false);
+                  setDraft(null);
+                  setMemberIds([]);
+                  setPmDailyHours(null);
+                  setPmBaselineDates(null);
+                };
+
+                const applyPm = async (hours: number) => {
+                  if (
+                    !draft.manager_person_id ||
+                    !draft.start_date ||
+                    !draft.end_date
+                  ) {
+                    return;
+                  }
+                  const result = await applyProjectManagerScheduleTime({
+                    organizationId: state.organization.id,
+                    projectId: draft.id,
+                    managerPersonId: draft.manager_person_id,
+                    startDate: draft.start_date,
+                    endDate: draft.end_date,
+                    hoursPerDay: hours,
+                    assignments: state.assignments,
+                    leaveDays: state.leave_days,
+                    newId,
+                    upsertAssignment,
+                    deleteAssignment,
+                    ensureScheduleRange,
+                  });
+                  if (!result.created && result.reason) {
+                    push(result.reason, "warning");
+                  }
+                };
+
+                if (intent.kind === "need_dates") {
+                  push(
+                    "Set start and completion dates to book project manager schedule time",
+                    "warning",
+                  );
+                  closeEdit();
+                  push("Project saved");
+                  router.replace(projectHref(saved));
+                  return;
+                }
+                if (intent.kind === "overwrite" || intent.kind === "align") {
+                  closeEdit();
+                  setPmPrompt({
+                    kind: intent.kind,
+                    hours: intent.hours,
+                    project: draft,
+                  });
+                  push("Project saved");
+                  router.replace(projectHref(saved));
+                  return;
+                }
+                if (intent.kind === "create") {
+                  await applyPm(intent.hours);
+                }
+                closeEdit();
                 push("Project saved");
                 router.replace(projectHref(saved));
               } catch (err) {
@@ -802,11 +924,50 @@ export default function ProjectDetailPage() {
               setEditing(false);
               setDraft(null);
               setMemberIds([]);
+              setPmDailyHours(null);
+              setPmBaselineDates(null);
             }}
             onDelete={() => setConfirmDelete(true)}
           />
         </Modal>
       )}
+
+      {pmPrompt ? (
+        <PmSchedulePromptModal
+          kind={pmPrompt.kind}
+          onSkip={() => setPmPrompt(null)}
+          onConfirm={async () => {
+            const pending = pmPrompt;
+            setPmPrompt(null);
+            if (
+              !pending.project.manager_person_id ||
+              !pending.project.start_date ||
+              !pending.project.end_date
+            ) {
+              return;
+            }
+            const result = await applyProjectManagerScheduleTime({
+              organizationId: state.organization.id,
+              projectId: pending.project.id,
+              managerPersonId: pending.project.manager_person_id,
+              startDate: pending.project.start_date,
+              endDate: pending.project.end_date,
+              hoursPerDay: pending.hours,
+              assignments: state.assignments,
+              leaveDays: state.leave_days,
+              newId,
+              upsertAssignment,
+              deleteAssignment,
+              ensureScheduleRange,
+            });
+            if (!result.created && result.reason) {
+              push(result.reason, "warning");
+            } else {
+              push("Project manager schedule updated");
+            }
+          }}
+        />
+      ) : null}
 
       {canEdit && editingMilestone && (
         <Modal

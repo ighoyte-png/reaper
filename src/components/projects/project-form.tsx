@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Field, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
+import {
+  PodFilterBar,
+  usePodFilter,
+} from "@/components/people/pod-filter-bar";
 import { cn } from "@/lib/cn";
+import { filterPeopleByPod } from "@/lib/domain/pods";
+import { roundAssignmentHours } from "@/lib/domain/budget";
 import type {
   BudgetMode,
   Person,
+  Pod,
+  PodMember,
   Project,
   ProjectStatus,
   ProjectTemplate,
@@ -27,6 +35,8 @@ export function ProjectForm({
   project,
   clients,
   people,
+  pods = [],
+  podMembers = [],
   memberIds,
   onMemberIdsChange,
   onChange,
@@ -37,10 +47,14 @@ export function ProjectForm({
   templateId = "",
   onTemplateIdChange,
   showTemplateSelect = false,
+  pmDailyHours,
+  onPmDailyHoursChange,
 }: {
   project: Omit<Project, "organization_id">;
   clients: { id: string; name: string; color?: string }[];
   people: Person[];
+  pods?: Pod[];
+  podMembers?: PodMember[];
   memberIds: string[];
   onMemberIdsChange: (ids: string[]) => void;
   onChange: (p: Omit<Project, "organization_id">) => void;
@@ -52,17 +66,33 @@ export function ProjectForm({
   onTemplateIdChange?: (id: string) => void;
   /** When true, show optional template picker (new projects only). */
   showTemplateSelect?: boolean;
+  /** Optional PM daily hours for schedule booking (null/undefined = blank). */
+  pmDailyHours?: number | null;
+  onPmDailyHoursChange?: (hours: number | null) => void;
 }) {
   const [tab, setTab] = useState<TabId>("details");
+  const { showPods, podTabs, podFilter, setPodFilter } = usePodFilter(pods);
   const clientsSorted = [...clients].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
   const peopleSorted = [...people].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
+  const teamPeople = useMemo(() => {
+    const filtered = filterPeopleByPod(
+      peopleSorted,
+      pods,
+      podMembers,
+      podFilter,
+    );
+    return filtered;
+  }, [peopleSorted, pods, podMembers, podFilter]);
   const templatesSorted = [...templates].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
+
+  const showPmHours =
+    Boolean(project.manager_person_id) && Boolean(onPmDailyHoursChange);
 
   function setMode(mode: BudgetMode) {
     onChange({
@@ -219,13 +249,24 @@ export function ProjectForm({
           {tab === "team" ? (
             <>
               <Field label="Team members">
+                {showPods ? (
+                  <PodFilterBar
+                    pods={podTabs}
+                    podFilter={podFilter}
+                    onSelect={setPodFilter}
+                    className="mb-2"
+                    allLabel="All people"
+                  />
+                ) : null}
                 <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-md border border-[var(--border)] p-2">
-                  {peopleSorted.length === 0 ? (
+                  {teamPeople.length === 0 ? (
                     <p className="text-xs text-[var(--text-muted)]">
-                      Add people in the directory first.
+                      {peopleSorted.length === 0
+                        ? "Add people in the directory first."
+                        : "No people in this pod."}
                     </p>
                   ) : (
-                    peopleSorted.map((p) => {
+                    teamPeople.map((p) => {
                       const checked = memberIds.includes(p.id);
                       return (
                         <label
@@ -283,31 +324,68 @@ export function ProjectForm({
           ) : null}
 
           {tab === "timeline" ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Start date">
-                <DateInput
-                  className={inputClass}
-                  value={project.start_date ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      ...project,
-                      start_date: e.target.value || null,
-                    })
-                  }
-                />
-              </Field>
-              <Field label="Completion date">
-                <DateInput
-                  className={inputClass}
-                  value={project.end_date ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      ...project,
-                      end_date: e.target.value || null,
-                    })
-                  }
-                />
-              </Field>
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Start date">
+                  <DateInput
+                    className={inputClass}
+                    value={project.start_date ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...project,
+                        start_date: e.target.value || null,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Completion date">
+                  <DateInput
+                    className={inputClass}
+                    value={project.end_date ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...project,
+                        end_date: e.target.value || null,
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+              {showPmHours ? (
+                <Field label="Project manager daily hours (optional)">
+                  <input
+                    type="number"
+                    min={0.01}
+                    step={0.01}
+                    className={inputClass}
+                    value={pmDailyHours ?? ""}
+                    placeholder="e.g. 1"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        onPmDailyHoursChange?.(null);
+                        return;
+                      }
+                      onPmDailyHoursChange?.(Number(raw) || 0);
+                    }}
+                    onBlur={() => {
+                      if (pmDailyHours == null || pmDailyHours <= 0) {
+                        onPmDailyHoursChange?.(null);
+                        return;
+                      }
+                      onPmDailyHoursChange?.(
+                        Math.max(0.01, roundAssignmentHours(pmDailyHours)),
+                      );
+                    }}
+                  />
+                  <p className="mt-1.5 text-[11px] leading-snug text-[var(--text-muted)]">
+                    Project Management time isn&apos;t free! Estimate your daily
+                    average for the duration of the project timeline to keep
+                    reporting accurate. The assignment will automatically be
+                    added to your schedule.
+                  </p>
+                </Field>
+              ) : null}
             </div>
           ) : null}
 

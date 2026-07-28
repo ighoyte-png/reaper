@@ -8,6 +8,8 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { FavoritesSidebar } from "@/components/nav/favorites-sidebar";
 import { ProjectForm } from "@/components/projects/project-form";
+import { applyProjectManagerScheduleTime } from "@/components/projects/apply-pm-schedule";
+import { PmSchedulePromptModal } from "@/components/projects/pm-schedule-prompt-modal";
 import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
@@ -29,6 +31,11 @@ import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { projectDateProgress } from "@/lib/domain/progress";
+import {
+  findPmProjectAssignments,
+  projectTimelineDatesChanged,
+  resolvePmScheduleIntent,
+} from "@/lib/domain/project-manager-schedule";
 import {
   projectStatusPillClass,
   sortClientsByName,
@@ -97,6 +104,9 @@ function ProjectsPageContent() {
     upsertProject,
     setProjectMembers,
     applyProjectTemplate,
+    upsertAssignment,
+    deleteAssignment,
+    ensureScheduleRange,
     newId,
     isPublicShare,
     myPerson,
@@ -114,6 +124,35 @@ function ProjectsPageContent() {
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [createTemplateId, setCreateTemplateId] = useState("");
   const [pendingCreateApply, setPendingCreateApply] = useState(false);
+  const [pmDailyHours, setPmDailyHours] = useState<number | null>(null);
+  const [pmBaselineDates, setPmBaselineDates] = useState<{
+    start_date: string | null;
+    end_date: string | null;
+  } | null>(null);
+  const [pmPrompt, setPmPrompt] = useState<{
+    kind: "overwrite" | "align";
+    hours: number;
+    project: Omit<Project, "organization_id">;
+    members: string[];
+    templateToApply: string;
+  } | null>(null);
+
+  function openNewProject(partial?: Partial<Omit<Project, "organization_id">>) {
+    setMemberIds([]);
+    setCreateTemplateId("");
+    setPmDailyHours(null);
+    setPmBaselineDates(null);
+    setEditing({ ...emptyProject(newId("proj")), ...partial });
+  }
+
+  function closeProjectForm() {
+    setEditing(null);
+    setMemberIds([]);
+    setCreateTemplateId("");
+    setPendingCreateApply(false);
+    setPmDailyHours(null);
+    setPmBaselineDates(null);
+  }
 
   const { filters, setFilter, setFilters } = useUrlFilters(
     PROJECT_FILTER_DEFAULTS,
@@ -257,10 +296,38 @@ function ProjectsPageContent() {
     return counts;
   }, [projects]);
 
+  async function applyPmSchedule(
+    project: Omit<Project, "organization_id">,
+    hours: number,
+  ) {
+    if (!project.manager_person_id || !project.start_date || !project.end_date) {
+      return;
+    }
+    const result = await applyProjectManagerScheduleTime({
+      organizationId: state.organization.id,
+      projectId: project.id,
+      managerPersonId: project.manager_person_id,
+      startDate: project.start_date,
+      endDate: project.end_date,
+      hoursPerDay: hours,
+      assignments: state.assignments,
+      leaveDays: state.leave_days,
+      newId,
+      upsertAssignment,
+      deleteAssignment,
+      ensureScheduleRange,
+    });
+    if (!result.created && result.reason) {
+      push(result.reason, "warning");
+    }
+  }
+
   async function saveProject(
     project: Omit<Project, "organization_id">,
     members: string[],
     templateToApply: string,
+    pmAction: "auto" | "apply" | "skip" = "auto",
+    pmHoursOverride?: number,
   ) {
     try {
       await upsertProject({
@@ -278,9 +345,54 @@ function ProjectsPageContent() {
       if (templateToApply) {
         await applyProjectTemplate(project.id, templateToApply);
       }
-      setEditing(null);
-      setMemberIds([]);
-      setCreateTemplateId("");
+
+      const managerId = project.manager_person_id;
+      const existing = managerId
+        ? findPmProjectAssignments(state.assignments, managerId, project.id)
+        : [];
+      const hoursForIntent =
+        pmHoursOverride ??
+        (pmDailyHours != null && pmDailyHours > 0 ? pmDailyHours : null);
+      const intent =
+        pmAction === "skip"
+          ? ({ kind: "none" } as const)
+          : pmAction === "apply" && hoursForIntent != null
+            ? ({ kind: "create", hours: hoursForIntent } as const)
+            : resolvePmScheduleIntent({
+                pmDailyHours: hoursForIntent,
+                managerPersonId: managerId,
+                startDate: project.start_date,
+                endDate: project.end_date,
+                existing,
+                datesChanged: projectTimelineDatesChanged(
+                  pmBaselineDates,
+                  project,
+                ),
+              });
+
+      if (intent.kind === "need_dates") {
+        push(
+          "Set start and completion dates to book project manager schedule time",
+          "warning",
+        );
+      } else if (intent.kind === "overwrite" || intent.kind === "align") {
+        setPmPrompt({
+          kind: intent.kind,
+          hours: intent.hours,
+          project,
+          members,
+          templateToApply: "",
+        });
+        closeProjectForm();
+        push(
+          templateToApply ? "Project created from template" : "Project saved",
+        );
+        return;
+      } else if (intent.kind === "create") {
+        await applyPmSchedule(project, intent.hours);
+      }
+
+      closeProjectForm();
       push(
         templateToApply ? "Project created from template" : "Project saved",
       );
@@ -307,11 +419,7 @@ function ProjectsPageContent() {
               </Link>
               <Button
                 variant="primary"
-                onClick={() => {
-                  setMemberIds([]);
-                  setCreateTemplateId("");
-                  setEditing(emptyProject(newId("proj")));
-                }}
+                onClick={() => openNewProject()}
               >
                 Add Project
               </Button>
@@ -325,11 +433,7 @@ function ProjectsPageContent() {
             <EmptyState
               title="No projects yet"
               cta="Create Your First Project"
-              onClick={() => {
-                setMemberIds([]);
-                setCreateTemplateId("");
-                setEditing(emptyProject(newId("proj")));
-              }}
+              onClick={() => openNewProject()}
             />
           ) : (
             <p className="py-16 text-center text-sm text-[var(--text-muted)]">
@@ -495,14 +599,10 @@ function ProjectsPageContent() {
                         count={groupProjects.length}
                         onAdd={
                           canManage
-                            ? () => {
-                                setMemberIds([]);
-                                setCreateTemplateId("");
-                                setEditing({
-                                  ...emptyProject(newId("proj")),
+                            ? () =>
+                                openNewProject({
                                   client_id: client?.id ?? null,
-                                });
-                              }
+                                })
                             : undefined
                         }
                       />
@@ -523,19 +623,19 @@ function ProjectsPageContent() {
               : "Add Project"
           }
           className="max-w-3xl"
-          onClose={() => {
-            setEditing(null);
-            setMemberIds([]);
-            setCreateTemplateId("");
-          }}
+          onClose={closeProjectForm}
         >
           <ProjectForm
             project={editing}
             clients={state.clients}
             people={state.people}
+            pods={state.pods}
+            podMembers={state.pod_members}
             memberIds={memberIds}
             onMemberIdsChange={setMemberIds}
             onChange={setEditing}
+            pmDailyHours={pmDailyHours}
+            onPmDailyHoursChange={setPmDailyHours}
             showTemplateSelect={!state.projects.some((p) => p.id === editing.id)}
             templates={state.project_templates}
             templateId={createTemplateId}
@@ -565,12 +665,7 @@ function ProjectsPageContent() {
               }
               await saveProject(editing, memberIds, "");
             }}
-            onCancel={() => {
-              setEditing(null);
-              setMemberIds([]);
-              setCreateTemplateId("");
-              setPendingCreateApply(false);
-            }}
+            onCancel={closeProjectForm}
           />
         </Modal>
       )}
@@ -584,6 +679,19 @@ function ProjectsPageContent() {
             const templateToApply = createTemplateId;
             setPendingCreateApply(false);
             await saveProject(editing, memberIds, templateToApply);
+          }}
+        />
+      ) : null}
+
+      {pmPrompt ? (
+        <PmSchedulePromptModal
+          kind={pmPrompt.kind}
+          onSkip={() => setPmPrompt(null)}
+          onConfirm={async () => {
+            const pending = pmPrompt;
+            setPmPrompt(null);
+            await applyPmSchedule(pending.project, pending.hours);
+            push("Project manager schedule updated");
           }}
         />
       ) : null}

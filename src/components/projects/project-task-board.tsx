@@ -154,6 +154,8 @@ type BoardCtx = {
   selected: Set<string>;
   toggleSelect: (id: string) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
+  /** Selected task ids currently being dragged as a group (dim siblings). */
+  multiDragIds: Set<string> | null;
   cycleStatus: (task: Task) => void;
   editingTaskId: string | null;
   setEditingTask: (task: Task | null) => void;
@@ -188,6 +190,41 @@ function sortByOrder(tasks: Task[]): Task[] {
   return [...tasks].sort(
     (a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title),
   );
+}
+
+/**
+ * Tasks to move when dragging `activeId`. If the active task is selected with
+ * others, move all selected roots (skip children whose parent is also selected).
+ */
+function movableDragGroup(
+  activeId: string,
+  selected: Set<string>,
+  projectTasks: Task[],
+): Task[] {
+  const active = projectTasks.find((t) => t.id === activeId);
+  if (!active) return [];
+  if (!selected.has(activeId) || selected.size <= 1) return [active];
+
+  const roots = [...selected]
+    .map((id) => projectTasks.find((t) => t.id === id))
+    .filter((t): t is Task => Boolean(t))
+    .filter((t) => !t.parent_id || !selected.has(t.parent_id));
+
+  return roots.sort((a, b) => {
+    if (a.list_id !== b.list_id) {
+      if (a.list_id === active.list_id) return -1;
+      if (b.list_id === active.list_id) return 1;
+      return a.list_id.localeCompare(b.list_id);
+    }
+    const aParent = a.parent_id ?? "";
+    const bParent = b.parent_id ?? "";
+    if (aParent !== bParent) {
+      if (!a.parent_id) return -1;
+      if (!b.parent_id) return 1;
+      return aParent.localeCompare(bParent);
+    }
+    return a.sort_order - b.sort_order || a.title.localeCompare(b.title);
+  });
 }
 
 /** Pulsing placeholder rows while project tasks load (schedule sidebar / hub). */
@@ -282,6 +319,8 @@ export function ProjectTaskBoard({
     !projectDataReady &&
     dataStatus.projects[projectId] !== "error";
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [multiDragIds, setMultiDragIds] = useState<Set<string> | null>(null);
+  const [listDragActiveId, setListDragActiveId] = useState<string | null>(null);
   const [bulkDraft, setBulkDraft] = useState<{
     status?: TaskStatus;
     /** undefined = unchanged; null = unassigned */
@@ -824,8 +863,35 @@ export function ProjectTaskBoard({
     }
   }
 
+  function handleListDragStart(event: DragStartEvent) {
+    const data = event.active.data.current as
+      | ListDragData
+      | TaskDragData
+      | undefined;
+    if (!data || data.type !== "task") {
+      setMultiDragIds(null);
+      setListDragActiveId(null);
+      return;
+    }
+    const activeId = String(event.active.id);
+    setListDragActiveId(activeId);
+    if (selected.has(activeId) && selected.size > 1) {
+      const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
+      const group = movableDragGroup(activeId, selected, projectTasks);
+      setMultiDragIds(new Set(group.map((t) => t.id)));
+    } else {
+      setMultiDragIds(null);
+    }
+  }
+
+  function clearListDragState() {
+    setMultiDragIds(null);
+    setListDragActiveId(null);
+  }
+
   function handleListDragEnd(event: DragEndEvent) {
     const { active, over, delta } = event;
+    clearListDragState();
     if (!manageLists || !over) return;
 
     const activeData = active.data.current as
@@ -854,20 +920,23 @@ export function ProjectTaskBoard({
     if (activeData.type !== "task") return;
 
     const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
-    const task = projectTasks.find((t) => t.id === active.id);
-    if (!task) return;
+    const movers = movableDragGroup(String(active.id), selected, projectTasks);
+    if (movers.length === 0) return;
+    const task = movers[0]!;
+    const movingIds = new Set(movers.map((t) => t.id));
+    const multi = movers.length > 1;
 
-    const childTasks = sortByOrder(
-      projectTasks.filter((t) => t.parent_id === task.id),
-    );
+    const childTasksOf = (parentId: string) =>
+      sortByOrder(projectTasks.filter((t) => t.parent_id === parentId));
 
     const primarilyHorizontal =
       Math.abs(delta.x) >= INDENT_DRAG_PX &&
       Math.abs(delta.x) >= Math.abs(delta.y) * 0.75;
 
-    if (primarilyHorizontal) {
+    // Indent / outdent only for a single dragged task.
+    if (primarilyHorizontal && !multi) {
+      const childTasks = childTasksOf(task.id);
       if (delta.x > 0) {
-        // Indent: nest under the previous top-level sibling (max depth 1).
         if (task.parent_id || childTasks.length > 0) return;
         const parents = sortByOrder(
           projectTasks.filter(
@@ -891,7 +960,6 @@ export function ProjectTaskBoard({
             if (p.sort_order !== i) upsertTask({ ...p, sort_order: i });
           });
       } else {
-        // Outdent: promote subtask to a normal top-level task.
         if (!task.parent_id) return;
         const parent = projectTasks.find((t) => t.id === task.parent_id);
         if (!parent) return;
@@ -923,6 +991,7 @@ export function ProjectTaskBoard({
       return;
     }
 
+    if (primarilyHorizontal && multi) return;
     if (active.id === over.id || !overData) return;
 
     let destListId: string;
@@ -934,11 +1003,15 @@ export function ProjectTaskBoard({
       destParentId = null;
       insertIndex = projectTasks.filter(
         (t) =>
-          t.list_id === destListId && !t.parent_id && t.id !== task.id,
+          t.list_id === destListId &&
+          !t.parent_id &&
+          !movingIds.has(t.id),
       ).length;
     } else if (overData.type === "task") {
       const overTask = projectTasks.find((t) => t.id === over.id);
       if (!overTask) return;
+      // Dropping onto another selected mover: treat as list-end of that scope
+      // after removing movers (index resolved below from without-movers list).
       destListId = overTask.list_id;
       destParentId = overTask.parent_id;
       const destSiblings = sortByOrder(
@@ -946,56 +1019,67 @@ export function ProjectTaskBoard({
           (t) =>
             t.list_id === destListId &&
             t.parent_id === destParentId &&
-            t.id !== task.id,
+            !movingIds.has(t.id),
         ),
       );
-      const overIdx = destSiblings.findIndex((t) => t.id === overTask.id);
-      insertIndex = overIdx < 0 ? destSiblings.length : overIdx;
+      if (movingIds.has(overTask.id)) {
+        insertIndex = destSiblings.length;
+      } else {
+        const overIdx = destSiblings.findIndex((t) => t.id === overTask.id);
+        insertIndex = overIdx < 0 ? destSiblings.length : overIdx;
+      }
     } else {
       return;
     }
 
-    if (destParentId === task.id) return;
-    if (destParentId && childTasks.length > 0) return;
+    if (destParentId && movingIds.has(destParentId)) return;
+    const anyMoverHasChildren = movers.some(
+      (m) => childTasksOf(m.id).length > 0,
+    );
+    if (destParentId && anyMoverHasChildren) return;
     if (
       destParentId &&
-      projectTasks.some(
-        (t) => t.id === destParentId && t.parent_id === task.id,
+      movers.some((m) =>
+        projectTasks.some(
+          (t) => t.id === destParentId && t.parent_id === m.id,
+        ),
       )
     ) {
       return;
     }
 
-    const oldListId = task.list_id;
-    const oldParentId = task.parent_id;
+    const sameScope = movers.every(
+      (m) => m.list_id === destListId && m.parent_id === destParentId,
+    );
 
-    if (oldListId === destListId && oldParentId === destParentId) {
+    if (sameScope) {
       const scope = sortByOrder(
         projectTasks.filter(
           (t) => t.list_id === destListId && t.parent_id === destParentId,
         ),
       );
-      const oldIndex = scope.findIndex((t) => t.id === task.id);
-      const newIndex = scope.findIndex((t) => t.id === over.id);
-      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
-      const reordered = arrayMove(scope, oldIndex, newIndex);
-      reordered.forEach((t, i) => {
+      const without = scope.filter((t) => !movingIds.has(t.id));
+      const target = Math.max(0, Math.min(insertIndex, without.length));
+      const next = [...without];
+      next.splice(target, 0, ...movers);
+      next.forEach((t, i) => {
         if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
       });
       return;
     }
 
+    // Cross list / parent: insert block into dest, reindex every old scope.
     const destSiblings = sortByOrder(
       projectTasks.filter(
         (t) =>
           t.list_id === destListId &&
           t.parent_id === destParentId &&
-          t.id !== task.id,
+          !movingIds.has(t.id),
       ),
     );
     const target = Math.max(0, Math.min(insertIndex, destSiblings.length));
     const nextDest = [...destSiblings];
-    nextDest.splice(target, 0, task);
+    nextDest.splice(target, 0, ...movers);
     nextDest.forEach((t, i) => {
       upsertTask({
         ...t,
@@ -1005,22 +1089,34 @@ export function ProjectTaskBoard({
       });
     });
 
-    for (const child of childTasks) {
-      if (child.list_id !== destListId) {
-        upsertTask({ ...child, list_id: destListId });
+    for (const mover of movers) {
+      for (const child of childTasksOf(mover.id)) {
+        if (child.list_id !== destListId) {
+          upsertTask({ ...child, list_id: destListId });
+        }
       }
     }
 
-    sortByOrder(
-      projectTasks.filter(
-        (t) =>
-          t.list_id === oldListId &&
-          t.parent_id === oldParentId &&
-          t.id !== task.id,
-      ),
-    ).forEach((t, i) => {
-      if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
-    });
+    const oldScopes = new Map<string, { listId: string; parentId: string | null }>();
+    for (const m of movers) {
+      oldScopes.set(`${m.list_id}:${m.parent_id ?? ""}`, {
+        listId: m.list_id,
+        parentId: m.parent_id,
+      });
+    }
+    for (const { listId, parentId } of oldScopes.values()) {
+      if (listId === destListId && parentId === destParentId) continue;
+      sortByOrder(
+        projectTasks.filter(
+          (t) =>
+            t.list_id === listId &&
+            t.parent_id === parentId &&
+            !movingIds.has(t.id),
+        ),
+      ).forEach((t, i) => {
+        if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
+      });
+    }
   }
 
   const ctx: BoardCtx = {
@@ -1045,6 +1141,7 @@ export function ProjectTaskBoard({
     selected,
     toggleSelect,
     setParentsSelected,
+    multiDragIds,
     cycleStatus,
     editingTaskId,
     setEditingTask,
@@ -1268,6 +1365,7 @@ export function ProjectTaskBoard({
           <div className="ml-auto flex shrink-0 flex-col items-end gap-0">
             <span className="mb-1 text-[10px] text-[var(--text-muted)]">
               {selected.size} selected
+              {manageLists ? " · drag to move together" : ""}
             </span>
             <div className="flex items-center gap-1.5">
               {bulkHasChanges ? (
@@ -1310,6 +1408,8 @@ export function ProjectTaskBoard({
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
+          onDragStart={handleListDragStart}
+          onDragCancel={clearListDragState}
           onDragEnd={handleListDragEnd}
         >
           <SortableContext
@@ -1364,6 +1464,22 @@ export function ProjectTaskBoard({
               );
             })}
           </SortableContext>
+          <DragOverlay dropAnimation={null}>
+            {listDragActiveId ? (
+              <div className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm shadow-md">
+                {multiDragIds && multiDragIds.size > 1 ? (
+                  <span className="font-medium">
+                    {multiDragIds.size} tasks
+                  </span>
+                ) : (
+                  <span className="font-medium">
+                    {state.tasks.find((t) => t.id === listDragActiveId)
+                      ?.title || "Task"}
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </DragOverlay>
         </DndContext>
       )}
 
@@ -2069,7 +2185,8 @@ function TaskRow({
           ? undefined
           : CSS.Transform.toString(transform),
         transition: isExiting ? undefined : transition,
-        opacity: isDragging ? 0.6 : undefined,
+        opacity:
+          isDragging || ctx.multiDragIds?.has(task.id) ? 0.35 : undefined,
         ...(nestIndent ? { marginLeft: nestIndent } : {}),
       }}
       className={cn(
@@ -2134,7 +2251,11 @@ function TaskRow({
               depth > 0 && "-translate-x-2",
             )}
             aria-label="Drag to reorder, nest, or move to another list"
-            title="Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
+            title={
+              ctx.selected.has(task.id) && ctx.selected.size > 1
+                ? "Drag to move all selected tasks"
+                : "Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
+            }
             {...attributes}
             {...listeners}
             onClick={(e) => e.stopPropagation()}

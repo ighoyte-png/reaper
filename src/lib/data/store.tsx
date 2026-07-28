@@ -574,7 +574,7 @@ interface DataContextValue {
     startKey: string,
     endKey: string,
     projectId?: string | null,
-  ) => Promise<void>;
+  ) => Promise<{ leaveDays: LeaveDay[]; assignments: Assignment[] } | void>;
   /** Subscribe project task realtime while hub / schedule sidebar is active. */
   setActiveRealtimeProjectIds: (projectIds: string[]) => void;
   /** Soft-fail RPC helpers (demo / missing RPC → null; caller falls back to TS). */
@@ -642,7 +642,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const orgTasksInflight = useRef<Promise<void> | null>(null);
   const mentionCommentsInflight = useRef<Promise<void> | null>(null);
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
-  const scheduleRangeInflight = useRef<Promise<void> | null>(null);
+  const scheduleRangeInflight = useRef<Promise<{
+    leaveDays: LeaveDay[];
+    assignments: Assignment[];
+  } | void> | null>(null);
   /** Tracks the broadest org-tasks scope already loaded this session. */
   const orgTasksScopeRef = useRef<{
     all: boolean;
@@ -1452,7 +1455,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       startKey: string,
       endKey: string,
       projectId?: string | null,
-    ) => {
+    ): Promise<{ leaveDays: LeaveDay[]; assignments: Assignment[] } | void> => {
       if (mode !== "supabase") {
         scheduleRangeLoadedRef.current = { start: startKey, end: endKey };
         setScheduleRangeLoaded({ start: startKey, end: endKey });
@@ -1531,6 +1534,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             scheduleRangeLoadedRef.current = nextRange;
             setScheduleRangeLoaded(nextRange);
           }
+          return { leaveDays: leave_days, assignments };
         } finally {
           scheduleRangeInflight.current = null;
         }
