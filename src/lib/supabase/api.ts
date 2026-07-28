@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createDemoSeed } from "@/lib/demo/seed";
 import { orderTasksParentsFirst } from "@/lib/domain/tasks";
+import { resolveAvatarUrl } from "@/lib/supabase/avatar";
 import type {
   Assignment,
   Bulletin,
@@ -791,8 +792,14 @@ export async function loadOrgBootstrap(
       mapProject(row as Record<string, unknown>),
     ),
     milestones: [],
-    people: (peopleRes.data ?? []).map((row) =>
-      mapPerson(row as Record<string, unknown>),
+    people: await Promise.all(
+      (peopleRes.data ?? []).map(async (row) => {
+        const person = mapPerson(row as Record<string, unknown>);
+        return {
+          ...person,
+          avatar_url: await resolveAvatarUrl(supabase, person.avatar_url),
+        };
+      }),
     ),
     assignments: [],
     project_members,

@@ -1,0 +1,15 @@
+-- Manual / CI checklist for migration 057 (run against a staging project).
+-- Not executed automatically; documents the two-agency matrix.
+
+-- Setup: create org A and org B with admin/manager/member each.
+-- As member of A:
+--   UPDATE profiles SET role = 'admin' WHERE id = auth.uid();           -- must fail
+--   UPDATE profiles SET organization_id = '<org-b>' WHERE id = auth.uid(); -- must fail
+--   UPDATE people SET cost_rate = 1 WHERE profile_id = auth.uid();      -- must fail
+--   UPDATE tasks SET title = 'x' WHERE id = '<roster-task>';            -- must fail
+--   UPDATE tasks SET status = 'complete' WHERE id = '<roster-task>';    -- must succeed if on roster
+--   SELECT * FROM bulletins WHERE audience = 'people' AND NOT (current_person_id() = ANY(audience_person_ids));
+--     -- must return 0 rows for members
+-- Disable org A (set disabled_at): subsequent SELECT on projects must return 0 for that user.
+-- Insert assignment with organization_id = A and person_id from B: must fail same-org trigger.
+-- Storage: upload to person-avatars/<org-b>/<person>/x.jpg as org-A user: must fail.

@@ -4,8 +4,9 @@ import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { canManage } from "@/lib/auth/roles";
 import { generateShareToken, publicShareUrl } from "@/lib/share/token";
+import { siteOriginFromRequest } from "@/lib/security/request";
 
-async function requireManager() {
+async function requireManager(request: Request) {
   if (!isSupabaseConfigured()) {
     return {
       error: NextResponse.json(
@@ -23,6 +24,13 @@ async function requireManager() {
         },
         { status: 400 },
       ),
+    };
+  }
+
+  const originCheck = siteOriginFromRequest(request);
+  if (!originCheck.ok) {
+    return {
+      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };
   }
 
@@ -57,25 +65,18 @@ async function requireManager() {
     };
   }
 
-  return { caller, admin: createAdminClient() };
-}
-
-function originFrom(request: Request): string {
-  return (
-    request.headers.get("origin") ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    "http://localhost:3000"
-  );
+  return { caller, admin: createAdminClient(), origin: originCheck.origin };
 }
 
 /** Current public-link status for the signed-in org. */
 export async function GET(request: Request) {
   try {
-    const auth = await requireManager();
+    const auth = await requireManager(request);
     if ("error" in auth && auth.error) return auth.error;
-    const { caller, admin } = auth as {
+    const { caller, admin, origin } = auth as {
       caller: { organization_id: string };
       admin: ReturnType<typeof createAdminClient>;
+      origin: string;
     };
 
     const { data: org, error } = await admin
@@ -93,7 +94,6 @@ export async function GET(request: Request) {
 
     const enabled = Boolean(org.share_enabled);
     const token = (org.share_token as string | null) ?? null;
-    const origin = originFrom(request);
 
     return NextResponse.json({
       enabled,
@@ -116,11 +116,12 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const auth = await requireManager();
+    const auth = await requireManager(request);
     if ("error" in auth && auth.error) return auth.error;
-    const { caller, admin } = auth as {
+    const { caller, admin, origin } = auth as {
       caller: { organization_id: string };
       admin: ReturnType<typeof createAdminClient>;
+      origin: string;
     };
 
     const body = (await request.json()) as { action?: string };
@@ -177,7 +178,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
-    const origin = originFrom(request);
     return NextResponse.json({
       ok: true,
       enabled: share_enabled,

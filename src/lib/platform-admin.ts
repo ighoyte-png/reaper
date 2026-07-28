@@ -19,6 +19,14 @@ export function isPlatformAdminEmail(email: string | null | undefined): boolean 
   return list.includes(email.trim().toLowerCase());
 }
 
+function hasPlatformAdminMetadata(
+  user: { app_metadata?: Record<string, unknown> } | null,
+): boolean {
+  const meta = user?.app_metadata;
+  if (!meta || typeof meta !== "object") return false;
+  return meta.platform_admin === true || meta.role === "platform_admin";
+}
+
 export async function requirePlatformAdmin() {
   if (!isSupabaseConfigured()) {
     return {
@@ -66,6 +74,19 @@ export async function requirePlatformAdmin() {
   if (!isPlatformAdminEmail(email)) {
     return {
       error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+    };
+  }
+  const allowEmailOnly =
+    process.env.PLATFORM_ADMIN_ALLOW_EMAIL_ONLY === "true";
+  if (!hasPlatformAdminMetadata(user) && !allowEmailOnly) {
+    return {
+      error: NextResponse.json(
+        {
+          error:
+            "Platform admin requires app_metadata.platform_admin=true (or set PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true temporarily).",
+        },
+        { status: 403 },
+      ),
     };
   }
 

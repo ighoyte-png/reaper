@@ -3,6 +3,7 @@ import {
   projectTeamPersonIds,
   showProjectManagerUi,
 } from "@/lib/domain/project-access";
+import { sanitizeExternalUrl } from "@/lib/safe-url";
 import type {
   AssignmentStatus,
   DemoState,
@@ -10,8 +11,10 @@ import type {
   Recurrence,
 } from "@/lib/types";
 
-/** Strip cost/bill rates and emails from a public share payload.
- * Also omits clients/projects marked hide_from_public_share and related rows.
+/**
+ * Prospect showcase sanitizer for org-wide public share.
+ * Keeps schedule/projects/people/tasks for demos; strips PII, internal notes,
+ * leave, restricted bulletins, hidden assets, and templates.
  */
 export function sanitizePublicWorkspace(state: DemoState): DemoState {
   const hiddenClientIds = new Set(
@@ -28,30 +31,54 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
       )
       .map((p) => p.id),
   );
-  const clients = state.clients.filter((c) => !hiddenClientIds.has(c.id));
-  const projects = state.projects.filter((p) => !hiddenProjectIds.has(p.id));
+  const clients = state.clients
+    .filter((c) => !hiddenClientIds.has(c.id))
+    .map((c) => ({
+      ...c,
+      notes: "",
+      contact_first_name: "",
+      contact_last_name: "",
+      contact_email: "",
+      contact_phone: "",
+      company_website: "",
+    }));
+  const projects = state.projects
+    .filter((p) => !hiddenProjectIds.has(p.id))
+    .map((p) => ({
+      ...p,
+      notes: "",
+      share_token: null,
+    }));
   const assignments = state.assignments.filter(
     (a) => !hiddenProjectIds.has(a.project_id),
   );
   const milestones = state.milestones.filter(
     (m) => !hiddenProjectIds.has(m.project_id),
   );
-  const project_assets = state.project_assets.filter(
-    (a) => !hiddenProjectIds.has(a.project_id),
-  );
+  const project_assets = state.project_assets
+    .filter(
+      (a) => !hiddenProjectIds.has(a.project_id) && !a.hide_from_client,
+    )
+    .map((a) => ({
+      ...a,
+      url: sanitizeExternalUrl(a.url) ?? "",
+    }));
   const task_lists = state.task_lists.filter(
     (l) => !hiddenProjectIds.has(l.project_id),
   );
-  const tasks = state.tasks.filter((t) => !hiddenProjectIds.has(t.project_id));
-  const taskIds = new Set(tasks.map((t) => t.id));
-  const task_comments = state.task_comments.filter((c) =>
-    taskIds.has(c.task_id),
-  );
+  const tasks = state.tasks
+    .filter((t) => !hiddenProjectIds.has(t.project_id))
+    .map((t) => ({
+      ...t,
+      notes: "",
+    }));
   const project_members = state.project_members.filter(
     (m) => !hiddenProjectIds.has(m.project_id),
   );
   const bulletins = state.bulletins.filter(
-    (b) => !b.project_id || !hiddenProjectIds.has(b.project_id),
+    (b) =>
+      (!b.project_id || !hiddenProjectIds.has(b.project_id)) &&
+      (b.audience ?? "all") === "all",
   );
 
   return {
@@ -63,6 +90,12 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     project_favorites: [],
     pods: [],
     pod_members: [],
+    leave_days: [],
+    project_templates: [],
+    template_milestones: [],
+    template_task_lists: [],
+    template_tasks: [],
+    task_comments: [],
     clients,
     projects,
     assignments,
@@ -70,7 +103,6 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     project_assets,
     task_lists,
     tasks,
-    task_comments,
     project_members,
     bulletins,
     people: state.people.map(
@@ -160,7 +192,8 @@ export interface ProjectPortalPayload {
 
 /**
  * Build a heavily-sanitized public payload for a single project's client
- * portal — no rates, emails, assignees, internal notes, or other projects.
+ * portal — no rates, emails on org share style; portal intentionally includes
+ * team contact emails for the client relationship.
  */
 export function sanitizeProjectPortal(
   state: DemoState,
@@ -283,7 +316,7 @@ export function sanitizeProjectPortal(
         id: a.id,
         kind: a.kind,
         label: a.label,
-        url: a.url,
+        url: sanitizeExternalUrl(a.url) ?? "",
         body: a.body,
         sort_order: a.sort_order,
       })),

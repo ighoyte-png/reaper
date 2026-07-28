@@ -3,8 +3,16 @@ import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { loadProjectPortalWorkspace } from "@/lib/supabase/api";
 import { sanitizeProjectPortal } from "@/lib/share/sanitize";
+import { resolveAvatarUrl } from "@/lib/supabase/avatar";
 
 type Params = { params: Promise<{ token: string }> };
+
+function notFound() {
+  return NextResponse.json(
+    { error: "Not found" },
+    { status: 404, headers: { "Cache-Control": "no-store" } },
+  );
+}
 
 /** Anonymous public client-portal snapshot for one project's share token. */
 export async function GET(_request: Request, { params }: Params) {
@@ -12,13 +20,13 @@ export async function GET(_request: Request, { params }: Params) {
     const { token } = await params;
     const shareToken = token?.trim();
     if (!shareToken || shareToken.length < 8) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return notFound();
     }
 
     if (!isSupabaseConfigured() || !isServiceRoleConfigured()) {
       return NextResponse.json(
         { error: "Public project share requires Supabase" },
-        { status: 400 },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
       );
     }
 
@@ -36,17 +44,23 @@ export async function GET(_request: Request, { params }: Params) {
             error:
               "Public project share columns missing — apply supabase/migrations/015_pm_execution.sql",
           },
-          { status: 400 },
+          { status: 400, headers: { "Cache-Control": "no-store" } },
         );
       }
-      return NextResponse.json(
-        { error: projectError.message },
-        { status: 400 },
-      );
+      return notFound();
     }
 
     if (!project || !project.share_enabled) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return notFound();
+    }
+
+    const { data: org } = await admin
+      .from("organizations")
+      .select("disabled_at")
+      .eq("id", project.organization_id)
+      .maybeSingle();
+    if (org?.disabled_at) {
+      return notFound();
     }
 
     const workspace = await loadProjectPortalWorkspace(
@@ -54,17 +68,23 @@ export async function GET(_request: Request, { params }: Params) {
       String(project.organization_id),
       String(project.id),
     );
+    workspace.people = await Promise.all(
+      workspace.people.map(async (p) => ({
+        ...p,
+        avatar_url: await resolveAvatarUrl(admin, p.avatar_url),
+      })),
+    );
     const portal = sanitizeProjectPortal(workspace, String(project.id));
     if (!portal) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return notFound();
     }
 
-    return NextResponse.json({ portal });
+    return NextResponse.json(
+      { portal },
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (err) {
     console.error(err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed" },
-      { status: 500 },
-    );
+    return notFound();
   }
 }

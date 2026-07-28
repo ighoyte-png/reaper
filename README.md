@@ -40,9 +40,11 @@ Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
 
 6. Open the app → **Create workspace** (email/password) → **Settings → Load demo data**.
 
-7. **Member invites** (optional): add `SUPABASE_SERVICE_ROLE_KEY` to `.env` (service_role secret — server only). In Supabase **Authentication → URL configuration**, set Site URL to `http://localhost:3000`. Then **People → Invite** sends an email; the member lands on **My schedule** only.
+7. **Member invites** (optional): add `SUPABASE_SERVICE_ROLE_KEY` to `.env` (service_role secret — server only). Set `NEXT_PUBLIC_SITE_URL` to your app origin (e.g. `http://localhost:3000`). In Supabase **Authentication → URL configuration**, set Site URL to the same origin. Then **People → Invite** emails a secure invite (no copyable recovery links).
 
-8. **Platform admin** (optional): set `PLATFORM_ADMIN_EMAILS` to your email(s), run [`039_platform_admin.sql`](supabase/migrations/039_platform_admin.sql). Create the user in Supabase **Authentication → Users** (email + password) — do **not** use Create workspace. Sign in on `/login`; you land on `/admin` with no personal workspace. **Enter** attaches you to a workspace when you need the full app.
+8. **Platform admin** (optional): set `PLATFORM_ADMIN_EMAILS` to your email(s), run [`039_platform_admin.sql`](supabase/migrations/039_platform_admin.sql). Create the user in Supabase **Authentication → Users** (email + password) — do **not** use Create workspace. In **Authentication → Users → user → App Metadata**, set `{ "platform_admin": true }` (or temporarily `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true`). Sign in on `/login`; you land on `/admin` with no personal workspace. **Enter** attaches you to a workspace when you need the full app.
+
+9. **Security hardening**: after pulling latest, apply [`057_security_hardening.sql`](supabase/migrations/057_security_hardening.sql). Run `npm run security:check` for share/HTML/URL self-checks. See [`supabase/tests/database/security_hardening_checklist.sql`](supabase/tests/database/security_hardening_checklist.sql) for the live two-agency RLS matrix.
 
 With env vars set, the UI switches from local demo login to real Supabase auth and persists schedule/projects/people in Postgres.
 

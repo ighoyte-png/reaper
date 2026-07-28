@@ -321,7 +321,12 @@ export default function SettingsPage() {
       let avatarUrl: string;
       if (mode === "supabase") {
         const supabase = createClient();
-        avatarUrl = await uploadPersonAvatar(supabase, myPerson.id, file);
+        avatarUrl = await uploadPersonAvatar(
+          supabase,
+          state.organization.id,
+          myPerson.id,
+          file,
+        );
       } else {
         avatarUrl = await readFileAsDataUrl(file);
       }

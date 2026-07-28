@@ -139,8 +139,6 @@ function PeoplePageContent() {
   const [inviteTarget, setInviteTarget] = useState<Person | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [inviteEmailSent, setInviteEmailSent] = useState<boolean | null>(null);
   const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
 
   const editingLinkedProfile = editing?.profile_id
@@ -168,15 +166,11 @@ function PeoplePageContent() {
     person: Person,
     options: {
       resend?: boolean;
-      sendEmail?: boolean;
       emailOverride?: string;
     } = {},
   ) {
     const resend = Boolean(options.resend);
-    const sendEmail = Boolean(options.sendEmail);
     setInviteTarget(person);
-    setInviteUrl(null);
-    setInviteEmailSent(null);
     setInviteEmailError(null);
     setInviteBusy(true);
     const email =
@@ -208,56 +202,37 @@ function PeoplePageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           resend
-            ? { personId: person.id, resend: true, sendEmail }
+            ? { personId: person.id, resend: true }
             : {
                 personId: person.id,
                 email,
                 fullName: person.name,
-                sendEmail,
               },
         ),
       });
       const data = (await res.json()) as {
         error?: string;
         linkedExisting?: boolean;
-        inviteUrl?: string | null;
         emailSent?: boolean;
-        emailError?: string | null;
       };
       if (!res.ok) throw new Error(data.error || "Invite failed");
       await refresh();
-      setInviteEmailSent(Boolean(data.emailSent));
-      setInviteEmailError(data.emailError ?? null);
-      if (data.inviteUrl) {
-        setInviteUrl(data.inviteUrl);
-        if (data.emailSent) {
-          push("Invite email sent. You can also copy the link below.", "success");
-        } else if (data.emailError) {
-          const rateLimited = /rate.?limit/i.test(data.emailError);
-          push(
-            rateLimited
-              ? "Email rate limit hit (Supabase free tier is ~2/hour). User was still created — copy the link below."
-              : `Email not sent (${data.emailError}). User was created — copy the link below.`,
-            "warning",
-          );
-        } else {
-          push("Invite link ready — copy and share it.", "success");
-        }
-      } else if (data.emailSent) {
-        push("Invite email sent. They can set a password from the link.", "success");
-        setInviteTarget(null);
-      } else {
+      if (data.emailSent) {
         push(
-          data.linkedExisting
-            ? "Account linked. They can sign in if they already have a password."
-            : "No invite URL returned. Check Supabase Auth → Users.",
-          "warning",
+          resend
+            ? "Invite email resent. They can set a password from the link."
+            : "Invite email sent. They can set a password from the link.",
+          "success",
         );
-        setInviteTarget(null);
+      } else {
+        push("Invite processed.", "success");
       }
+      setInviteTarget(null);
     } catch (err) {
+      setInviteEmailError(
+        err instanceof Error ? err.message : "Invite failed",
+      );
       push(err instanceof Error ? err.message : "Invite failed", "warning");
-      if (resend) setInviteTarget(null);
     } finally {
       setInviteBusy(false);
     }
@@ -283,6 +258,7 @@ function PeoplePageContent() {
           const supabase = createClient();
           avatar_url = await uploadPersonAvatar(
             supabase,
+            state.organization.id,
             editing.id,
             avatarFile,
           );
@@ -313,7 +289,7 @@ function PeoplePageContent() {
         setInviteEmail(email);
         await createInviteLink(
           { ...row, organization_id: state.organization.id },
-          { sendEmail: true, emailOverride: email },
+          { emailOverride: email },
         );
         setIsNewPerson(false);
       } else {
@@ -466,7 +442,6 @@ function PeoplePageContent() {
                       } else {
                         setInviteTarget(person);
                         setInviteEmail("");
-                        setInviteUrl(null);
                       }
                     }}
                   >
@@ -683,7 +658,6 @@ function PeoplePageContent() {
             setResendTarget(null);
             void createInviteLink(person, {
               resend: true,
-              sendEmail: true,
             });
           }}
         />
@@ -751,68 +725,26 @@ function PeoplePageContent() {
       {canManage && inviteTarget && (
         <Modal
           title={
-            inviteUrl
-              ? `Invite link · ${inviteTarget.name}`
-              : inviteBusy && inviteTarget.profile_id
-                ? `Resending · ${inviteTarget.name}`
-                : `Invite ${inviteTarget.name}`
+            inviteBusy && inviteTarget.profile_id
+              ? `Resending · ${inviteTarget.name}`
+              : `Invite ${inviteTarget.name}`
           }
           onClose={() => {
             setInviteTarget(null);
-            setInviteUrl(null);
-            setInviteEmailSent(null);
             setInviteEmailError(null);
           }}
         >
           <div className="grid gap-3">
-            {inviteBusy && !inviteUrl ? (
+            {inviteBusy ? (
               <p className="text-sm text-[var(--text-muted)]">
-                Preparing invite…
+                Sending invite email…
               </p>
-            ) : inviteUrl ? (
-              <>
-                <p className="text-sm text-[var(--text-muted)]">
-                  {inviteEmailSent
-                    ? "Invite email was sent. Copyable link below as backup."
-                    : inviteEmailError
-                      ? `No email sent (${inviteEmailError}). Share this link so they can set a password.`
-                      : "No email was sent — copy and share this link so they can set a password."}
-                </p>
-                <textarea
-                  className={`${inputClass} h-28 py-2 font-mono text-xs`}
-                  readOnly
-                  value={inviteUrl}
-                />
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    onClick={() => {
-                      setInviteTarget(null);
-                      setInviteUrl(null);
-                      setInviteEmailSent(null);
-                      setInviteEmailError(null);
-                    }}
-                  >
-                    Done
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(inviteUrl);
-                      push("Invite link copied", "success");
-                    }}
-                  >
-                    Copy Link
-                  </Button>
-                </div>
-              </>
             ) : (
               <>
                 <p className="text-sm text-[var(--text-muted)]">
-                  Creates a <strong>member</strong> login linked to this person.
-                  They can view their own schedule only.
+                  Creates a <strong>member</strong> login linked to this person
+                  and emails them a secure invite. They set a password from that
+                  email.
                 </p>
                 <Field label="Work email">
                   <input
@@ -823,13 +755,9 @@ function PeoplePageContent() {
                     placeholder="name@company.com"
                   />
                 </Field>
-                {mode === "supabase" && (
-                  <p className="text-xs text-[var(--text-muted)]">
-                    Creates a copyable invite link only (no email). Use{" "}
-                    <strong>Add & Invite</strong> when creating a person if you
-                    want Supabase to email them.
-                  </p>
-                )}
+                {inviteEmailError ? (
+                  <p className="text-xs text-[var(--danger)]">{inviteEmailError}</p>
+                ) : null}
                 {mode === "demo" && (
                   <p className="text-xs text-[var(--text-muted)]">
                     Demo mode: no email is sent. After inviting, use Settings →
@@ -850,13 +778,11 @@ function PeoplePageContent() {
                     disabled={inviteBusy || !inviteEmail.trim()}
                     onClick={() => {
                       if (inviteTarget) {
-                        void createInviteLink(inviteTarget, {
-                          sendEmail: false,
-                        });
+                        void createInviteLink(inviteTarget);
                       }
                     }}
                   >
-                    {inviteBusy ? "Creating…" : "Create Invite Link"}
+                    {inviteBusy ? "Sending…" : "Send Invite Email"}
                   </Button>
                 </div>
               </>

@@ -3,8 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { canManage } from "@/lib/auth/roles";
+import { siteOriginFromRequest } from "@/lib/security/request";
 
-async function requireManager() {
+async function requireManager(request: Request) {
   if (!isSupabaseConfigured()) {
     return {
       error: NextResponse.json(
@@ -22,6 +23,13 @@ async function requireManager() {
         },
         { status: 400 },
       ),
+    };
+  }
+
+  const originCheck = siteOriginFromRequest(request);
+  if (!originCheck.ok) {
+    return {
+      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
     };
   }
 
@@ -56,16 +64,25 @@ async function requireManager() {
     };
   }
 
-  return { caller, admin: createAdminClient() };
+  return {
+    caller,
+    admin: createAdminClient(),
+    origin: originCheck.origin,
+  };
 }
 
+/**
+ * Email-only invites. Never returns recovery/magic/action links.
+ * Body: { personId, email?, fullName?, resend?: boolean }
+ */
 export async function POST(request: Request) {
   try {
-    const auth = await requireManager();
+    const auth = await requireManager(request);
     if ("error" in auth && auth.error) return auth.error;
-    const { caller, admin } = auth as {
+    const { caller, admin, origin } = auth as {
       caller: { organization_id: string };
       admin: ReturnType<typeof createAdminClient>;
+      origin: string;
     };
 
     const body = (await request.json()) as {
@@ -73,12 +90,9 @@ export async function POST(request: Request) {
       email?: string;
       fullName?: string;
       resend?: boolean;
-      /** When true, Supabase sends invite/recovery mail. Default false (link only). */
-      sendEmail?: boolean;
     };
     const personId = body.personId?.trim();
     const resend = Boolean(body.resend);
-    const sendEmail = Boolean(body.sendEmail);
 
     if (!personId) {
       return NextResponse.json(
@@ -98,10 +112,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Person not found" }, { status: 404 });
     }
 
-    const origin =
-      request.headers.get("origin") ||
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      "http://localhost:3000";
+    const redirectTo = `${origin}/set-password`;
 
     // --- Resend invite for an already-linked person ---
     if (resend) {
@@ -114,7 +125,7 @@ export async function POST(request: Request) {
 
       const { data: profile, error: profileError } = await admin
         .from("profiles")
-        .select("id, email, full_name, organization_id")
+        .select("id, email, full_name, organization_id, role")
         .eq("id", person.profile_id)
         .eq("organization_id", caller.organization_id)
         .maybeSingle();
@@ -126,50 +137,23 @@ export async function POST(request: Request) {
         );
       }
 
-      const email = profile.email.toLowerCase();
-      const redirectTo = `${origin}/set-password`;
-
-      let emailSent = false;
-      let emailError: string | null = null;
-
-      // Resend only emails when explicitly requested (same as Add & invite).
-      if (sendEmail) {
-        const { error: resetError } = await admin.auth.resetPasswordForEmail(
-          email,
-          { redirectTo },
-        );
-        if (resetError) {
-          emailError = resetError.message;
-        } else {
-          emailSent = true;
-        }
-      }
-
-      // Always produce a shareable link for the admin (does not send email).
-      let inviteUrl: string | null = null;
-      const { data: recovery } = await admin.auth.admin.generateLink({
-        type: "recovery",
-        email,
-        options: { redirectTo },
-      });
-      inviteUrl = recovery?.properties?.action_link ?? null;
-
-      if (!inviteUrl) {
-        const { data: magic } = await admin.auth.admin.generateLink({
-          type: "magiclink",
-          email,
-          options: { redirectTo },
-        });
-        inviteUrl = magic?.properties?.action_link ?? null;
-      }
-
-      if (!inviteUrl && !emailSent) {
+      // Do not issue recovery links for admins via manager invite UI.
+      if (profile.role === "admin") {
         return NextResponse.json(
-          {
-            error:
-              emailError ||
-              "Could not generate an invite link",
-          },
+          { error: "Ask an admin to reset that account from Auth settings" },
+          { status: 403 },
+        );
+      }
+
+      const email = profile.email.toLowerCase();
+      const { error: resetError } = await admin.auth.resetPasswordForEmail(
+        email,
+        { redirectTo },
+      );
+      if (resetError) {
+        console.error("[invite] resend failed", resetError.message);
+        return NextResponse.json(
+          { error: "Could not send invite email" },
           { status: 400 },
         );
       }
@@ -179,9 +163,7 @@ export async function POST(request: Request) {
         resend: true,
         userId: profile.id,
         email,
-        inviteUrl,
-        emailSent,
-        emailError,
+        emailSent: true,
       });
     }
 
@@ -208,125 +190,42 @@ export async function POST(request: Request) {
     }
 
     const displayName = fullName || person.name;
-    const redirectTo = `${origin}/set-password`;
-    let linkedExisting = false;
-    let inviteUrl: string | null = null;
-    let userId: string | undefined;
-    let emailSent = false;
-    let emailError: string | null = null;
 
-    async function findAuthUserByEmail(addr: string) {
-      const listed = await admin.auth.admin.listUsers({ perPage: 1000 });
-      return listed.data.users.find((u) => u.email?.toLowerCase() === addr);
-    }
-
-    /** Creates / resolves Auth user and returns a shareable link. Never sends mail. */
-    async function linkOnlyInvite() {
-      const { data: linkData, error: linkError } =
-        await admin.auth.admin.generateLink({
-          type: "invite",
-          email,
-          options: {
-            data: { full_name: displayName },
-            redirectTo,
-          },
-        });
-
-      if (!linkError && linkData?.user?.id) {
-        return {
-          userId: linkData.user.id,
-          inviteUrl: linkData.properties?.action_link ?? null,
-          linkedExisting: false,
-          error: null as string | null,
-        };
-      }
-
-      const existing = await findAuthUserByEmail(email);
-      if (!existing) {
-        return {
-          userId: undefined,
-          inviteUrl: null,
-          linkedExisting: false,
-          error:
-            linkError?.message ||
-            "Could not create invite. Check Auth → Users / logs in Supabase.",
-        };
-      }
-
-      const { data: recovery } = await admin.auth.admin.generateLink({
-        type: "recovery",
-        email,
-        options: {
-          redirectTo,
-        },
+    const { data: invited, error: inviteError } =
+      await admin.auth.admin.inviteUserByEmail(email, {
+        data: { full_name: displayName },
+        redirectTo,
       });
 
-      return {
-        userId: existing.id,
-        inviteUrl: recovery?.properties?.action_link ?? null,
-        linkedExisting: true,
-        error: linkError?.message ?? null,
-      };
-    }
+    let userId = invited?.user?.id as string | undefined;
+    let linkedExisting = false;
 
-    if (sendEmail) {
-      // Prefer inviteUserByEmail (creates user + sends mail). On rate limit /
-      // mailer failure, still create the user via generateLink so the invite
-      // isn't lost — admin gets a copyable URL instead.
-      const { data: invited, error: inviteError } =
-        await admin.auth.admin.inviteUserByEmail(email, {
-          data: { full_name: displayName },
-          redirectTo,
-        });
-
-      if (!inviteError && invited?.user?.id) {
-        userId = invited.user.id;
-        emailSent = true;
-        const { data: linkData } = await admin.auth.admin.generateLink({
-          type: "recovery",
-          email,
-          options: {
-            redirectTo,
-          },
-        });
-        inviteUrl = linkData?.properties?.action_link ?? null;
-      } else {
-        emailError = inviteError?.message ?? "Could not send invite email";
-        const fallback = await linkOnlyInvite();
-        if (!fallback.userId) {
-          return NextResponse.json(
-            { error: fallback.error || emailError },
-            { status: 400 },
-          );
-        }
-        userId = fallback.userId;
-        inviteUrl = fallback.inviteUrl;
-        linkedExisting = fallback.linkedExisting;
-        // Do not call resetPasswordForEmail here — that also burns the mail quota.
-      }
-    } else {
-      const result = await linkOnlyInvite();
-      if (!result.userId) {
+    if (inviteError || !userId) {
+      // Existing Auth user: send password reset email only (no action link in JSON).
+      const listed = await admin.auth.admin.listUsers({ perPage: 1000 });
+      const existing = listed.data.users.find(
+        (u) => u.email?.toLowerCase() === email,
+      );
+      if (!existing) {
+        console.error("[invite] create failed", inviteError?.message);
         return NextResponse.json(
-          {
-            error:
-              result.error ||
-              "Could not create invite link. Check Auth → Users / logs in Supabase.",
-          },
+          { error: "Could not send invite email" },
           { status: 400 },
         );
       }
-      userId = result.userId;
-      inviteUrl = result.inviteUrl;
-      linkedExisting = result.linkedExisting;
-      emailError = result.error;
-    }
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: "Could not resolve invited user id" },
-        { status: 500 },
+      userId = existing.id;
+      linkedExisting = true;
+      const { error: resetError } = await admin.auth.resetPasswordForEmail(
+        email,
+        { redirectTo },
       );
+      if (resetError) {
+        console.error("[invite] existing-user reset failed", resetError.message);
+        return NextResponse.json(
+          { error: "Could not send invite email" },
+          { status: 400 },
+        );
+      }
     }
 
     const { data: existingProfile } = await admin
@@ -368,7 +267,8 @@ export async function POST(request: Request) {
           full_name: displayName,
           role: "member",
         })
-        .eq("id", userId);
+        .eq("id", userId)
+        .eq("organization_id", caller.organization_id);
     }
 
     const { error: personLinkError } = await admin
@@ -387,11 +287,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       userId,
-      inviteUrl,
       linkedExisting,
       resend: false,
-      emailSent,
-      emailError,
+      emailSent: true,
     });
   } catch (err) {
     console.error(err);

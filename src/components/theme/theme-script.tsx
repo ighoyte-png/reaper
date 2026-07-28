@@ -1,4 +1,4 @@
-export function ThemeScript() {
+export function ThemeScript({ nonce }: { nonce?: string }) {
   const code = `
 (function(){
   try {
@@ -11,5 +11,13 @@ export function ThemeScript() {
     document.documentElement.style.colorScheme = theme;
   } catch (e) {}
 })();`;
-  return <script dangerouslySetInnerHTML={{ __html: code }} />;
+  // Browsers strip `nonce` from the DOM after execution, which would otherwise
+  // look like a server/client mismatch during hydration.
+  return (
+    <script
+      nonce={nonce}
+      suppressHydrationWarning
+      dangerouslySetInnerHTML={{ __html: code }}
+    />
+  );
 }

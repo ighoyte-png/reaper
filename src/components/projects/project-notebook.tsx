@@ -28,6 +28,7 @@ import {
   ASSET_KIND_LABELS,
   inferAssetKind,
 } from "@/lib/domain/assets";
+import { sanitizeExternalUrl } from "@/lib/safe-url";
 import { cn } from "@/lib/cn";
 import type { ProjectAsset, ProjectAssetKind } from "@/lib/types";
 
@@ -97,13 +98,15 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
 
   function saveLink() {
     if (!url.trim()) return;
-    const inferred = kind === "custom" ? inferAssetKind(url) : kind;
+    const safeUrl = sanitizeExternalUrl(url.trim());
+    if (!safeUrl) return;
+    const inferred = kind === "custom" ? inferAssetKind(safeUrl) : kind;
     if (editing) {
       upsertProjectAsset({
         ...editing,
         kind: inferred,
         label: label.trim() || ASSET_KIND_LABELS[inferred],
-        url: url.trim(),
+        url: safeUrl,
         body: "",
         hide_from_client: hideFromClient,
       });
@@ -114,7 +117,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         project_id: projectId,
         kind: inferred,
         label: label.trim() || ASSET_KIND_LABELS[inferred],
-        url: url.trim(),
+        url: safeUrl,
         body: "",
         sort_order: assets.length,
         hide_from_client: hideFromClient,
@@ -482,14 +485,20 @@ function SortableAssetRow({
             </button>
           ) : null}
           <AssetKindIcon kind={asset.kind} />
-          <a
-            href={asset.url}
-            target="_blank"
-            rel="noreferrer"
-            className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
-          >
-            {asset.label || ASSET_KIND_LABELS[asset.kind]}
-          </a>
+          {sanitizeExternalUrl(asset.url) ? (
+            <a
+              href={sanitizeExternalUrl(asset.url)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
+            >
+              {asset.label || ASSET_KIND_LABELS[asset.kind]}
+            </a>
+          ) : (
+            <span className="min-w-0 flex-1 truncate">
+              {asset.label || ASSET_KIND_LABELS[asset.kind]}
+            </span>
+          )}
           {actions}
         </div>
       )}

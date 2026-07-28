@@ -15,6 +15,7 @@ import {
   type PortalHoursRetainer,
   type ProjectPortalPayload,
 } from "@/lib/share/sanitize";
+import { sanitizeExternalUrl } from "@/lib/safe-url";
 import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
 import { calendarYearBars } from "@/lib/domain/budget";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
@@ -484,15 +485,22 @@ export default function ProjectSharePage() {
                       <AssetKindIcon
                         kind={a.kind as ProjectAssetKind}
                       />
-                      <a
-                        href={a.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
-                      >
-                        {a.label ||
-                          ASSET_KIND_LABELS[a.kind as ProjectAssetKind]}
-                      </a>
+                      {sanitizeExternalUrl(a.url) ? (
+                        <a
+                          href={sanitizeExternalUrl(a.url)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
+                        >
+                          {a.label ||
+                            ASSET_KIND_LABELS[a.kind as ProjectAssetKind]}
+                        </a>
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate">
+                          {a.label ||
+                            ASSET_KIND_LABELS[a.kind as ProjectAssetKind]}
+                        </span>
+                      )}
                       <ExternalLink
                         size={12}
                         className="shrink-0 text-[var(--text-muted)]"

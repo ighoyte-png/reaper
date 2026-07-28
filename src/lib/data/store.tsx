@@ -24,6 +24,7 @@ import {
 import { addDays, parseISO } from "date-fns";
 import { assignmentOverlapsDateRange } from "@/lib/domain/recurrence";
 import { toDateKey } from "@/lib/domain/dates";
+import { canEditProject } from "@/lib/domain/project-access";
 import { emptyTaskAuditFields, orderTasksParentsFirst } from "@/lib/domain/tasks";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import {
@@ -3052,26 +3053,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertTask: (task) => {
-        // Managers can edit any task. Members may fully edit tasks assigned to
-        // them, and may change status on any task (UI gates other fields).
+        // Managers/PMs edit details. Members may only change status (RLS+trigger enforce).
         const existing = state.tasks.find((t) => t.id === task.id);
-        if (!manage && myPerson) {
-          const isAssignee = task.assignee_person_id === myPerson.id;
-          if (!isAssignee) {
-            if (!existing) return;
-            const statusOnly =
-              task.status !== existing.status &&
-              task.title === existing.title &&
-              task.project_id === existing.project_id &&
-              task.list_id === existing.list_id &&
-              task.parent_id === existing.parent_id &&
-              task.assignee_person_id === existing.assignee_person_id &&
-              task.start_date === existing.start_date &&
-              task.due_date === existing.due_date &&
-              task.notes === existing.notes &&
-              task.sort_order === existing.sort_order;
-            if (!statusOnly) return;
-          }
+        const project =
+          state.projects.find((p) => p.id === task.project_id) ?? null;
+        const mayEditDetails = canEditProject(project, {
+          canManage: manage,
+          myPersonId: myPerson?.id,
+        });
+        if (!mayEditDetails) {
+          if (!existing) return;
+          const statusOnly =
+            task.status !== existing.status &&
+            task.title === existing.title &&
+            task.project_id === existing.project_id &&
+            task.list_id === existing.list_id &&
+            task.parent_id === existing.parent_id &&
+            task.assignee_person_id === existing.assignee_person_id &&
+            task.start_date === existing.start_date &&
+            task.due_date === existing.due_date &&
+            task.notes === existing.notes &&
+            task.sort_order === existing.sort_order;
+          if (!statusOnly) return;
         }
         const now = new Date().toISOString();
         const actorId = profile?.id ?? null;

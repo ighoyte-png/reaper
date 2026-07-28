@@ -9,7 +9,6 @@ import {
   showDesktopNotification,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
-import { notesPlainText } from "@/lib/notes-html";
 
 /**
  * Shows OS desktop notifications when the signed-in person is @mentioned
@@ -71,21 +70,9 @@ export function MentionDesktopListener() {
         const project = task
           ? (snap.projects.find((p) => p.id === task.project_id) ?? null)
           : null;
-        const author = comment?.author_profile_id
-          ? snap.profiles.find((p) => p.id === comment.author_profile_id)
-          : null;
-        const authorName =
-          author?.full_name?.trim() ||
-          author?.email?.trim() ||
-          "Someone";
-        const snippet = comment
-          ? notesPlainText(comment.body).slice(0, 120)
-          : "";
 
-        showDesktopNotification(`${authorName} mentioned you`, {
-          body: task
-            ? `${task.title}${snippet ? ` — ${snippet}` : ""}`
-            : snippet || "New mention in a comment",
+        showDesktopNotification("New mention", {
+          body: "Open Reaper to view the mention",
           tag: `mention-comment-${commentId}`,
           onClick: () => {
             const latest = stateRef.current;
@@ -126,12 +113,8 @@ export function MentionDesktopListener() {
       const detail = (ev as CustomEvent<TaskNoteMentionBroadcast>).detail;
       if (!detail?.personIds?.includes(personId)) return;
 
-      showDesktopNotification(
-        `${detail.authorName || "Someone"} mentioned you`,
-        {
-          body: detail.taskTitle
-            ? `In task “${detail.taskTitle}”`
-            : "In a task note",
+      showDesktopNotification("New mention", {
+          body: "Open Reaper to view the mention",
           tag: `mention-task-${detail.taskId}`,
           onClick: () => {
             const project = stateRef.current.projects.find(
@@ -143,8 +126,7 @@ export function MentionDesktopListener() {
               router.push(appHref("/dashboard"));
             }
           },
-        },
-      );
+        });
     }
 
     window.addEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
