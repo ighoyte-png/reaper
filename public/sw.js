@@ -1,4 +1,8 @@
-/* Reaper notification service worker — enables PWA-branded OS toasts when installed. */
+/* Reaper notification service worker — enables PWA-branded OS toasts when installed.
+ * Bump REAPER_SW_REV when this file changes so browsers pick up a new worker. */
+const REAPER_SW_REV = "0.4.75";
+void REAPER_SW_REV;
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });

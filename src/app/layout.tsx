@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { Geist_Mono } from "next/font/google";
 import { NavigationProgress } from "@/components/nav/navigation-progress";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
+import { VersionRefresh } from "@/components/pwa/version-refresh";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { ThemeScript } from "@/components/theme/theme-script";
 import { ToastProvider } from "@/components/toast/toast-provider";
@@ -64,8 +65,10 @@ export default async function RootLayout({
               <Suspense fallback={null}>
                 <NavigationProgress />
               </Suspense>
-              <PwaProvider />
-              {children}
+              <PwaProvider>
+                <VersionRefresh />
+                {children}
+              </PwaProvider>
             </ToastProvider>
           </DataProvider>
         </ThemeProvider>

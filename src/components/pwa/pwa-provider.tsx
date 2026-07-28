@@ -1,10 +1,52 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
-const DISMISS_KEY = "reaper:pwa-install-dismissed";
+const DISMISS_UNTIL_KEY = "reaper:pwa-install-dismiss-until";
+const LEGACY_DISMISS_KEY = "reaper:pwa-install-dismissed";
+/** After "Not now", wait this long before auto-prompting again. */
+const DISMISS_MS = 14 * 24 * 60 * 60 * 1000;
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+type PwaInstallContextValue = {
+  /** Running as installed app (standalone window). */
+  isInstalled: boolean;
+  /** Browser has a deferred install prompt ready. */
+  canInstall: boolean;
+  install: () => Promise<boolean>;
+  /** Clear dismiss and show the banner again (if install is available). */
+  showInstallPrompt: () => void;
+};
+
+const PwaInstallContext = createContext<PwaInstallContextValue | null>(null);
+
+export function usePwaInstall(): PwaInstallContextValue {
+  const ctx = useContext(PwaInstallContext);
+  if (!ctx) {
+    return {
+      isInstalled: false,
+      canInstall: false,
+      install: async () => false,
+      showInstallPrompt: () => {},
+    };
+  }
+  return ctx;
+}
 
 function isStandaloneDisplay(): boolean {
   if (typeof window === "undefined") return false;
@@ -13,15 +55,53 @@ function isStandaloneDisplay(): boolean {
   return Boolean(nav.standalone);
 }
 
+function readDismissed(): boolean {
+  try {
+    if (window.localStorage.getItem(LEGACY_DISMISS_KEY) === "1") {
+      window.localStorage.removeItem(LEGACY_DISMISS_KEY);
+      writeDismissed();
+      return true;
+    }
+    const until = Number(window.localStorage.getItem(DISMISS_UNTIL_KEY) ?? "0");
+    return Number.isFinite(until) && until > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function writeDismissed() {
+  try {
+    window.localStorage.setItem(
+      DISMISS_UNTIL_KEY,
+      String(Date.now() + DISMISS_MS),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearDismissed() {
+  try {
+    window.localStorage.removeItem(DISMISS_UNTIL_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
- * Registers the notification service worker and, when Chrome offers install,
- * prompts so OS toasts can show as "Reaper" instead of "Google Chrome".
+ * Registers the notification service worker and surfaces install UX
+ * (banner + Settings) when the browser offers a PWA install prompt.
  */
-export function PwaProvider() {
+export function PwaProvider({ children }: { children?: ReactNode }) {
   const router = useRouter();
-  const deferredPrompt = useRef<Event | null>(null);
+  const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
   const [showHint, setShowHint] = useState(false);
+
+  useEffect(() => {
+    setIsInstalled(isStandaloneDisplay());
+  }, []);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -51,29 +131,21 @@ export function PwaProvider() {
 
   useEffect(() => {
     if (isStandaloneDisplay()) return;
-    if (typeof window === "undefined") return;
-    try {
-      if (window.localStorage.getItem(DISMISS_KEY) === "1") return;
-    } catch {
-      /* ignore */
-    }
 
     const onBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      deferredPrompt.current = e;
+      deferredPrompt.current = e as BeforeInstallPromptEvent;
       setCanInstall(true);
-      setShowHint(true);
+      if (!readDismissed()) setShowHint(true);
     };
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     return () =>
       window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
   }, []);
 
-  async function install() {
-    const ev = deferredPrompt.current as
-      | (Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> })
-      | null;
-    if (!ev?.prompt) return;
+  const install = useCallback(async () => {
+    const ev = deferredPrompt.current;
+    if (!ev?.prompt) return false;
     await ev.prompt();
     try {
       await ev.userChoice;
@@ -83,38 +155,58 @@ export function PwaProvider() {
     deferredPrompt.current = null;
     setCanInstall(false);
     setShowHint(false);
-  }
+    clearDismissed();
+    return true;
+  }, []);
+
+  const showInstallPrompt = useCallback(() => {
+    clearDismissed();
+    if (deferredPrompt.current) {
+      setCanInstall(true);
+      setShowHint(true);
+    }
+  }, []);
+
+  const value = useMemo(
+    () => ({ isInstalled, canInstall, install, showInstallPrompt }),
+    [isInstalled, canInstall, install, showInstallPrompt],
+  );
 
   function dismiss() {
     setShowHint(false);
-    try {
-      window.localStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      /* ignore */
-    }
+    writeDismissed();
   }
 
-  if (!showHint || !canInstall) return null;
-
   return (
-    <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-[80] flex justify-center sm:left-auto sm:right-4 sm:justify-end">
-      <div className="pointer-events-auto flex max-w-md items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3 shadow-lg">
-        <div className="min-w-0 flex-1 text-sm">
-          <p className="font-medium text-[var(--text)]">Install the Reaper app</p>
-          <p className="mt-0.5 text-[var(--text-muted)]">
-            Open Reaper from your desktop like a regular app — faster launch, its
-            own window, always one click away.
-          </p>
+    <PwaInstallContext.Provider value={value}>
+      {children}
+      {showHint && canInstall && !isInstalled ? (
+        <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-[80] flex justify-center sm:left-auto sm:right-4 sm:justify-end">
+          <div className="pointer-events-auto flex max-w-md items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3 shadow-lg">
+            <div className="min-w-0 flex-1 text-sm">
+              <p className="font-medium text-[var(--text)]">
+                Install the Reaper app
+              </p>
+              <p className="mt-0.5 text-[var(--text-muted)]">
+                Open Reaper from your desktop like a regular app — faster launch,
+                its own window, always one click away.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-1.5">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => void install()}
+              >
+                Install
+              </Button>
+              <Button type="button" variant="ghost" onClick={dismiss}>
+                Not now
+              </Button>
+            </div>
+          </div>
         </div>
-        <div className="flex shrink-0 flex-col gap-1.5">
-          <Button type="button" variant="primary" onClick={() => void install()}>
-            Install
-          </Button>
-          <Button type="button" variant="ghost" onClick={dismiss}>
-            Not now
-          </Button>
-        </div>
-      </div>
-    </div>
+      ) : null}
+    </PwaInstallContext.Provider>
   );
 }

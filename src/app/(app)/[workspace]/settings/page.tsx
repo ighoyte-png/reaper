@@ -12,6 +12,7 @@ import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
+import { usePwaInstall } from "@/components/pwa/pwa-provider";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -71,6 +72,12 @@ export default function SettingsPage() {
   const { clearViewAs } = useViewAs();
   const { theme, setTheme } = useTheme();
   const { push } = useToast();
+  const {
+    isInstalled: pwaInstalled,
+    canInstall: pwaCanInstall,
+    install: installPwa,
+    showInstallPrompt,
+  } = usePwaInstall();
   const router = useRouter();
   const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
@@ -701,6 +708,63 @@ export default function SettingsPage() {
                     options={CONTENT_WIDTH_OPTIONS}
                   />
                 </Field>
+
+                <div className="rounded-md border border-[var(--border)] p-3">
+                  <p className="text-sm font-medium text-[var(--text)]">
+                    Desktop app
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Install Reaper on this device for a dedicated window and
+                    quicker access from your desktop.
+                  </p>
+                  <div className="mt-3">
+                    {pwaInstalled ? (
+                      <p className="text-sm text-[var(--text-muted)]">
+                        You&apos;re using the installed Reaper app.
+                      </p>
+                    ) : pwaCanInstall ? (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        onClick={() => {
+                          void (async () => {
+                            const ok = await installPwa();
+                            if (ok) {
+                              push("Install started", "success");
+                            } else {
+                              showInstallPrompt();
+                              push(
+                                "Use the install prompt, or Chrome’s Install option in the address bar.",
+                              );
+                            }
+                          })();
+                        }}
+                      >
+                        Install Reaper app
+                      </Button>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-sm text-[var(--text-muted)]">
+                          Your browser doesn&apos;t have an install prompt ready
+                          yet. Try Chrome or Edge, or use the browser menu →
+                          Install app / Install page as app.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => {
+                            showInstallPrompt();
+                            push(
+                              "If Chrome offers Install in the address bar, use that. Otherwise check the browser menu.",
+                            );
+                          }}
+                        >
+                          Show install tip
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="mt-4 flex items-center justify-end border-t border-[var(--border)] pt-3">
