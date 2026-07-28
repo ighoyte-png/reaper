@@ -414,12 +414,12 @@ function PeoplePageContent() {
             ) : null}
             {person.office ? (
               <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-                {person.office}
+                City: {person.office}
               </div>
             ) : null}
             {linkedProfile ? (
               <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-                {accessLabel(linkedProfile.role)}
+                Access: {accessLabel(linkedProfile.role)}
               </div>
             ) : null}
           </div>

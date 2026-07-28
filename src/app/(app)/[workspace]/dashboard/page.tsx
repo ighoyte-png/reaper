@@ -1355,12 +1355,20 @@ function DashboardIdentityCard({
           ) : null}
           {!isPublicIdentity && identityPerson?.office ? (
             <div className="mt-0.5 text-xs text-[var(--text-muted)]">
-              {identityPerson.office}
+              City: {identityPerson.office}
             </div>
           ) : null}
           {!isPublicIdentity && personPods.length > 0 ? (
-            <div className="mt-0.5 text-xs text-[var(--text-muted)]">
-              Pod: {personPods.map((p) => p.name).join(", ")}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+              {personPods.map((pod) => (
+                <span
+                  key={pod.id}
+                  className="max-w-full truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+                  title={pod.name}
+                >
+                  {pod.name}
+                </span>
+              ))}
             </div>
           ) : null}
           {isPublicIdentity ? (
