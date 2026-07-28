@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { notesToEditorHtml, sanitizeNotesHtml } from "@/lib/notes-html";
 import type { MentionPerson } from "@/lib/mentions";
 import { createMentionSuggestion } from "@/components/ui/mention-suggestion";
+import { ensureDesktopNotificationPermission } from "@/lib/desktop-notifications";
 import { Field, Modal, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -291,7 +292,15 @@ export function SimpleRichTextEditor({
           <LinkIcon size={14} strokeWidth={2.5} />
         </ToolbarButton>
       </div>
-      <EditorContent editor={ed} />
+      <div
+        onFocusCapture={() => {
+          if (mentionPeople && mentionPeople.length > 0) {
+            void ensureDesktopNotificationPermission();
+          }
+        }}
+      >
+        <EditorContent editor={ed} />
+      </div>
       {mentionPeople && mentionPeople.length > 0 ? (
         <p className="border-t border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
           Type @ to mention someone

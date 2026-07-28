@@ -1836,6 +1836,7 @@ function ListSection({
               {drafting ? (
                 <InlineTaskForm
                   people={ctx.people}
+                  mentionPeople={ctx.mentionPeople}
                   initial={
                     readTaskCreateDraft(ctx.profileId, list.id) ?? undefined
                   }
@@ -1894,6 +1895,7 @@ function ListTaskDropZone({
 function InlineTaskForm({
   people,
   allPeople,
+  mentionPeople,
   initial,
   status = "upcoming",
   submitLabel,
@@ -1905,6 +1907,7 @@ function InlineTaskForm({
 }: {
   people: Person[];
   allPeople?: Person[];
+  mentionPeople?: Person[];
   initial?: InlineTaskDraft;
   status?: TaskStatus;
   submitLabel: string;
@@ -2039,7 +2042,12 @@ function InlineTaskForm({
           </div>
           <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
             <span className="pt-1.5 text-sm text-[var(--text-muted)]">Notes</span>
-            <SimpleRichTextEditor value={notes} onChange={setNotes} />
+            <SimpleRichTextEditor
+              value={notes}
+              onChange={setNotes}
+              placeholder="Add a note… Use @ to mention"
+              mentionPeople={mentionPeople}
+            />
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -2148,6 +2156,7 @@ function TaskRow({
         <InlineTaskForm
           people={ctx.people}
           allPeople={ctx.allPeople}
+          mentionPeople={ctx.mentionPeople}
           status={task.status}
           depth={0}
           submitLabel="Save"

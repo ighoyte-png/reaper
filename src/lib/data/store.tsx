@@ -25,6 +25,12 @@ import { addDays, parseISO } from "date-fns";
 import { assignmentOverlapsDateRange } from "@/lib/domain/recurrence";
 import { toDateKey } from "@/lib/domain/dates";
 import { emptyTaskAuditFields, orderTasksParentsFirst } from "@/lib/domain/tasks";
+import { extractMentionPersonIds } from "@/lib/mentions";
+import {
+  dispatchTaskNoteMention,
+  type TaskNoteMentionBroadcast,
+} from "@/lib/desktop-notifications";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import {
   bulletinUnreadRecipientProfileIds,
   clearLegacyDismissedBulletinIds,
@@ -613,6 +619,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   /** Auth session is a platform admin with no workspace profile. */
   const [platformOnly, setPlatformOnly] = useState(false);
   const supabaseRef = useRef<SupabaseClient | null>(null);
+  const orgChannelRef = useRef<RealtimeChannel | null>(null);
   const orgId = state.organization.id || ORG_ID;
   /** Recently written row ids — ignore realtime echoes of our own optimistic writes. */
   const localWritesRef = useRef<Map<string, number>>(new Map());
@@ -1119,7 +1126,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
         },
         onChange("pod_members"),
       )
+      .on(
+        "broadcast",
+        { event: "task-note-mention" },
+        ({ payload }) => {
+          const detail = payload as TaskNoteMentionBroadcast;
+          if (!detail?.personIds?.length || !detail.taskId) return;
+          dispatchTaskNoteMention(detail);
+        },
+      )
       .subscribe();
+
+    orgChannelRef.current = orgChannel;
 
     const projectChannels = activeRealtimeProjectIds.map((projectId) =>
       client
@@ -1159,6 +1177,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (flushTimer) clearTimeout(flushTimer);
+      orgChannelRef.current = null;
       void client.removeChannel(orgChannel);
       for (const ch of projectChannels) {
         void client.removeChannel(ch);
@@ -3101,6 +3120,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", row.id);
           runRemoteSoft(() => upsertTaskRow(supabaseRef.current!, row));
+        }
+        // Desktop notify newly @mentioned people in task notes (org broadcast).
+        const prevMentionIds = new Set(
+          extractMentionPersonIds(existing?.notes ?? ""),
+        );
+        const nextMentionIds = extractMentionPersonIds(row.notes ?? "");
+        const newlyMentioned = [...nextMentionIds].filter(
+          (id) => !prevMentionIds.has(id) && id !== myPerson?.id,
+        );
+        if (newlyMentioned.length > 0) {
+          const payload: TaskNoteMentionBroadcast = {
+            personIds: newlyMentioned,
+            taskId: row.id,
+            projectId: row.project_id,
+            taskTitle: row.title,
+            authorName:
+              myPerson?.name?.trim() ||
+              profile?.full_name?.trim() ||
+              profile?.email?.trim() ||
+              "Someone",
+          };
+          if (orgChannelRef.current) {
+            void orgChannelRef.current.send({
+              type: "broadcast",
+              event: "task-note-mention",
+              payload,
+            });
+          }
         }
       },
       deleteTask: (id) => {

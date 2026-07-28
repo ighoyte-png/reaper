@@ -3,19 +3,22 @@
 import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { format, isWeekend, parseISO, addWeeks, subWeeks } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass, Modal, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
-import { ManagerTag } from "@/components/projects/project-manager-person";
+import {
+  ManagerTag,
+  ProjectManagerTag,
+} from "@/components/projects/project-manager-person";
 import {
   filterPeopleByPod,
+  podsForPerson,
   scheduleProjectManagerPeople,
   sortPods,
   type PodFilter,
@@ -97,11 +100,8 @@ import {
   sortPeopleByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
-import {
-  projectManagerPerson,
-  showProjectManagerUi,
-} from "@/lib/domain/project-access";
 import { personAvatarColor } from "@/lib/domain/people";
+import { projectTeamPersonIds } from "@/lib/domain/project-access";
 import {
   isFullDayLeave,
   leaveBlockLabel,
@@ -117,6 +117,8 @@ import type {
   LeaveDay,
   LeaveKind,
   Person,
+  Pod,
+  PodMember,
   Project,
 } from "@/lib/types";
 
@@ -309,9 +311,9 @@ export function ScheduleGrid() {
   /** User's preferred minimized state (restored after temporary expand for editing). */
   const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(true);
   const [sidebarMinimized, setSidebarMinimized] = useState(true);
-  const [sidebarPanelTab, setSidebarPanelTab] = useState<"edit" | "tasks">(
-    "edit",
-  );
+  const [sidebarPanelTab, setSidebarPanelTab] = useState<
+    "edit" | "tasks" | "assignee"
+  >("edit");
   const sidebarPreferMinimizedRef = useRef(true);
   const hoursInputRef = useRef<HTMLInputElement>(null);
   /** When set to an assignment id, focus/select Hours after that form mounts. */
@@ -720,16 +722,48 @@ export function ScheduleGrid() {
 
   const selected = state.assignments.find((a) => a.id === selectedId) ?? null;
 
-  const showManagers = showProjectManagerUi(state.projects);
   const sidebarProjectId =
     editForm?.project_id ?? selected?.project_id ?? null;
   const sidebarProject = sidebarProjectId
     ? (projectsById.get(sidebarProjectId) ?? null)
     : null;
-  const sidebarManager =
-    showManagers && sidebarProject
-      ? projectManagerPerson(sidebarProject, state.people)
-      : null;
+  const sidebarColor = sidebarProject
+    ? projectDisplayColor(sidebarProject, clientsById)
+    : "var(--border)";
+  const sidebarAssigneeId =
+    editForm?.person_id ?? selected?.person_id ?? null;
+  const sidebarAssignee = sidebarAssigneeId
+    ? (state.people.find((p) => p.id === sidebarAssigneeId) ?? null)
+    : null;
+
+  const assignmentMentionPeople = useMemo(() => {
+    const projectId = editForm?.project_id ?? selected?.project_id ?? null;
+    if (!projectId) {
+      return sortPeopleByName(state.people).map((p) => ({
+        id: p.id,
+        name: p.name,
+      }));
+    }
+    const ids = projectTeamPersonIds(
+      projectId,
+      state.project_members,
+      state.assignments,
+      state.tasks,
+    );
+    const project = projectsById.get(projectId);
+    if (project?.manager_person_id) ids.add(project.manager_person_id);
+    return sortPeopleByName(state.people.filter((p) => ids.has(p.id))).map(
+      (p) => ({ id: p.id, name: p.name }),
+    );
+  }, [
+    editForm?.project_id,
+    selected?.project_id,
+    state.project_members,
+    state.assignments,
+    state.tasks,
+    state.people,
+    projectsById,
+  ]);
 
   useEffect(() => {
     const loadIds = new Set<string>();
@@ -3856,31 +3890,48 @@ export function ScheduleGrid() {
         ) : canManage && editForm ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="flex border-b border-[var(--border)] px-4">
-              <button
-                type="button"
-                className={cn(
-                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
-                  sidebarPanelTab === "edit"
-                    ? "border-[var(--accent)] text-[var(--text)]"
-                    : "border-transparent text-[var(--text-muted)]",
-                )}
-                onClick={() => setSidebarPanelTab("edit")}
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
-                  sidebarPanelTab === "tasks"
-                    ? "border-[var(--accent)] text-[var(--text)]"
-                    : "border-transparent text-[var(--text-muted)]",
-                )}
-                onClick={() => setSidebarPanelTab("tasks")}
-              >
-                Tasks
-              </button>
+            <div className="flex items-stretch border-b border-[var(--border)]">
+              <div className="flex items-center py-2 pl-3 pr-1">
+                <ProjectColorBar color={sidebarColor} size="stretch" className="min-h-6" />
+              </div>
+              <div className="flex min-w-0 flex-1">
+                <button
+                  type="button"
+                  className={cn(
+                    "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                    sidebarPanelTab === "edit"
+                      ? "border-[var(--accent)] text-[var(--text)]"
+                      : "border-transparent text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSidebarPanelTab("edit")}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                    sidebarPanelTab === "tasks"
+                      ? "border-[var(--accent)] text-[var(--text)]"
+                      : "border-transparent text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSidebarPanelTab("tasks")}
+                >
+                  Tasks
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                    sidebarPanelTab === "assignee"
+                      ? "border-[var(--accent)] text-[var(--text)]"
+                      : "border-transparent text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSidebarPanelTab("assignee")}
+                >
+                  Assignee
+                </button>
+              </div>
             </div>
             <div className="border-b border-[var(--border)] px-4 py-2">
               <Link
@@ -3903,6 +3954,13 @@ export function ScheduleGrid() {
                   allowSelect={false}
                 />
               </div>
+            ) : sidebarPanelTab === "assignee" ? (
+              <AssignmentAssigneeDetails
+                person={sidebarAssignee}
+                project={sidebarProject}
+                pods={state.pods}
+                podMembers={state.pod_members}
+              />
             ) : (
           <div className="space-y-3 p-4">
             <Field label="Project">
@@ -4020,6 +4078,8 @@ export function ScheduleGrid() {
               <SimpleRichTextEditor
                 value={editForm.notes}
                 onChange={(notes) => patchEditForm({ notes })}
+                placeholder="Add a note… Use @ to mention"
+                mentionPeople={assignmentMentionPeople}
               />
             </div>
             {(() => {
@@ -4052,20 +4112,29 @@ export function ScheduleGrid() {
                 </div>
               );
             })()}
-            <button
-              type="button"
-              disabled={!formDirty}
-              className={cn(
-                "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md text-sm font-medium",
-                formDirty
-                  ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90"
-                  : "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-              )}
-              onClick={saveEditForm}
-            >
-              <Save size={14} />
-              {formDirty ? "Save changes" : "Saved"}
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={!formDirty}
+                className={cn(
+                  "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md text-sm font-medium",
+                  formDirty
+                    ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90"
+                    : "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+                )}
+                onClick={saveEditForm}
+              >
+                <Save size={14} />
+                {formDirty ? "Save changes" : "Saved"}
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)]"
+                onClick={deleteSelectedAssignment}
+              >
+                <Trash2 size={14} /> Delete
+              </button>
+            </div>
             {(() => {
               const name = assignmentEditorName(
                 editForm.edited_by_profile_id,
@@ -4075,82 +4144,59 @@ export function ScheduleGrid() {
               if (!editForm.edited_at && !name) return null;
               return (
                 <p className="text-xs text-[var(--text-muted)]">
-                  Last Edited By: {name ?? "—"}
+                  {formatLastEditedBy(name, editForm.edited_at)}
                 </p>
               );
             })()}
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md border border-[var(--border)] text-sm"
-                onClick={() => {
-                  const base = editForm;
-                  const len =
-                    workingDaysBetween(
-                      base.start_date,
-                      base.end_date,
-                    ).length || 1;
-                  const next: Assignment = {
-                    ...base,
-                    id: newId("asg"),
-                    start_date: toDateKey(
-                      addDaysSafe(base.start_date, len + 2),
-                    ),
-                    end_date: toDateKey(
-                      addDaysSafe(base.end_date, len + 2),
-                    ),
-                  };
-                  commitAssignment(next, "Duplicated");
-                  selectAssignment(next.id);
-                }}
-              >
-                <Copy size={14} /> Duplicate
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)]"
-                onClick={deleteSelectedAssignment}
-              >
-                <Trash2 size={14} /> Delete
-              </button>
-            </div>
             </div>
             )}
             </div>
-            {sidebarManager ? (
-              <div className="shrink-0 border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3">
-                <ProjectManagerPerson person={sidebarManager} showTag />
-              </div>
-            ) : null}
           </div>
         ) : selected ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="flex border-b border-[var(--border)] px-4">
-              <button
-                type="button"
-                className={cn(
-                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
-                  sidebarPanelTab === "edit"
-                    ? "border-[var(--accent)] text-[var(--text)]"
-                    : "border-transparent text-[var(--text-muted)]",
-                )}
-                onClick={() => setSidebarPanelTab("edit")}
-              >
-                Details
-              </button>
-              <button
-                type="button"
-                className={cn(
-                  "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
-                  sidebarPanelTab === "tasks"
-                    ? "border-[var(--accent)] text-[var(--text)]"
-                    : "border-transparent text-[var(--text-muted)]",
-                )}
-                onClick={() => setSidebarPanelTab("tasks")}
-              >
-                Tasks
-              </button>
+            <div className="flex items-stretch border-b border-[var(--border)]">
+              <div className="flex items-center py-2 pl-3 pr-1">
+                <ProjectColorBar color={sidebarColor} size="stretch" className="min-h-6" />
+              </div>
+              <div className="flex min-w-0 flex-1">
+                <button
+                  type="button"
+                  className={cn(
+                    "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                    sidebarPanelTab === "edit"
+                      ? "border-[var(--accent)] text-[var(--text)]"
+                      : "border-transparent text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSidebarPanelTab("edit")}
+                >
+                  Details
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                    sidebarPanelTab === "tasks"
+                      ? "border-[var(--accent)] text-[var(--text)]"
+                      : "border-transparent text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSidebarPanelTab("tasks")}
+                >
+                  Tasks
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                    sidebarPanelTab === "assignee"
+                      ? "border-[var(--accent)] text-[var(--text)]"
+                      : "border-transparent text-[var(--text-muted)]",
+                  )}
+                  onClick={() => setSidebarPanelTab("assignee")}
+                >
+                  Assignee
+                </button>
+              </div>
             </div>
             <div className="border-b border-[var(--border)] px-4 py-2">
               <Link
@@ -4173,6 +4219,13 @@ export function ScheduleGrid() {
                   allowSelect={false}
                 />
               </div>
+            ) : sidebarPanelTab === "assignee" ? (
+              <AssignmentAssigneeDetails
+                person={sidebarAssignee}
+                project={sidebarProject}
+                pods={state.pods}
+                podMembers={state.pod_members}
+              />
             ) : (
           <ReadOnlyAssignmentDetails
             assignment={selected}
@@ -4193,11 +4246,6 @@ export function ScheduleGrid() {
           />
             )}
             </div>
-            {sidebarManager ? (
-              <div className="shrink-0 border-t border-[var(--border)] bg-[var(--bg)] px-4 py-3">
-                <ProjectManagerPerson person={sidebarManager} showTag />
-              </div>
-            ) : null}
           </div>
         ) : (
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm text-[var(--text-muted)]">
@@ -4933,17 +4981,92 @@ function ReadOnlyAssignmentDetails({
       </div>
       {assignment.edited_at || editorName ? (
         <p className="text-xs text-[var(--text-muted)]">
-          Last Edited By: {editorName ?? "—"}
+          {formatLastEditedBy(editorName, assignment.edited_at)}
         </p>
       ) : null}
     </div>
   );
 }
 
-function addDaysSafe(dateKey: string, days: number): Date {
-  const d = parseISO(dateKey);
-  d.setDate(d.getDate() + days);
-  return d;
+function formatLastEditedBy(
+  name: string | null | undefined,
+  editedAt: string | null | undefined,
+): string {
+  const who = name?.trim() || "—";
+  if (!editedAt) return `Last Edited By: ${who}`;
+  try {
+    const then = parseISO(editedAt).getTime();
+    if (Number.isNaN(then)) return `Last Edited By: ${who}`;
+    const hours = Math.max(0, Math.floor((Date.now() - then) / 3_600_000));
+    const ago =
+      hours < 1
+        ? "less than 1 hour ago"
+        : hours === 1
+          ? "1 hour ago"
+          : `${hours} hours ago`;
+    return `Last Edited By: ${who} · ${ago}`;
+  } catch {
+    return `Last Edited By: ${who}`;
+  }
+}
+
+function AssignmentAssigneeDetails({
+  person,
+  project,
+  pods,
+  podMembers,
+}: {
+  person: Person | null;
+  project: Project | null;
+  pods: Pod[];
+  podMembers: PodMember[];
+}) {
+  if (!person) {
+    return (
+      <p className="p-4 text-sm text-[var(--text-muted)]">No assignee.</p>
+    );
+  }
+  const personPods = podsForPerson(person.id, pods, podMembers);
+  const isProjectManager = Boolean(
+    project?.manager_person_id && project.manager_person_id === person.id,
+  );
+
+  return (
+    <div className="space-y-3 p-4">
+      <div className="flex items-start gap-3">
+        <PersonAvatar
+          avatarUrl={person.avatar_url}
+          name={person.name}
+          size="lg"
+          fallback="initials"
+          color={person.avatar_color}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="truncate text-sm font-semibold leading-tight">
+              {person.name}
+            </div>
+            {isProjectManager ? <ProjectManagerTag /> : null}
+          </div>
+          {person.role_title ? (
+            <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+              {person.role_title}
+            </div>
+          ) : null}
+          {person.office ? (
+            <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+              {person.office}
+            </div>
+          ) : null}
+          {personPods.length > 0 ? (
+            <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+              Pod: {personPods.map((p) => p.name).join(", ")}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Advance by N weekdays (skips Sat/Sun). */

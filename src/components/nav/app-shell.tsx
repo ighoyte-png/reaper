@@ -12,6 +12,7 @@ import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { loginPathWithNext, stripWorkspacePrefix } from "@/lib/paths";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
+import { MentionDesktopListener } from "@/components/notifications/mention-desktop-listener";
 
 /** Paths members cannot access — redirect here while Viewing As a member. */
 function isManageOnlyPath(pathname: string, workspaceSlug: string): boolean {
@@ -138,6 +139,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         <AppNavbar />
         <ViewAsBanner />
         <ViewAsRouteGuard />
+        <MentionDesktopListener />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
           {children}
         </div>
