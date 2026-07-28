@@ -222,12 +222,10 @@ export default function DashboardPage() {
   }, [orgScopedPeople, state.people.length]);
 
   const todaysAssignments = useMemo(() => {
-    const today = expandAssignmentsInRange(
-      state.assignments,
-      todayKey,
-      todayKey,
-    )
+    if (!personalPersonId) return [];
+    return expandAssignmentsInRange(state.assignments, todayKey, todayKey)
       .filter((o) => occurrenceCoversDay(o, todayKey))
+      .filter((o) => o.person_id === personalPersonId)
       .map((o) => ({
         id:
           o.weekOffset > 0
@@ -237,11 +235,7 @@ export default function DashboardPage() {
         project_id: o.project_id,
         hours_per_day: o.hours_per_day,
       }));
-    // Org dashboard / public share: all people. Members / View As: one person.
-    if (showingAsManager) return today;
-    if (!personalPersonId) return [];
-    return today.filter((a) => a.person_id === personalPersonId);
-  }, [state.assignments, todayKey, showingAsManager, personalPersonId]);
+  }, [state.assignments, todayKey, personalPersonId]);
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
@@ -927,10 +921,11 @@ export default function DashboardPage() {
               assignments={todaysAssignments}
               projects={state.projects}
               clients={state.clients}
-              people={orgScopedPeople}
-              orgMode={showingAsManager}
-              fallbackPerson={focusPerson}
-              defaultPersonId={personalPersonId}
+              person={
+                (personalPersonId
+                  ? state.people.find((p) => p.id === personalPersonId)
+                  : null) ?? focusPerson
+              }
               appHref={appHref}
               projectHref={projectHref}
             />
@@ -1565,10 +1560,7 @@ function TodaySchedule({
   assignments,
   projects,
   clients,
-  people,
-  orgMode,
-  fallbackPerson,
-  defaultPersonId,
+  person,
   appHref,
   projectHref,
 }: {
@@ -1580,49 +1572,18 @@ function TodaySchedule({
   }[];
   projects: Project[];
   clients: Client[];
-  people: Person[];
-  /** Manager / public: person filter across the org. */
-  orgMode: boolean;
-  fallbackPerson?: Person | null;
-  defaultPersonId?: string | null;
+  person?: Person | null;
   appHref: (path: string) => string;
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
 }) {
-  const [personFilter, setPersonFilter] = useState<string>(
-    () => defaultPersonId ?? people[0]?.id ?? "",
-  );
-
-  // Keep filter valid when roster / default changes.
-  const selectedPersonId = useMemo(() => {
-    if (!orgMode) return defaultPersonId ?? fallbackPerson?.id ?? "";
-    if (personFilter && people.some((p) => p.id === personFilter)) {
-      return personFilter;
-    }
-    if (defaultPersonId && people.some((p) => p.id === defaultPersonId)) {
-      return defaultPersonId;
-    }
-    return people[0]?.id ?? "";
-  }, [orgMode, personFilter, people, defaultPersonId, fallbackPerson?.id]);
-
-  const selectedPerson =
-    people.find((p) => p.id === selectedPersonId) ?? fallbackPerson ?? null;
-
-  const scoped = useMemo(() => {
-    if (!orgMode) return assignments;
-    if (!selectedPersonId) return [];
-    return assignments.filter((a) => a.person_id === selectedPersonId);
-  }, [assignments, orgMode, selectedPersonId]);
-
-  const dayAvailable = selectedPerson
-    ? dailyCapacityHours(selectedPerson)
-    : 0;
+  const dayAvailable = person ? dailyCapacityHours(person) : 0;
 
   const slices = useMemo(() => {
     const byProject = new Map<
       string,
       { projectId: string; hours: number; color: string; label: string }
     >();
-    for (const a of scoped) {
+    for (const a of assignments) {
       const project = projects.find((p) => p.id === a.project_id);
       const client = project?.client_id
         ? clients.find((c) => c.id === project.client_id)
@@ -1659,11 +1620,11 @@ function TodaySchedule({
       });
     }
     return projectSlices;
-  }, [scoped, projects, clients, dayAvailable]);
+  }, [assignments, projects, clients, dayAvailable]);
 
   const dayBooked = useMemo(
-    () => scoped.reduce((sum, a) => sum + a.hours_per_day, 0),
-    [scoped],
+    () => assignments.reduce((sum, a) => sum + a.hours_per_day, 0),
+    [assignments],
   );
 
   const dayLevel = capacityLevel(
@@ -1676,31 +1637,17 @@ function TodaySchedule({
 
   return (
     <section className={panelClass()}>
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <WidgetTitle icon={CalendarRange}>Schedules</WidgetTitle>
-          <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-            Today&apos;s hours by project
-          </p>
-        </div>
-        {orgMode && people.length > 0 ? (
-          <label className="flex min-w-0 items-center gap-2 text-xs text-[var(--text-muted)]">
-            <span className="shrink-0">Person</span>
-            <Select
-              searchable
-              className="mt-0 h-8 w-auto min-w-[9rem] max-w-[14rem] py-0 text-xs"
-              value={selectedPersonId}
-              onChange={setPersonFilter}
-              options={people.map((p) => ({ value: p.id, label: p.name }))}
-            />
-          </label>
-        ) : null}
+      <div className="mb-3 min-w-0">
+        <WidgetTitle icon={CalendarRange}>Schedules</WidgetTitle>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+          Today&apos;s hours by project
+        </p>
       </div>
 
-      {selectedPerson && dayAvailable > 0 ? (
+      {person && dayAvailable > 0 ? (
         <div className="mb-3 border-b border-[var(--section-rule)] pb-3">
           <CapacityBar
-            label={orgMode ? selectedPerson.name : "Today"}
+            label="Today"
             booked={dayBooked}
             available={dayAvailable}
             level={dayLevel}
@@ -1710,8 +1657,7 @@ function TodaySchedule({
 
       {pieTotal <= 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
-          Nothing scheduled today
-          {orgMode && selectedPerson ? ` for ${selectedPerson.name}` : ""}.
+          Nothing scheduled today.
         </p>
       ) : (
         <div className="flex flex-col items-center gap-4 pt-5 sm:flex-row sm:items-start sm:pt-6">
