@@ -5,6 +5,7 @@ import {
   expandAssignmentsInRange,
   occurrenceCoversDay,
 } from "@/lib/domain/recurrence";
+import { punchAssignmentOnDate } from "@/lib/domain/leave-override";
 
 /**
  * True when `candidate` would share any working day with another assignment
@@ -166,4 +167,109 @@ export function clampResizeStart(
     start = day;
   }
   return start;
+}
+
+function assignmentSpanDays(a: Assignment): number {
+  return workingDaysBetween(a.start_date, a.end_date).length;
+}
+
+/**
+ * Remove same-person + same-project day overlaps in `range`. Keeps the
+ * longer contiguous span (then stable id); punches/deletes underlappers.
+ */
+export function cleanupOverlappingAssignments(
+  assignments: Assignment[],
+  rangeStart: string,
+  rangeEnd: string,
+  newId: (prefix: string) => string,
+): { upserts: Assignment[]; deletes: string[] } {
+  const groups = new Map<string, Assignment[]>();
+  for (const a of assignments) {
+    const key = `${a.person_id}|${a.project_id}`;
+    const list = groups.get(key);
+    if (list) list.push(a);
+    else groups.set(key, [a]);
+  }
+
+  let current = [...assignments];
+  const allUpserts = new Map<string, Assignment>();
+  const allDeletes = new Set<string>();
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+
+    // Longer span wins, then stable id.
+    const ranked = [...group].sort((a, b) => {
+      const spanDiff = assignmentSpanDays(b) - assignmentSpanDays(a);
+      if (spanDiff !== 0) return spanDiff;
+      return a.id.localeCompare(b.id);
+    });
+
+    const claimed = new Set<string>();
+    const lineage = new Map<string, Set<string>>();
+    for (const root of ranked) {
+      lineage.set(root.id, new Set([root.id]));
+    }
+
+    for (const root of ranked) {
+      const liveIds = lineage.get(root.id);
+      if (!liveIds || liveIds.size === 0) continue;
+
+      const conflictDays = new Set<string>();
+      for (const id of [...liveIds]) {
+        const live = current.find((a) => a.id === id);
+        if (!live || allDeletes.has(id)) continue;
+        const occs = expandAssignmentInRange(live, rangeStart, rangeEnd);
+        for (const occ of occs) {
+          for (const day of workingDaysBetween(occ.start_date, occ.end_date)) {
+            if (day < rangeStart || day > rangeEnd) continue;
+            if (claimed.has(day)) conflictDays.add(day);
+          }
+        }
+      }
+
+      if (conflictDays.size > 0) {
+        for (const day of [...conflictDays].sort()) {
+          const pieces = current.filter(
+            (a) => liveIds.has(a.id) && !allDeletes.has(a.id),
+          );
+          for (const piece of pieces) {
+            const occs = expandAssignmentInRange(piece, day, day);
+            if (!occs.some((o) => occurrenceCoversDay(o, day))) continue;
+            const result = punchAssignmentOnDate(piece, day, newId);
+            for (const id of result.deletes) {
+              allDeletes.add(id);
+              allUpserts.delete(id);
+              liveIds.delete(id);
+              current = current.filter((a) => a.id !== id);
+            }
+            for (const row of result.upserts) {
+              allDeletes.delete(row.id);
+              allUpserts.set(row.id, row);
+              liveIds.add(row.id);
+              const idx = current.findIndex((a) => a.id === row.id);
+              if (idx >= 0) current[idx] = row;
+              else current.push(row);
+            }
+          }
+        }
+      }
+
+      for (const id of liveIds) {
+        const live = current.find((a) => a.id === id);
+        if (!live || allDeletes.has(id)) continue;
+        const occs = expandAssignmentInRange(live, rangeStart, rangeEnd);
+        for (const occ of occs) {
+          for (const day of workingDaysBetween(occ.start_date, occ.end_date)) {
+            if (day >= rangeStart && day <= rangeEnd) claimed.add(day);
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    upserts: [...allUpserts.values()].filter((a) => !allDeletes.has(a.id)),
+    deletes: [...allDeletes],
+  };
 }

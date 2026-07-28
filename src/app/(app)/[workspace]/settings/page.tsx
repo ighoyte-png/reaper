@@ -23,6 +23,7 @@ import {
   uploadPersonAvatar,
 } from "@/lib/supabase/avatar";
 import { isAdmin } from "@/lib/auth/roles";
+import { sortPeopleByName } from "@/lib/domain/sorting";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 import {
   CONTENT_WIDTH_OPTIONS,
@@ -400,7 +401,10 @@ export default function SettingsPage() {
           "warning",
         );
       } else {
-        push(`Applied ${n} statutory leave day(s)`, "success");
+        push(
+          `Applied ${n} statutory leave day(s). Existing holidays were refreshed; other leave on those days was left alone.`,
+          "success",
+        );
       }
     } catch (err) {
       push(err instanceof Error ? err.message : "Apply failed", "warning");
@@ -868,7 +872,7 @@ export default function SettingsPage() {
                           No people yet.
                         </p>
                       ) : (
-                        state.people.map((person) => (
+                        sortPeopleByName(state.people).map((person) => (
                           <label
                             key={person.id}
                             className="flex cursor-pointer items-center gap-2 text-sm"

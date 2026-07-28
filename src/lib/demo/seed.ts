@@ -373,6 +373,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-2",
@@ -388,6 +390,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-3",
@@ -403,6 +407,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "Overbooks Jordan this week",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-4",
@@ -418,6 +424,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-5",
@@ -433,6 +441,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "Pushes Atlas over total budget",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-6",
@@ -448,6 +458,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-7",
@@ -463,6 +475,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-8",
@@ -478,6 +492,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "Does not burn budget",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
       {
         id: "asg-9",
@@ -493,6 +509,8 @@ export function createDemoSeed(): DemoState {
         recurrence_end_date: null,
         recurrence_exceptions: [],
         notes: "",
+        edited_at: null,
+        edited_by_profile_id: null,
       },
     ],
     project_members: [],

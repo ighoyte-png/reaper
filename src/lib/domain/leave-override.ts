@@ -169,6 +169,22 @@ function punchWeekly(
 }
 
 /**
+ * Punch a single assignment off one date (non-recurring split or weekly
+ * exception/fragments). Used by leave override and overlap cleanup.
+ */
+export function punchAssignmentOnDate(
+  assignment: Assignment,
+  leaveDate: string,
+  newId: (prefix: string) => string,
+): LeaveOverrideResult {
+  const recurrence = assignment.recurrence ?? "none";
+  if (recurrence === "weekly") {
+    return punchWeekly(assignment, leaveDate, newId);
+  }
+  return punchNonRecurring(assignment, leaveDate, newId);
+}
+
+/**
  * Full-day leave clears booked time for that person/day by trimming or
  * splitting overlapping assignments (including weekly series).
  */
@@ -184,18 +200,7 @@ export function applyFullDayLeaveOverride(
   for (const assignment of assignments) {
     if (assignment.person_id !== personId) continue;
 
-    const recurrence = assignment.recurrence ?? "none";
-    if (recurrence === "weekly") {
-      const result = punchWeekly(assignment, leaveDate, newId);
-      upserts.push(...result.upserts);
-      deletes.push(...result.deletes);
-      continue;
-    }
-
-    const days = workingDaysBetween(assignment.start_date, assignment.end_date);
-    if (!days.includes(leaveDate)) continue;
-
-    const result = punchNonRecurring(assignment, leaveDate, newId);
+    const result = punchAssignmentOnDate(assignment, leaveDate, newId);
     upserts.push(...result.upserts);
     deletes.push(...result.deletes);
   }

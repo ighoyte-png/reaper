@@ -21,6 +21,8 @@ type Props = {
   /** Soft fills (e.g. leave) as date ranges. */
   fillRanges?: { start: string; end: string }[];
   fillClassName?: string;
+  /** Date keys where this person is overbooked — red column outline. */
+  overbookDayKeys?: string[];
   interactive?: boolean;
   title?: string;
   cursorClassName?: string;
@@ -46,6 +48,7 @@ export function ScheduleRowHitLayer({
   rangeClassName = "bg-[var(--accent)]/35",
   fillRanges,
   fillClassName = "bg-[var(--leave-block-fill)]",
+  overbookDayKeys,
   interactive = false,
   title,
   cursorClassName,
@@ -64,6 +67,32 @@ export function ScheduleRowHitLayer({
     const idx = columns.indexOf(today);
     return { left: columnOffsetPx(columns, idx), width: today.width };
   }, [columns]);
+
+  const overbookGeos = useMemo(() => {
+    if (!overbookDayKeys || overbookDayKeys.length === 0) return [];
+    const daySet = new Set(overbookDayKeys);
+    const out: { left: number; width: number; key: string }[] = [];
+    const seen = new Set<string>();
+    for (let i = 0; i < columns.length; i++) {
+      const col = columns[i];
+      if (seen.has(col.id)) continue;
+      let hit = false;
+      for (const day of daySet) {
+        if (day >= col.startKey && day <= col.endKey) {
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) continue;
+      seen.add(col.id);
+      out.push({
+        left: columnOffsetPx(columns, i),
+        width: col.width,
+        key: col.id,
+      });
+    }
+    return out;
+  }, [columns, overbookDayKeys]);
 
   const rangeGeo =
     rangeStart && rangeEnd
@@ -160,6 +189,14 @@ export function ScheduleRowHitLayer({
           style={{ left: hoverGeo.left, width: hoverGeo.width }}
         />
       ) : null}
+      {overbookGeos.map((g) => (
+        <div
+          key={g.key}
+          className="pointer-events-none absolute inset-y-0 box-border border border-[var(--status-over)]"
+          style={{ left: g.left, width: g.width }}
+          aria-hidden
+        />
+      ))}
     </div>
   );
 }

@@ -295,6 +295,8 @@ export interface Assignment {
    * removed or detached without splitting the series into multiple rows.
    */
   recurrence_exceptions: string[];
+  edited_at: string | null;
+  edited_by_profile_id: string | null;
 }
 
 /** Explicit project team roster (may also appear via schedule/tasks). */

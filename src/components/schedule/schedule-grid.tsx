@@ -63,7 +63,7 @@ import {
   readUserViewPrefs,
   scheduleAnchorForOffset,
 } from "@/lib/user-view-prefs";
-import { expandAssignmentsInRange, occurrenceCoversDay, type AssignmentOccurrence } from "@/lib/domain/recurrence";
+import { expandAssignmentsInRange, occurrenceCoversDay, assignmentOverlapsDateRange, type AssignmentOccurrence } from "@/lib/domain/recurrence";
 import {
   endWeeklySeriesBeforeOccurrence,
   splitWeeklySeriesForFuture,
@@ -74,6 +74,7 @@ import {
   assignmentPlacementConflicts,
   clampResizeEnd,
   clampResizeStart,
+  cleanupOverlappingAssignments,
   clipRangeToFreeDays,
   occupiedDaysForRow,
 } from "@/lib/domain/assignment-occupancy";
@@ -409,6 +410,43 @@ export function ScheduleGrid() {
     const fetchEnd = toDateKey(addWeeks(parseISO(endKey), 2));
     void ensureScheduleRange(fetchStart, fetchEnd);
   }, [startKey, endKey, ensureScheduleRange, state.organization.id]);
+
+  /** One-shot cleanup of legacy same-person/project day overlaps in view. */
+  useEffect(() => {
+    if (!canManage || isPublicShare) return;
+    const { upserts, deletes } = cleanupOverlappingAssignments(
+      state.assignments,
+      startKey,
+      endKey,
+      newId,
+    );
+    if (upserts.length === 0 && deletes.length === 0) return;
+    for (const id of deletes) {
+      deleteAssignment(id);
+    }
+    for (const row of upserts) {
+      upsertAssignment(row);
+    }
+    assignmentsRef.current = (() => {
+      let next = assignmentsRef.current.filter((a) => !deletes.includes(a.id));
+      for (const row of upserts) {
+        const exists = next.some((a) => a.id === row.id);
+        next = exists
+          ? next.map((a) => (a.id === row.id ? row : a))
+          : [...next, row];
+      }
+      return next;
+    })();
+  }, [
+    canManage,
+    isPublicShare,
+    startKey,
+    endKey,
+    state.assignments,
+    newId,
+    deleteAssignment,
+    upsertAssignment,
+  ]);
 
   const headerGroups = useMemo(() => {
     // Day zoom: one month chip per weekday week (5 days). Do not span the
@@ -795,6 +833,24 @@ export function ScheduleGrid() {
     capacityBands,
     state.leave_days,
   ]);
+
+  /** Day keys where booked hours exceed daily capacity (capacity_week / 5). */
+  const overbookedDaysByPersonId = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const person of visiblePeople) {
+      const dayHours = bookedHoursByPersonDay.get(person.id);
+      if (!dayHours) continue;
+      const cap = dailyCapacityHours(person);
+      if (cap <= 0) continue;
+      const days: string[] = [];
+      for (const [day, hours] of dayHours) {
+        if (day < startKey || day > endKey) continue;
+        if (hours > cap) days.push(day);
+      }
+      if (days.length > 0) map.set(person.id, days);
+    }
+    return map;
+  }, [visiblePeople, bookedHoursByPersonDay, startKey, endKey]);
 
   const projectsByPersonId = useMemo(() => {
     // Keep assignment rows visible for every project status (on hold, archived,
@@ -1444,6 +1500,8 @@ export function ScheduleGrid() {
       recurrence: "none",
       recurrence_end_date: null,
       recurrence_exceptions: [],
+      edited_at: null,
+      edited_by_profile_id: null,
     };
     trackedUpsert(
       row,
@@ -1457,7 +1515,66 @@ export function ScheduleGrid() {
   }
 
   function commitAssignment(next: Assignment, toast?: string) {
-    trackedUpsert(next, toast);
+    let row = next;
+    const checkStart =
+      row.start_date < startKey ? row.start_date : startKey;
+    const checkEnd = row.end_date > endKey ? row.end_date : endKey;
+    const padStart = shiftWorkingDays(checkStart, -20);
+    const padEnd = shiftWorkingDays(checkEnd, 60);
+    if (
+      assignmentPlacementConflicts(
+        row,
+        state.assignments,
+        padStart,
+        padEnd,
+      )
+    ) {
+      const clipped = clipRangeToFreeDays(
+        row.person_id,
+        row.project_id,
+        row.start_date,
+        row.start_date,
+        row.end_date,
+        state.assignments,
+        row.id,
+      );
+      if (!clipped) {
+        push("That range overlaps another block on this project", "warning");
+        return;
+      }
+      if (
+        clipped.start !== row.start_date ||
+        clipped.end !== row.end_date
+      ) {
+        row = {
+          ...row,
+          start_date: clipped.start,
+          end_date: clipped.end,
+        };
+        if (
+          assignmentPlacementConflicts(
+            row,
+            state.assignments,
+            padStart,
+            padEnd,
+          )
+        ) {
+          push("That range overlaps another block on this project", "warning");
+          return;
+        }
+      } else {
+        push("That range overlaps another block on this project", "warning");
+        return;
+      }
+    }
+    trackedUpsert(row, toast);
+    if (editForm?.id === row.id) {
+      setEditForm({
+        ...row,
+        edited_at: new Date().toISOString(),
+        edited_by_profile_id: profile?.id ?? null,
+      });
+    }
   }
 
   function patchEditForm(patch: Partial<Assignment>) {
@@ -1758,11 +1875,18 @@ export function ScheduleGrid() {
     [state.clients],
   );
 
-  /** Sidebar budget list — must not recompute on expand/collapse/scroll. */
+  /** Sidebar budget list — projects with assignments for visible people in range. */
   const sidebarProjectBurns = useMemo(() => {
     if (!canManage) return [];
+    const visibleIds = new Set(visiblePeople.map((p) => p.id));
+    const projectIds = new Set<string>();
+    for (const a of state.assignments) {
+      if (!visibleIds.has(a.person_id)) continue;
+      if (!assignmentOverlapsDateRange(a, startKey, endKey)) continue;
+      projectIds.add(a.project_id);
+    }
     return sortedProjects
-      .filter((p) => p.status === "active")
+      .filter((p) => p.status === "active" && projectIds.has(p.id))
       .map((project) => ({
         project,
         client: project.client_id
@@ -1776,6 +1900,9 @@ export function ScheduleGrid() {
     clientsById,
     state.assignments,
     state.people,
+    visiblePeople,
+    startKey,
+    endKey,
   ]);
 
   const addableProjectsForPerson = useMemo(() => {
@@ -2160,6 +2287,9 @@ export function ScheduleGrid() {
                   }
                   gridDragging={gridDragging}
                   sliceMode={sliceMode}
+                  overbookSignature={(
+                    overbookedDaysByPersonId.get(person.id) ?? []
+                  ).join("|")}
                   scrollRef={scrollRef}
                   onToggleCollapsed={togglePersonCollapsed}
                   onAddProject={() => {
@@ -2420,6 +2550,7 @@ export function ScheduleGrid() {
                         columns={columns}
                         width={tw}
                         height={ROW_H}
+                        overbookDayKeys={overbookedDaysByPersonId.get(person.id)}
                         rangeStart={
                           leaveDraft?.personId === person.id
                             ? leaveDraft.start
@@ -2710,6 +2841,9 @@ export function ScheduleGrid() {
                             columns={columns}
                             width={tw}
                             height={ROW_H}
+                            overbookDayKeys={overbookedDaysByPersonId.get(
+                              person.id,
+                            )}
                             rangeStart={
                               draft?.personId === person.id &&
                               draft?.projectId === project.id
@@ -3828,6 +3962,12 @@ export function ScheduleGrid() {
                     ),
                   })
                 }
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (!canManage) return;
+                  saveEditForm();
+                }}
               />
             </Field>
             <div className="block text-xs text-[var(--text-muted)]">
@@ -3881,23 +4021,19 @@ export function ScheduleGrid() {
               <Save size={14} />
               {formDirty ? "Save changes" : "Saved"}
             </button>
-            {editForm.start_date < editForm.end_date && (
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md border text-sm",
-                  sliceMode
-                    ? "border-[var(--accent)] text-[var(--accent)]"
-                    : "border-[var(--border)]",
-                )}
-                onClick={() => setSliceMode((v) => !v)}
-              >
-                <Scissors size={14} />
-                {sliceMode
-                  ? "Click a day on the block to slice…"
-                  : "Slice multi-day block"}
-              </button>
-            )}
+            {(() => {
+              const name = assignmentEditorName(
+                editForm.edited_by_profile_id,
+                state.profiles,
+                state.people,
+              );
+              if (!editForm.edited_at && !name) return null;
+              return (
+                <p className="text-xs text-[var(--text-muted)]">
+                  Last Edited By: {name ?? "—"}
+                </p>
+              );
+            })()}
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
@@ -4004,6 +4140,11 @@ export function ScheduleGrid() {
                   )
                 : "#64748B"
             }
+            editorName={assignmentEditorName(
+              selected.edited_by_profile_id,
+              state.profiles,
+              state.people,
+            )}
           />
             )}
             </div>
@@ -4250,7 +4391,8 @@ function personSectionPropsEqual(
     prev.selectedOccurrence === next.selectedOccurrence &&
     prev.selectedLeaveBlockId === next.selectedLeaveBlockId &&
     prev.gridDragging === next.gridDragging &&
-    prev.sliceMode === next.sliceMode
+    prev.sliceMode === next.sliceMode &&
+    prev.overbookSignature === next.overbookSignature
   );
 }
 
@@ -4295,6 +4437,7 @@ type PersonScheduleSectionProps = {
   selectedLeaveBlockId: string | null;
   gridDragging: boolean;
   sliceMode: boolean;
+  overbookSignature: string;
   scrollRef: RefObject<HTMLDivElement | null>;
   onToggleCollapsed: (personId: string) => void;
   onAddProject: () => void;
@@ -4657,14 +4800,27 @@ function MemberTodaySummary({
   );
 }
 
+function assignmentEditorName(
+  profileId: string | null | undefined,
+  profiles: { id: string; full_name: string }[],
+  people: { name: string; profile_id: string | null }[],
+): string | null {
+  if (!profileId) return null;
+  const author = profiles.find((p) => p.id === profileId);
+  const authorPerson = people.find((p) => p.profile_id === profileId);
+  return author?.full_name || authorPerson?.name || null;
+}
+
 function ReadOnlyAssignmentDetails({
   assignment,
   project,
   color,
+  editorName,
 }: {
   assignment: Assignment;
   project?: Project;
   color: string;
+  editorName?: string | null;
 }) {
   return (
     <div className="space-y-4 p-4 text-sm">
@@ -4722,6 +4878,11 @@ function ReadOnlyAssignmentDetails({
           <p className="mt-1.5 text-[var(--text-muted)]">No notes</p>
         )}
       </div>
+      {assignment.edited_at || editorName ? (
+        <p className="text-xs text-[var(--text-muted)]">
+          Last Edited By: {editorName ?? "—"}
+        </p>
+      ) : null}
     </div>
   );
 }

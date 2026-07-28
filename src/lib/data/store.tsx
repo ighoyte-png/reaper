@@ -145,6 +145,17 @@ function uid(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function stampAssignmentEdit(
+  assignment: Assignment,
+  actorId: string | null,
+): Assignment {
+  return {
+    ...assignment,
+    edited_at: new Date().toISOString(),
+    edited_by_profile_id: actorId,
+  };
+}
+
 function loadDemoState(): DemoState {
   if (typeof window === "undefined") return createDemoSeed();
   try {
@@ -2358,10 +2369,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertAssignment: (assignment) => {
+        const now = new Date().toISOString();
         const row = {
           ...withOrg(assignment),
           recurrence: assignment.recurrence ?? "none",
           recurrence_exceptions: assignment.recurrence_exceptions ?? [],
+          edited_at: now,
+          edited_by_profile_id: profile?.id ?? null,
         } as Assignment;
         patch((prev) => {
           const exists = prev.assignments.some((a) => a.id === row.id);
@@ -2456,12 +2470,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
               leaveRow.date,
               uid,
             );
-            remoteUpserts = ov.upserts;
+            const actorId = profile?.id ?? null;
+            remoteUpserts = ov.upserts.map((a) =>
+              stampAssignmentEdit(a, actorId),
+            );
             remoteDeletes = ov.deletes;
             assignments = prev.assignments.filter(
               (a) => !ov.deletes.includes(a.id),
             );
-            for (const a of ov.upserts) {
+            for (const a of remoteUpserts) {
               const idx = assignments.findIndex((x) => x.id === a.id);
               if (idx >= 0) assignments[idx] = a;
               else assignments.push(a);
@@ -2575,12 +2592,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
               dates,
               uid,
             );
-            asgUpserts = ov.upserts;
+            const actorId = profile?.id ?? null;
+            asgUpserts = ov.upserts.map((a) => stampAssignmentEdit(a, actorId));
             asgDeletes = ov.deletes;
             assignments = prev.assignments.filter(
               (a) => !ov.deletes.includes(a.id),
             );
-            for (const a of ov.upserts) {
+            for (const a of asgUpserts) {
               const idx = assignments.findIndex((x) => x.id === a.id);
               if (idx >= 0) assignments[idx] = a;
               else assignments.push(a);
@@ -2798,67 +2816,133 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       applyHolidayCalendar: async (calendarId) => {
-        const days = state.holiday_calendar_days.filter(
-          (d) => d.calendar_id === calendarId,
-        );
+        const days = state.holiday_calendar_days
+          .filter((d) => d.calendar_id === calendarId)
+          .slice()
+          .sort((a, b) => a.date.localeCompare(b.date));
         const people = state.people.filter(
           (p) => p.holiday_calendar_id === calendarId,
         );
         if (days.length === 0 || people.length === 0) return 0;
+
+        const rangeStart = days[0].date;
+        const rangeEnd = days[days.length - 1].date;
+        const organizationId = state.organization.id;
+        const personIds = new Set(people.map((p) => p.id));
+
+        // Prefetch leave + assignments for the holiday window so we reuse
+        // existing leave ids and can trim bookings even when Settings is open
+        // (schedule viewport may not have those weeks loaded).
+        let fetchedAssignments: Assignment[] = [];
+        let fetchedLeave: LeaveDay[] = [];
+        if (mode === "supabase" && supabaseRef.current && organizationId) {
+          const client = supabaseRef.current;
+          try {
+            const [assignments, leave_days] = await Promise.all([
+              loadAssignmentsForRange(
+                client,
+                organizationId,
+                rangeStart,
+                rangeEnd,
+              ),
+              loadLeaveForRange(client, organizationId, rangeStart, rangeEnd),
+            ]);
+            fetchedAssignments = assignments.filter((a) =>
+              personIds.has(a.person_id),
+            );
+            fetchedLeave = leave_days.filter((l) => personIds.has(l.person_id));
+          } catch (err) {
+            console.error("applyHolidayCalendar: failed to load range", err);
+            throw err instanceof Error
+              ? err
+              : new Error("Failed to load schedule data for holiday apply");
+          }
+        }
 
         let created: LeaveDay[] = [];
         let remoteUpserts: Assignment[] = [];
         let remoteDeletes: string[] = [];
 
         patch((prev) => {
-          let leave_days = [...prev.leave_days];
-          let assignments = [...prev.assignments];
+          const asgById = new Map(prev.assignments.map((a) => [a.id, a]));
+          for (const a of fetchedAssignments) asgById.set(a.id, a);
+          let assignments = [...asgById.values()];
+
+          const leaveById = new Map(prev.leave_days.map((l) => [l.id, l]));
+          for (const l of fetchedLeave) leaveById.set(l.id, l);
+          let leave_days = [...leaveById.values()];
+
           const newLeaves: LeaveDay[] = [];
           const upsertMap = new Map<string, Assignment>();
           const deleteSet = new Set<string>();
+          const leaveByPersonDate = new Map(
+            leave_days.map((l) => [`${l.person_id}|${l.date}`, l] as const),
+          );
+
+          function applyTrim(personId: string, date: string) {
+            const ov = applyFullDayLeaveOverride(
+              assignments,
+              personId,
+              date,
+              uid,
+            );
+            const actorId = profile?.id ?? null;
+            for (const id of ov.deletes) {
+              deleteSet.add(id);
+              upsertMap.delete(id);
+            }
+            assignments = assignments.filter((a) => !ov.deletes.includes(a.id));
+            for (const a of ov.upserts) {
+              const stamped = stampAssignmentEdit(a, actorId);
+              upsertMap.set(stamped.id, stamped);
+              const idx = assignments.findIndex((x) => x.id === stamped.id);
+              if (idx >= 0) assignments[idx] = stamped;
+              else assignments.push(stamped);
+            }
+          }
 
           for (const person of people) {
             for (const day of days) {
-              const existing = leave_days.find(
-                (l) => l.person_id === person.id && l.date === day.date,
-              );
+              const key = `${person.id}|${day.date}`;
+              const existing = leaveByPersonDate.get(key);
+
+              if (existing) {
+                // Slot already occupied — never stack a second leave row.
+                if (existing.kind === "holiday") {
+                  const leaveRow: LeaveDay = {
+                    ...existing,
+                    status: "approved",
+                    hours_per_day: null,
+                    notes: day.name?.trim() || existing.notes || "",
+                  };
+                  leave_days = leave_days.map((l) =>
+                    l.id === existing.id ? leaveRow : l,
+                  );
+                  leaveByPersonDate.set(key, leaveRow);
+                  newLeaves.push(leaveRow);
+                  applyTrim(person.id, day.date);
+                }
+                // Other leave kinds keep the day; skip holiday booking.
+                continue;
+              }
+
               const leaveRow: LeaveDay = {
-                id: existing?.id ?? uid("leave"),
+                id: uid("leave"),
                 organization_id: prev.organization.id,
                 person_id: person.id,
                 date: day.date,
                 kind: "holiday",
                 status: "approved",
                 hours_per_day: null,
-                notes: existing?.notes ?? day.name ?? "",
+                notes: day.name ?? "",
               };
               newLeaves.push(leaveRow);
-              if (existing) {
-                leave_days = leave_days.map((l) =>
-                  l.id === existing.id ? leaveRow : l,
-                );
-              } else {
-                leave_days.push(leaveRow);
-              }
-              const ov = applyFullDayLeaveOverride(
-                assignments,
-                person.id,
-                day.date,
-                uid,
-              );
-              for (const id of ov.deletes) {
-                deleteSet.add(id);
-                upsertMap.delete(id);
-              }
-              assignments = assignments.filter((a) => !ov.deletes.includes(a.id));
-              for (const a of ov.upserts) {
-                upsertMap.set(a.id, a);
-                const idx = assignments.findIndex((x) => x.id === a.id);
-                if (idx >= 0) assignments[idx] = a;
-                else assignments.push(a);
-              }
+              leave_days.push(leaveRow);
+              leaveByPersonDate.set(key, leaveRow);
+              applyTrim(person.id, day.date);
             }
           }
+
           created = newLeaves;
           remoteUpserts = [...upsertMap.values()];
           remoteDeletes = [...deleteSet];

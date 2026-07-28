@@ -348,6 +348,10 @@ export function mapAssignment(row: Record<string, unknown>): Assignment {
     recurrence_exceptions: Array.isArray(row.recurrence_exceptions)
       ? (row.recurrence_exceptions as unknown[]).map(String)
       : [],
+    edited_at: row.edited_at ? String(row.edited_at) : null,
+    edited_by_profile_id: row.edited_by_profile_id
+      ? String(row.edited_by_profile_id)
+      : null,
   };
 }
 
@@ -1920,7 +1924,7 @@ export async function upsertAssignmentRow(
   supabase: SupabaseClient,
   assignment: Assignment,
 ) {
-  const { error } = await supabase.from("assignments").upsert({
+  const payload = {
     id: assignment.id,
     organization_id: assignment.organization_id,
     person_id: assignment.person_id,
@@ -1934,8 +1938,32 @@ export async function upsertAssignmentRow(
     recurrence: assignment.recurrence ?? "none",
     recurrence_end_date: assignment.recurrence_end_date,
     recurrence_exceptions: assignment.recurrence_exceptions ?? [],
-  });
-  if (error) throw error;
+    edited_at: assignment.edited_at,
+    edited_by_profile_id: assignment.edited_by_profile_id,
+  };
+  const { error } = await supabase.from("assignments").upsert(payload);
+  if (!error) return;
+
+  const missingCols =
+    /Could not find the '(edited_at|edited_by_profile_id)' column/i.test(
+      error.message,
+    ) ||
+    (error.code === "PGRST204" &&
+      /(edited_at|edited_by_profile_id)/i.test(error.message));
+  if (missingCols) {
+    const {
+      edited_at: _e,
+      edited_by_profile_id: _b,
+      ...rest
+    } = payload;
+    const retry = await supabase.from("assignments").upsert(rest);
+    if (retry.error) throw retry.error;
+    console.warn(
+      "assignments.edited_at/edited_by_profile_id missing — apply supabase/migrations/056_assignment_edit_audit.sql",
+    );
+    return;
+  }
+  throw error;
 }
 
 export async function deleteAssignmentRow(
@@ -3009,6 +3037,8 @@ export async function seedDemoWorkspace(
     recurrence: a.recurrence ?? "none",
     recurrence_end_date: a.recurrence_end_date ?? null,
     recurrence_exceptions: a.recurrence_exceptions ?? [],
+    edited_at: a.edited_at ?? null,
+    edited_by_profile_id: a.edited_by_profile_id ?? null,
   }));
 
   const leaveDays = seed.leave_days.map((l) => ({
