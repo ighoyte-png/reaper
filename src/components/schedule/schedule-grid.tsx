@@ -196,12 +196,15 @@ export function ScheduleGrid() {
     project: "all",
     person: "all",
     zoom: "day",
+    capacity: "week",
   });
   const zoom = (
     filters.zoom === "week" || filters.zoom === "month" || filters.zoom === "day"
       ? filters.zoom
       : "day"
   ) as ScheduleZoom;
+  const capacityGrain: "week" | "day" =
+    filters.capacity === "day" ? "day" : "week";
   const projectFilter = filters.project;
   const personFilter = filters.person;
   const [podFilter, setPodFilter] = useState<PodFilter>("all");
@@ -229,7 +232,12 @@ export function ScheduleGrid() {
   }, [state.organization.id, profile?.id, podFilter]);
 
   useEffect(() => {
-    const patch: { project?: string; person?: string; zoom?: string } = {};
+    const patch: {
+      project?: string;
+      person?: string;
+      zoom?: string;
+      capacity?: string;
+    } = {};
     if (
       projectFilter !== "all" &&
       !state.projects.some((p) => p.id === projectFilter)
@@ -249,11 +257,15 @@ export function ScheduleGrid() {
     ) {
       patch.zoom = "day";
     }
+    if (filters.capacity !== "week" && filters.capacity !== "day") {
+      patch.capacity = "week";
+    }
     if (Object.keys(patch).length) setFilters(patch);
   }, [
     projectFilter,
     personFilter,
     filters.zoom,
+    filters.capacity,
     state.projects,
     state.people,
     setFilters,
@@ -507,14 +519,55 @@ export function ScheduleGrid() {
   }, [columns, zoom]);
 
   const capacityBands = useMemo(() => {
+    type Band = {
+      id: string;
+      startKey: string;
+      endKey: string;
+      width: number;
+      groupIndex: number;
+    };
+
+    // Per-day capacity: one segment per working day, aligned to the grid.
+    if (capacityGrain === "day") {
+      if (zoom === "day") {
+        return columns.map((c) => ({
+          id: c.id,
+          startKey: c.startKey,
+          endKey: c.endKey,
+          width: c.width,
+          groupIndex: c.groupIndex,
+        }));
+      }
+      const bands: Band[] = [];
+      for (const c of columns) {
+        const days = workingDaysBetween(c.startKey, c.endKey);
+        if (days.length === 0) {
+          bands.push({
+            id: c.id,
+            startKey: c.startKey,
+            endKey: c.endKey,
+            width: c.width,
+            groupIndex: c.groupIndex,
+          });
+          continue;
+        }
+        const dayW = c.width / days.length;
+        for (const day of days) {
+          bands.push({
+            id: day,
+            startKey: day,
+            endKey: day,
+            width: dayW,
+            groupIndex: c.groupIndex,
+          });
+        }
+      }
+      return bands;
+    }
+
+    // Per-week capacity (default): day-zoom columns roll up to week bands.
     if (zoom === "day") {
-      const bands: {
-        id: string;
-        startKey: string;
-        endKey: string;
-        width: number;
-        groupIndex: number;
-      }[] = [];
+      const bands: Band[] = [];
       let i = 0;
       while (i < columns.length) {
         const g = columns[i].groupIndex;
@@ -526,7 +579,13 @@ export function ScheduleGrid() {
           end = columns[i].endKey;
           i++;
         }
-        bands.push({ id: start, startKey: start, endKey: end, width, groupIndex: g });
+        bands.push({
+          id: start,
+          startKey: start,
+          endKey: end,
+          width,
+          groupIndex: g,
+        });
       }
       return bands;
     }
@@ -537,7 +596,7 @@ export function ScheduleGrid() {
       width: c.width,
       groupIndex: c.groupIndex,
     }));
-  }, [columns, zoom]);
+  }, [columns, zoom, capacityGrain]);
 
   function shiftAnchor(delta: number) {
     if (zoom === "month") setAnchor((a) => shiftMonth(a, delta));
@@ -833,24 +892,6 @@ export function ScheduleGrid() {
     capacityBands,
     state.leave_days,
   ]);
-
-  /** Day keys where booked hours exceed daily capacity (capacity_week / 5). */
-  const overbookedDaysByPersonId = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const person of visiblePeople) {
-      const dayHours = bookedHoursByPersonDay.get(person.id);
-      if (!dayHours) continue;
-      const cap = dailyCapacityHours(person);
-      if (cap <= 0) continue;
-      const days: string[] = [];
-      for (const [day, hours] of dayHours) {
-        if (day < startKey || day > endKey) continue;
-        if (hours > cap) days.push(day);
-      }
-      if (days.length > 0) map.set(person.id, days);
-    }
-    return map;
-  }, [visiblePeople, bookedHoursByPersonDay, startKey, endKey]);
 
   const projectsByPersonId = useMemo(() => {
     // Keep assignment rows visible for every project status (on hold, archived,
@@ -1987,6 +2028,16 @@ export function ScheduleGrid() {
           <p className="text-sm font-medium">
             {rangeLabel}
           </p>
+          <Select
+            value={capacityGrain}
+            onChange={(v) => setFilter("capacity", v)}
+            className="mt-0 h-8 w-[9.5rem] shrink-0"
+            aria-label="Capacity view"
+            options={[
+              { value: "week", label: "Capacity / week" },
+              { value: "day", label: "Capacity / day" },
+            ]}
+          />
           <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
             <Select
               value={zoom}
@@ -2287,9 +2338,7 @@ export function ScheduleGrid() {
                   }
                   gridDragging={gridDragging}
                   sliceMode={sliceMode}
-                  overbookSignature={(
-                    overbookedDaysByPersonId.get(person.id) ?? []
-                  ).join("|")}
+                  capacityGrain={capacityGrain}
                   scrollRef={scrollRef}
                   onToggleCollapsed={togglePersonCollapsed}
                   onAddProject={() => {
@@ -2550,7 +2599,6 @@ export function ScheduleGrid() {
                         columns={columns}
                         width={tw}
                         height={ROW_H}
-                        overbookDayKeys={overbookedDaysByPersonId.get(person.id)}
                         rangeStart={
                           leaveDraft?.personId === person.id
                             ? leaveDraft.start
@@ -2841,9 +2889,6 @@ export function ScheduleGrid() {
                             columns={columns}
                             width={tw}
                             height={ROW_H}
-                            overbookDayKeys={overbookedDaysByPersonId.get(
-                              person.id,
-                            )}
                             rangeStart={
                               draft?.personId === person.id &&
                               draft?.projectId === project.id
@@ -4392,7 +4437,7 @@ function personSectionPropsEqual(
     prev.selectedLeaveBlockId === next.selectedLeaveBlockId &&
     prev.gridDragging === next.gridDragging &&
     prev.sliceMode === next.sliceMode &&
-    prev.overbookSignature === next.overbookSignature
+    prev.capacityGrain === next.capacityGrain
   );
 }
 
@@ -4437,7 +4482,7 @@ type PersonScheduleSectionProps = {
   selectedLeaveBlockId: string | null;
   gridDragging: boolean;
   sliceMode: boolean;
-  overbookSignature: string;
+  capacityGrain: "week" | "day";
   scrollRef: RefObject<HTMLDivElement | null>;
   onToggleCollapsed: (personId: string) => void;
   onAddProject: () => void;
@@ -4452,6 +4497,7 @@ const PersonScheduleSection = memo(function PersonScheduleSection({
   utilBands,
   labelPx,
   zoom,
+  capacityGrain,
   canManage,
   scrollRef,
   onToggleCollapsed,
@@ -4523,8 +4569,8 @@ const PersonScheduleSection = memo(function PersonScheduleSection({
                 <div
                   key={band.id}
                   className={cn(
-                    "flex items-center px-1 text-[10px] font-medium",
-                    zoom === "month"
+                    "flex items-center px-0.5 text-[10px] font-medium",
+                    capacityGrain === "day" || zoom === "month"
                       ? "border-r border-[var(--schedule-day-border)]"
                       : "border-r-2 border-[var(--schedule-week-border)]",
                     band.level === "healthy" &&
@@ -4540,11 +4586,18 @@ const PersonScheduleSection = memo(function PersonScheduleSection({
                     width: band.width,
                     height: "calc(100% - 8px)",
                   }}
+                  title={
+                    band.available <= 0
+                      ? "Unavailable"
+                      : `${Math.round(band.pct)}% · ${formatHours(band.booked)} booked / ${formatHours(band.available)} available`
+                  }
                 >
                   <span className="truncate">
                     {band.available <= 0
                       ? "—"
-                      : `${Math.round(band.pct)}% | ${formatHours(band.booked)}`}
+                      : capacityGrain === "day"
+                        ? `${Math.round(band.pct)}%`
+                        : `${Math.round(band.pct)}% | ${formatHours(band.booked)}`}
                   </span>
                 </div>
               ))}
