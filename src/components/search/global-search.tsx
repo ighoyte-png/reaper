@@ -182,7 +182,7 @@ export function GlobalSearch({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/40 p-0 pt-[12vh] sm:p-4 sm:pt-[12vh]"
+      className="fixed inset-0 z-[100] flex items-start justify-center bg-black/65 p-0 pt-[12vh] sm:p-4 sm:pt-[12vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
