@@ -100,10 +100,10 @@ export function PwaProvider() {
     <div className="pointer-events-none fixed bottom-4 left-4 right-4 z-[80] flex justify-center sm:left-auto sm:right-4 sm:justify-end">
       <div className="pointer-events-auto flex max-w-md items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--bg-elevated)] p-3 shadow-lg">
         <div className="min-w-0 flex-1 text-sm">
-          <p className="font-medium text-[var(--text)]">Install Reaper</p>
+          <p className="font-medium text-[var(--text)]">Install the Reaper app</p>
           <p className="mt-0.5 text-[var(--text-muted)]">
-            Installed notifications show as Reaper with the app icon — not Google
-            Chrome.
+            Open Reaper from your desktop like a regular app — faster launch, its
+            own window, always one click away.
           </p>
         </div>
         <div className="flex shrink-0 flex-col gap-1.5">
