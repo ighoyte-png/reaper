@@ -46,6 +46,8 @@ Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
 
 9. **Security hardening**: after pulling latest, apply [`057_security_hardening.sql`](supabase/migrations/057_security_hardening.sql). Run `npm run security:check` for share/HTML/URL self-checks. Run `npm run security:rls` against staging (needs service role) for the two-agency RLS matrix — see [`supabase/tests/database/security_hardening_checklist.sql`](supabase/tests/database/security_hardening_checklist.sql).
 
+10. **Org search** (optional): apply [`058_org_search.sql`](supabase/migrations/058_org_search.sql) for Cmd/Ctrl+K deep search across projects, clients, tasks, and comments.
+
 With env vars set, the UI switches from local demo login to real Supabase auth and persists schedule/projects/people in Postgres.
 
 ## Features

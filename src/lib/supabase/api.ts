@@ -28,6 +28,7 @@ import type {
   TemplateTask,
   TemplateTaskList,
 } from "@/lib/types";
+import type { SearchHit } from "@/lib/search";
 
 function num(value: unknown, fallback = 0): number {
   if (typeof value === "number") return value;
@@ -3157,4 +3158,45 @@ export async function seedDemoWorkspace(
       "bulletins insert skipped — apply supabase/migrations/015_pm_execution.sql",
     );
   }
+}
+
+/** Org-wide deep search (requires migration 058). */
+export async function searchOrg(
+  supabase: SupabaseClient,
+  query: string,
+  limit = 40,
+): Promise<SearchHit[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+
+  const { data, error } = await supabase.rpc("search_org", {
+    p_query: q,
+    p_limit: limit,
+  });
+
+  if (error) {
+    if (
+      /Could not find the function/i.test(error.message) ||
+      /schema cache/i.test(error.message) ||
+      error.code === "PGRST202"
+    ) {
+      console.warn(
+        "search_org missing — apply supabase/migrations/058_org_search.sql",
+      );
+      return [];
+    }
+    throw error;
+  }
+
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    kind: String(row.kind) as SearchHit["kind"],
+    id: String(row.id),
+    title: String(row.title ?? ""),
+    subtitle: String(row.subtitle ?? ""),
+    snippet: String(row.snippet ?? ""),
+    project_id: row.project_id ? String(row.project_id) : null,
+    task_id: row.task_id ? String(row.task_id) : null,
+    client_id: row.client_id ? String(row.client_id) : null,
+    hit_rank: Number(row.hit_rank ?? 0),
+  }));
 }

@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  Search,
   Settings,
   Sun,
 } from "lucide-react";
@@ -18,6 +19,11 @@ import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
 import { PlatformAdminNavLink } from "@/components/nav/platform-admin-link";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import {
+  GlobalSearch,
+  GlobalSearchHotkeyBridge,
+  GlobalSearchTrigger,
+} from "@/components/search/global-search";
 import { useTheme } from "@/components/theme/theme-provider";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -85,6 +91,7 @@ export function AppNavbar() {
     pathForNav === "/settings" || pathForNav.startsWith("/settings/");
   const [aboutOpen, setAboutOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
   const accountName =
     myPerson?.name?.trim() ||
@@ -202,7 +209,24 @@ export function AppNavbar() {
             );
           })}
         </nav>
-        <div className="ml-auto flex shrink-0 items-center">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {!shareBasePath ? (
+            <>
+              <GlobalSearchTrigger
+                className="hidden sm:inline-flex"
+                onClick={() => setSearchOpen(true)}
+              />
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] sm:hidden"
+                aria-label="Search"
+                title="Search"
+                onClick={() => setSearchOpen(true)}
+              >
+                <Search size={16} strokeWidth={1.75} />
+              </button>
+            </>
+          ) : null}
           {accountName ? (
             <div ref={accountMenuRef} className="relative">
               <button
@@ -408,6 +432,18 @@ export function AppNavbar() {
         </div>
       </div>
       {aboutOpen ? <AboutDialog onClose={() => setAboutOpen(false)} /> : null}
+      {!shareBasePath ? (
+        <>
+          <GlobalSearchHotkeyBridge
+            enabled
+            onOpen={() => setSearchOpen(true)}
+          />
+          <GlobalSearch
+            open={searchOpen}
+            onClose={() => setSearchOpen(false)}
+          />
+        </>
+      ) : null}
     </>
   );
 }
