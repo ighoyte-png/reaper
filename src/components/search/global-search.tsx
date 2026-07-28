@@ -204,7 +204,7 @@ export function GlobalSearch({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search projects, clients, tasks, comments…"
+            placeholder="Search Reaper"
             className={cn(
               inputClass,
               "h-9 flex-1 border-0 bg-transparent px-0 shadow-none focus:ring-0",
@@ -340,15 +340,17 @@ export function GlobalSearchTrigger({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+        "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
         className,
       )}
       aria-label="Search"
       title="Search (Ctrl+K)"
     >
-      <Search size={14} strokeWidth={1.75} />
-      <span className="hidden truncate sm:inline">Search…</span>
-      <kbd className="ml-auto hidden shrink-0 rounded border border-[var(--border)] px-1 py-px text-[10px] text-[var(--text-muted)] lg:inline">
+      <Search size={14} strokeWidth={1.75} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate text-left sm:inline">
+        Search Reaper
+      </span>
+      <kbd className="ml-1 hidden shrink-0 rounded border border-[var(--border)] px-1 py-px text-[10px] text-[var(--text-muted)] sm:inline">
         Ctrl+K
       </kbd>
     </button>

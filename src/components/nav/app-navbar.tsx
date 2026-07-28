@@ -213,7 +213,7 @@ export function AppNavbar() {
           {!shareBasePath ? (
             <>
               <GlobalSearchTrigger
-                className="hidden sm:inline-flex"
+                className="hidden w-64 sm:inline-flex"
                 onClick={() => setSearchOpen(true)}
               />
               <button
