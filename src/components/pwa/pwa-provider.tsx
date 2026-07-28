@@ -58,14 +58,15 @@ export function PwaProvider() {
       /* ignore */
     }
 
-    const on bip = (e: Event) => {
+    const onBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       deferredPrompt.current = e;
       setCanInstall(true);
       setShowHint(true);
     };
-    window.addEventListener("beforeinstallprompt", on bip);
-    return () => window.removeEventListener("beforeinstallprompt", on bip);
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    return () =>
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
   }, []);
 
   async function install() {
