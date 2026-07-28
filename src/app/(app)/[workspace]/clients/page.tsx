@@ -484,15 +484,49 @@ function ClientsPageContent() {
                 <article
                   key={client.id}
                   className={cn(
-                    "flex gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+                    "group flex gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
                     archived && "opacity-60",
                   )}
                 >
                   <ProjectColorBar color={client.color} size="stretch" />
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="mb-3 min-w-0">
-                      <div className="truncate text-sm font-semibold leading-tight">
-                        {client.name}
+                      <div className="flex items-start gap-1">
+                        <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
+                          {client.name}
+                        </div>
+                        {canManage ? (
+                          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                            <button
+                              type="button"
+                              className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                              onClick={() => toggleArchive(client)}
+                              aria-label={
+                                archived
+                                  ? `Unarchive ${client.name}`
+                                  : `Archive ${client.name}`
+                              }
+                              title={archived ? "Unarchive" : "Archive"}
+                            >
+                              {archived ? (
+                                <ArchiveRestore size={14} strokeWidth={1.75} />
+                              ) : (
+                                <Archive size={14} strokeWidth={1.75} />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                              onClick={() =>
+                                setEditing(normalizeClientContact(client))
+                              }
+                              aria-label={`Edit ${client.name}`}
+                              title="Edit"
+                            >
+                              <Pencil size={14} strokeWidth={1.75} />
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         <span
@@ -543,39 +577,6 @@ function ClientsPageContent() {
                         <p className="line-clamp-2 pt-0.5">{client.notes}</p>
                       ) : null}
                     </div>
-
-                    {canManage ? (
-                      <div className="mt-3 flex items-center justify-end gap-1 border-t border-[var(--border)] pt-2.5">
-                        <button
-                          type="button"
-                          className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                          onClick={() => toggleArchive(client)}
-                          aria-label={
-                            archived
-                              ? `Unarchive ${client.name}`
-                              : `Archive ${client.name}`
-                          }
-                          title={archived ? "Unarchive" : "Archive"}
-                        >
-                          {archived ? (
-                            <ArchiveRestore size={14} strokeWidth={1.75} />
-                          ) : (
-                            <Archive size={14} strokeWidth={1.75} />
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className="inline-flex cursor-pointer rounded p-1.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                          onClick={() =>
-                            setEditing(normalizeClientContact(client))
-                          }
-                          aria-label={`Edit ${client.name}`}
-                          title="Edit"
-                        >
-                          <Pencil size={14} strokeWidth={1.75} />
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
                 </article>
               );

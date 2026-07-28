@@ -84,9 +84,9 @@ export function childTasks(tasks: Task[], parentId: string): Task[] {
 export function taskStatusLabel(status: TaskStatus): string {
   switch (status) {
     case "upcoming":
-      return "Upcoming";
-    case "active":
       return "Active";
+    case "active":
+      return "In Review";
     case "complete":
       return "Complete";
   }

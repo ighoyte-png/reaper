@@ -710,7 +710,7 @@ function TasksOverview({
         projectId: "in-progress",
         hours: data.inProgress,
         color: "var(--task-active-fg)",
-        label: "In Progress",
+        label: "In Review",
       },
       {
         projectId: "no-due",
@@ -722,7 +722,7 @@ function TasksOverview({
         projectId: "upcoming",
         hours: data.upcoming,
         color: "var(--accent)",
-        label: "Upcoming",
+        label: "Active",
       },
     ] as const
   ).filter((s) => s.hours > 0);
