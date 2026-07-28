@@ -75,7 +75,7 @@ export function GlobalSearch({
 }) {
   const mounted = useMounted();
   const router = useRouter();
-  const { mode, state, isPublicShare } = useData();
+  const { mode, state, isPublicShare, canManage, myPerson, profile } = useData();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +88,16 @@ export function GlobalSearch({
   const reqId = useRef(0);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const accessRef = useRef({
+    canManage,
+    personId: myPerson?.id ?? null,
+    role: profile?.role ?? null,
+  });
+  accessRef.current = {
+    canManage,
+    personId: myPerson?.id ?? null,
+    role: profile?.role ?? null,
+  };
 
   const flat = useMemo(() => flattenHits(hits), [hits]);
 
@@ -131,7 +141,7 @@ export function GlobalSearch({
       try {
         let next: SearchHit[];
         if (mode === "demo") {
-          next = searchDemoState(stateRef.current, q);
+          next = searchDemoState(stateRef.current, q, 40, accessRef.current);
         } else {
           const client = createClient();
           next = await searchOrg(client, q);
@@ -147,7 +157,7 @@ export function GlobalSearch({
         if (reqId.current === id) setLoading(false);
       }
     })();
-  }, [debounced, open, isPublicShare, mode]);
+  }, [debounced, open, isPublicShare, mode, canManage, myPerson?.id, profile?.role]);
 
   const go = useCallback(
     (hit: SearchHit) => {

@@ -1,5 +1,7 @@
+import { canManage } from "@/lib/auth/roles";
+import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { notesPlainText } from "@/lib/notes-html";
-import type { DemoState } from "@/lib/types";
+import type { DemoState, Role } from "@/lib/types";
 
 export type SearchHitKind = "client" | "project" | "task" | "comment";
 
@@ -13,6 +15,12 @@ export type SearchHit = {
   task_id: string | null;
   client_id: string | null;
   hit_rank: number;
+};
+
+export type SearchAccessContext = {
+  canManage?: boolean;
+  role?: Role | null;
+  personId?: string | null;
 };
 
 function matches(haystack: string, q: string): boolean {
@@ -29,21 +37,54 @@ function clip(text: string, n = 140): string {
 export function searchDemoState(
   state: Pick<
     DemoState,
-    "clients" | "projects" | "tasks" | "task_comments" | "profiles"
+    | "clients"
+    | "projects"
+    | "tasks"
+    | "task_comments"
+    | "profiles"
+    | "assignments"
+    | "project_members"
   >,
   query: string,
   limit = 40,
+  access?: SearchAccessContext,
 ): SearchHit[] {
   const q = query.trim().toLowerCase();
   if (q.length < 2) return [];
+
+  const manage =
+    access?.canManage ??
+    (access?.role != null ? canManage(access.role) : true);
+  const personId = access?.personId ?? null;
+  const visibleProjectIds = manage
+    ? null
+    : personId
+      ? projectIdsForPerson(
+          personId,
+          state.assignments ?? [],
+          state.tasks,
+          state.project_members ?? [],
+          state.projects,
+        )
+      : new Set<string>();
 
   const per = Math.max(3, Math.floor(limit / 4));
   const clientsById = new Map(state.clients.map((c) => [c.id, c]));
   const projectsById = new Map(state.projects.map((p) => [p.id, p]));
   const tasksById = new Map(state.tasks.map((t) => [t.id, t]));
 
+  const visibleClientIds = new Set<string>();
+  if (visibleProjectIds) {
+    for (const p of state.projects) {
+      if (visibleProjectIds.has(p.id) && p.client_id) {
+        visibleClientIds.add(p.client_id);
+      }
+    }
+  }
+
   const clients: SearchHit[] = [];
   for (const c of state.clients) {
+    if (visibleProjectIds && !visibleClientIds.has(c.id)) continue;
     const contact = `${c.contact_first_name} ${c.contact_last_name}`.trim();
     const notes = notesPlainText(c.notes);
     const nameHit = matches(c.name, q);
@@ -75,6 +116,7 @@ export function searchDemoState(
   const projects: SearchHit[] = [];
   const projectLim = Math.min(limit, 40);
   for (const p of state.projects) {
+    if (visibleProjectIds && !visibleProjectIds.has(p.id)) continue;
     const notes = notesPlainText(p.notes);
     const nameHit = matches(p.name, q);
     const notesHit = matches(notes, q);
@@ -98,6 +140,7 @@ export function searchDemoState(
 
   const tasks: SearchHit[] = [];
   for (const t of state.tasks) {
+    if (visibleProjectIds && !visibleProjectIds.has(t.project_id)) continue;
     const notes = notesPlainText(t.notes);
     const titleHit = matches(t.title, q);
     const notesHit = matches(notes, q);
@@ -119,17 +162,19 @@ export function searchDemoState(
 
   const comments: SearchHit[] = [];
   for (const c of state.task_comments) {
+    const task = tasksById.get(c.task_id);
+    if (!task) continue;
+    if (visibleProjectIds && !visibleProjectIds.has(task.project_id)) continue;
     const body = notesPlainText(c.body);
     if (!matches(body, q)) continue;
-    const task = tasksById.get(c.task_id);
-    const project = task ? projectsById.get(task.project_id) : null;
+    const project = projectsById.get(task.project_id);
     comments.push({
       kind: "comment",
       id: c.id,
-      title: task?.title?.trim() || "Comment",
+      title: task.title?.trim() || "Comment",
       subtitle: project?.name ?? "",
       snippet: clip(body),
-      project_id: task?.project_id ?? null,
+      project_id: task.project_id,
       task_id: c.task_id,
       client_id: project?.client_id ?? null,
       hit_rank: 2,
