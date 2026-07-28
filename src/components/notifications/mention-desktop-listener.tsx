@@ -4,8 +4,11 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { personAvatarColor } from "@/lib/domain/people";
+import { notesPlainText } from "@/lib/notes-html";
 import {
   TASK_NOTE_MENTION_EVENT,
+  notificationPortraitIcon,
   showDesktopNotification,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
@@ -50,6 +53,7 @@ export function MentionDesktopListener() {
 
     const personId = myPerson.id;
     const myProfileId = profile?.id ?? null;
+    const orgName = state.organization?.name?.trim() || "Reaper";
 
     void (async () => {
       await ensureMentionComments(fresh);
@@ -70,10 +74,39 @@ export function MentionDesktopListener() {
         const project = task
           ? (snap.projects.find((p) => p.id === task.project_id) ?? null)
           : null;
+        const authorPerson = comment?.author_profile_id
+          ? (snap.people.find((p) => p.profile_id === comment.author_profile_id) ??
+            null)
+          : null;
+        const authorProfile = comment?.author_profile_id
+          ? (snap.profiles.find((p) => p.id === comment.author_profile_id) ??
+            null)
+          : null;
+        const authorName =
+          authorPerson?.name?.trim() ||
+          authorProfile?.full_name?.trim() ||
+          authorProfile?.email?.trim() ||
+          "Someone";
+        const snippet = comment
+          ? notesPlainText(comment.body).slice(0, 140)
+          : "";
+        const bodyParts = [
+          orgName,
+          task
+            ? `${task.title}${snippet ? ` — ${snippet}` : ""}`
+            : snippet || "New mention in a comment",
+        ];
 
-        showDesktopNotification("New mention", {
-          body: "Open Reaper to view the mention",
+        const icon = await notificationPortraitIcon({
+          name: authorName,
+          avatarUrl: authorPerson?.avatar_url,
+          color: authorPerson ? personAvatarColor(authorPerson) : null,
+        });
+
+        showDesktopNotification(authorName, {
+          body: bodyParts.join("\n"),
           tag: `mention-comment-${commentId}`,
+          icon,
           onClick: () => {
             const latest = stateRef.current;
             const c =
@@ -96,6 +129,7 @@ export function MentionDesktopListener() {
     })();
   }, [
     state.unread_mentions,
+    state.organization?.name,
     myPerson,
     profile?.id,
     isPublicShare,
@@ -108,14 +142,28 @@ export function MentionDesktopListener() {
   useEffect(() => {
     if (isPublicShare || !myPerson) return;
     const personId = myPerson.id;
+    const orgName = state.organization?.name?.trim() || "Reaper";
 
     function onTaskNoteMention(ev: Event) {
       const detail = (ev as CustomEvent<TaskNoteMentionBroadcast>).detail;
       if (!detail?.personIds?.includes(personId)) return;
 
-      showDesktopNotification("New mention", {
-          body: "Open Reaper to view the mention",
+      const authorName = detail.authorName?.trim() || "Someone";
+      void (async () => {
+        const icon = await notificationPortraitIcon({
+          name: authorName,
+          avatarUrl: detail.authorAvatarUrl,
+          color: detail.authorColor,
+        });
+        showDesktopNotification(authorName, {
+          body: [
+            orgName,
+            detail.taskTitle
+              ? `In task “${detail.taskTitle}”`
+              : "In a task note",
+          ].join("\n"),
           tag: `mention-task-${detail.taskId}`,
+          icon,
           onClick: () => {
             const project = stateRef.current.projects.find(
               (p) => p.id === detail.projectId,
@@ -127,12 +175,20 @@ export function MentionDesktopListener() {
             }
           },
         });
+      })();
     }
 
     window.addEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
     return () =>
       window.removeEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
-  }, [isPublicShare, myPerson, router, projectHref, appHref]);
+  }, [
+    isPublicShare,
+    myPerson,
+    state.organization?.name,
+    router,
+    projectHref,
+    appHref,
+  ]);
 
   return null;
 }

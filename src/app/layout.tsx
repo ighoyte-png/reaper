@@ -22,9 +22,15 @@ export const metadata: Metadata = {
   },
   description:
     "Reaper - Project Management That Doesn't Get in Your Way.",
+  applicationName: "Reaper",
   icons: {
     icon: "/reaper_logo.svg",
     apple: "/reaper_logo.svg",
+  },
+  appleWebApp: {
+    title: "Reaper",
+    capable: true,
+    statusBarStyle: "default",
   },
 };
 

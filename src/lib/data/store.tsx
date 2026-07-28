@@ -111,6 +111,7 @@ import { canManage, isAdmin, personForProfile } from "@/lib/auth/roles";
 import { clearViewAsStorage } from "@/lib/view-as-storage";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
+import { personAvatarColor } from "@/lib/domain/people";
 import { workingDaysBetween } from "@/lib/domain/dates";
 import { uniqueSlug } from "@/lib/slug";
 import {
@@ -3143,6 +3144,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
               profile?.full_name?.trim() ||
               profile?.email?.trim() ||
               "Someone",
+            authorAvatarUrl: myPerson?.avatar_url ?? null,
+            authorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
           if (orgChannelRef.current) {
             void orgChannelRef.current.send({

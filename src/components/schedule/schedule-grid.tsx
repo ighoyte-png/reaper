@@ -312,7 +312,7 @@ export function ScheduleGrid() {
   const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(true);
   const [sidebarMinimized, setSidebarMinimized] = useState(true);
   const [sidebarPanelTab, setSidebarPanelTab] = useState<
-    "edit" | "tasks" | "assignee"
+    "edit" | "tasks" | "assigner"
   >("edit");
   const sidebarPreferMinimizedRef = useRef(true);
   const hoursInputRef = useRef<HTMLInputElement>(null);
@@ -730,10 +730,9 @@ export function ScheduleGrid() {
   const sidebarColor = sidebarProject
     ? projectDisplayColor(sidebarProject, clientsById)
     : "var(--border)";
-  const sidebarAssigneeId =
-    editForm?.person_id ?? selected?.person_id ?? null;
-  const sidebarAssignee = sidebarAssigneeId
-    ? (state.people.find((p) => p.id === sidebarAssigneeId) ?? null)
+  const sidebarAssignerId = sidebarProject?.manager_person_id ?? null;
+  const sidebarAssigner = sidebarAssignerId
+    ? (state.people.find((p) => p.id === sidebarAssignerId) ?? null)
     : null;
 
   const assignmentMentionPeople = useMemo(() => {
@@ -3923,13 +3922,13 @@ export function ScheduleGrid() {
                   type="button"
                   className={cn(
                     "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
-                    sidebarPanelTab === "assignee"
+                    sidebarPanelTab === "assigner"
                       ? "border-[var(--accent)] text-[var(--text)]"
                       : "border-transparent text-[var(--text-muted)]",
                   )}
-                  onClick={() => setSidebarPanelTab("assignee")}
+                  onClick={() => setSidebarPanelTab("assigner")}
                 >
-                  Assignee
+                  Assigner
                 </button>
               </div>
             </div>
@@ -3952,12 +3951,16 @@ export function ScheduleGrid() {
                   readOnly
                   compact
                   allowSelect={false}
+                  assigneePersonId={
+                    canManage
+                      ? null
+                      : (viewAs?.effectivePersonId ?? myPerson?.id ?? null)
+                  }
                 />
               </div>
-            ) : sidebarPanelTab === "assignee" ? (
-              <AssignmentAssigneeDetails
-                person={sidebarAssignee}
-                project={sidebarProject}
+            ) : sidebarPanelTab === "assigner" ? (
+              <AssignmentAssignerDetails
+                person={sidebarAssigner}
                 pods={state.pods}
                 podMembers={state.pod_members}
               />
@@ -4188,13 +4191,13 @@ export function ScheduleGrid() {
                   type="button"
                   className={cn(
                     "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
-                    sidebarPanelTab === "assignee"
+                    sidebarPanelTab === "assigner"
                       ? "border-[var(--accent)] text-[var(--text)]"
                       : "border-transparent text-[var(--text-muted)]",
                   )}
-                  onClick={() => setSidebarPanelTab("assignee")}
+                  onClick={() => setSidebarPanelTab("assigner")}
                 >
-                  Assignee
+                  Assigner
                 </button>
               </div>
             </div>
@@ -4217,12 +4220,16 @@ export function ScheduleGrid() {
                   readOnly
                   compact
                   allowSelect={false}
+                  assigneePersonId={
+                    canManage
+                      ? null
+                      : (viewAs?.effectivePersonId ?? myPerson?.id ?? null)
+                  }
                 />
               </div>
-            ) : sidebarPanelTab === "assignee" ? (
-              <AssignmentAssigneeDetails
-                person={sidebarAssignee}
-                project={sidebarProject}
+            ) : sidebarPanelTab === "assigner" ? (
+              <AssignmentAssignerDetails
+                person={sidebarAssigner}
                 pods={state.pods}
                 podMembers={state.pod_members}
               />
@@ -5010,26 +5017,21 @@ function formatLastEditedBy(
   }
 }
 
-function AssignmentAssigneeDetails({
+function AssignmentAssignerDetails({
   person,
-  project,
   pods,
   podMembers,
 }: {
   person: Person | null;
-  project: Project | null;
   pods: Pod[];
   podMembers: PodMember[];
 }) {
   if (!person) {
     return (
-      <p className="p-4 text-sm text-[var(--text-muted)]">No assignee.</p>
+      <p className="p-4 text-sm text-[var(--text-muted)]">No assigner.</p>
     );
   }
   const personPods = podsForPerson(person.id, pods, podMembers);
-  const isProjectManager = Boolean(
-    project?.manager_person_id && project.manager_person_id === person.id,
-  );
 
   return (
     <div className="space-y-3 p-4">
@@ -5046,7 +5048,7 @@ function AssignmentAssigneeDetails({
             <div className="truncate text-sm font-semibold leading-tight">
               {person.name}
             </div>
-            {isProjectManager ? <ProjectManagerTag /> : null}
+            <ProjectManagerTag />
           </div>
           {person.role_title ? (
             <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
@@ -5055,12 +5057,20 @@ function AssignmentAssigneeDetails({
           ) : null}
           {person.office ? (
             <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-              {person.office}
+              City: {person.office}
             </div>
           ) : null}
           {personPods.length > 0 ? (
-            <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-              Pod: {personPods.map((p) => p.name).join(", ")}
+            <div className="mt-2 flex flex-wrap items-center gap-1">
+              {personPods.map((pod) => (
+                <span
+                  key={pod.id}
+                  className="max-w-full truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+                  title={pod.name}
+                >
+                  {pod.name}
+                </span>
+              ))}
             </div>
           ) : null}
         </div>

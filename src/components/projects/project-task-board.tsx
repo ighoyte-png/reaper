@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -102,6 +102,8 @@ type Props = {
   allowSelect?: boolean;
   /** Deep-link: scroll to this task, highlight it, and expand notes/comments. */
   focusTaskId?: string | null;
+  /** When set, only show tasks assigned to this person. */
+  assigneePersonId?: string | null;
   /**
    * Rendered between active lists and the Archive section (e.g. Templates).
    * Lets the project page keep Templates above Archive while both sit under Tasks.
@@ -282,6 +284,7 @@ export function ProjectTaskBoard({
   allowCardView = false,
   allowSelect: allowSelectProp,
   focusTaskId = null,
+  assigneePersonId = null,
   templatesSlot,
 }: Props) {
   const {
@@ -389,8 +392,21 @@ export function ProjectTaskBoard({
   );
 
   const visibleTasks = useMemo(() => {
-    return state.tasks.filter((t) => t.project_id === projectId);
-  }, [state.tasks, projectId]);
+    const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
+    if (!assigneePersonId) return projectTasks;
+
+    const assigned = projectTasks.filter(
+      (t) => t.assignee_person_id === assigneePersonId,
+    );
+    const assignedIds = new Set(assigned.map((t) => t.id));
+    return assigned.map((t) =>
+      t.parent_id && assignedIds.has(t.parent_id)
+        ? t
+        : t.parent_id
+          ? { ...t, parent_id: null }
+          : t,
+    );
+  }, [state.tasks, projectId, assigneePersonId]);
 
   const childrenMap = useMemo(() => {
     const map = new Map<string, Task[]>();
