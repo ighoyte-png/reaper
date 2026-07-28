@@ -4,18 +4,20 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { isUnreadBulletin } from "@/lib/domain/bulletins";
 import { personAvatarColor } from "@/lib/domain/people";
 import { notesPlainText } from "@/lib/notes-html";
 import {
   TASK_NOTE_MENTION_EVENT,
   notificationPortraitIcon,
+  reaperNotificationBadgeUrl,
   showDesktopNotification,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 
 /**
- * Shows OS desktop notifications when the signed-in person is @mentioned
- * in a task comment (via mention_unreads) or task notes (via broadcast).
+ * Shows OS desktop notifications for @mentions (comments / task notes)
+ * and new bulletin board posts (via unread_bulletin_ids).
  */
 export function MentionDesktopListener() {
   const {
@@ -24,11 +26,13 @@ export function MentionDesktopListener() {
     profile,
     isPublicShare,
     ensureMentionComments,
+    canManage,
   } = useData();
   const router = useRouter();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const seenCommentIdsRef = useRef<Set<string> | null>(null);
+  const seenBulletinIdsRef = useRef<Set<string> | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -180,6 +184,98 @@ export function MentionDesktopListener() {
     state.organization?.name,
     router,
     projectHref,
+    appHref,
+  ]);
+
+  useEffect(() => {
+    if (isPublicShare || !profile) {
+      seenBulletinIdsRef.current = null;
+      return;
+    }
+
+    const mine = state.unread_bulletin_ids;
+    if (seenBulletinIdsRef.current === null) {
+      seenBulletinIdsRef.current = new Set(mine);
+      return;
+    }
+
+    const seen = seenBulletinIdsRef.current;
+    const fresh = mine.filter((id) => !seen.has(id));
+    if (fresh.length === 0) return;
+
+    const orgName = state.organization?.name?.trim() || "Reaper";
+    const personId = myPerson?.id ?? null;
+    const manageWithoutPerson = canManage && !personId;
+    const unreadSet = new Set(mine);
+
+    void (async () => {
+      const snap = stateRef.current;
+      for (const bulletinId of fresh) {
+        const bulletin =
+          snap.bulletins.find((b) => b.id === bulletinId) ?? null;
+        if (!bulletin) {
+          // Unread row can arrive before the bulletin payload — retry later.
+          continue;
+        }
+        seen.add(bulletinId);
+        if (
+          !isUnreadBulletin(bulletin, personId, profile.id, unreadSet, {
+            manageWithoutPerson,
+          })
+        ) {
+          continue;
+        }
+
+        const authorPerson = bulletin.created_by_profile_id
+          ? (snap.people.find(
+              (p) => p.profile_id === bulletin.created_by_profile_id,
+            ) ?? null)
+          : null;
+        const authorProfile = bulletin.created_by_profile_id
+          ? (snap.profiles.find((p) => p.id === bulletin.created_by_profile_id) ??
+            null)
+          : null;
+        const authorName =
+          authorPerson?.name?.trim() ||
+          authorProfile?.full_name?.trim() ||
+          authorProfile?.email?.trim() ||
+          "Bulletin";
+
+        const snippet = notesPlainText(bulletin.body).slice(0, 140);
+        const href = appHref("/dashboard");
+        const icon = authorPerson
+          ? await notificationPortraitIcon({
+              name: authorName,
+              avatarUrl: authorPerson.avatar_url,
+              color: personAvatarColor(authorPerson),
+            })
+          : reaperNotificationBadgeUrl();
+
+        void showDesktopNotification(authorName, {
+          body: [
+            orgName,
+            bulletin.title
+              ? `${bulletin.title}${snippet ? ` — ${snippet}` : ""}`
+              : snippet || "New bulletin",
+          ].join("\n"),
+          tag: `bulletin-${bulletinId}`,
+          icon,
+          href,
+          onClick: () => {
+            router.push(href);
+          },
+        });
+      }
+    })();
+  }, [
+    state.unread_bulletin_ids,
+    state.organization?.name,
+    state.bulletins,
+    myPerson?.id,
+    profile,
+    canManage,
+    isPublicShare,
+    router,
     appHref,
   ]);
 
