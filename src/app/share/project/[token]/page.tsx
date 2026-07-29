@@ -7,7 +7,9 @@ import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   MilestoneApprovalCheck,
+  MilestoneEssentialSlot,
   ProgressBar,
+  milestonePortalGlowClass,
 } from "@/components/projects/progress-bar";
 import { ProjectManagerTag } from "@/components/projects/project-manager-person";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
@@ -614,40 +616,52 @@ export default function ProjectSharePage() {
               return (
                 <div
                   key={m.id}
-                  className={cn(
-                    "rounded-md p-2",
-                    readyForApproval &&
-                      "cursor-pointer transition-colors hover:bg-[var(--row-hover)]",
-                  )}
-                  onClick={
-                    readyForApproval ? () => openApprove(m.id) : undefined
-                  }
-                  onKeyDown={
-                    readyForApproval
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            openApprove(m.id);
-                          }
-                        }
-                      : undefined
-                  }
-                  role={readyForApproval ? "button" : undefined}
-                  tabIndex={readyForApproval ? 0 : undefined}
+                  className="flex items-stretch gap-1.5 rounded-md p-2"
                 >
-                  <ProgressBar
-                    pct={pct}
-                    label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
-                    approved={m.client_approved}
-                    readyForApproval={readyForApproval}
-                    footerStart={byline}
-                    celebrate={celebrateId === m.id}
-                    essential={{
-                      kind: parseAssetKind(m.essential_kind),
-                      label: m.essential_label,
-                      url: m.essential_url,
-                    }}
+                  <MilestoneEssentialSlot
+                    kind={parseAssetKind(m.essential_kind)}
+                    label={m.essential_label}
+                    url={m.essential_url}
+                    glowHover={Boolean(
+                      parseAssetKind(m.essential_kind) && m.essential_url.trim(),
+                    )}
                   />
+                  <div
+                    className={cn(
+                      "min-w-0 flex-1 p-1",
+                      readyForApproval &&
+                        cn("cursor-pointer", milestonePortalGlowClass),
+                    )}
+                    onClick={
+                      readyForApproval ? () => openApprove(m.id) : undefined
+                    }
+                    onKeyDown={
+                      readyForApproval
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              openApprove(m.id);
+                            }
+                          }
+                        : undefined
+                    }
+                    role={readyForApproval ? "button" : undefined}
+                    tabIndex={readyForApproval ? 0 : undefined}
+                    aria-label={
+                      readyForApproval
+                        ? `Approve milestone ${m.name}`
+                        : undefined
+                    }
+                  >
+                    <ProgressBar
+                      pct={pct}
+                      label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
+                      approved={m.client_approved}
+                      readyForApproval={readyForApproval}
+                      footerStart={byline}
+                      celebrate={celebrateId === m.id}
+                    />
+                  </div>
                 </div>
               );
             })}

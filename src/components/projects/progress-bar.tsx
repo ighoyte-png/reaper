@@ -35,14 +35,25 @@ export function MilestoneReadyTag({ className }: { className?: string }) {
   );
 }
 
+/** Subtle green glow for portal approval / essentials hover affordances. */
+export const milestonePortalGlowClass =
+  "rounded-md transition-[background-color,box-shadow] duration-150 " +
+  "hover:bg-[color-mix(in_srgb,var(--status-healthy)_12%,transparent)] " +
+  "hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--status-healthy)_40%,transparent),0_0_14px_color-mix(in_srgb,var(--status-healthy)_28%,transparent)] " +
+  "focus-visible:outline-none focus-visible:bg-[color-mix(in_srgb,var(--status-healthy)_12%,transparent)] " +
+  "focus-visible:shadow-[0_0_0_1px_color-mix(in_srgb,var(--status-healthy)_40%,transparent),0_0_14px_color-mix(in_srgb,var(--status-healthy)_28%,transparent)]";
+
 export function MilestoneEssentialSlot({
   kind,
   label,
   url,
+  glowHover = false,
 }: {
   kind: ProjectAssetKind | null;
   label?: string;
   url?: string;
+  /** When true, use the portal green glow on hover (separate from milestone row). */
+  glowHover?: boolean;
 }) {
   const href = url ? sanitizeExternalUrl(url) : null;
   if (kind && href) {
@@ -53,7 +64,10 @@ export function MilestoneEssentialSlot({
         target="_blank"
         rel="noopener noreferrer"
         title={tip}
-        className="inline-flex shrink-0 self-center"
+        className={cn(
+          "inline-flex shrink-0 self-center p-1",
+          glowHover && milestonePortalGlowClass,
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         <AssetKindIcon kind={kind} label={label} title={null} />
