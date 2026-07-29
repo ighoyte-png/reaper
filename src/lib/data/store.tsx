@@ -579,7 +579,9 @@ interface DataContextValue {
     assigneePersonId?: string | null;
     openOnly?: boolean;
   }) => Promise<void>;
-  ensureMentionComments: (commentIds?: string[]) => Promise<void>;
+  ensureMentionComments: (
+    commentIds?: string[],
+  ) => Promise<import("@/lib/supabase/api").MentionCommentsBundle>;
   ensureProjectData: (projectId: string) => Promise<void>;
   ensureScheduleRange: (
     startKey: string,
@@ -652,7 +654,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     useState<string[]>([]);
 
   const orgTasksInflight = useRef<Promise<void> | null>(null);
-  const mentionCommentsInflight = useRef<Promise<void> | null>(null);
+  const mentionCommentsInflight = useRef<Promise<{
+    tasks: import("@/lib/types").Task[];
+    task_comments: import("@/lib/types").TaskComment[];
+  }> | null>(null);
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
   const scheduleRangeInflight = useRef<Promise<{
     leaveDays: LeaveDay[];
@@ -664,6 +669,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     personIds: Set<string>;
   }>({ all: false, personIds: new Set() });
   const mentionCommentsLoadedRef = useRef<Set<string>>(new Set());
+  const mentionCommentByIdRef = useRef<Map<string, TaskComment>>(new Map());
+  const mentionTaskByIdRef = useRef<Map<string, Task>>(new Map());
   const projectReadyRef = useRef<Set<string>>(new Set());
   const scheduleRangeLoadedRef = useRef<{ start: string; end: string } | null>(
     null,
@@ -751,6 +758,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!sameOrg) {
           orgTasksScopeRef.current = { all: false, personIds: new Set() };
           mentionCommentsLoadedRef.current = new Set();
+          mentionCommentByIdRef.current = new Map();
+          mentionTaskByIdRef.current = new Map();
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
           setOrgTasksStatus("idle");
@@ -1323,10 +1332,66 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const ensureMentionComments = useCallback(
     async (commentIds?: string[]) => {
+      const empty = { tasks: [] as Task[], task_comments: [] as TaskComment[] };
+
+      const remember = (bundle: {
+        tasks: Task[];
+        task_comments: TaskComment[];
+      }) => {
+        for (const c of bundle.task_comments) {
+          mentionCommentByIdRef.current.set(c.id, c);
+          mentionCommentsLoadedRef.current.add(c.id);
+        }
+        for (const t of bundle.tasks) {
+          mentionTaskByIdRef.current.set(t.id, t);
+        }
+      };
+
+      const collect = (ids: string[]) => {
+        const task_comments: TaskComment[] = [];
+        for (const id of ids) {
+          const cached = mentionCommentByIdRef.current.get(id);
+          if (cached) {
+            task_comments.push(cached);
+            continue;
+          }
+          const fromState = state.task_comments.find((c) => c.id === id);
+          if (fromState) {
+            mentionCommentByIdRef.current.set(id, fromState);
+            task_comments.push(fromState);
+          }
+        }
+        const taskIds = new Set(task_comments.map((c) => c.task_id));
+        const tasks: Task[] = [];
+        for (const taskId of taskIds) {
+          const cached = mentionTaskByIdRef.current.get(taskId);
+          if (cached) {
+            tasks.push(cached);
+            continue;
+          }
+          const fromState = state.tasks.find((t) => t.id === taskId);
+          if (fromState) {
+            mentionTaskByIdRef.current.set(taskId, fromState);
+            tasks.push(fromState);
+          }
+        }
+        return { tasks, task_comments };
+      };
+
       if (mode !== "supabase") {
         setMentionCommentsStatus("ready");
-        return;
+        const ids = [
+          ...new Set(
+            (commentIds ?? state.unread_mentions.map((m) => m.comment_id)).filter(
+              Boolean,
+            ),
+          ),
+        ];
+        const bundle = collect(ids);
+        remember(bundle);
+        return bundle;
       }
+
       const ids = [
         ...new Set(
           (commentIds ?? state.unread_mentions.map((m) => m.comment_id)).filter(
@@ -1334,50 +1399,58 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ),
         ),
       ];
+      if (ids.length === 0) {
+        setMentionCommentsStatus("ready");
+        return empty;
+      }
+
       const missing = ids.filter(
-        (id) => !mentionCommentsLoadedRef.current.has(id),
+        (id) => !mentionCommentByIdRef.current.has(id),
       );
       if (missing.length === 0) {
         setMentionCommentsStatus("ready");
-        return;
+        return collect(ids);
       }
+
       if (mentionCommentsInflight.current) {
         await mentionCommentsInflight.current;
         const stillMissing = missing.filter(
-          (id) => !mentionCommentsLoadedRef.current.has(id),
+          (id) => !mentionCommentByIdRef.current.has(id),
         );
         if (stillMissing.length === 0) {
           setMentionCommentsStatus("ready");
-          return;
+          return collect(ids);
         }
       }
+
       const client = supabaseRef.current ?? createClient();
       const organizationId = state.organization.id;
-      if (!organizationId) return;
+      if (!organizationId) return empty;
 
+      const toFetch = ids.filter((id) => !mentionCommentByIdRef.current.has(id));
       const run = (async () => {
         setMentionCommentsStatus("loading");
         try {
-          const bundle = await loadMentionComments(
-            client,
-            organizationId,
-            missing,
-          );
+          const fetched =
+            toFetch.length > 0
+              ? await loadMentionComments(client, organizationId, toFetch)
+              : empty;
+          remember(fetched);
           setState((prev) => {
             const tasksById = new Map(prev.tasks.map((t) => [t.id, t]));
-            for (const t of bundle.tasks) tasksById.set(t.id, t);
+            for (const t of fetched.tasks) tasksById.set(t.id, t);
             const commentsById = new Map(
               prev.task_comments.map((c) => [c.id, c]),
             );
-            for (const c of bundle.task_comments) commentsById.set(c.id, c);
+            for (const c of fetched.task_comments) commentsById.set(c.id, c);
             return {
               ...prev,
               tasks: [...tasksById.values()],
               task_comments: [...commentsById.values()],
             };
           });
-          for (const id of missing) mentionCommentsLoadedRef.current.add(id);
           setMentionCommentsStatus("ready");
+          return collect(ids);
         } catch (err) {
           console.error(err);
           setMentionCommentsStatus("error");
@@ -1389,7 +1462,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       mentionCommentsInflight.current = run;
       return run;
     },
-    [mode, state.organization.id, state.unread_mentions],
+    [
+      mode,
+      state.organization.id,
+      state.unread_mentions,
+      state.task_comments,
+      state.tasks,
+    ],
   );
 
   const ensureProjectData = useCallback(

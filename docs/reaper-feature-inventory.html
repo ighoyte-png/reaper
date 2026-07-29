@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reaper · Product Overview</title>
+  <meta name="description" content="What Reaper does — a clear product overview for teams and sales." />
+  <link rel="icon" href="../public/reaper_logo.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --page-bg: #f0f1f3;
+      --bg: #ffffff;
+      --bg-elevated: #f4f5f7;
+      --text: #1f2933;
+      --text-muted: #6b7280;
+      --border: #e5e7eb;
+      --divider: #f3f4f6;
+      --accent: #2563eb;
+      --accent-fg: #ffffff;
+      --accent-wash: color-mix(in srgb, #2563eb 10%, #ffffff);
+      --healthy: #16a34a;
+      --healthy-wash: color-mix(in srgb, #16a34a 12%, #ffffff);
+      --near: #d97706;
+      --near-wash: color-mix(in srgb, #d97706 12%, #ffffff);
+      --radius: 0.55rem;
+      --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px rgba(15, 23, 42, 0.05);
+      --font: "Figtree", ui-sans-serif, system-ui, sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --page-bg: #08090c;
+        --bg: #0f1115;
+        --bg-elevated: #1c212b;
+        --text: #e8eaed;
+        --text-muted: #9aa3b2;
+        --border: #1f2430;
+        --divider: #1a1f28;
+        --accent: #3b82f6;
+        --accent-wash: color-mix(in srgb, #3b82f6 16%, #0f1115);
+        --healthy: #22c55e;
+        --healthy-wash: color-mix(in srgb, #22c55e 14%, #0f1115);
+        --near: #f59e0b;
+        --near-wash: color-mix(in srgb, #f59e0b 14%, #0f1115);
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 14px 36px rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    :root[data-theme="dark"] {
+      --page-bg: #08090c;
+      --bg: #0f1115;
+      --bg-elevated: #1c212b;
+      --text: #e8eaed;
+      --text-muted: #9aa3b2;
+      --border: #1f2430;
+      --divider: #1a1f28;
+      --accent: #3b82f6;
+      --accent-wash: color-mix(in srgb, #3b82f6 16%, #0f1115);
+      --healthy: #22c55e;
+      --healthy-wash: color-mix(in srgb, #22c55e 14%, #0f1115);
+      --near: #f59e0b;
+      --near-wash: color-mix(in srgb, #f59e0b 14%, #0f1115);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 14px 36px rgba(0, 0, 0, 0.3);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(1100px 420px at 8% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 58%),
+        radial-gradient(800px 360px at 100% 0%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 50%),
+        var(--page-bg);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .shell {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4.5rem;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand img {
+      height: 2.85rem;
+      width: auto;
+      display: block;
+    }
+
+    .brand-text strong {
+      display: block;
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+    }
+
+    .brand-text span {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 0.45rem 0.9rem;
+      font: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { background: var(--bg-elevated); }
+    .btn-accent {
+      background: var(--accent);
+      border-color: transparent;
+      color: var(--accent-fg);
+    }
+    .btn-accent:hover { opacity: 0.92; background: var(--accent); }
+
+    .hero {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 6px);
+      box-shadow: var(--shadow);
+      padding: 2rem 1.6rem 1.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.65rem;
+    }
+
+    .hero h1 {
+      margin: 0 0 0.75rem;
+      font-size: clamp(1.85rem, 4vw, 2.45rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.12;
+      max-width: 16ch;
+    }
+
+    .hero .tagline {
+      margin: 0 0 1.15rem;
+      font-size: 1.15rem;
+      font-weight: 550;
+      letter-spacing: -0.015em;
+      max-width: 32rem;
+    }
+
+    .hero .lede {
+      margin: 0;
+      max-width: 40rem;
+      color: var(--text-muted);
+      font-size: 1.02rem;
+    }
+
+    .pain-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+
+    .pain {
+      background: var(--bg-elevated);
+      border-radius: var(--radius);
+      padding: 1rem 1.05rem;
+    }
+
+    .pain strong {
+      display: block;
+      font-size: 0.92rem;
+      font-weight: 700;
+      margin-bottom: 0.3rem;
+      letter-spacing: -0.01em;
+    }
+
+    .pain p {
+      margin: 0;
+      font-size: 0.86rem;
+      color: var(--text-muted);
+    }
+
+    .toc {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin: 0 0 2rem;
+    }
+
+    .toc a {
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      text-decoration: none;
+    }
+    .toc a:hover {
+      border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    section {
+      margin-bottom: 2.25rem;
+    }
+
+    h2 {
+      margin: 0 0 0.4rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+    }
+
+    .section-intro {
+      margin: 0 0 1rem;
+      color: var(--text-muted);
+      font-size: 0.98rem;
+      max-width: 40rem;
+    }
+
+    .feature-list {
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    .feature {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      box-shadow: var(--shadow);
+      padding: 1.15rem 1.2rem;
+    }
+
+    .feature h3 {
+      margin: 0 0 0.35rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+    }
+
+    .feature .why {
+      margin-top: 0.65rem;
+      padding-top: 0.65rem;
+      border-top: 1px solid var(--divider);
+      font-size: 0.88rem;
+      color: var(--text);
+    }
+
+    .feature .why span {
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-right: 0.4rem;
+    }
+
+    .roles {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .role {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      box-shadow: var(--shadow);
+      padding: 1.15rem 1.2rem;
+    }
+
+    .role .label {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      margin-bottom: 0.55rem;
+    }
+
+    .label-member { background: var(--accent-wash); color: var(--accent); }
+    .label-manager { background: var(--near-wash); color: var(--near); }
+    .label-admin { background: var(--healthy-wash); color: var(--healthy); }
+    .label-platform { background: var(--bg-elevated); color: var(--text-muted); }
+
+    .role h3 {
+      margin: 0 0 0.4rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+
+    .role p {
+      margin: 0;
+      font-size: 0.92rem;
+      color: var(--text-muted);
+    }
+
+    .role ul {
+      margin: 0.7rem 0 0;
+      padding-left: 1.1rem;
+      font-size: 0.9rem;
+      color: var(--text);
+    }
+
+    .role li { margin: 0.25rem 0; }
+
+    .share-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+    }
+
+    .share-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      box-shadow: var(--shadow);
+      padding: 1.25rem 1.2rem;
+    }
+
+    .share-card h3 {
+      margin: 0 0 0.4rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+
+    .share-card p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.94rem;
+    }
+
+    .checklist {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 2px);
+      box-shadow: var(--shadow);
+      padding: 0.4rem 0;
+    }
+
+    .check {
+      display: grid;
+      grid-template-columns: 1.5rem 1fr;
+      gap: 0.65rem;
+      padding: 0.75rem 1.2rem;
+      border-bottom: 1px solid var(--divider);
+      align-items: start;
+    }
+    .check:last-child { border-bottom: none; }
+
+    .check .mark {
+      width: 1.15rem;
+      height: 1.15rem;
+      border-radius: 999px;
+      background: var(--accent-wash);
+      color: var(--accent);
+      display: grid;
+      place-items: center;
+      font-size: 0.7rem;
+      font-weight: 800;
+      margin-top: 0.15rem;
+    }
+
+    .check strong {
+      display: block;
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.15rem;
+    }
+
+    .check span {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+    }
+
+    .pitch {
+      background: var(--accent-wash);
+      border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+      border-radius: calc(var(--radius) + 4px);
+      padding: 1.35rem 1.3rem;
+    }
+
+    .pitch h2 {
+      margin-bottom: 0.5rem;
+    }
+
+    .pitch p {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+    }
+
+    .pitch p:last-child { margin-bottom: 0; color: var(--text-muted); font-size: 0.92rem; }
+
+    footer.doc-foot {
+      margin-top: 2.75rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.75rem;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 760px) {
+      .pain-grid,
+      .roles,
+      .share-grid {
+        grid-template-columns: 1fr;
+      }
+      .hero { padding: 1.4rem 1.15rem; }
+      .hero h1 { max-width: none; }
+    }
+
+    @media print {
+      body { background: white; }
+      .topbar .btn, .toc { display: none; }
+      .feature, .role, .share-card, .checklist, .hero { box-shadow: none; break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../public/reaper_logo.svg" alt="Reaper" />
+        <div class="brand-text">
+          <strong>Reaper</strong>
+          <span>Product overview · for teams &amp; sales</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <button type="button" class="btn" id="themeToggle">Theme</button>
+        <a class="btn btn-accent" href="https://reaperpm.com" target="_blank" rel="noreferrer">reaperpm.com</a>
+      </div>
+    </header>
+
+    <div class="hero">
+      <div class="eyebrow">Project &amp; resource planning</div>
+      <h1>Run the work. See the capacity. Keep everyone aligned.</h1>
+      <p class="tagline">Project management that doesn’t get in your way.</p>
+      <p class="lede">
+        Reaper helps agencies and project teams schedule people, manage delivery,
+        watch budgets, and keep clients in the loop — without the clutter of a
+        bloated PM suite.
+      </p>
+      <div class="pain-grid">
+        <div class="pain">
+          <strong>Who it’s for</strong>
+          <p>Studios, agencies, and delivery teams that live in schedules, retainers, and client work.</p>
+        </div>
+        <div class="pain">
+          <strong>What it replaces</strong>
+          <p>Spreadsheets, half-used PM tools, and “who’s free next week?” Slack threads.</p>
+        </div>
+        <div class="pain">
+          <strong>How teams use it</strong>
+          <p>Plan capacity, run projects, report on utilization and budget, share a clean client view.</p>
+        </div>
+      </div>
+    </div>
+
+    <nav class="toc" aria-label="On this page">
+      <a href="#why">Why Reaper</a>
+      <a href="#capabilities">What you can do</a>
+      <a href="#roles">Who uses it</a>
+      <a href="#sharing">Client &amp; public sharing</a>
+      <a href="#extras">Nice extras</a>
+      <a href="#pitch">30-second pitch</a>
+    </nav>
+
+    <section id="why">
+      <h2>Why teams pick Reaper</h2>
+      <p class="section-intro">
+        Built around how delivery work actually runs: people on a calendar, projects with real tasks, and clear visibility for managers and clients.
+      </p>
+      <div class="checklist">
+        <div class="check">
+          <div class="mark">✓</div>
+          <div>
+            <strong>Schedule and capacity in one place</strong>
+            <span>See who’s booked, who’s on leave, and where the gaps are — before you overcommit.</span>
+          </div>
+        </div>
+        <div class="check">
+          <div class="mark">✓</div>
+          <div>
+            <strong>Projects that stay practical</strong>
+            <span>Tasks, milestones, notes, and a project notebook — enough structure to ship, not enough to bury you.</span>
+          </div>
+        </div>
+        <div class="check">
+          <div class="mark">✓</div>
+          <div>
+            <strong>Budgets and utilization you can explain</strong>
+            <span>Know what’s healthy, what’s burning hot, and how people are actually being used.</span>
+          </div>
+        </div>
+        <div class="check">
+          <div class="mark">✓</div>
+          <div>
+            <strong>The right access for each role</strong>
+            <span>Members focus on their work. Managers see the whole org. Clients get a polished portal — not your internal chaos.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="capabilities">
+      <h2>What you can do in Reaper</h2>
+      <p class="section-intro">
+        Everyday capabilities, in plain language — the stuff you’d demo on a sales call.
+      </p>
+      <div class="feature-list">
+        <article class="feature">
+          <h3>Dashboard that answers “what needs attention?”</h3>
+          <p>
+            A home base for overdue and urgent work, team load, announcements, and
+            @mentions — so the day starts with priorities, not a scavenger hunt.
+          </p>
+          <div class="why"><span>Sales angle</span> Reduces “I didn’t see that” moments and keeps managers ahead of fire drills.</div>
+        </article>
+
+        <article class="feature">
+          <h3>Visual schedule for the whole team</h3>
+          <p>
+            Drag-and-drop assignments across people and weeks, including recurring
+            bookings and leave. Filter by pods (team groups). Members see their own
+            row; managers see the full board.
+          </p>
+          <div class="why"><span>Sales angle</span> Makes staffing conversations visual and fast — perfect for weekly planning meetings.</div>
+        </article>
+
+        <article class="feature">
+          <h3>Projects from kickoff to delivery</h3>
+          <p>
+            Organize work by client and project. Inside each project: team roster,
+            milestones, a task board, notes, and files/links in a notebook.
+            Star favorites so key projects stay one click away.
+          </p>
+          <div class="why"><span>Sales angle</span> Feels familiar to anyone who’s used a board tool, but tied to real schedule and budget context.</div>
+        </article>
+
+        <article class="feature">
+          <h3>My Tasks for individual contributors</h3>
+          <p>
+            Team members get a simple view of what’s assigned to them — overdue,
+            upcoming, and done — without wading through the full org.
+          </p>
+          <div class="why"><span>Sales angle</span> Adoption story: ICs get clarity without needing manager-level complexity.</div>
+        </article>
+
+        <article class="feature">
+          <h3>Reports managers actually open</h3>
+          <p>
+            Utilization heatmaps across people and weeks, budget health across
+            projects, and task rollups. Spot burnout and overruns early.
+          </p>
+          <div class="why"><span>Sales angle</span> Leadership visibility without exporting to Excel every Friday.</div>
+        </article>
+
+        <article class="feature">
+          <h3>Clients &amp; people directory</h3>
+          <p>
+            Keep client records and your roster in one workspace. Invite teammates,
+            set roles, track leave, manage rates, and organize people into pods
+            (design, eng, account, etc.).
+          </p>
+          <div class="why"><span>Sales angle</span> One system of record for “who we work with” and “who does the work.”</div>
+        </article>
+
+        <article class="feature">
+          <h3>Reusable project templates</h3>
+          <p>
+            Save a proven delivery pattern (milestones + task structure) and spin up
+            the next engagement without rebuilding from scratch. Export a live
+            project into a template when you’ve nailed the process.
+          </p>
+          <div class="why"><span>Sales angle</span> Speeds onboarding of new client work and standardizes quality.</div>
+        </article>
+
+        <article class="feature">
+          <h3>Announcements that reach the right people</h3>
+          <p>
+            Post bulletins to everyone, or target specific people and pods. Unread
+            items show up on the dashboard — and can ping as desktop notifications.
+          </p>
+          <div class="why"><span>Sales angle</span> Internal comms without another chat tool; useful for office closures, process changes, kickoffs.</div>
+        </article>
+
+        <article class="feature">
+          <h3>Search across the workspace</h3>
+          <p>
+            Jump to clients, projects, tasks, and comments with a quick keyboard
+            shortcut. Searching a client also surfaces their projects. Team members
+            only see projects they’re allowed to open.
+          </p>
+          <div class="why"><span>Sales angle</span> “Find it in seconds” — and permissions stay respected.</div>
+        </article>
+      </div>
+    </section>
+
+    <section id="roles">
+      <h2>Who uses it — and what they see</h2>
+      <p class="section-intro">
+        Access is role-based so you can sell security and focus, not just features.
+      </p>
+      <div class="roles">
+        <div class="role">
+          <span class="label label-member">Member</span>
+          <h3>Individual contributors</h3>
+          <p>Focus on their schedule, their projects, and their tasks.</p>
+          <ul>
+            <li>Dashboard, schedule (their row), and projects they belong to</li>
+            <li>My Tasks for personal workload</li>
+            <li>Search limited to projects they can open</li>
+            <li>Update status on work they’re part of</li>
+          </ul>
+        </div>
+        <div class="role">
+          <span class="label label-manager">Manager</span>
+          <h3>Delivery leads &amp; PMs</h3>
+          <p>Run the operation day to day.</p>
+          <ul>
+            <li>Full schedule, reports, clients, and people</li>
+            <li>Project templates and org-wide search</li>
+            <li>“View as” a teammate to see their world</li>
+            <li>Public share links and holiday calendars</li>
+          </ul>
+        </div>
+        <div class="role">
+          <span class="label label-admin">Admin</span>
+          <h3>Workspace owners</h3>
+          <p>Everything a manager can do, plus ownership controls.</p>
+          <ul>
+            <li>Rename the workspace and URL</li>
+            <li>Change teammate roles</li>
+            <li>Overall workspace administration</li>
+          </ul>
+        </div>
+        <div class="role">
+          <span class="label label-platform">Platform</span>
+          <h3>Reaper operators</h3>
+          <p>For multi-workspace / SaaS administration.</p>
+          <ul>
+            <li>Create or disable workspaces</li>
+            <li>Control whether new signups can create workspaces</li>
+            <li>Enter a customer workspace when needed</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="sharing">
+      <h2>Share without oversharing</h2>
+      <p class="section-intro">
+        Two ways to show work externally — both designed to look professional and stay safe.
+      </p>
+      <div class="share-grid">
+        <div class="share-card">
+          <h3>Org public board</h3>
+          <p>
+            A read-only link to a curated view of the workspace (schedule, projects,
+            reports, and more). Hide specific clients or projects you don’t want
+            on the board. Great for internal stakeholders or trusted partners.
+          </p>
+        </div>
+        <div class="share-card">
+          <h3>Client project portal</h3>
+          <p>
+            A polished, per-project page for the client: progress, team, and selected
+            assets — without exposing internal notes, costs, or other clients’ work.
+            Turn it on from the project when you’re ready.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="extras">
+      <h2>Details that make demos land</h2>
+      <p class="section-intro">Smaller features that often win the room.</p>
+      <div class="feature-list">
+        <article class="feature">
+          <h3>Desktop app feel (PWA)</h3>
+          <p>
+            Install Reaper like an app on the desktop. Get update prompts when a new
+            version ships, and optional desktop notifications for mentions and bulletins.
+          </p>
+        </article>
+        <article class="feature">
+          <h3>View As</h3>
+          <p>
+            Managers can temporarily see the product as a specific person — useful for
+            coaching, support, and checking that access looks right.
+          </p>
+        </article>
+        <article class="feature">
+          <h3>Holiday calendars &amp; leave</h3>
+          <p>
+            Build holiday calendars, apply them to people, and book leave so capacity
+            math stays honest.
+          </p>
+        </article>
+        <article class="feature">
+          <h3>Works in the browser — demo or live</h3>
+          <p>
+            Try the product in demo mode without a backend, or connect to a live
+            workspace with real-time updates for the team.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section id="pitch">
+      <div class="pitch">
+        <h2>30-second pitch</h2>
+        <p>
+          “Reaper is project and resource planning for delivery teams — schedule your
+          people, run client projects, watch utilization and budgets, and share a clean
+          client portal. Members stay focused on their work; managers see the whole
+          operation. It’s built to be fast to adopt and hard to outgrow for agency-style
+          work.”
+        </p>
+        <p>
+          Tagline: <strong style="color: var(--text);">Project Management That Doesn’t Get in Your Way.</strong>
+          · Site: <a href="https://reaperpm.com">reaperpm.com</a>
+        </p>
+      </div>
+    </section>
+
+    <footer class="doc-foot">
+      <span>Reaper product overview · v0.4.82</span>
+      <span>© <span id="year"></span> Reaper · All rights reserved.</span>
+    </footer>
+  </div>
+
+  <script>
+    document.getElementById("year").textContent = String(new Date().getFullYear());
+
+    const root = document.documentElement;
+    const toggle = document.getElementById("themeToggle");
+    const stored = localStorage.getItem("reaper-overview-theme");
+    if (stored === "light" || stored === "dark") root.setAttribute("data-theme", stored);
+
+    function labelTheme() {
+      const t = root.getAttribute("data-theme");
+      if (t === "dark") toggle.textContent = "Light";
+      else if (t === "light") toggle.textContent = "Dark";
+      else toggle.textContent = "Theme";
+    }
+    labelTheme();
+
+    toggle.addEventListener("click", () => {
+      const current = root.getAttribute("data-theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const next = !current ? (prefersDark ? "light" : "dark") : (current === "dark" ? "light" : "dark");
+      root.setAttribute("data-theme", next);
+      localStorage.setItem("reaper-overview-theme", next);
+      labelTheme();
+    });
+  </script>
+</body>
+</html>

@@ -234,7 +234,10 @@ export function PublicShareProvider({
         scheduleRange: null,
       },
       ensureOrgTasks: async () => {},
-      ensureMentionComments: async () => {},
+      ensureMentionComments: async () => ({
+        tasks: [],
+        task_comments: [],
+      }),
       ensureProjectData: async () => {},
       ensureScheduleRange: async () => {},
       setActiveRealtimeProjectIds: () => {},

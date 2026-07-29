@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reaper · Feature &amp; Functions Checklist</title>
+  <link rel="icon" href="../public/reaper_logo.svg" type="image/svg+xml" />
+  <style>
+    :root {
+      --bg: #fff;
+      --text: #111;
+      --muted: #555;
+      --line: #ccc;
+      --accent: #2563eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 14px/1.45 system-ui, -apple-system, Segoe UI, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .wrap {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 24px 20px 64px;
+    }
+    header {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+    }
+    header h1 {
+      margin: 0 0 4px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    header p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .meta {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    h2 {
+      margin: 28px 0 8px;
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 4px;
+    }
+    h3 {
+      margin: 16px 0 6px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    ul.check {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    ul.check li {
+      display: grid;
+      grid-template-columns: 1.1rem 1fr;
+      gap: 8px;
+      padding: 3px 0;
+      align-items: start;
+    }
+    ul.check li::before {
+      content: "☐";
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .note {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 4px 0 0;
+    }
+    .who {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    footer {
+      margin-top: 36px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media print {
+      .wrap { padding: 0; max-width: none; }
+      h2 { break-after: avoid; }
+      ul.check { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Reaper — Feature &amp; Functions Checklist</h1>
+      <p>Boring, simple, comprehensive inventory. Check items as needed for demos, QA, or onboarding.</p>
+      <p class="meta">Product version: v0.4.82 · Roles: Member · Manager · Admin · Platform admin</p>
+    </header>
+
+    <h2>1. Access &amp; accounts</h2>
+    <ul class="check">
+      <li>Log in with email/password</li>
+      <li>Sign up / create workspace (when platform allows)</li>
+      <li>Forgot password / password reset</li>
+      <li>Set password after invite or recovery link</li>
+      <li>Log out</li>
+      <li>Change password (Settings)</li>
+      <li>Upload / change profile photo</li>
+      <li>Demo mode login (no backend)</li>
+      <li>Switch demo profile (demo mode)</li>
+      <li>Invite a person to the workspace <span class="who">(Manager+)</span></li>
+      <li>Change a user’s role: member / manager / admin <span class="who">(Admin)</span></li>
+      <li>Platform admin console: list workspaces <span class="who">(Platform)</span></li>
+      <li>Platform: rename / disable / delete workspace <span class="who">(Platform)</span></li>
+      <li>Platform: enter a workspace <span class="who">(Platform)</span></li>
+      <li>Platform: toggle “allow workspace signup” <span class="who">(Platform)</span></li>
+      <li>Disabled workspace blocks normal use</li>
+    </ul>
+
+    <h2>2. Workspace settings</h2>
+    <ul class="check">
+      <li>Open Settings</li>
+      <li>Edit organization name <span class="who">(Admin)</span></li>
+      <li>Edit organization URL / slug <span class="who">(Admin)</span></li>
+      <li>Choose theme (light / dark)</li>
+      <li>Choose default start page</li>
+      <li>Choose schedule time offset / page width preferences</li>
+      <li>Install as desktop app (PWA)</li>
+      <li>Dismiss / snooze install prompt</li>
+      <li>Re-open install tip from Settings</li>
+      <li>Enable / disable org public share link <span class="who">(Manager+)</span></li>
+      <li>Regenerate org public share link <span class="who">(Manager+)</span></li>
+      <li>Create / edit holiday calendars <span class="who">(Manager+)</span></li>
+      <li>Apply holiday calendar to people <span class="who">(Manager+)</span></li>
+      <li>Load demo data <span class="who">(Manager+ / demo)</span></li>
+    </ul>
+
+    <h2>3. Navigation &amp; shell</h2>
+    <ul class="check">
+      <li>Dashboard nav item</li>
+      <li>Schedule nav item</li>
+      <li>Projects nav item</li>
+      <li>My Tasks nav item <span class="who">(Member only)</span></li>
+      <li>Reports nav item <span class="who">(Manager+)</span></li>
+      <li>Clients nav item <span class="who">(Manager+)</span></li>
+      <li>People nav item <span class="who">(Manager+)</span></li>
+      <li>Member cannot open Clients / People / Templates / full Reports</li>
+      <li>Favorite project tabs in nav</li>
+      <li>Reorder favorite project tabs</li>
+      <li>Breadcrumbs / page headers</li>
+      <li>About Reaper dialog</li>
+      <li>Account menu</li>
+      <li>Version refresh banner when a new deploy is available</li>
+      <li>Auto-reload when tab is hidden and a new version exists</li>
+    </ul>
+
+    <h2>4. Dashboard</h2>
+    <ul class="check">
+      <li>Identity / “who am I” card</li>
+      <li>View As person <span class="who">(Manager+)</span></li>
+      <li>Clear View As</li>
+      <li>Bulletins list</li>
+      <li>Create bulletin</li>
+      <li>Edit bulletin</li>
+      <li>Delete bulletin</li>
+      <li>Pin bulletin</li>
+      <li>Bulletin audience: all users</li>
+      <li>Bulletin audience: selected people</li>
+      <li>Bulletin audience: selected pods</li>
+      <li>Bulletin audience: pods + people combined</li>
+      <li>Unread bulletin indicator</li>
+      <li>Dismiss / mark bulletin read</li>
+      <li>Member only sees bulletins in their audience</li>
+      <li>Tagged / @mention comments panel</li>
+      <li>Dismiss mention</li>
+      <li>Overdue / urgent / high-priority tasks</li>
+      <li>Utilization / capacity summary widgets</li>
+      <li>Project health / at-risk budgets <span class="who">(Manager+)</span></li>
+      <li>Upcoming leave / leave calendar widget</li>
+      <li>Unread badge on Dashboard in nav</li>
+    </ul>
+
+    <h2>5. Schedule</h2>
+    <ul class="check">
+      <li>View schedule grid</li>
+      <li>Zoom: day / week / month (as supported)</li>
+      <li>Scroll / navigate date range</li>
+      <li>Create assignment</li>
+      <li>Edit assignment hours / dates / status</li>
+      <li>Delete assignment</li>
+      <li>Drag move assignment</li>
+      <li>Resize assignment</li>
+      <li>Weekly recurrence</li>
+      <li>Recurrence end date</li>
+      <li>Exception weeks / skip occurrence</li>
+      <li>Split this occurrence vs future</li>
+      <li>Tentative vs confirmed status (as supported)</li>
+      <li>Overlap / occupancy handling</li>
+      <li>Leave shown on schedule</li>
+      <li>Filter by pod</li>
+      <li>Member sees own row only</li>
+      <li>Manager sees all people (scoped as configured)</li>
+      <li>Hide people marked hide-from-schedule</li>
+      <li>Project manager schedule indicators (when multiple PMs)</li>
+    </ul>
+
+    <h2>6. Clients <span class="who">(Manager+)</span></h2>
+    <ul class="check">
+      <li>List clients</li>
+      <li>Create client</li>
+      <li>Edit client name / color / notes</li>
+      <li>Edit client contact fields</li>
+      <li>Archive / restore client</li>
+      <li>Delete client</li>
+      <li>Create project from client</li>
+      <li>Hide client from public share</li>
+      <li>Search / filter clients (page UI)</li>
+    </ul>
+
+    <h2>7. Projects</h2>
+    <ul class="check">
+      <li>List projects</li>
+      <li>Filter / sort projects</li>
+      <li>Create project</li>
+      <li>Edit project fields (name, color, status, dates, etc.)</li>
+      <li>Set budget mode (fixed / hourly / monthly retainer, as supported)</li>
+      <li>Set project manager</li>
+      <li>Archive / unarchive project</li>
+      <li>Delete project</li>
+      <li>Member only lists projects they can open (roster, PM, schedule, or assignee)</li>
+      <li>Open project hub (pretty URL with client + project slug)</li>
+      <li>Legacy project UUID URL redirects</li>
+      <li>Star / unstar project favorite</li>
+      <li>Set project team roster (project members)</li>
+      <li>Assign tasks to roster people</li>
+      <li>Milestones: create / edit / delete / reorder</li>
+      <li>Task lists: create / rename / color / archive</li>
+      <li>Tasks: create / edit / delete</li>
+      <li>Tasks: parent / child hierarchy</li>
+      <li>Tasks: set status</li>
+      <li>Tasks: set assignee</li>
+      <li>Tasks: set start / due dates</li>
+      <li>Tasks: notes</li>
+      <li>Member can update task status on accessible projects</li>
+      <li>Task comments / rich notes</li>
+      <li>@mention people in comments</li>
+      <li>Edit own comment</li>
+      <li>Delete own comment (or manager delete)</li>
+      <li>Comment reactions</li>
+      <li>Project notebook / assets: add link or file entry</li>
+      <li>Edit / delete asset</li>
+      <li>Hide asset from client portal</li>
+      <li>Budget card on project</li>
+      <li>Progress indicators (calendar / tasks / milestones)</li>
+      <li>Enable / disable client portal link for project</li>
+      <li>Hide project from org public share</li>
+      <li>Apply project template</li>
+      <li>Export project as template</li>
+      <li>Project Manager can edit their project without full org-manage role</li>
+    </ul>
+
+    <h2>8. My Tasks / Tasks report</h2>
+    <ul class="check">
+      <li>My Tasks page for members</li>
+      <li>Tasks report for managers</li>
+      <li>Overdue tasks list</li>
+      <li>Undated tasks list</li>
+      <li>Completed tasks list</li>
+      <li>Filter by client / project (as supported)</li>
+      <li>Open task deep link into project</li>
+    </ul>
+
+    <h2>9. Reports <span class="who">(Manager+)</span></h2>
+    <ul class="check">
+      <li>Reports hub</li>
+      <li>Utilization report (people × weeks heatmap)</li>
+      <li>Budgets report (org-wide burn)</li>
+      <li>Per-project budget detail page</li>
+      <li>Budget health states (healthy / near / over)</li>
+      <li>Forecast data (where exposed)</li>
+    </ul>
+
+    <h2>10. People <span class="who">(Manager+)</span></h2>
+    <ul class="check">
+      <li>List people</li>
+      <li>Create person</li>
+      <li>Edit person (name, role title, office, email, etc.)</li>
+      <li>Set cost / bill rates</li>
+      <li>Set capacity / hours</li>
+      <li>Upload person avatar</li>
+      <li>Hide person from schedule</li>
+      <li>Delete person</li>
+      <li>Link person to invited profile</li>
+      <li>Create / edit / delete pods</li>
+      <li>Set pod manager</li>
+      <li>Add / remove pod members</li>
+      <li>Assign person to multiple pods</li>
+      <li>Create leave (full day / partial)</li>
+      <li>Edit / delete leave</li>
+      <li>Leave blocks / multi-day leave</li>
+      <li>Leave override of schedule assignments (as supported)</li>
+    </ul>
+
+    <h2>11. Templates <span class="who">(Manager+)</span></h2>
+    <ul class="check">
+      <li>List templates</li>
+      <li>Create template</li>
+      <li>Edit template name / description</li>
+      <li>Delete template</li>
+      <li>Template milestones</li>
+      <li>Template task lists</li>
+      <li>Template tasks</li>
+      <li>Apply template to a project</li>
+      <li>Export live project to template</li>
+      <li>Member cannot open Templates</li>
+    </ul>
+
+    <h2>12. Search</h2>
+    <ul class="check">
+      <li>Open search (Cmd/Ctrl+K or UI trigger)</li>
+      <li>Search clients</li>
+      <li>Search projects</li>
+      <li>Search tasks</li>
+      <li>Search comments</li>
+      <li>Client match also lists that client’s projects</li>
+      <li>Navigate to result</li>
+      <li>Manager/admin: org-wide results</li>
+      <li>Member: only accessible projects (and related clients/tasks/comments)</li>
+      <li>Minimum 2 characters</li>
+    </ul>
+
+    <h2>13. Notifications</h2>
+    <ul class="check">
+      <li>In-app unread bulletins</li>
+      <li>In-app unread @mentions</li>
+      <li>Desktop notification for mention (when permitted)</li>
+      <li>Desktop notification for bulletin (when permitted)</li>
+      <li>Browser / OS permission prompt</li>
+      <li>Click notification opens relevant place (e.g. Dashboard)</li>
+    </ul>
+
+    <h2>14. Sharing — org public board</h2>
+    <ul class="check">
+      <li>Open public board via token URL</li>
+      <li>Read-only: Dashboard</li>
+      <li>Read-only: Schedule</li>
+      <li>Read-only: Projects (and project pages)</li>
+      <li>Read-only: Reports</li>
+      <li>Read-only: Clients</li>
+      <li>Read-only: People</li>
+      <li>Templates blocked / redirected on share</li>
+      <li>Hidden clients omitted</li>
+      <li>Hidden projects omitted</li>
+      <li>Sensitive fields stripped (profiles, rates, etc.)</li>
+      <li>Share chrome labeled public / read only</li>
+    </ul>
+
+    <h2>15. Sharing — client project portal</h2>
+    <ul class="check">
+      <li>Open portal via project token URL</li>
+      <li>Show project progress / team / selected assets</li>
+      <li>Hide notebook items marked hidden from portal</li>
+      <li>Do not expose other clients’ work</li>
+      <li>Do not expose internal-only costs / secrets (sanitized)</li>
+    </ul>
+
+    <h2>16. Permissions summary</h2>
+    <ul class="check">
+      <li>Member: self schedule; accessible projects; My Tasks; limited settings</li>
+      <li>Manager: full manage surfaces; View As; sharing; holidays; templates</li>
+      <li>Admin: manager + org rename/slug + role changes</li>
+      <li>Project Manager on a project: can edit that project without org-manage</li>
+      <li>View As does not grant Settings as the viewed person</li>
+      <li>Search respects member project access</li>
+      <li>Bulletin audience enforced for members</li>
+    </ul>
+
+    <h2>17. Data domains covered (reference)</h2>
+    <p class="note">Not separate UI screens — capabilities implied by the product.</p>
+    <ul class="check">
+      <li>Organizations / workspaces</li>
+      <li>Profiles &amp; roles</li>
+      <li>Clients</li>
+      <li>Projects &amp; project members</li>
+      <li>Milestones</li>
+      <li>Task lists &amp; tasks</li>
+      <li>Task comments, mentions, reactions</li>
+      <li>Project assets / notebook</li>
+      <li>Assignments &amp; recurrence</li>
+      <li>Leave &amp; holiday calendars</li>
+      <li>People &amp; avatars</li>
+      <li>Pods &amp; pod members</li>
+      <li>Bulletins &amp; unread inboxes</li>
+      <li>Project favorites</li>
+      <li>Project templates</li>
+      <li>Budgets / utilization aggregates</li>
+      <li>Public share tokens (org + project)</li>
+    </ul>
+
+    <footer>
+      Reaper feature &amp; functions checklist · v0.4.82 · Companion to the sales overview in the same docs folder.
+    </footer>
+  </div>
+</body>
+</html>
