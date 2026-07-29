@@ -5085,7 +5085,7 @@ function AssignmentAssignerDetails({
           ) : null}
           {person.office ? (
             <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-              City: {person.office}
+              {person.office}
             </div>
           ) : null}
           {personPods.length > 0 ? (
