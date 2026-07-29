@@ -21,7 +21,10 @@ import {
 } from "@/lib/share/sanitize";
 import { approveDemoPortalMilestone } from "@/lib/share/demo-milestone-approve";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
-import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
+import {
+  assetDisplayTitle,
+  titleCaseWords,
+} from "@/lib/domain/assets";
 import { calendarYearBars } from "@/lib/domain/budget";
 import { parseAssetKind } from "@/lib/domain/milestones";
 import { taskStatusLabel } from "@/lib/domain/tasks";
@@ -612,9 +615,9 @@ export default function ProjectSharePage() {
                 <div
                   key={m.id}
                   className={cn(
-                    "rounded-md",
+                    "rounded-md p-2",
                     readyForApproval &&
-                      "cursor-pointer p-2 -m-2 transition-colors hover:bg-[var(--row-hover)]",
+                      "cursor-pointer transition-colors hover:bg-[var(--row-hover)]",
                   )}
                   onClick={
                     readyForApproval ? () => openApprove(m.id) : undefined
@@ -666,7 +669,7 @@ export default function ProjectSharePage() {
                   {isNote ? (
                     <div className="space-y-1">
                       <span className="block truncate font-medium">
-                        {a.label || "Note"}
+                        {titleCaseWords(a.label.trim() || "Note")}
                       </span>
                       <p className="whitespace-pre-wrap text-[var(--text-muted)]">
                         {a.body}
@@ -676,6 +679,7 @@ export default function ProjectSharePage() {
                     <div className="flex items-center gap-2">
                       <AssetKindIcon
                         kind={a.kind as ProjectAssetKind}
+                        label={a.label}
                       />
                       {sanitizeExternalUrl(a.url) ? (
                         <a
@@ -684,13 +688,17 @@ export default function ProjectSharePage() {
                           rel="noopener noreferrer"
                           className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
                         >
-                          {a.label ||
-                            ASSET_KIND_LABELS[a.kind as ProjectAssetKind]}
+                          {assetDisplayTitle(
+                            a.label,
+                            a.kind as ProjectAssetKind,
+                          )}
                         </a>
                       ) : (
                         <span className="min-w-0 flex-1 truncate">
-                          {a.label ||
-                            ASSET_KIND_LABELS[a.kind as ProjectAssetKind]}
+                          {assetDisplayTitle(
+                            a.label,
+                            a.kind as ProjectAssetKind,
+                          )}
                         </span>
                       )}
                       <ExternalLink

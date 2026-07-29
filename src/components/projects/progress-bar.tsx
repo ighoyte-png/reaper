@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
+import { assetTooltip } from "@/lib/domain/assets";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import { cn } from "@/lib/cn";
 import type { ProjectAssetKind } from "@/lib/types";
@@ -45,23 +46,24 @@ export function MilestoneEssentialSlot({
 }) {
   const href = url ? sanitizeExternalUrl(url) : null;
   if (kind && href) {
+    const tip = assetTooltip(label, kind);
     return (
       <a
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        title={label?.trim() || undefined}
+        title={tip}
         className="inline-flex shrink-0 self-center"
         onClick={(e) => e.stopPropagation()}
       >
-        <AssetKindIcon kind={kind} />
+        <AssetKindIcon kind={kind} label={label} title={null} />
       </a>
     );
   }
   return (
     <span
       aria-hidden
-      title="Essentials asset not set"
+      title="Essentials Asset Not Set"
       className="inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded border border-dashed border-[var(--text-muted)]/50 bg-[var(--bg-elevated)]"
     />
   );

@@ -115,6 +115,7 @@ export function SimpleRichTextEditor({
   className,
   placeholder = "Add a note…",
   mentionPeople,
+  resizable = false,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -122,6 +123,8 @@ export function SimpleRichTextEditor({
   placeholder?: string;
   /** When set, typing @ opens a Slack-style mention flyout. */
   mentionPeople?: MentionPerson[];
+  /** Allow dragging the bottom edge to grow/shrink the editor vertically. */
+  resizable?: boolean;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState<LinkDraft>({
@@ -251,7 +254,8 @@ export function SimpleRichTextEditor({
   return (
     <div
       className={cn(
-        "mt-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]",
+        "mt-1 rounded-md border border-[var(--border)] bg-[var(--bg)]",
+        !resizable && "overflow-hidden",
         className,
       )}
     >
@@ -293,6 +297,10 @@ export function SimpleRichTextEditor({
         </ToolbarButton>
       </div>
       <div
+        className={cn(
+          resizable &&
+            "h-[7.5rem] min-h-[4.5rem] max-h-[min(70vh,32rem)] resize-y overflow-auto",
+        )}
         onFocusCapture={() => {
           if (mentionPeople && mentionPeople.length > 0) {
             void ensureDesktopNotificationPermission();

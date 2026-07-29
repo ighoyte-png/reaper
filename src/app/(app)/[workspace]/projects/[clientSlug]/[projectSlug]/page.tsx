@@ -49,7 +49,12 @@ import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sortin
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
-import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
+import {
+  MILESTONE_ESSENTIAL_KINDS,
+  MILESTONE_ESSENTIAL_PREFILL_KINDS,
+  sortedAssetKindOptions,
+  titleCaseWords,
+} from "@/lib/domain/assets";
 import type { Milestone, Project, ProjectAssetKind } from "@/lib/types";
 
 function formatDisplayDate(dateKey: string | null | undefined): string {
@@ -1077,20 +1082,36 @@ export default function ProjectDetailPage() {
                     <Field label="Type">
                       <Select
                         value={editingMilestone.essential_kind ?? ""}
-                        onChange={(v) =>
+                        onChange={(v) => {
+                          const nextKind = (v || null) as ProjectAssetKind | null;
+                          let nextLabel = editingMilestone.essential_label;
+                          let nextUrl = editingMilestone.essential_url;
+                          if (
+                            nextKind &&
+                            MILESTONE_ESSENTIAL_PREFILL_KINDS.has(nextKind)
+                          ) {
+                            const match = state.project_assets.find(
+                              (a) =>
+                                a.project_id === project.id &&
+                                a.kind === nextKind &&
+                                !a.body.trim() &&
+                                Boolean(a.url.trim()),
+                            );
+                            if (match) {
+                              nextLabel = match.label;
+                              nextUrl = match.url;
+                            }
+                          }
                           setEditingMilestone({
                             ...editingMilestone,
-                            essential_kind: (v || null) as ProjectAssetKind | null,
-                          })
-                        }
+                            essential_kind: nextKind,
+                            essential_label: nextLabel,
+                            essential_url: nextUrl,
+                          });
+                        }}
                         options={[
                           { value: "", label: "Select type…" },
-                          ...(
-                            Object.keys(ASSET_KIND_LABELS) as ProjectAssetKind[]
-                          ).map((k) => ({
-                            value: k,
-                            label: ASSET_KIND_LABELS[k],
-                          })),
+                          ...sortedAssetKindOptions(MILESTONE_ESSENTIAL_KINDS),
                         ]}
                       />
                     </Field>
@@ -1206,8 +1227,9 @@ export default function ProjectDetailPage() {
                         ...editingMilestone,
                         approval_name: editingMilestone.approval_name.trim(),
                         approval_email: editingMilestone.approval_email.trim(),
-                        essential_label:
+                        essential_label: titleCaseWords(
                           editingMilestone.essential_label.trim(),
+                        ),
                         essential_url: editingMilestone.essential_url.trim(),
                         essential_kind:
                           editingMilestone.essential_kind &&

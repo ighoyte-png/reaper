@@ -609,6 +609,86 @@ export function ProjectTaskBoard({
     bulkDraft.assigneeId !== undefined ||
     bulkDraft.dueDate !== undefined;
 
+  function moveSelectedToList(destListId: string) {
+    if (!manageLists || selected.size === 0 || !destListId) return;
+    const destList = allLists.find((l) => l.id === destListId);
+    if (!destList) return;
+
+    const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
+    const selectedTasks = [...selected]
+      .map((id) => projectTasks.find((t) => t.id === id))
+      .filter((t): t is Task => Boolean(t));
+
+    // Move selected parents (with their children) and orphan selected subtasks.
+    const movers = selectedTasks
+      .filter((t) => !t.parent_id || !selected.has(t.parent_id))
+      .sort(
+        (a, b) =>
+          a.sort_order - b.sort_order || a.title.localeCompare(b.title),
+      );
+    if (movers.length === 0) return;
+
+    const movingIds = new Set(movers.map((m) => m.id));
+    const childTasksOf = (parentId: string) =>
+      projectTasks.filter((t) => t.parent_id === parentId);
+
+    const destParents = sortByOrder(
+      projectTasks.filter(
+        (t) =>
+          t.list_id === destListId &&
+          !t.parent_id &&
+          !movingIds.has(t.id),
+      ),
+    );
+
+    let nextOrder = destParents.length;
+    for (const mover of movers) {
+      upsertTask({
+        ...mover,
+        list_id: destListId,
+        parent_id: null,
+        sort_order: nextOrder,
+      });
+      nextOrder += 1;
+
+      const children = sortByOrder(childTasksOf(mover.id));
+      children.forEach((child, i) => {
+        upsertTask({
+          ...child,
+          list_id: destListId,
+          parent_id: mover.id,
+          sort_order: i,
+        });
+      });
+    }
+
+    const oldScopes = new Map<
+      string,
+      { listId: string; parentId: string | null }
+    >();
+    for (const m of movers) {
+      oldScopes.set(`${m.list_id}:${m.parent_id ?? ""}`, {
+        listId: m.list_id,
+        parentId: m.parent_id,
+      });
+    }
+    for (const { listId, parentId } of oldScopes.values()) {
+      if (listId === destListId && parentId === null) continue;
+      sortByOrder(
+        projectTasks.filter(
+          (t) =>
+            t.list_id === listId &&
+            t.parent_id === parentId &&
+            !movingIds.has(t.id),
+        ),
+      ).forEach((t, i) => {
+        if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
+      });
+    }
+
+    clearSelection();
+  }
+
   function applyBulkEdits() {
     if (!bulkHasChanges || selected.size === 0) return;
     for (const id of selected) {
@@ -1425,6 +1505,29 @@ export function ProjectTaskBoard({
               </label>
             </>
           ) : null}
+          {manageLists && activeLists.length > 0 ? (
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                Move to list
+              </span>
+              <Select
+                className="mt-0 h-7 w-auto min-w-[8.5rem] max-w-[12rem] py-0 text-xs"
+                value=""
+                onChange={(value) => {
+                  if (value) moveSelectedToList(value);
+                }}
+                aria-label="Move selected tasks to list"
+                placeholder="Choose..."
+                options={[
+                  { value: "", label: "Choose..." },
+                  ...activeLists.map((l) => ({
+                    value: l.id,
+                    label: l.name,
+                  })),
+                ]}
+              />
+            </label>
+          ) : null}
           <div className="ml-auto flex shrink-0 flex-col items-end gap-0">
             <span className="mb-1 text-[10px] text-[var(--text-muted)]">
               {selected.size} selected
@@ -2147,6 +2250,7 @@ function InlineTaskForm({
               onChange={setNotes}
               placeholder="Add a note… Use @ to mention"
               mentionPeople={mentionPeople}
+              resizable
             />
           </div>
         </div>

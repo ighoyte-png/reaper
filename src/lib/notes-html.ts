@@ -1,16 +1,14 @@
 /** Strip tags / collapse whitespace for empty checks and plain fallbacks. */
 export function notesPlainText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<\/li>/gi, "\n")
-    .replace(/<\/(?:ul|ol)>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
+  return decodeHtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n")
+      .replace(/<\/li>/gi, "\n")
+      .replace(/<\/(?:ul|ol)>/gi, "\n")
+      .replace(/<[^>]+>/g, ""),
+  )
+    .replace(/\u00A0/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -39,11 +37,44 @@ function escapeText(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * Decode common HTML entities in text nodes. Loops so double-encoded
+ * values like `&amp;nbsp;` become a real non-breaking space.
+ */
+function decodeHtmlEntities(text: string): string {
+  let cur = text;
+  for (let pass = 0; pass < 4; pass++) {
+    const next = cur
+      .replace(/&amp;/gi, "&")
+      .replace(/&nbsp;/gi, "\u00A0")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&apos;/gi, "'")
+      .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
+        const code = parseInt(hex, 16);
+        return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      })
+      .replace(/&#(\d+);/g, (match, dec: string) => {
+        const code = Number(dec);
+        return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      });
+    if (next === cur) break;
+    cur = next;
+  }
+  return cur;
+}
+
 /** Coerce legacy plain-text notes into TipTap-friendly HTML. */
 export function notesToEditorHtml(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (/<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(trimmed)) return value;
+  if (/<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(trimmed)) {
+    // Re-sanitize so double-encoded entities (&amp;nbsp;) are normalized
+    // before TipTap parses the document.
+    return sanitizeNotesHtml(trimmed) || trimmed;
+  }
   return trimmed
     .split(/\n/)
     .map((line) => `<p>${escapeText(line) || "<br>"}</p>`)
@@ -159,7 +190,10 @@ function tokenizeHtml(html: string): WalkNode[] {
 function renderNodes(nodes: WalkNode[]): string {
   return nodes
     .map((node) => {
-      if (node.type === "text") return escapeText(node.text ?? "");
+      if (node.type === "text") {
+        // Decode first so existing entities aren't double-escaped (&nbsp; → &amp;nbsp;).
+        return escapeText(decodeHtmlEntities(node.text ?? ""));
+      }
       const tag = (node.tag ?? "").toUpperCase();
       const inner = renderNodes(node.children ?? []);
       if (!ALLOWED_TAGS.has(tag)) return inner;

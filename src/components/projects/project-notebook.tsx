@@ -26,7 +26,10 @@ import { useData } from "@/lib/data/store";
 import { useViewAsOptional } from "@/lib/view-as";
 import {
   ASSET_KIND_LABELS,
+  assetDisplayTitle,
   inferAssetKind,
+  sortedAssetKindOptions,
+  titleCaseWords,
 } from "@/lib/domain/assets";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import { cn } from "@/lib/cn";
@@ -105,7 +108,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
       upsertProjectAsset({
         ...editing,
         kind: inferred,
-        label: label.trim() || ASSET_KIND_LABELS[inferred],
+        label: titleCaseWords(label.trim() || ASSET_KIND_LABELS[inferred]),
         url: safeUrl,
         body: "",
         hide_from_client: hideFromClient,
@@ -116,7 +119,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         organization_id: state.organization.id,
         project_id: projectId,
         kind: inferred,
-        label: label.trim() || ASSET_KIND_LABELS[inferred],
+        label: titleCaseWords(label.trim() || ASSET_KIND_LABELS[inferred]),
         url: safeUrl,
         body: "",
         sort_order: assets.length,
@@ -132,7 +135,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
       upsertProjectAsset({
         ...editing,
         kind: "custom",
-        label: label.trim() || "Note",
+        label: titleCaseWords(label.trim() || "Note"),
         url: "",
         body: noteBody,
         hide_from_client: hideFromClient,
@@ -143,7 +146,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
         organization_id: state.organization.id,
         project_id: projectId,
         kind: "custom",
-        label: label.trim() || "Note",
+        label: titleCaseWords(label.trim() || "Note"),
         url: "",
         body: noteBody,
         sort_order: assets.length,
@@ -236,12 +239,7 @@ export function ProjectNotebook({ projectId }: { projectId: string }) {
             <Select
               value={kind}
               onChange={(v) => setKind(v as ProjectAssetKind)}
-              options={(
-                Object.keys(ASSET_KIND_LABELS) as ProjectAssetKind[]
-              ).map((k) => ({
-                value: k,
-                label: ASSET_KIND_LABELS[k],
-              }))}
+              options={sortedAssetKindOptions()}
             />
           </Field>
           <Field label="Label">
@@ -463,7 +461,7 @@ function SortableAssetRow({
               </button>
             ) : null}
             <span className="min-w-0 flex-1 truncate font-medium">
-              {asset.label || "Note"}
+              {titleCaseWords(asset.label.trim() || "Note")}
             </span>
             {actions}
           </div>
@@ -484,7 +482,7 @@ function SortableAssetRow({
               <GripVertical size={14} />
             </button>
           ) : null}
-          <AssetKindIcon kind={asset.kind} />
+          <AssetKindIcon kind={asset.kind} label={asset.label} />
           {sanitizeExternalUrl(asset.url) ? (
             <a
               href={sanitizeExternalUrl(asset.url)!}
@@ -492,11 +490,11 @@ function SortableAssetRow({
               rel="noopener noreferrer"
               className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
             >
-              {asset.label || ASSET_KIND_LABELS[asset.kind]}
+              {assetDisplayTitle(asset.label, asset.kind)}
             </a>
           ) : (
             <span className="min-w-0 flex-1 truncate">
-              {asset.label || ASSET_KIND_LABELS[asset.kind]}
+              {assetDisplayTitle(asset.label, asset.kind)}
             </span>
           )}
           {actions}
