@@ -783,6 +783,8 @@ export default function DashboardPage() {
               profiles={state.profiles}
               people={sortedPeople}
               pods={state.pods}
+              projects={state.projects}
+              projectHref={projectHref}
               canEdit={effectiveCanManage && !isPublicShare}
               profileId={profile?.id ?? null}
               isUnread={(b) =>
@@ -1875,6 +1877,7 @@ function emptyBulletin(id: string, profileId: string | null): BulletinDraft {
     audience: "all",
     audience_person_ids: [],
     audience_pod_ids: [],
+    tone: "default",
     created_by_profile_id: profileId,
     created_at: new Date().toISOString(),
   };
@@ -1885,6 +1888,8 @@ function BulletinBoard({
   profiles,
   people,
   pods,
+  projects,
+  projectHref,
   canEdit,
   profileId,
   isUnread,
@@ -1899,6 +1904,8 @@ function BulletinBoard({
   profiles: Profile[];
   people: Person[];
   pods: Pod[];
+  projects: Project[];
+  projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   canEdit: boolean;
   profileId: string | null;
   isUnread?: (b: Bulletin) => boolean;
@@ -1967,24 +1974,54 @@ function BulletinBoard({
               (p) => p.id === b.created_by_profile_id,
             );
             const unread = isUnread?.(b) ?? false;
+            const success = b.tone === "success";
+            const linkedProject = b.project_id
+              ? projects.find((p) => p.id === b.project_id)
+              : null;
+            const goToProject = () => {
+              if (!linkedProject) return;
+              if (unread && onDismissUnread) onDismissUnread(b.id);
+              window.location.href = projectHref(linkedProject);
+            };
             return (
               <li
                 key={b.id}
                 className={cn(
                   "rounded-md border px-3 py-2 text-sm",
-                  unread
-                    ? "border-transparent bg-[var(--status-attention-wash)]"
-                    : b.pinned
-                      ? "border-transparent bg-[var(--accent)]/5"
-                      : "border-[var(--border)]",
+                  success
+                    ? "border-transparent bg-[var(--status-healthy)]/15"
+                    : unread
+                      ? "border-transparent bg-[var(--status-attention-wash)]"
+                      : b.pinned
+                        ? "border-transparent bg-[var(--accent)]/5"
+                        : "border-[var(--border)]",
+                  linkedProject && "cursor-pointer hover:opacity-95",
                 )}
+                onClick={linkedProject ? goToProject : undefined}
+                onKeyDown={
+                  linkedProject
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          goToProject();
+                        }
+                      }
+                    : undefined
+                }
+                role={linkedProject ? "link" : undefined}
+                tabIndex={linkedProject ? 0 : undefined}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 font-medium">
                       {unread ? (
                         <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-attention)]"
+                          className={cn(
+                            "h-1.5 w-1.5 shrink-0 rounded-full",
+                            success
+                              ? "bg-[var(--status-healthy)]"
+                              : "bg-[var(--status-attention)]",
+                          )}
                           aria-label="New"
                         />
                       ) : null}
@@ -2004,7 +2041,11 @@ function BulletinBoard({
                       {` · ${audienceSummary(b)}`}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-start gap-1">
+                  <div
+                    className="flex shrink-0 items-start gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
                     {unread && onDismissUnread ? (
                       <button
                         type="button"
@@ -2032,6 +2073,7 @@ function BulletinBoard({
                               audience: b.audience,
                               audience_person_ids: [...b.audience_person_ids],
                               audience_pod_ids: [...(b.audience_pod_ids ?? [])],
+                              tone: b.tone ?? "default",
                               created_by_profile_id: b.created_by_profile_id,
                               created_at: b.created_at,
                             })

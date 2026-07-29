@@ -49,7 +49,8 @@ import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sortin
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
-import type { Milestone, Project } from "@/lib/types";
+import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
+import type { Milestone, Project, ProjectAssetKind } from "@/lib/types";
 
 function formatDisplayDate(dateKey: string | null | undefined): string {
   if (!dateKey) return "No date";
@@ -610,6 +611,15 @@ export default function ProjectDetailPage() {
                             status: "upcoming",
                             client_approved: false,
                             sort_order: milestones.length,
+                            approval_enabled: false,
+                            approval_name: "",
+                            approval_email: "",
+                            essential_kind: null,
+                            essential_label: "",
+                            essential_url: "",
+                            approved_by_name: null,
+                            approved_at: null,
+                            approved_by_client: false,
                           };
                           upsertMilestone(m);
                         }}
@@ -639,9 +649,34 @@ export default function ProjectDetailPage() {
                         });
                       }}
                       onToggleApproved={(m, approved) =>
-                        upsertMilestone({ ...m, client_approved: approved })
+                        upsertMilestone({
+                          ...m,
+                          client_approved: approved,
+                          // PM toggle never writes client-approval byline fields.
+                          ...(approved
+                            ? {}
+                            : {
+                                approved_by_client: false,
+                                approved_by_name: null,
+                                approved_at: null,
+                              }),
+                        })
                       }
-                      onEdit={setEditingMilestone}
+                      onEdit={(m) => {
+                        const contactName = [
+                          client?.contact_first_name,
+                          client?.contact_last_name,
+                        ]
+                          .map((s) => s?.trim())
+                          .filter(Boolean)
+                          .join(" ");
+                        setEditingMilestone({
+                          ...m,
+                          approval_name: m.approval_name || contactName,
+                          approval_email:
+                            m.approval_email || client?.contact_email || "",
+                        });
+                      }}
                     />
                   )}
                 </div>
@@ -978,55 +1013,159 @@ export default function ProjectDetailPage() {
           }}
         >
           <div className="grid gap-3">
-            <Field label="Name">
-              <input
-                className={inputClass}
-                value={editingMilestone.name}
-                onChange={(e) =>
-                  setEditingMilestone({
-                    ...editingMilestone,
-                    name: e.target.value,
-                  })
-                }
-              />
-            </Field>
-            <Field label="Start date">
-              <DateInput
-                className={inputClass}
-                value={editingMilestone.start_date ?? ""}
-                onChange={(e) =>
-                  setEditingMilestone({
-                    ...editingMilestone,
-                    start_date: e.target.value || null,
-                  })
-                }
-              />
-            </Field>
-            <Field label="Due date">
-              <DateInput
-                className={inputClass}
-                value={editingMilestone.due_date ?? ""}
-                onChange={(e) =>
-                  setEditingMilestone({
-                    ...editingMilestone,
-                    due_date: e.target.value || null,
-                  })
-                }
-              />
-            </Field>
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={editingMilestone.client_approved}
-                onChange={(e) =>
-                  setEditingMilestone({
-                    ...editingMilestone,
-                    client_approved: e.target.checked,
-                  })
-                }
-              />
-              Client approved
-            </label>
+            {editingMilestone.approved_by_client ? (
+              <>
+                <Field label="Name">
+                  <input
+                    className={inputClass}
+                    value={editingMilestone.name}
+                    readOnly
+                    disabled
+                  />
+                </Field>
+                <p className="text-sm text-[var(--text-muted)]">
+                  This milestone was approved by the client and is locked.
+                  You can delete it, but dates, essentials, and approval
+                  settings cannot be changed.
+                </p>
+              </>
+            ) : (
+              <>
+                <Field label="Name">
+                  <input
+                    className={inputClass}
+                    value={editingMilestone.name}
+                    onChange={(e) =>
+                      setEditingMilestone({
+                        ...editingMilestone,
+                        name: e.target.value,
+                      })
+                    }
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Start Date">
+                    <DateInput
+                      className={inputClass}
+                      value={editingMilestone.start_date ?? ""}
+                      onChange={(e) =>
+                        setEditingMilestone({
+                          ...editingMilestone,
+                          start_date: e.target.value || null,
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Due Date">
+                    <DateInput
+                      className={inputClass}
+                      value={editingMilestone.due_date ?? ""}
+                      onChange={(e) =>
+                        setEditingMilestone({
+                          ...editingMilestone,
+                          due_date: e.target.value || null,
+                        })
+                      }
+                    />
+                  </Field>
+                </div>
+                <div className="space-y-2 rounded-md border border-[var(--border)] p-3">
+                  <h3 className="text-sm font-semibold">
+                    Client Approval is Ready
+                  </h3>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <Field label="Type">
+                      <Select
+                        value={editingMilestone.essential_kind ?? ""}
+                        onChange={(v) =>
+                          setEditingMilestone({
+                            ...editingMilestone,
+                            essential_kind: (v || null) as ProjectAssetKind | null,
+                          })
+                        }
+                        options={[
+                          { value: "", label: "Select type…" },
+                          ...(
+                            Object.keys(ASSET_KIND_LABELS) as ProjectAssetKind[]
+                          ).map((k) => ({
+                            value: k,
+                            label: ASSET_KIND_LABELS[k],
+                          })),
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Label">
+                      <input
+                        className={inputClass}
+                        value={editingMilestone.essential_label}
+                        onChange={(e) =>
+                          setEditingMilestone({
+                            ...editingMilestone,
+                            essential_label: e.target.value,
+                          })
+                        }
+                        placeholder="Optional"
+                      />
+                    </Field>
+                    <Field label="URL">
+                      <input
+                        className={inputClass}
+                        value={editingMilestone.essential_url}
+                        onChange={(e) =>
+                          setEditingMilestone({
+                            ...editingMilestone,
+                            essential_url: e.target.value,
+                          })
+                        }
+                        placeholder="https://"
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Field label="Client Name">
+                      <input
+                        className={inputClass}
+                        value={editingMilestone.approval_name}
+                        onChange={(e) =>
+                          setEditingMilestone({
+                            ...editingMilestone,
+                            approval_name: e.target.value,
+                          })
+                        }
+                        placeholder="Client contact name"
+                      />
+                    </Field>
+                    <Field label="Email">
+                      <input
+                        className={inputClass}
+                        type="email"
+                        value={editingMilestone.approval_email}
+                        onChange={(e) =>
+                          setEditingMilestone({
+                            ...editingMilestone,
+                            approval_email: e.target.value,
+                          })
+                        }
+                        placeholder="client@example.com"
+                      />
+                    </Field>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editingMilestone.approval_enabled}
+                      onChange={(e) =>
+                        setEditingMilestone({
+                          ...editingMilestone,
+                          approval_enabled: e.target.checked,
+                        })
+                      }
+                    />
+                    Enable Milestone Approval
+                  </label>
+                </div>
+              </>
+            )}
             <div className="flex justify-between pt-2">
               <button
                 type="button"
@@ -1048,18 +1187,42 @@ export default function ProjectDetailPage() {
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
-                  onClick={() => {
-                    upsertMilestone(editingMilestone);
-                    setConfirmDeleteMilestoneId(null);
-                    setEditingMilestone(null);
-                    push("Milestone saved");
-                  }}
-                >
-                  Save
-                </button>
+                {!editingMilestone.approved_by_client ? (
+                  <button
+                    type="button"
+                    className="h-9 rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)]"
+                    onClick={() => {
+                      if (editingMilestone.approval_enabled) {
+                        const name = editingMilestone.approval_name.trim();
+                        const email = editingMilestone.approval_email.trim();
+                        if (!name || !email) {
+                          push(
+                            "Client name and email are required to enable milestone approval",
+                          );
+                          return;
+                        }
+                      }
+                      upsertMilestone({
+                        ...editingMilestone,
+                        approval_name: editingMilestone.approval_name.trim(),
+                        approval_email: editingMilestone.approval_email.trim(),
+                        essential_label:
+                          editingMilestone.essential_label.trim(),
+                        essential_url: editingMilestone.essential_url.trim(),
+                        essential_kind:
+                          editingMilestone.essential_kind &&
+                          editingMilestone.essential_url.trim()
+                            ? editingMilestone.essential_kind
+                            : editingMilestone.essential_kind,
+                      });
+                      setConfirmDeleteMilestoneId(null);
+                      setEditingMilestone(null);
+                      push("Milestone saved");
+                    }}
+                  >
+                    Save
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>

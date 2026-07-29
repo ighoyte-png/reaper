@@ -228,6 +228,15 @@ function loadDemoState(): DemoState {
         client_approved: Boolean(m.client_approved),
         sort_order:
           typeof m.sort_order === "number" ? m.sort_order : idx,
+        approval_enabled: Boolean(m.approval_enabled),
+        approval_name: m.approval_name ?? "",
+        approval_email: m.approval_email ?? "",
+        essential_kind: m.essential_kind ?? null,
+        essential_label: m.essential_label ?? "",
+        essential_url: m.essential_url ?? "",
+        approved_by_name: m.approved_by_name ?? null,
+        approved_at: m.approved_at ?? null,
+        approved_by_client: Boolean(m.approved_by_client),
       })),
       organization: {
         ...seed.organization,
@@ -251,6 +260,7 @@ function loadDemoState(): DemoState {
         ...l,
         color: l.color ?? null,
         archived: Boolean(l.archived),
+        hide_from_client: Boolean(l.hide_from_client),
       })),
       tasks: parsed.tasks ?? seed.tasks,
       task_comments: (parsed.task_comments ?? seed.task_comments).map((c) => ({
@@ -271,6 +281,7 @@ function loadDemoState(): DemoState {
         audience_pod_ids: Array.isArray(b.audience_pod_ids)
           ? b.audience_pod_ids
           : [],
+        tone: b.tone === "success" ? "success" : "default",
       })),
       unread_bulletin_ids: Array.isArray(parsed.unread_bulletin_ids)
         ? parsed.unread_bulletin_ids.filter(
@@ -2521,7 +2532,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertMilestone: (milestone) => {
-        const row = withOrg(milestone) as Milestone;
+        const row = {
+          ...withOrg(milestone),
+          approval_enabled: Boolean(milestone.approval_enabled),
+          approval_name: milestone.approval_name ?? "",
+          approval_email: milestone.approval_email ?? "",
+          essential_kind: milestone.essential_kind ?? null,
+          essential_label: milestone.essential_label ?? "",
+          essential_url: milestone.essential_url ?? "",
+          approved_by_name: milestone.approved_by_name ?? null,
+          approved_at: milestone.approved_at ?? null,
+          approved_by_client: Boolean(milestone.approved_by_client),
+        } as Milestone;
         noteLocalWrite("milestones", row.id);
         patch((prev) => {
           const exists = prev.milestones.some((m) => m.id === row.id);
@@ -3123,7 +3145,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       upsertTaskList: (list) => {
-        const row = withOrg(list) as TaskList;
+        const row = {
+          ...withOrg(list),
+          hide_from_client: Boolean(list.hide_from_client),
+        } as TaskList;
         patch((prev) => {
           const exists = prev.task_lists.some((l) => l.id === row.id);
           return {
@@ -3377,7 +3402,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       upsertBulletin: (bulletin) => {
         if (!manage) return;
-        const row = withOrg(bulletin) as Bulletin;
+        const row = {
+          ...withOrg(bulletin),
+          tone: bulletin.tone === "success" ? "success" : "default",
+        } as Bulletin;
         let isNew = false;
         patch((prev) => {
           const exists = prev.bulletins.some((b) => b.id === row.id);
@@ -3687,6 +3715,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
             status: "upcoming",
             client_approved: false,
             sort_order: m.sort_order,
+            approval_enabled: false,
+            approval_name: "",
+            approval_email: "",
+            essential_kind: null,
+            essential_label: "",
+            essential_url: "",
+            approved_by_name: null,
+            approved_at: null,
+            approved_by_client: false,
           };
         });
 
@@ -3705,6 +3742,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             color: null,
             sort_order: l.sort_order,
             archived: false,
+            hide_from_client: false,
           };
         });
 

@@ -5,9 +5,13 @@ import { useParams } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { ProgressBar } from "@/components/projects/progress-bar";
+import {
+  MilestoneApprovalCheck,
+  ProgressBar,
+} from "@/components/projects/progress-bar";
 import { ProjectManagerTag } from "@/components/projects/project-manager-person";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
+import { Field, Modal, inputClass } from "@/components/ui/form";
 import { createDemoSeed, DEMO_STORAGE_KEY } from "@/lib/demo/seed";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
@@ -15,11 +19,19 @@ import {
   type PortalHoursRetainer,
   type ProjectPortalPayload,
 } from "@/lib/share/sanitize";
+import { approveDemoPortalMilestone } from "@/lib/share/demo-milestone-approve";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import { ASSET_KIND_LABELS } from "@/lib/domain/assets";
 import { calendarYearBars } from "@/lib/domain/budget";
+import { parseAssetKind } from "@/lib/domain/milestones";
+import { taskStatusLabel } from "@/lib/domain/tasks";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
-import type { Assignment, Project, ProjectAssetKind } from "@/lib/types";
+import type {
+  Assignment,
+  Project,
+  ProjectAssetKind,
+  TaskStatus,
+} from "@/lib/types";
 import { toDateKey } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { DemoState } from "@/lib/types";
@@ -135,28 +147,25 @@ function PortalTaskRow({
 }: {
   task: { title: string; status: string };
 }) {
+  const status = task.status as TaskStatus;
+  const label = taskStatusLabel(status);
+  const colorClass =
+    status === "complete"
+      ? "text-[var(--task-complete-fg)]"
+      : status === "active"
+        ? "text-[var(--task-complete-fg)]"
+        : "text-[var(--task-active-fg)]";
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm">
       <span
         className={cn(
-          task.status === "complete" &&
+          status === "complete" &&
             "text-[var(--task-complete-fg)] line-through",
         )}
       >
         {task.title}
       </span>
-      <span
-        className={cn(
-          "shrink-0 text-xs capitalize",
-          task.status === "complete"
-            ? "text-[var(--task-complete-fg)]"
-            : task.status === "active"
-              ? "text-[var(--task-active-fg)]"
-              : "text-[var(--task-upcoming-fg)]",
-        )}
-      >
-        {task.status}
-      </span>
+      <span className={cn("shrink-0 text-xs", colorClass)}>{label}</span>
     </div>
   );
 }
@@ -168,6 +177,13 @@ export default function ProjectSharePage() {
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
   const [chartYear, setChartYear] = useState(() => new Date().getFullYear());
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approveName, setApproveName] = useState("");
+  const [approveEmail, setApproveEmail] = useState("");
+  const [approveError, setApproveError] = useState<string | null>(null);
+  const [approveBusy, setApproveBusy] = useState(false);
+  const [credentialsOk, setCredentialsOk] = useState(false);
+  const [celebrateId, setCelebrateId] = useState<string | null>(null);
 
   const portalTabTitle = portal
     ? portal.clientName
@@ -246,6 +262,157 @@ export default function ProjectSharePage() {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!approvingId) return;
+    const name = approveName;
+    const email = approveEmail;
+    if (!name.trim() || !email.trim()) {
+      setCredentialsOk(false);
+      return;
+    }
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        if (!isSupabaseConfigured()) {
+          const result = approveDemoPortalMilestone(
+            token,
+            approvingId,
+            name,
+            email,
+            { verifyOnly: true },
+          );
+          setCredentialsOk(Boolean(result.ok && result.match !== false));
+          return;
+        }
+        try {
+          const res = await fetch(
+            `/api/share/project/${encodeURIComponent(token)}/milestones/${encodeURIComponent(approvingId)}/approve`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name, email, verifyOnly: true }),
+            },
+          );
+          const body = (await res.json()) as { match?: boolean };
+          setCredentialsOk(Boolean(body.match));
+        } catch {
+          setCredentialsOk(false);
+        }
+      })();
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [approvingId, approveName, approveEmail, token]);
+
+  function openApprove(milestoneId: string) {
+    setApprovingId(milestoneId);
+    setApproveName("");
+    setApproveEmail("");
+    setApproveError(null);
+    setCredentialsOk(false);
+  }
+
+  function closeApprove() {
+    setApprovingId(null);
+    setApproveName("");
+    setApproveEmail("");
+    setApproveError(null);
+    setCredentialsOk(false);
+    setApproveBusy(false);
+  }
+
+  async function confirmApprove() {
+    if (!approvingId || !credentialsOk) return;
+    setApproveBusy(true);
+    setApproveError(null);
+    try {
+      if (!isSupabaseConfigured()) {
+        const result = approveDemoPortalMilestone(
+          token,
+          approvingId,
+          approveName,
+          approveEmail,
+        );
+        if (!result.ok) {
+          setApproveError(result.error);
+          return;
+        }
+        setPortal((prev) =>
+          prev
+            ? {
+                ...prev,
+                milestones: prev.milestones.map((m) =>
+                  m.id === result.milestone.id
+                    ? {
+                        ...m,
+                        client_approved: true,
+                        approved_by_client: true,
+                        approved_by_name: result.milestone.approved_by_name,
+                        approved_at: result.milestone.approved_at,
+                      }
+                    : m,
+                ),
+              }
+            : prev,
+        );
+        setCelebrateId(approvingId);
+        closeApprove();
+        window.setTimeout(() => setCelebrateId(null), 1200);
+        return;
+      }
+
+      const res = await fetch(
+        `/api/share/project/${encodeURIComponent(token)}/milestones/${encodeURIComponent(approvingId)}/approve`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: approveName,
+            email: approveEmail,
+          }),
+        },
+      );
+      const body = (await res.json()) as {
+        milestone?: {
+          id: string;
+          approved_by_name: string | null;
+          approved_at: string | null;
+        };
+        error?: string;
+      };
+      if (!res.ok || !body.milestone) {
+        setApproveError(body.error || "Unable to approve milestone");
+        return;
+      }
+      const approvedId = approvingId;
+      setPortal((prev) =>
+        prev
+          ? {
+              ...prev,
+              milestones: prev.milestones.map((m) =>
+                m.id === body.milestone!.id
+                  ? {
+                      ...m,
+                      client_approved: true,
+                      approved_by_client: true,
+                      approved_by_name: body.milestone!.approved_by_name,
+                      approved_at: body.milestone!.approved_at,
+                    }
+                  : m,
+              ),
+            }
+          : prev,
+      );
+      setCelebrateId(approvedId);
+      closeApprove();
+      window.setTimeout(() => setCelebrateId(null), 1200);
+    } catch (err) {
+      setApproveError(
+        err instanceof Error ? err.message : "Unable to approve milestone",
+      );
+    } finally {
+      setApproveBusy(false);
+    }
+  }
+
   if (!ready) {
     return (
       <div className="flex h-full items-center justify-center p-8 text-sm text-[var(--text-muted)]">
@@ -283,14 +450,7 @@ export default function ProjectSharePage() {
   const teamSorted = [...portal.team];
   const manager = portal.showProjectManagers ? portal.manager : null;
   const teamWithoutManager = manager
-    ? teamSorted.filter(
-        (m) =>
-          !(
-            m.email &&
-            manager.email &&
-            m.email.toLowerCase() === manager.email.toLowerCase()
-          ) && m.name !== manager.name,
-      )
+    ? teamSorted.filter((m) => m.name !== manager.name)
     : teamSorted;
   const showTeamSection = Boolean(manager) || teamSorted.length > 0;
 
@@ -345,7 +505,7 @@ export default function ProjectSharePage() {
             ) : null}
             {teamWithoutManager.map((member) => (
               <li
-                key={member.email || member.name}
+                key={member.name}
                 className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center"
               >
                 <PersonAvatar
@@ -361,15 +521,6 @@ export default function ProjectSharePage() {
                     <div className="truncate text-xs text-[var(--text-muted)]">
                       {member.title}
                     </div>
-                  ) : null}
-                  {member.email ? (
-                    <a
-                      href={`mailto:${member.email}`}
-                      className="mt-1 inline-flex items-center justify-center gap-1 text-xs text-[var(--accent)] hover:underline"
-                    >
-                      <Mail size={11} />
-                      {member.email}
-                    </a>
                   ) : null}
                 </div>
               </li>
@@ -447,12 +598,52 @@ export default function ProjectSharePage() {
                       m.due_date,
                       todayKey,
                     ) ?? 0;
+              const readyForApproval =
+                m.approval_enabled && !m.client_approved;
+              const byline =
+                m.approved_by_client && m.approved_by_name
+                  ? `Approved by ${m.approved_by_name}${
+                      m.approved_at
+                        ? ` on ${formatDisplayDate(m.approved_at.slice(0, 10))}`
+                        : ""
+                    }`
+                  : null;
               return (
-                <div key={m.id}>
+                <div
+                  key={m.id}
+                  className={cn(
+                    "rounded-md",
+                    readyForApproval &&
+                      "cursor-pointer p-2 -m-2 transition-colors hover:bg-[var(--row-hover)]",
+                  )}
+                  onClick={
+                    readyForApproval ? () => openApprove(m.id) : undefined
+                  }
+                  onKeyDown={
+                    readyForApproval
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openApprove(m.id);
+                          }
+                        }
+                      : undefined
+                  }
+                  role={readyForApproval ? "button" : undefined}
+                  tabIndex={readyForApproval ? 0 : undefined}
+                >
                   <ProgressBar
                     pct={pct}
                     label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
                     approved={m.client_approved}
+                    readyForApproval={readyForApproval}
+                    footerStart={byline}
+                    celebrate={celebrateId === m.id}
+                    essential={{
+                      kind: parseAssetKind(m.essential_kind),
+                      label: m.essential_label,
+                      url: m.essential_url,
+                    }}
                   />
                 </div>
               );
@@ -561,6 +752,61 @@ export default function ProjectSharePage() {
           </div>
         )}
       </section>
+
+      {approvingId ? (
+        <Modal title="Approve Milestone" onClose={closeApprove}>
+          <div className="grid gap-3">
+            <Field label="Name">
+              <input
+                className={inputClass}
+                value={approveName}
+                onChange={(e) => {
+                  setApproveName(e.target.value);
+                  setCredentialsOk(false);
+                }}
+                placeholder="Your name"
+                autoComplete="name"
+              />
+            </Field>
+            <Field label="Email">
+              <input
+                className={inputClass}
+                type="email"
+                value={approveEmail}
+                onChange={(e) => {
+                  setApproveEmail(e.target.value);
+                  setCredentialsOk(false);
+                }}
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+            </Field>
+            {approveError ? (
+              <p className="text-sm text-[var(--status-over)]">{approveError}</p>
+            ) : null}
+            {credentialsOk ? (
+              <div className="flex flex-col items-center gap-2 pt-2">
+                <p className="text-sm font-medium">Approve Milestone</p>
+                <MilestoneApprovalCheck
+                  interactive
+                  pending
+                  onClick={() => {
+                    if (!approveBusy) void confirmApprove();
+                  }}
+                />
+                <p className="text-center text-sm text-[var(--text-muted)]">
+                  This is Your Moment of Glory!
+                </p>
+              </div>
+            ) : approveName.trim() && approveEmail.trim() ? (
+              <p className="text-sm text-[var(--text-muted)]">
+                Enter the name and email provided by your project manager to
+                unlock approval.
+              </p>
+            ) : null}
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }

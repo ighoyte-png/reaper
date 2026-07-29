@@ -151,10 +151,9 @@ export interface ProjectPortalPayload {
     title: string;
     avatar_url: string | null;
   } | null;
-  /** Team members with contact emails — shown to the client, unlike the org-wide share. */
+  /** Team members — names/titles/avatars only (emails stripped; PM email stays on manager). */
   team: {
     name: string;
-    email: string;
     title: string;
     avatar_url: string | null;
   }[];
@@ -165,6 +164,13 @@ export interface ProjectPortalPayload {
     status: string;
     client_approved: boolean;
     sort_order: number;
+    approval_enabled: boolean;
+    approved_by_client: boolean;
+    approved_by_name: string | null;
+    approved_at: string | null;
+    essential_kind: string | null;
+    essential_label: string;
+    essential_url: string;
   }[];
   taskLists: { id: string; name: string; milestone_id: string | null }[];
   /** Titles/status only — no assignee, notes, or internal cost data. */
@@ -228,7 +234,6 @@ export function sanitizeProjectPortal(
     .filter((p) => teamIds.has(p.id))
     .map((p) => ({
       name: p.name,
-      email: p.email,
       title: p.role_title,
       avatar_url: p.avatar_url ?? null,
     }))
@@ -256,6 +261,11 @@ export function sanitizeProjectPortal(
             })),
         }
       : null;
+
+  const visibleLists = state.task_lists.filter(
+    (l) => l.project_id === projectId && !l.hide_from_client,
+  );
+  const visibleListIds = new Set(visibleLists.map((l) => l.id));
 
   return {
     organizationName: state.organization.name,
@@ -285,30 +295,35 @@ export function sanitizeProjectPortal(
         status: m.status,
         client_approved: m.client_approved,
         sort_order: m.sort_order,
+        approval_enabled: Boolean(m.approval_enabled),
+        approved_by_client: Boolean(m.approved_by_client),
+        approved_by_name: m.approved_by_client
+          ? (m.approved_by_name ?? null)
+          : null,
+        approved_at: m.approved_by_client ? (m.approved_at ?? null) : null,
+        essential_kind: m.essential_kind,
+        essential_label: m.essential_label ?? "",
+        essential_url: sanitizeExternalUrl(m.essential_url) ?? "",
       })),
-    taskLists: state.task_lists
-      .filter((l) => l.project_id === projectId)
+    taskLists: visibleLists
       .sort(
         (a, b) =>
           a.sort_order - b.sort_order || a.name.localeCompare(b.name),
       )
       .map((l) => ({ id: l.id, name: l.name, milestone_id: l.milestone_id })),
-    tasks: (() => {
-      const listIds = new Set(
-        state.task_lists
-          .filter((l) => l.project_id === projectId)
-          .map((l) => l.id),
-      );
-      return state.tasks
-        .filter((t) => t.project_id === projectId || listIds.has(t.list_id))
-        .map((t) => ({
-          id: t.id,
-          list_id: t.list_id,
-          parent_id: t.parent_id,
-          title: t.title,
-          status: t.status,
-        }));
-    })(),
+    tasks: state.tasks
+      .filter(
+        (t) =>
+          visibleListIds.has(t.list_id) &&
+          (t.project_id === projectId || visibleListIds.has(t.list_id)),
+      )
+      .map((t) => ({
+        id: t.id,
+        list_id: t.list_id,
+        parent_id: t.parent_id,
+        title: t.title,
+        status: t.status,
+      })),
     assets: state.project_assets
       .filter((a) => a.project_id === projectId && !a.hide_from_client)
       .sort((a, b) => a.sort_order - b.sort_order)

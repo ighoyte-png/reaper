@@ -102,9 +102,22 @@ export interface Milestone {
   start_date: string | null;
   due_date: string | null;
   status: MilestoneStatus;
-  /** Admin-checked after formal client sign-off. */
+  /** PM- or client-checked approval flag. */
   client_approved: boolean;
   sort_order: number;
+  /** When true (and contact set), portal shows Ready for Approval. */
+  approval_enabled: boolean;
+  /** Expected client contact for portal approval (never exposed on portal). */
+  approval_name: string;
+  approval_email: string;
+  /** Inline essentials link shown beside the milestone bar. */
+  essential_kind: ProjectAssetKind | null;
+  essential_label: string;
+  essential_url: string;
+  /** Set only when the client approves via the portal. */
+  approved_by_name: string | null;
+  approved_at: string | null;
+  approved_by_client: boolean;
 }
 
 export interface ProjectAsset {
@@ -132,6 +145,8 @@ export interface TaskList {
   sort_order: number;
   /** When true, list is hidden from the main board until restored. */
   archived: boolean;
+  /** When true, list (and its tasks) are omitted from the client portal. */
+  hide_from_client: boolean;
 }
 
 export interface Task {
@@ -181,6 +196,8 @@ export interface TaskCommentReaction {
   profile_id: string;
 }
 
+export type BulletinTone = "default" | "success";
+
 export interface Bulletin {
   id: string;
   organization_id: string;
@@ -192,6 +209,8 @@ export interface Bulletin {
   audience: "all" | "people";
   audience_person_ids: string[];
   audience_pod_ids: string[];
+  /** Visual tone — success = green highlight (e.g. milestone approval). */
+  tone: BulletinTone;
   created_by_profile_id: string | null;
   created_at: string;
 }

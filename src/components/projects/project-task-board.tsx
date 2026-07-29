@@ -28,6 +28,8 @@ import {
   ArchiveRestore,
   ChevronDown,
   ChevronRight,
+  Eye,
+  EyeOff,
   GripVertical,
   MessageSquare,
   Pencil,
@@ -650,6 +652,7 @@ export function ProjectTaskBoard({
       color: null,
       sort_order: 0,
       archived: false,
+      hide_from_client: false,
     };
     upsertTaskList(list);
   }
@@ -1517,6 +1520,12 @@ export function ProjectTaskBoard({
                   onUnarchive={() =>
                     upsertTaskList({ ...list, archived: false })
                   }
+                  onToggleHideFromClient={() =>
+                    upsertTaskList({
+                      ...list,
+                      hide_from_client: !list.hide_from_client,
+                    })
+                  }
                   onDelete={() =>
                     setConfirmDeleteList({ id: list.id, name: list.name })
                   }
@@ -1619,6 +1628,12 @@ export function ProjectTaskBoard({
                       onUnarchive={() =>
                         upsertTaskList({ ...list, archived: false })
                       }
+                      onToggleHideFromClient={() =>
+                        upsertTaskList({
+                          ...list,
+                          hide_from_client: !list.hide_from_client,
+                        })
+                      }
                       onDelete={() =>
                         setConfirmDeleteList({ id: list.id, name: list.name })
                       }
@@ -1710,6 +1725,7 @@ function ListSection({
   onCreateDraft,
   onArchive,
   onUnarchive,
+  onToggleHideFromClient,
   onDelete,
 }: {
   list: TaskList;
@@ -1725,6 +1741,7 @@ function ListSection({
   onCreateDraft: (draft: InlineTaskDraft) => void;
   onArchive: () => void;
   onUnarchive: () => void;
+  onToggleHideFromClient: () => void;
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -1810,6 +1827,29 @@ function ListSection({
         ) : null}
         {ctx.manageLists && ctx.listsEditMode ? (
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className={cn(
+                "inline-flex cursor-pointer rounded p-1 hover:bg-[var(--row-hover)]",
+                list.hide_from_client
+                  ? "text-[var(--text-muted)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--text)]",
+              )}
+              onClick={onToggleHideFromClient}
+              aria-label={
+                list.hide_from_client
+                  ? `Show ${list.name} on client portal`
+                  : `Hide ${list.name} from client portal`
+              }
+              title={
+                list.hide_from_client
+                  ? "Hidden from client portal"
+                  : "Hide from client portal"
+              }
+              aria-pressed={list.hide_from_client}
+            >
+              {list.hide_from_client ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
             {list.archived ? (
               <button
                 type="button"
@@ -2704,6 +2744,7 @@ function CommentItem({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const author = ctx.profiles.find((p) => p.id === comment.author_profile_id);
   const authorPerson = ctx.people.find(
     (p) => p.profile_id === comment.author_profile_id,
@@ -2809,7 +2850,7 @@ function CommentItem({
                     className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
                     aria-label="Delete comment"
                     title="Delete"
-                    onClick={() => ctx.deleteComment(comment.id)}
+                    onClick={() => setConfirmDelete(true)}
                   >
                     <Trash2 size={13} strokeWidth={1.75} />
                   </button>
@@ -2819,6 +2860,18 @@ function CommentItem({
           </>
         )}
       </div>
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="Delete comment?"
+          message="Delete this comment? This can't be undone."
+          confirmLabel="Delete"
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            setConfirmDelete(false);
+            ctx.deleteComment(comment.id);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

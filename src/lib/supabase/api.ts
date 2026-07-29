@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createDemoSeed } from "@/lib/demo/seed";
+import { parseAssetKind } from "@/lib/domain/milestones";
 import { orderTasksParentsFirst } from "@/lib/domain/tasks";
 import { resolveAvatarUrl } from "@/lib/supabase/avatar";
 import type {
@@ -129,6 +130,17 @@ export function mapMilestone(row: Record<string, unknown>): Milestone {
     status: row.status as Milestone["status"],
     client_approved: Boolean(row.client_approved),
     sort_order: num(row.sort_order),
+    approval_enabled: Boolean(row.approval_enabled),
+    approval_name: String(row.approval_name ?? ""),
+    approval_email: String(row.approval_email ?? ""),
+    essential_kind: parseAssetKind(row.essential_kind),
+    essential_label: String(row.essential_label ?? ""),
+    essential_url: String(row.essential_url ?? ""),
+    approved_by_name: row.approved_by_name
+      ? String(row.approved_by_name)
+      : null,
+    approved_at: row.approved_at ? String(row.approved_at) : null,
+    approved_by_client: Boolean(row.approved_by_client),
   };
 }
 
@@ -156,6 +168,7 @@ function mapTaskList(row: Record<string, unknown>): TaskList {
     color: row.color ? String(row.color) : null,
     sort_order: num(row.sort_order),
     archived: Boolean(row.archived),
+    hide_from_client: Boolean(row.hide_from_client),
   };
 }
 
@@ -215,6 +228,7 @@ export function mapBulletin(row: Record<string, unknown>): Bulletin {
   const podIds = Array.isArray(row.audience_pod_ids)
     ? (row.audience_pod_ids as unknown[]).map(String)
     : [];
+  const toneRaw = String(row.tone ?? "default");
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),
@@ -225,6 +239,7 @@ export function mapBulletin(row: Record<string, unknown>): Bulletin {
     audience,
     audience_person_ids: ids,
     audience_pod_ids: podIds,
+    tone: toneRaw === "success" ? "success" : "default",
     created_by_profile_id: row.created_by_profile_id
       ? String(row.created_by_profile_id)
       : null,
@@ -2002,6 +2017,15 @@ export async function upsertMilestoneRow(
     status: milestone.status,
     client_approved: Boolean(milestone.client_approved),
     sort_order: milestone.sort_order,
+    approval_enabled: Boolean(milestone.approval_enabled),
+    approval_name: milestone.approval_name ?? "",
+    approval_email: milestone.approval_email ?? "",
+    essential_kind: milestone.essential_kind,
+    essential_label: milestone.essential_label ?? "",
+    essential_url: milestone.essential_url ?? "",
+    approved_by_name: milestone.approved_by_name,
+    approved_at: milestone.approved_at,
+    approved_by_client: Boolean(milestone.approved_by_client),
   };
   const { error } = await supabase.from("milestones").upsert(payload);
   if (!error) return;
@@ -2015,12 +2039,30 @@ export async function upsertMilestoneRow(
   const missingStart =
     /Could not find the 'start_date' column/i.test(error.message) ||
     (error.code === "PGRST204" && /start_date/i.test(error.message));
+  const missingApproval =
+    /Could not find the 'approval_enabled' column/i.test(error.message) ||
+    /approval_name|approval_email|essential_kind|approved_by/i.test(
+      error.message,
+    ) ||
+    (error.code === "PGRST204" &&
+      /approval_|essential_|approved_by/i.test(error.message));
 
-  if (missingApproved || missingSort || missingStart) {
-    const rest = { ...payload };
-    if (missingApproved) delete (rest as { client_approved?: boolean }).client_approved;
-    if (missingSort) delete (rest as { sort_order?: number }).sort_order;
-    if (missingStart) delete (rest as { start_date?: string | null }).start_date;
+  if (missingApproved || missingSort || missingStart || missingApproval) {
+    const rest = { ...payload } as Record<string, unknown>;
+    if (missingApproved) delete rest.client_approved;
+    if (missingSort) delete rest.sort_order;
+    if (missingStart) delete rest.start_date;
+    if (missingApproval) {
+      delete rest.approval_enabled;
+      delete rest.approval_name;
+      delete rest.approval_email;
+      delete rest.essential_kind;
+      delete rest.essential_label;
+      delete rest.essential_url;
+      delete rest.approved_by_name;
+      delete rest.approved_at;
+      delete rest.approved_by_client;
+    }
     const retry = await supabase.from("milestones").upsert(rest);
     if (!retry.error) {
       if (missingApproved) {
@@ -2036,6 +2078,11 @@ export async function upsertMilestoneRow(
       if (missingStart) {
         console.warn(
           "milestones.start_date missing — apply supabase/migrations/025_assets_milestones_mentions.sql",
+        );
+      }
+      if (missingApproval) {
+        console.warn(
+          "milestones approval columns missing — apply supabase/migrations/062_milestone_client_approval.sql",
         );
       }
       return;
@@ -2271,10 +2318,24 @@ export async function upsertTaskListRow(
     color: list.color,
     sort_order: list.sort_order,
     archived: list.archived,
+    hide_from_client: Boolean(list.hide_from_client),
   };
   let { error } = await supabase.from("task_lists").upsert(payload);
+  if (
+    error &&
+    (/hide_from_client/i.test(error.message) ||
+      (error.code === "PGRST204" && /hide_from_client/i.test(error.message)))
+  ) {
+    const { hide_from_client: _dropHide, ...withoutHide } = payload;
+    ({ error } = await supabase.from("task_lists").upsert(withoutHide));
+    if (!error) {
+      console.warn(
+        "task_lists.hide_from_client missing — apply supabase/migrations/062_milestone_client_approval.sql",
+      );
+    }
+  }
   if (error && /archived/i.test(error.message)) {
-    const { archived: _drop, ...legacy } = payload;
+    const { archived: _drop, hide_from_client: _dropHide, ...legacy } = payload;
     ({ error } = await supabase.from("task_lists").upsert(legacy));
     if (!error) {
       console.warn(
@@ -2510,17 +2571,32 @@ export async function upsertBulletinRow(
     audience: bulletin.audience,
     audience_person_ids: bulletin.audience_person_ids,
     audience_pod_ids: bulletin.audience_pod_ids,
+    tone: bulletin.tone === "success" ? "success" : "default",
     created_by_profile_id: bulletin.created_by_profile_id,
     created_at: bulletin.created_at,
   };
   const { error } = await supabase.from("bulletins").upsert(payload);
   if (!error) return;
 
+  const missingTone =
+    /Could not find the 'tone' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /tone/i.test(error.message));
+  if (missingTone) {
+    const { tone: _tone, ...withoutTone } = payload;
+    const retryTone = await supabase.from("bulletins").upsert(withoutTone);
+    if (!retryTone.error) {
+      console.warn(
+        "bulletins.tone missing — apply supabase/migrations/062_milestone_client_approval.sql",
+      );
+      return;
+    }
+  }
+
   const missingPods =
     /Could not find the 'audience_pod_ids'/i.test(error.message) ||
     (error.code === "PGRST204" && /audience_pod_ids/i.test(error.message));
   if (missingPods) {
-    const { audience_pod_ids: _pods, ...withoutPods } = payload;
+    const { audience_pod_ids: _pods, tone: _tone, ...withoutPods } = payload;
     const retryPods = await supabase.from("bulletins").upsert(withoutPods);
     if (!retryPods.error) {
       console.warn(
@@ -2540,6 +2616,7 @@ export async function upsertBulletinRow(
       audience: _a,
       audience_person_ids: _ids,
       audience_pod_ids: _pods,
+      tone: _tone,
       ...rest
     } = payload;
     const retry = await supabase.from("bulletins").upsert(rest);
@@ -2810,6 +2887,15 @@ export async function applyProjectTemplateRows(
     status: m.status,
     client_approved: false,
     sort_order: m.sort_order,
+    approval_enabled: false,
+    approval_name: "",
+    approval_email: "",
+    essential_kind: null as null,
+    essential_label: "",
+    essential_url: "",
+    approved_by_name: null as null,
+    approved_at: null as null,
+    approved_by_client: false,
   }));
   const taskListRows = args.taskLists.map((l) => ({
     id: l.id,
@@ -2820,6 +2906,7 @@ export async function applyProjectTemplateRows(
     color: l.color ?? null,
     sort_order: l.sort_order,
     archived: false,
+    hide_from_client: false,
   }));
   const now = new Date().toISOString();
   const taskRows = orderTasksParentsFirst(
@@ -2958,6 +3045,15 @@ export async function seedDemoWorkspace(
     status: m.status,
     client_approved: m.client_approved,
     sort_order: m.sort_order,
+    approval_enabled: Boolean(m.approval_enabled),
+    approval_name: m.approval_name ?? "",
+    approval_email: m.approval_email ?? "",
+    essential_kind: m.essential_kind,
+    essential_label: m.essential_label ?? "",
+    essential_url: m.essential_url ?? "",
+    approved_by_name: m.approved_by_name,
+    approved_at: m.approved_at,
+    approved_by_client: Boolean(m.approved_by_client),
   }));
 
   const projectAssets = seed.project_assets.map((a) => ({
@@ -2980,6 +3076,7 @@ export async function seedDemoWorkspace(
     color: l.color,
     sort_order: l.sort_order,
     archived: Boolean(l.archived),
+    hide_from_client: Boolean(l.hide_from_client),
   }));
 
   const tasks = seed.tasks.map((t) => ({
@@ -3013,6 +3110,7 @@ export async function seedDemoWorkspace(
     audience_pod_ids: (b.audience_pod_ids ?? []).map((pid) =>
       remapId(ids, pid),
     ),
+    tone: b.tone === "success" ? "success" : "default",
     // Demo authors are not real profiles in a fresh org — omit attribution.
     created_by_profile_id: null as string | null,
     created_at: b.created_at,

@@ -263,7 +263,27 @@ export function MentionDesktopListener() {
           "Bulletin";
 
         const snippet = notesPlainText(bulletin.body).slice(0, 140);
-        const href = appHref("/dashboard");
+        const linkedProject = bulletin.project_id
+          ? (snap.projects.find((p) => p.id === bulletin.project_id) ?? null)
+          : null;
+        const href = linkedProject
+          ? projectHref(linkedProject)
+          : appHref("/dashboard");
+        const isSuccess = bulletin.tone === "success";
+        const notifTitle = isSuccess
+          ? orgName
+          : authorPerson?.name?.trim() ||
+            authorProfile?.full_name?.trim() ||
+            authorProfile?.email?.trim() ||
+            "Bulletin";
+        const notifBody = isSuccess
+          ? bulletin.title || snippet || "Milestone approved"
+          : [
+              orgName,
+              bulletin.title
+                ? `${bulletin.title}${snippet ? ` — ${snippet}` : ""}`
+                : snippet || "New bulletin",
+            ].join("\n");
         const icon = authorPerson
           ? await notificationPortraitIcon({
               name: authorName,
@@ -272,13 +292,8 @@ export function MentionDesktopListener() {
             })
           : reaperNotificationBadgeUrl();
 
-        void showDesktopNotification(authorName, {
-          body: [
-            orgName,
-            bulletin.title
-              ? `${bulletin.title}${snippet ? ` — ${snippet}` : ""}`
-              : snippet || "New bulletin",
-          ].join("\n"),
+        void showDesktopNotification(notifTitle, {
+          body: notifBody,
           tag: `bulletin-${bulletinId}`,
           icon,
           href,
@@ -297,6 +312,7 @@ export function MentionDesktopListener() {
     canManage,
     isPublicShare,
     router,
+    projectHref,
     appHref,
   ]);
 

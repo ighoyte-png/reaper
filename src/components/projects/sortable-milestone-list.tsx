@@ -22,6 +22,25 @@ import { ProgressBar } from "@/components/projects/progress-bar";
 import { milestoneDateProgress } from "@/lib/domain/progress";
 import { cn } from "@/lib/cn";
 import type { Milestone, Project } from "@/lib/types";
+import { format, parseISO } from "date-fns";
+
+function approvedByline(milestone: Milestone): string | null {
+  if (!milestone.approved_by_client || !milestone.approved_by_name) {
+    return null;
+  }
+  const when = milestone.approved_at
+    ? (() => {
+        try {
+          return format(parseISO(milestone.approved_at), "MMM d, yyyy");
+        } catch {
+          return milestone.approved_at.slice(0, 10);
+        }
+      })()
+    : null;
+  return when
+    ? `Approved by ${milestone.approved_by_name} on ${when}`
+    : `Approved by ${milestone.approved_by_name}`;
+}
 
 export function SortableMilestoneList({
   milestones,
@@ -111,6 +130,8 @@ function SortableMilestoneRow({
     ? formatDisplayDate(milestone.due_date)
     : "No date";
   const label = `${milestone.name} · ${dateLabel}`;
+  const byline = approvedByline(milestone);
+  const locked = milestone.approved_by_client;
 
   return (
     <div
@@ -139,6 +160,15 @@ function SortableMilestoneRow({
             pct={pct ?? 0}
             label={label}
             approved={milestone.client_approved}
+            readyForApproval={
+              milestone.approval_enabled && !milestone.client_approved
+            }
+            footerStart={byline}
+            essential={{
+              kind: milestone.essential_kind,
+              label: milestone.essential_label,
+              url: milestone.essential_url,
+            }}
           />
         </div>
       </div>
@@ -156,22 +186,34 @@ function SortableMilestoneRow({
           <button
             type="button"
             className={cn(
-              "inline-flex cursor-pointer rounded p-1 hover:bg-[var(--row-hover)]",
-              milestone.client_approved
-                ? "text-[var(--status-healthy)]"
-                : "text-[var(--text-muted)] hover:text-[var(--status-healthy)]",
+              "inline-flex rounded p-1",
+              locked
+                ? "cursor-not-allowed text-[var(--status-healthy)] opacity-70"
+                : "cursor-pointer hover:bg-[var(--row-hover)]",
+              !locked &&
+                (milestone.client_approved
+                  ? "text-[var(--status-healthy)]"
+                  : "text-[var(--text-muted)] hover:text-[var(--status-healthy)]"),
             )}
-            onClick={() =>
-              onToggleApproved(milestone, !milestone.client_approved)
-            }
+            onClick={() => {
+              if (locked) return;
+              onToggleApproved(milestone, !milestone.client_approved);
+            }}
+            disabled={locked}
             aria-label={
-              milestone.client_approved
-                ? "Mark milestone unapproved"
-                : "Mark milestone approved"
+              locked
+                ? "Client approved — locked"
+                : milestone.client_approved
+                  ? "Mark milestone unapproved"
+                  : "Mark milestone approved"
             }
             aria-pressed={milestone.client_approved}
             title={
-              milestone.client_approved ? "Approved" : "Mark approved"
+              locked
+                ? "Locked after client approval"
+                : milestone.client_approved
+                  ? "Approved"
+                  : "Mark approved"
             }
           >
             <Check size={14} strokeWidth={2.5} />
