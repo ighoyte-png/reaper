@@ -108,6 +108,7 @@ export function buildPmWeeklyAssignment(args: {
     recurrence: "weekly",
     recurrence_end_date: hi,
     recurrence_exceptions: [],
+    created_at: new Date().toISOString(),
     edited_at: null,
     edited_by_profile_id: null,
   };

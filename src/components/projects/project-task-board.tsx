@@ -154,7 +154,7 @@ type BoardCtx = {
   /** Deep-link target from ?task= — slight blue highlight. */
   focusTaskId: string | null;
   selected: Set<string>;
-  toggleSelect: (id: string) => void;
+  toggleSelect: (id: string, shiftKey?: boolean) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
   /** Selected task ids currently being dragged as a group (dim siblings). */
   multiDragIds: Set<string> | null;
@@ -322,6 +322,7 @@ export function ProjectTaskBoard({
     !projectDataReady &&
     dataStatus.projects[projectId] !== "error";
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectionAnchorRef = useRef<string | null>(null);
   const [multiDragIds, setMultiDragIds] = useState<Set<string> | null>(null);
   const [listDragActiveId, setListDragActiveId] = useState<string | null>(null);
   const [bulkDraft, setBulkDraft] = useState<{
@@ -422,13 +423,52 @@ export function ProjectTaskBoard({
     return map;
   }, [visibleTasks]);
 
-  function toggleSelect(id: string) {
+  /** Visual checkbox order across lists (parents then subtasks), for Shift+click ranges. */
+  const selectableOrder = useMemo(() => {
+    const ids: string[] = [];
+    const walkLists = (lists: typeof activeLists) => {
+      for (const list of lists) {
+        const parents = sortByOrder(
+          visibleTasks.filter((t) => t.list_id === list.id && !t.parent_id),
+        );
+        for (const parent of parents) {
+          ids.push(parent.id);
+          for (const child of childrenMap.get(parent.id) ?? []) {
+            ids.push(child.id);
+          }
+        }
+      }
+    };
+    walkLists(activeLists);
+    if (archiveExpanded) walkLists(archivedLists);
+    return ids;
+  }, [
+    activeLists,
+    archivedLists,
+    archiveExpanded,
+    visibleTasks,
+    childrenMap,
+  ]);
+
+  function toggleSelect(id: string, shiftKey = false) {
+    if (shiftKey && selectionAnchorRef.current) {
+      const anchorId = selectionAnchorRef.current;
+      const a = selectableOrder.indexOf(anchorId);
+      const b = selectableOrder.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        setSelected(new Set(selectableOrder.slice(lo, hi + 1)));
+        return;
+      }
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    selectionAnchorRef.current = id;
   }
 
   function setParentsSelected(ids: string[], on: boolean) {
@@ -440,6 +480,9 @@ export function ProjectTaskBoard({
       }
       return next;
     });
+    if (on && ids.length > 0) {
+      selectionAnchorRef.current = ids[ids.length - 1] ?? null;
+    }
   }
 
   function toggleExpand(id: string) {
@@ -466,6 +509,7 @@ export function ProjectTaskBoard({
   function clearSelection() {
     setSelected(new Set());
     setBulkDraft({});
+    selectionAnchorRef.current = null;
   }
 
   function beginDeleteTasks(rootIds: string[]) {
@@ -2414,8 +2458,14 @@ function TaskRow({
         {ctx.allowSelect ? (
           <Checkbox
             checked={isSelected}
-            onChange={() => ctx.toggleSelect(task.id)}
             onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              const shiftKey =
+                "shiftKey" in e.nativeEvent
+                  ? Boolean(e.nativeEvent.shiftKey)
+                  : false;
+              ctx.toggleSelect(task.id, shiftKey);
+            }}
             aria-label={`Select ${task.title}`}
           />
         ) : null}

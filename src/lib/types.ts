@@ -296,6 +296,8 @@ export interface Assignment {
    * removed or detached without splitting the series into multiple rows.
    */
   recurrence_exceptions: string[];
+  /** When the assignment row was first created. */
+  created_at: string;
   edited_at: string | null;
   edited_by_profile_id: string | null;
 }

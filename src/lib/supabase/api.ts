@@ -354,6 +354,7 @@ export function mapAssignment(row: Record<string, unknown>): Assignment {
     recurrence_exceptions: Array.isArray(row.recurrence_exceptions)
       ? (row.recurrence_exceptions as unknown[]).map(String)
       : [],
+    created_at: String(row.created_at ?? ""),
     edited_at: row.edited_at ? String(row.edited_at) : null,
     edited_by_profile_id: row.edited_by_profile_id
       ? String(row.edited_by_profile_id)
@@ -1950,6 +1951,7 @@ export async function upsertAssignmentRow(
     recurrence: assignment.recurrence ?? "none",
     recurrence_end_date: assignment.recurrence_end_date,
     recurrence_exceptions: assignment.recurrence_exceptions ?? [],
+    created_at: assignment.created_at || undefined,
     edited_at: assignment.edited_at,
     edited_by_profile_id: assignment.edited_by_profile_id,
   };
@@ -3069,6 +3071,7 @@ export async function seedDemoWorkspace(
     recurrence: a.recurrence ?? "none",
     recurrence_end_date: a.recurrence_end_date ?? null,
     recurrence_exceptions: a.recurrence_exceptions ?? [],
+    created_at: a.created_at || new Date().toISOString(),
     edited_at: a.edited_at ?? null,
     edited_by_profile_id: a.edited_by_profile_id ?? null,
   }));

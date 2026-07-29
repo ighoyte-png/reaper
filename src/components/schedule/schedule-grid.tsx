@@ -1574,6 +1574,7 @@ export function ScheduleGrid() {
       recurrence: "none",
       recurrence_end_date: null,
       recurrence_exceptions: [],
+      created_at: new Date().toISOString(),
       edited_at: null,
       edited_by_profile_id: null,
     };
@@ -3963,6 +3964,8 @@ export function ScheduleGrid() {
                 person={sidebarAssigner}
                 pods={state.pods}
                 podMembers={state.pod_members}
+                createdAt={editForm.created_at}
+                editedAt={editForm.edited_at}
               />
             ) : (
           <div className="space-y-3 p-4">
@@ -4232,6 +4235,8 @@ export function ScheduleGrid() {
                 person={sidebarAssigner}
                 pods={state.pods}
                 podMembers={state.pod_members}
+                createdAt={selected.created_at}
+                editedAt={selected.edited_at}
               />
             ) : (
           <ReadOnlyAssignmentDetails
@@ -5017,14 +5022,29 @@ function formatLastEditedBy(
   }
 }
 
+function formatAssignmentAuditDate(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  try {
+    const d = parseISO(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return format(d, "MMM d, yyyy");
+  } catch {
+    return null;
+  }
+}
+
 function AssignmentAssignerDetails({
   person,
   pods,
   podMembers,
+  createdAt,
+  editedAt,
 }: {
   person: Person | null;
   pods: Pod[];
   podMembers: PodMember[];
+  createdAt?: string | null;
+  editedAt?: string | null;
 }) {
   if (!person) {
     return (
@@ -5032,6 +5052,14 @@ function AssignmentAssignerDetails({
     );
   }
   const personPods = podsForPerson(person.id, pods, podMembers);
+  const assignedLabel = formatAssignmentAuditDate(createdAt);
+  const modifiedLabel = formatAssignmentAuditDate(editedAt);
+  const showModified =
+    Boolean(modifiedLabel) &&
+    (!createdAt ||
+      !editedAt ||
+      Math.abs(parseISO(editedAt).getTime() - parseISO(createdAt).getTime()) >
+        60_000);
 
   return (
     <div className="space-y-3 p-4">
@@ -5071,6 +5099,12 @@ function AssignmentAssignerDetails({
                   {pod.name}
                 </span>
               ))}
+            </div>
+          ) : null}
+          {assignedLabel || showModified ? (
+            <div className="mt-2 space-y-0.5 text-xs text-[var(--text-muted)]">
+              {assignedLabel ? <div>Assigned: {assignedLabel}</div> : null}
+              {showModified ? <div>Modified: {modifiedLabel}</div> : null}
             </div>
           ) : null}
         </div>

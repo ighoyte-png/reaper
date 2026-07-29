@@ -2477,24 +2477,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       upsertAssignment: (assignment) => {
         const now = new Date().toISOString();
-        const row = {
-          ...withOrg(assignment),
-          recurrence: assignment.recurrence ?? "none",
-          recurrence_exceptions: assignment.recurrence_exceptions ?? [],
-          edited_at: now,
-          edited_by_profile_id: profile?.id ?? null,
-        } as Assignment;
         patch((prev) => {
-          const exists = prev.assignments.some((a) => a.id === row.id);
+          const existing = prev.assignments.find((a) => a.id === assignment.id);
+          const row = {
+            ...withOrg(assignment),
+            recurrence: assignment.recurrence ?? "none",
+            recurrence_exceptions: assignment.recurrence_exceptions ?? [],
+            created_at:
+              assignment.created_at || existing?.created_at || now,
+            edited_at: now,
+            edited_by_profile_id: profile?.id ?? null,
+          } as Assignment;
           return {
             ...prev,
-            assignments: exists
+            assignments: existing
               ? prev.assignments.map((a) => (a.id === row.id ? row : a))
               : [...prev.assignments, row],
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
-          noteLocalWrite("assignments", row.id);
+          noteLocalWrite("assignments", assignment.id);
+          const existing = state.assignments.find((a) => a.id === assignment.id);
+          const row = {
+            ...withOrg(assignment),
+            recurrence: assignment.recurrence ?? "none",
+            recurrence_exceptions: assignment.recurrence_exceptions ?? [],
+            created_at:
+              assignment.created_at || existing?.created_at || now,
+            edited_at: now,
+            edited_by_profile_id: profile?.id ?? null,
+          } as Assignment;
           runRemoteSoft(() => upsertAssignmentRow(supabaseRef.current!, row));
         }
       },
