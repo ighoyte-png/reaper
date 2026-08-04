@@ -51,6 +51,25 @@ export function taskDividerLabel(title: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/** Divider line/dot color stored in task.notes (hex) when is_divider. */
+export function taskDividerColor(
+  notes: string | null | undefined,
+): string | null {
+  const trimmed = (notes ?? "").trim();
+  if (!trimmed) return null;
+  if (/^#[0-9A-Fa-f]{6}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+export function normalizeDividerColor(value: string | null | undefined): string {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return "";
+  if (/^#[0-9A-Fa-f]{6}$/i.test(trimmed)) {
+    return `#${trimmed.slice(1).toUpperCase()}`;
+  }
+  return "";
+}
+
 /**
  * Order tasks so parents appear before children (stable within each level).
  * Required for FK-safe inserts into tables with parent_id self-references.

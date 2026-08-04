@@ -72,6 +72,7 @@ import {
 import { notesHasContent, notesPreviewText } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
+import { PRESET_COLORS } from "@/lib/domain/colors";
 import { projectTeamPersonIds, projectAssigneePeople, canEditProject } from "@/lib/domain/project-access";
 import { personAvatarColor } from "@/lib/domain/people";
 import {
@@ -80,6 +81,8 @@ import {
   parentTasks,
   sortTaskLists,
   taskDividerLabel,
+  taskDividerColor,
+  normalizeDividerColor,
   taskStatusLabel,
   tasksForList,
 } from "@/lib/domain/tasks";
@@ -169,7 +172,10 @@ type BoardCtx = {
   setEditingTask: (task: Task | null) => void;
   saveEditingTask: (taskId: string, draft: InlineTaskDraft) => void;
   deleteEditingTask: (taskId: string) => void;
-  saveDividerTitle: (taskId: string, title: string) => void;
+  saveDivider: (
+    taskId: string,
+    patch: { title?: string; color?: string | null },
+  ) => void;
   deleteDivider: (taskId: string) => void;
   exitingTaskIds: Set<string>;
   onTaskExitComplete: (taskId: string) => void;
@@ -842,10 +848,20 @@ export function ProjectTaskBoard({
     upsertTask(task);
   }
 
-  function saveDividerTitle(taskId: string, title: string) {
+  function saveDivider(
+    taskId: string,
+    patch: { title?: string; color?: string | null },
+  ) {
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task || !task.is_divider) return;
-    upsertTask({ ...task, title: title.trim() });
+    upsertTask({
+      ...task,
+      title: patch.title !== undefined ? patch.title.trim() : task.title,
+      notes:
+        patch.color !== undefined
+          ? normalizeDividerColor(patch.color)
+          : task.notes,
+    });
   }
 
   function deleteDivider(taskId: string) {
@@ -1363,7 +1379,7 @@ export function ProjectTaskBoard({
     setEditingTask,
     saveEditingTask,
     deleteEditingTask,
-    saveDividerTitle,
+    saveDivider,
     deleteDivider,
     exitingTaskIds,
     onTaskExitComplete,
@@ -2448,8 +2464,10 @@ function TaskCommentIndicator({
 
 function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
   const label = taskDividerLabel(task.title);
+  const lineColor = taskDividerColor(task.notes);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(task.title);
+  const [draftTitle, setDraftTitle] = useState(task.title);
+  const [draftColor, setDraftColor] = useState(task.notes);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -2464,17 +2482,30 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
     });
 
   useEffect(() => {
-    if (!editing) setDraft(task.title);
-  }, [editing, task.title]);
+    if (!editing) {
+      setDraftTitle(task.title);
+      setDraftColor(task.notes);
+    }
+  }, [editing, task.title, task.notes]);
 
   useEffect(() => {
     if (editing) inputRef.current?.focus();
   }, [editing]);
 
   function commitEdit() {
-    ctx.saveDividerTitle(task.id, draft);
+    ctx.saveDivider(task.id, { title: draftTitle, color: draftColor });
     setEditing(false);
   }
+
+  function cancelEdit() {
+    setDraftTitle(task.title);
+    setDraftColor(task.notes);
+    setEditing(false);
+  }
+
+  const displayColor = editing
+    ? taskDividerColor(draftColor) ?? undefined
+    : lineColor ?? undefined;
 
   return (
     <div
@@ -2512,30 +2543,77 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
         )}
         <span
           aria-hidden
-          className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[var(--text)]"
+          className={cn(
+            "h-2.5 w-2.5 shrink-0 rounded-sm",
+            !displayColor && "bg-[var(--text)]",
+          )}
+          style={displayColor ? { backgroundColor: displayColor } : undefined}
         />
         {editing ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitEdit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                commitEdit();
-              }
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setDraft(task.title);
-                setEditing(false);
-              }
-            }}
-            placeholder="Divider label (optional)"
-            className={cn(inputClass, "min-w-0 flex-1 text-xs")}
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitEdit();
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                }
+              }}
+              placeholder="Divider label (optional)"
+              className={cn(inputClass, "min-w-0 w-full text-xs")}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="mr-0.5 text-[10px] text-[var(--text-muted)]">
+                Color
+              </span>
+              <button
+                type="button"
+                title="Default"
+                aria-label="Default color"
+                className={cn(
+                  "h-4 w-4 shrink-0 rounded-full border-2 bg-[var(--text)]",
+                  !normalizeDividerColor(draftColor)
+                    ? "border-[var(--accent)]"
+                    : "border-transparent",
+                )}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDraftColor("");
+                }}
+              />
+              {PRESET_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  title={color}
+                  aria-label={`Color ${color}`}
+                  className={cn(
+                    "h-4 w-4 shrink-0 rounded-full border-2",
+                    normalizeDividerColor(draftColor).toLowerCase() ===
+                      color.toLowerCase()
+                      ? "border-[var(--accent)]"
+                      : "border-transparent",
+                  )}
+                  style={{ backgroundColor: color }}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDraftColor(color);
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         ) : (
           <div
             className="flex min-w-0 flex-1 items-center gap-2"
@@ -2548,13 +2626,32 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
                 : undefined
             }
           >
-            <span className="h-px min-w-4 flex-1 bg-[var(--text)]" aria-hidden />
+            <span
+              aria-hidden
+              className={cn("h-px min-w-4 flex-1", !displayColor && "bg-[var(--text)]")}
+              style={displayColor ? { backgroundColor: displayColor } : undefined}
+            />
             {label ? (
               <>
-                <span className="shrink-0 whitespace-nowrap text-xs text-[var(--text)]">
-                  ---- {label} ----
+                <span
+                  className={cn(
+                    "shrink-0 whitespace-nowrap text-xs",
+                    !displayColor && "text-[var(--text)]",
+                  )}
+                  style={displayColor ? { color: displayColor } : undefined}
+                >
+                  {label}
                 </span>
-                <span className="h-px min-w-4 flex-1 bg-[var(--text)]" aria-hidden />
+                <span
+                  aria-hidden
+                  className={cn(
+                    "h-px min-w-4 flex-1",
+                    !displayColor && "bg-[var(--text)]",
+                  )}
+                  style={
+                    displayColor ? { backgroundColor: displayColor } : undefined
+                  }
+                />
               </>
             ) : null}
           </div>
@@ -2568,8 +2665,8 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
                 e.stopPropagation();
                 setEditing(true);
               }}
-              aria-label="Edit divider label"
-              title="Edit label"
+              aria-label="Edit divider"
+              title="Edit divider"
             >
               <Pencil size={14} />
             </button>

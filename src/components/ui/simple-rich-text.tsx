@@ -25,6 +25,11 @@ import { Button } from "@/components/ui/button";
 const editorContentClass = cn(
   "min-h-[4.5rem] px-2 py-2 text-sm leading-relaxed text-[var(--text)] outline-none",
   "[&_p]:m-0 [&_p+p]:mt-2",
+  "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
+  "[&_h2]:m-0 [&_h2]:mt-2.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
+  "[&_h3]:m-0 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:leading-snug",
+  "[&_h1+p]:mt-2 [&_h2+p]:mt-2 [&_h3+p]:mt-2",
+  "[&_p+h1]:mt-3 [&_p+h2]:mt-2.5 [&_p+h3]:mt-2",
   "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5",
   "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5",
   "[&_li]:my-1 [&_li>p]:m-0",
@@ -149,7 +154,7 @@ export function SimpleRichTextEditor({
         blockquote: false,
         code: false,
         codeBlock: false,
-        heading: false,
+        heading: { levels: [1, 2, 3] },
         horizontalRule: false,
         italic: false,
         strike: false,
@@ -233,6 +238,9 @@ export function SimpleRichTextEditor({
         link: ed.isActive("link"),
         bulletList: ed.isActive("bulletList"),
         orderedList: ed.isActive("orderedList"),
+        h1: ed.isActive("heading", { level: 1 }),
+        h2: ed.isActive("heading", { level: 2 }),
+        h3: ed.isActive("heading", { level: 3 }),
       };
     },
   });
@@ -278,6 +286,30 @@ export function SimpleRichTextEditor({
           onClick={() => ed.chain().focus().toggleUnderline().run()}
         >
           <UnderlineIcon size={14} strokeWidth={2.5} />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Heading 1"
+          active={Boolean(toolbar?.h1)}
+          className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
+          onClick={() => ed.chain().focus().toggleHeading({ level: 1 }).run()}
+        >
+          H1
+        </ToolbarButton>
+        <ToolbarButton
+          label="Heading 2"
+          active={Boolean(toolbar?.h2)}
+          className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
+          onClick={() => ed.chain().focus().toggleHeading({ level: 2 }).run()}
+        >
+          H2
+        </ToolbarButton>
+        <ToolbarButton
+          label="Heading 3"
+          active={Boolean(toolbar?.h3)}
+          className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
+          onClick={() => ed.chain().focus().toggleHeading({ level: 3 }).run()}
+        >
+          H3
         </ToolbarButton>
         <ToolbarButton
           label="Bullet list"
@@ -403,11 +435,13 @@ function ToolbarButton({
   active,
   onClick,
   children,
+  className,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  className?: string;
 }) {
   return (
     <button
@@ -418,6 +452,7 @@ function ToolbarButton({
       className={cn(
         "inline-flex h-7 w-7 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--border)]/60 hover:text-[var(--text)]",
         active && "bg-[var(--border)]/80 text-[var(--text)]",
+        className,
       )}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
@@ -441,6 +476,11 @@ export function RichNotesHtml({
       className={cn(
         "rich-notes block leading-relaxed [&_a]:pointer-events-auto",
         "[&_p]:m-0 [&_p+p]:mt-2",
+        "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
+        "[&_h2]:m-0 [&_h2]:mt-2.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
+        "[&_h3]:m-0 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:leading-snug",
+        "[&_h1+p]:mt-2 [&_h2+p]:mt-2 [&_h3+p]:mt-2",
+        "[&_p+h1]:mt-3 [&_p+h2]:mt-2.5 [&_p+h3]:mt-2",
         "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5",
         "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5",
         "[&_li]:my-1 [&_li>p]:m-0",
