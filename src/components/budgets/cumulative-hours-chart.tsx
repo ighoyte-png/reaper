@@ -5,7 +5,9 @@ import { format, parseISO } from "date-fns";
 import { ChartColumn, ChartLine } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
+  formatChartMoneyAxis,
   formatHours,
+  formatMoney,
   type WeeklyProgressPoint,
 } from "@/lib/domain/budget";
 
@@ -15,13 +17,19 @@ type ChartTab = "progress" | "weekly";
 export function ProjectProgressCharts({
   points,
   budgetHours,
+  budgetAmount,
+  unit = "hours",
   className,
 }: {
   points: WeeklyProgressPoint[];
-  budgetHours: number | null;
+  budgetHours?: number | null;
+  budgetAmount?: number | null;
+  unit?: "hours" | "amount";
   className?: string;
 }) {
   const [tab, setTab] = useState<ChartTab>("progress");
+  const isAmount = unit === "amount";
+  const budgetCap = isAmount ? budgetAmount : budgetHours;
 
   if (points.length === 0) {
     return (
@@ -44,13 +52,17 @@ export function ProjectProgressCharts({
           active={tab === "weekly"}
           onClick={() => setTab("weekly")}
           icon={<ChartColumn size={14} strokeWidth={2} />}
-          label="Hours per week"
+          label={isAmount ? "Spend per week" : "Hours per week"}
         />
       </div>
       {tab === "progress" ? (
-        <ProgressLineChart points={points} budgetHours={budgetHours} />
+        <ProgressLineChart
+          points={points}
+          unit={unit}
+          budgetCap={budgetCap ?? null}
+        />
       ) : (
-        <HoursPerWeekChart points={points} />
+        <HoursPerWeekChart points={points} unit={unit} />
       )}
     </div>
   );
@@ -104,37 +116,89 @@ function niceHourAxis(
   return { maxY, ticks };
 }
 
+function niceAmountAxis(
+  dataMax: number,
+  preferredSteps = 4,
+): { maxY: number; ticks: number[] } {
+  const target = Math.max(1, dataMax);
+  const rough = target / preferredSteps;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const norm = rough / magnitude;
+  let niceNorm = 1;
+  if (norm > 5) niceNorm = 10;
+  else if (norm > 2) niceNorm = 5;
+  else if (norm > 1) niceNorm = 2;
+  const step = niceNorm * magnitude;
+  const maxY = Math.ceil(target / step) * step;
+  const ticks: number[] = [];
+  for (let v = 0; v <= maxY + 1e-9; v += step) {
+    ticks.push(Math.round(v));
+  }
+  return { maxY, ticks };
+}
+
+function pointValue(
+  point: WeeklyProgressPoint,
+  field: "used" | "planned",
+  unit: "hours" | "amount",
+): number {
+  if (unit === "amount") {
+    return field === "used"
+      ? point.cumulativeUsedAmount
+      : point.cumulativePlannedAmount;
+  }
+  return field === "used" ? point.cumulativeUsed : point.cumulativePlanned;
+}
+
+function weekValue(point: WeeklyProgressPoint, unit: "hours" | "amount"): number {
+  return unit === "amount" ? point.weekAmount : point.weekHours;
+}
+
+function formatAxisValue(v: number, unit: "hours" | "amount"): string {
+  return unit === "amount" ? formatChartMoneyAxis(v) : `${v}h`;
+}
+
+function formatDetailValue(v: number, unit: "hours" | "amount"): string {
+  return unit === "amount" ? formatMoney(v) : formatHours(v);
+}
+
 function ProgressLineChart({
   points,
-  budgetHours,
+  unit,
+  budgetCap,
 }: {
   points: WeeklyProgressPoint[];
-  budgetHours: number | null;
+  unit: "hours" | "amount";
+  budgetCap: number | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const hatchId = useId().replace(/:/g, "");
   const w = 720;
   const h = 174;
-  const padL = 44;
+  const padL = unit === "amount" ? 52 : 44;
   const padR = 16;
   const padT = 22;
   const padB = 28;
   const plotW = w - padL - padR;
   const plotH = h - padT - padB;
 
-  const hasBudget = budgetHours != null && budgetHours > 0;
+  const hasBudget = budgetCap != null && budgetCap > 0;
   const dataMax = Math.max(
     ...points.map((p) =>
-      Math.max(p.cumulativeUsed, p.cumulativePlanned),
+      Math.max(pointValue(p, "used", unit), pointValue(p, "planned", unit)),
     ),
     1,
   );
   const { maxY, ticks: yTicks } = useMemo(
     () =>
-      niceHourAxis(
-        Math.max(dataMax, hasBudget ? budgetHours! : 0) * 1.08,
-      ),
-    [dataMax, hasBudget, budgetHours],
+      unit === "amount"
+        ? niceAmountAxis(
+            Math.max(dataMax, hasBudget ? budgetCap! : 0) * 1.08,
+          )
+        : niceHourAxis(
+            Math.max(dataMax, hasBudget ? budgetCap! : 0) * 1.08,
+          ),
+    [dataMax, hasBudget, budgetCap, unit],
   );
 
   const currentIdx = points.findIndex((p) => p.isCurrentWeek);
@@ -157,9 +221,9 @@ function ProgressLineChart({
   /** Display Y: used through handoff, planned afterward. */
   function valueAt(i: number) {
     const p = points[i]!;
-    if (i < handoffIdx) return p.cumulativeUsed;
-    if (i === handoffIdx) return p.cumulativeUsed;
-    return p.cumulativePlanned;
+    if (i < handoffIdx) return pointValue(p, "used", unit);
+    if (i === handoffIdx) return pointValue(p, "used", unit);
+    return pointValue(p, "planned", unit);
   }
 
   function pathSegment(from: number, to: number) {
@@ -197,7 +261,7 @@ function ProgressLineChart({
     return groups;
   }, [points]);
 
-  const budgetY = hasBudget ? yAt(budgetHours) : null;
+  const budgetY = hasBudget ? yAt(budgetCap!) : null;
   const weekBandW =
     points.length <= 1 ? plotW * 0.08 : plotW / (points.length - 1);
   const thisWeekX =
@@ -259,7 +323,7 @@ function ProgressLineChart({
                 className="fill-[var(--text-muted)]"
                 style={{ fontSize: 7 }}
               >
-                {`${v}h`}
+                {formatAxisValue(v, unit)}
               </text>
             </g>
           );
@@ -440,11 +504,15 @@ function ProgressLineChart({
               <div className="min-w-0">
                 <div className="text-[10px] leading-tight text-[var(--text-muted)]">
                   {hoverIdx > handoffIdx
-                    ? "Forecasted hours"
-                    : "Cumulative hours"}
+                    ? unit === "amount"
+                      ? "Forecasted spend"
+                      : "Forecasted hours"
+                    : unit === "amount"
+                      ? "Cumulative spend"
+                      : "Cumulative hours"}
                 </div>
                 <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
-                  {formatHours(hoverVal)}
+                  {formatDetailValue(hoverVal, unit)}
                 </div>
               </div>
               {hasBudget ? (
@@ -453,7 +521,7 @@ function ProgressLineChart({
                     Forecasted budget remaining
                   </div>
                   <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
-                    {formatHours(Math.max(0, budgetHours! - hoverVal))}
+                    {formatDetailValue(Math.max(0, budgetCap! - hoverVal), unit)}
                   </div>
                 </div>
               ) : null}
@@ -473,8 +541,22 @@ function ProgressLineChart({
   );
 }
 
-export function HoursPerWeekChart({ points }: { points: WeeklyProgressPoint[] }) {
-  const maxH = Math.max(...points.map((p) => p.weekHours), 1);
+export function HoursPerWeekChart({
+  points,
+  unit = "hours",
+}: {
+  points: WeeklyProgressPoint[];
+  unit?: "hours" | "amount";
+}) {
+  const values = points.map((p) => weekValue(p, unit));
+  const maxV = Math.max(...values, 1);
+  const { maxY, ticks: yTicks } = useMemo(
+    () =>
+      unit === "amount"
+        ? niceAmountAxis(maxV * 1.08)
+        : niceHourAxis(maxV * 1.08),
+    [maxV, unit],
+  );
   const monthLabels = useMemo(() => {
     const seen = new Map<string, number>();
     points.forEach((p, i) => {
@@ -492,19 +574,29 @@ export function HoursPerWeekChart({ points }: { points: WeeklyProgressPoint[] })
   }, [points]);
 
   return (
-    <div className="pt-1">
+    <div className="flex gap-2 pt-1">
+      <div className="relative h-44 w-10 shrink-0">
+        {[...yTicks].reverse().map((v, i) => (
+          <span
+            key={`y-${i}`}
+            className="absolute right-0 -translate-y-1/2 text-[7px] tabular-nums text-[var(--text-muted)]"
+            style={{ top: `${(1 - v / maxY) * 100}%` }}
+          >
+            {formatAxisValue(v, unit)}
+          </span>
+        ))}
+      </div>
+      <div className="min-w-0 flex-1">
       <div className="flex h-44 items-end gap-px sm:gap-0.5">
         {points.map((p) => {
-          const pct = Math.max(
-            p.weekHours > 0 ? 4 : 0,
-            (p.weekHours / maxH) * 100,
-          );
+          const v = weekValue(p, unit);
+          const pct = Math.max(v > 0 ? 4 : 0, (v / maxY) * 100);
           return (
             <div
               key={p.key}
               className="relative flex min-w-0 flex-1 flex-col items-center justify-end"
               style={{ height: "100%" }}
-              title={`${p.label}: ${formatHours(p.weekHours)}`}
+              title={`${p.label}: ${formatDetailValue(v, unit)}`}
             >
               {p.isCurrentWeek ? (
                 <div
@@ -540,6 +632,7 @@ export function HoursPerWeekChart({ points }: { points: WeeklyProgressPoint[] })
           </span>
         ))}
       </div>
+      </div>
     </div>
   );
 }
@@ -561,8 +654,11 @@ export function CumulativeHoursChart({
     weekEndKey: `${p.key}-28`,
     label: p.label,
     weekHours: 0,
+    weekAmount: 0,
     cumulativeUsed: p.cumulativeUsed,
     cumulativePlanned: p.cumulativePlanned,
+    cumulativeUsedAmount: 0,
+    cumulativePlannedAmount: 0,
     isCurrentWeek: !p.isFuture && (points[i + 1]?.isFuture ?? true),
     isFuture: p.isFuture,
   }));

@@ -270,6 +270,20 @@ export function formatMoney(amount: number): string {
   }).format(amount);
 }
 
+/** Compact currency labels for chart Y-axis ticks. */
+export function formatChartMoneyAxis(amount: number): string {
+  const abs = Math.abs(amount);
+  if (abs >= 1_000_000) {
+    const v = amount / 1_000_000;
+    return `$${Number.isInteger(v) ? v : v.toFixed(1)}M`;
+  }
+  if (abs >= 1000) {
+    const v = amount / 1000;
+    return `$${Number.isInteger(v) ? v : v.toFixed(1)}k`;
+  }
+  return formatMoney(amount);
+}
+
 export interface MonthBurnBar {
   key: string;
   label: string;
@@ -422,6 +436,29 @@ export function projectHoursInDateRange(
         )
       );
     }, 0);
+}
+
+/** Billable $ for confirmed schedule hours in [fromKey, toKey]. */
+export function projectBillableAmountInDateRange(
+  projectId: string,
+  assignments: Assignment[],
+  people: Person[],
+  fromKey: string,
+  toKey: string,
+  includeTentative = false,
+): number {
+  if (toKey < fromKey) return 0;
+  const byId = new Map(people.map((p) => [p.id, p]));
+  let sum = 0;
+  for (const a of assignments) {
+    if (a.project_id !== projectId) continue;
+    if (!includeTentative && a.status !== "confirmed") continue;
+    const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+    for (const occ of expandAssignmentInRange(a, fromKey, toKey)) {
+      sum += occurrenceHoursInRange(occ, fromKey, toKey) * rate;
+    }
+  }
+  return sum;
 }
 
 export interface ProjectHoursForecast {
@@ -580,10 +617,16 @@ export interface WeeklyProgressPoint {
   label: string;
   /** Hours scheduled in this week only. */
   weekHours: number;
+  /** Billable $ scheduled in this week only. */
+  weekAmount: number;
   /** Cumulative used through min(week end, today). */
   cumulativeUsed: number;
   /** Cumulative planned through week end. */
   cumulativePlanned: number;
+  /** Cumulative billable $ used through min(week end, today). */
+  cumulativeUsedAmount: number;
+  /** Cumulative billable $ planned through week end. */
+  cumulativePlannedAmount: number;
   isCurrentWeek: boolean;
   /** Week starts after today — entirely future. */
   isFuture: boolean;
@@ -692,6 +735,7 @@ export function weeklyProgressSeries(
   project: Project,
   assignments: Assignment[],
   asOf: Date = new Date(),
+  people: Person[] = [],
 ): WeeklyProgressPoint[] {
   const span = projectDateSpan(project, assignments);
   if (!span) return [];
@@ -703,6 +747,9 @@ export function weeklyProgressSeries(
   let cursor = new Date(start);
   let cumUsed = 0;
   let cumPlanned = 0;
+  let cumUsedAmount = 0;
+  let cumPlannedAmount = 0;
+  const trackAmount = people.length > 0;
   let guard = 0;
 
   while (cursor <= end && guard < 260) {
@@ -740,14 +787,43 @@ export function weeklyProgressSeries(
     }
     cumUsed += weekUsed;
 
+    let weekAmount = 0;
+    let weekUsedAmount = 0;
+    if (trackAmount && rangeTo >= rangeFrom) {
+      weekAmount = projectBillableAmountInDateRange(
+        project.id,
+        assignments,
+        people,
+        rangeFrom,
+        rangeTo,
+      );
+      cumPlannedAmount += weekAmount;
+      if (rangeFrom <= todayKey && rangeTo >= rangeFrom) {
+        const usedTo = rangeTo < todayKey ? rangeTo : todayKey;
+        if (usedTo >= rangeFrom) {
+          weekUsedAmount = projectBillableAmountInDateRange(
+            project.id,
+            assignments,
+            people,
+            rangeFrom,
+            usedTo,
+          );
+        }
+      }
+      cumUsedAmount += weekUsedAmount;
+    }
+
     points.push({
       key: weekStartKey,
       weekStartKey,
       weekEndKey,
       label: format(ws, "MMM d"),
       weekHours,
+      weekAmount,
       cumulativeUsed: cumUsed,
       cumulativePlanned: cumPlanned,
+      cumulativeUsedAmount: cumUsedAmount,
+      cumulativePlannedAmount: cumPlannedAmount,
       isCurrentWeek: weekStartKey === currentWeekStart,
       isFuture: weekStartKey > todayKey,
     });

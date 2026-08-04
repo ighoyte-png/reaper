@@ -45,6 +45,8 @@ export function BudgetCard({
   );
   const isMonthlyHours =
     mode === "hours" && Boolean(project.budget_monthly_reset);
+  const showHoursMetrics = mode === "hours";
+  const showAmountMetrics = mode === "amount";
   const year = new Date().getFullYear();
   const yearBars = isMonthlyHours
     ? calendarYearBars(
@@ -119,28 +121,46 @@ export function BudgetCard({
           </div>
           <dl className="space-y-1.5 text-xs">
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Hours Used</dt>
+              <dt className="text-[var(--text-muted)]">
+                {showAmountMetrics ? "Spend to Date" : "Hours Used"}
+              </dt>
               <dd className="tabular-nums font-medium">
-                {formatHours(hoursFx.hoursUsedToDate)}
+                {showHoursMetrics
+                  ? formatHours(hoursFx.hoursUsedToDate)
+                  : showAmountMetrics
+                    ? formatMoney(burn.usedAmount)
+                    : formatHours(hoursFx.hoursUsedToDate)}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
               <dt className="text-[var(--text-muted)]">Future Planned</dt>
               <dd className="tabular-nums font-medium">
-                {formatHours(hoursFx.hoursFuturePlanned)}
+                {showHoursMetrics
+                  ? formatHours(hoursFx.hoursFuturePlanned)
+                  : showAmountMetrics
+                    ? formatMoney(burn.futureAmount)
+                    : formatHours(hoursFx.hoursFuturePlanned)}
               </dd>
             </div>
             <div className="flex justify-between gap-2">
-              <dt className="text-[var(--text-muted)]">Remaining</dt>
+              <dt className="text-[var(--text-muted)]">
+                {showAmountMetrics ? "Budget Remaining" : "Remaining"}
+              </dt>
               <dd
                 className={cn(
                   "tabular-nums font-medium",
                   hoursFx.overBudget && "text-[var(--status-over)]",
                 )}
               >
-                {hoursFx.hoursRemaining == null
-                  ? "—"
-                  : formatHours(hoursFx.hoursRemaining)}
+                {showHoursMetrics
+                  ? hoursFx.hoursRemaining == null
+                    ? "—"
+                    : formatHours(hoursFx.hoursRemaining)
+                  : showAmountMetrics
+                    ? burn.remainingAmount == null
+                      ? "—"
+                      : formatMoney(burn.remainingAmount)
+                    : "—"}
               </dd>
             </div>
           </dl>

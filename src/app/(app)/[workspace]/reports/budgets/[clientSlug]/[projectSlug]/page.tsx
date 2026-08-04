@@ -116,8 +116,10 @@ export default function ProjectBudgetDetailPage() {
 
   const weeklyPoints = useMemo(
     () =>
-      project ? weeklyProgressSeries(project, state.assignments) : [],
-    [project, state.assignments],
+      project
+        ? weeklyProgressSeries(project, state.assignments, new Date(), state.people)
+        : [],
+    [project, state.assignments, state.people],
   );
 
   const yearTotals = useMemo(() => {
@@ -250,6 +252,8 @@ export default function ProjectBudgetDetailPage() {
   );
   const health = budgetHealth(burn);
   const chartUnit = mode === "amount" ? "amount" : "hours";
+  const showHoursMetrics = mode === "hours";
+  const showAmountMetrics = mode === "amount";
   const monthlyCap =
     mode === "hours" && project.budget_monthly_reset
       ? project.budget_hours ?? 0
@@ -358,23 +362,33 @@ export default function ProjectBudgetDetailPage() {
           <dl className="mt-4 grid gap-3 sm:grid-cols-3">
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
-                Hours used to date
+                {showAmountMetrics ? "Spend to date" : "Hours used to date"}
               </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
-                {formatHours(hoursFx.hoursUsedToDate)}
+                {showHoursMetrics
+                  ? formatHours(hoursFx.hoursUsedToDate)
+                  : showAmountMetrics
+                    ? formatMoney(burn.usedAmount)
+                    : formatHours(hoursFx.hoursUsedToDate)}
               </dd>
             </div>
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
-                Future hours planned
+                {showAmountMetrics
+                  ? "Future spend planned"
+                  : "Future hours planned"}
               </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
-                {formatHours(hoursFx.hoursFuturePlanned)}
+                {showHoursMetrics
+                  ? formatHours(hoursFx.hoursFuturePlanned)
+                  : showAmountMetrics
+                    ? formatMoney(burn.futureAmount)
+                    : formatHours(hoursFx.hoursFuturePlanned)}
               </dd>
             </div>
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
-                Hours remaining
+                {showAmountMetrics ? "Budget remaining" : "Hours remaining"}
               </dt>
               <dd
                 className={cn(
@@ -382,9 +396,15 @@ export default function ProjectBudgetDetailPage() {
                   hoursFx.overBudget && "text-[var(--status-over)]",
                 )}
               >
-                {hoursFx.hoursRemaining == null
-                  ? "—"
-                  : formatHours(hoursFx.hoursRemaining)}
+                {showHoursMetrics
+                  ? hoursFx.hoursRemaining == null
+                    ? "—"
+                    : formatHours(hoursFx.hoursRemaining)
+                  : showAmountMetrics
+                    ? burn.remainingAmount == null
+                      ? "—"
+                      : formatMoney(burn.remainingAmount)
+                    : "—"}
               </dd>
             </div>
           </dl>
@@ -422,7 +442,9 @@ export default function ProjectBudgetDetailPage() {
                   ? mode === "amount"
                     ? formatMoney(yearTotals.amount)
                     : formatHours(yearTotals.hours)
-                  : formatHours(hoursFx.hoursTotalPlanned)}
+                  : mode === "amount"
+                    ? formatMoney(burn.plannedAmount)
+                    : formatHours(hoursFx.hoursTotalPlanned)}
               </dd>
             </div>
           </dl>
@@ -457,7 +479,7 @@ export default function ProjectBudgetDetailPage() {
                     )}
                   >
                     <ChartColumn size={14} strokeWidth={2} />
-                    Hours per week
+                    {chartUnit === "amount" ? "Spend per week" : "Hours per week"}
                   </button>
                 </div>
                 {retainerTab === "calendar" ? (
@@ -493,13 +515,15 @@ export default function ProjectBudgetDetailPage() {
                   No schedule dates to chart yet.
                 </p>
               ) : (
-                <HoursPerWeekChart points={weeklyPoints} />
+                <HoursPerWeekChart points={weeklyPoints} unit={chartUnit} />
               )}
             </>
           ) : (
             <ProjectProgressCharts
               points={weeklyPoints}
-              budgetHours={project.budget_hours ?? null}
+              unit={chartUnit}
+              budgetHours={mode === "hours" ? project.budget_hours : null}
+              budgetAmount={mode === "amount" ? project.budget_amount : null}
             />
           )}
         </section>
@@ -508,32 +532,54 @@ export default function ProjectBudgetDetailPage() {
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Forecast vs budget</h2>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
-              Schedule hours and margin against the project budget.
+              {showHoursMetrics
+                ? "Schedule hours and margin against the project budget."
+                : showAmountMetrics
+                  ? "Schedule spend and margin against the project budget."
+                  : "Schedule and margin against the project."}
             </p>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
-                <dt className="text-[var(--text-muted)]">Hours used</dt>
+                <dt className="text-[var(--text-muted)]">
+                  {showAmountMetrics ? "Spend to date" : "Hours used"}
+                </dt>
                 <dd className="tabular-nums font-medium">
-                  {formatHours(forecast.hoursUsedToDate)}
+                  {showHoursMetrics
+                    ? formatHours(forecast.hoursUsedToDate)
+                    : showAmountMetrics
+                      ? formatMoney(burn.usedAmount)
+                      : formatHours(forecast.hoursUsedToDate)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
                 <dt className="text-[var(--text-muted)]">Future planned</dt>
                 <dd className="tabular-nums font-medium">
-                  {formatHours(forecast.hoursFuturePlanned)}
+                  {showHoursMetrics
+                    ? formatHours(forecast.hoursFuturePlanned)
+                    : showAmountMetrics
+                      ? formatMoney(burn.futureAmount)
+                      : formatHours(forecast.hoursFuturePlanned)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
-                <dt className="text-[var(--text-muted)]">Remaining hours</dt>
+                <dt className="text-[var(--text-muted)]">
+                  {showAmountMetrics ? "Budget remaining" : "Remaining hours"}
+                </dt>
                 <dd
                   className={cn(
                     "tabular-nums font-medium",
                     forecast.overBudget && "text-[var(--status-over)]",
                   )}
                 >
-                  {forecast.hoursRemaining == null
-                    ? "—"
-                    : formatHours(forecast.hoursRemaining)}
+                  {showHoursMetrics
+                    ? forecast.hoursRemaining == null
+                      ? "—"
+                      : formatHours(forecast.hoursRemaining)
+                    : showAmountMetrics
+                      ? burn.remainingAmount == null
+                        ? "—"
+                        : formatMoney(burn.remainingAmount)
+                      : "—"}
                 </dd>
               </div>
               {forecast.budgetMargin != null ? (
