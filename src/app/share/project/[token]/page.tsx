@@ -7,7 +7,6 @@ import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   MilestoneApprovalCheck,
-  MilestoneEssentialSlot,
   ProgressBar,
   milestonePortalGlowClass,
 } from "@/components/projects/progress-bar";
@@ -25,11 +24,12 @@ import { approveDemoPortalMilestone } from "@/lib/share/demo-milestone-approve";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import {
   assetDisplayTitle,
+  assetViewForApprovalTooltip,
   titleCaseWords,
 } from "@/lib/domain/assets";
 import { calendarYearBars } from "@/lib/domain/budget";
 import { parseAssetKind } from "@/lib/domain/milestones";
-import { taskStatusLabel } from "@/lib/domain/tasks";
+import { compareTaskOrder, taskStatusLabel } from "@/lib/domain/tasks";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import type {
   Assignment,
@@ -158,8 +158,8 @@ function PortalTaskRow({
     status === "complete"
       ? "text-[var(--task-complete-fg)]"
       : status === "active"
-        ? "text-[var(--task-complete-fg)]"
-        : "text-[var(--task-active-fg)]";
+        ? "text-[var(--task-active-fg)]"
+        : "text-[var(--task-upcoming-fg)]";
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm">
       <span
@@ -616,52 +616,51 @@ export default function ProjectSharePage() {
               return (
                 <div
                   key={m.id}
-                  className="flex items-stretch gap-1.5 rounded-md p-2"
-                >
-                  <MilestoneEssentialSlot
-                    kind={parseAssetKind(m.essential_kind)}
-                    label={m.essential_label}
-                    url={m.essential_url}
-                    glowHover={Boolean(
-                      parseAssetKind(m.essential_kind) && m.essential_url.trim(),
-                    )}
-                  />
-                  <div
-                    className={cn(
-                      "min-w-0 flex-1 p-1",
-                      readyForApproval &&
-                        cn("cursor-pointer", milestonePortalGlowClass),
-                    )}
-                    onClick={
-                      readyForApproval ? () => openApprove(m.id) : undefined
-                    }
-                    onKeyDown={
-                      readyForApproval
-                        ? (e) => {
-                            if (e.key === "Enter" || e.key === " ") {
-                              e.preventDefault();
-                              openApprove(m.id);
-                            }
+                  className={cn(
+                    "rounded-md p-2",
+                    readyForApproval &&
+                      cn("cursor-pointer", milestonePortalGlowClass),
+                  )}
+                  onClick={
+                    readyForApproval ? () => openApprove(m.id) : undefined
+                  }
+                  onKeyDown={
+                    readyForApproval
+                      ? (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            openApprove(m.id);
                           }
-                        : undefined
-                    }
-                    role={readyForApproval ? "button" : undefined}
-                    tabIndex={readyForApproval ? 0 : undefined}
-                    aria-label={
-                      readyForApproval
-                        ? `Approve milestone ${m.name}`
-                        : undefined
-                    }
-                  >
-                    <ProgressBar
-                      pct={pct}
-                      label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
-                      approved={m.client_approved}
-                      readyForApproval={readyForApproval}
-                      footerStart={byline}
-                      celebrate={celebrateId === m.id}
-                    />
-                  </div>
+                        }
+                      : undefined
+                  }
+                  role={readyForApproval ? "button" : undefined}
+                  tabIndex={readyForApproval ? 0 : undefined}
+                  title={readyForApproval ? "Click for Approval" : undefined}
+                  aria-label={
+                    readyForApproval
+                      ? `Approve milestone ${m.name}`
+                      : undefined
+                  }
+                >
+                  <ProgressBar
+                    pct={pct}
+                    label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
+                    approved={m.client_approved}
+                    readyForApproval={readyForApproval}
+                    footerStart={byline}
+                    celebrate={celebrateId === m.id}
+                    essential={{
+                      kind: parseAssetKind(m.essential_kind),
+                      label: m.essential_label,
+                      url: m.essential_url,
+                    }}
+                    essentialGlowHover={Boolean(
+                      parseAssetKind(m.essential_kind) &&
+                        m.essential_url.trim(),
+                    )}
+                    essentialApprovalTooltip
+                  />
                 </div>
               );
             })}
@@ -694,6 +693,10 @@ export default function ProjectSharePage() {
                       <AssetKindIcon
                         kind={a.kind as ProjectAssetKind}
                         label={a.label}
+                        title={assetViewForApprovalTooltip(
+                          a.label,
+                          a.kind as ProjectAssetKind,
+                        )}
                       />
                       {sanitizeExternalUrl(a.url) ? (
                         <a
@@ -739,13 +742,15 @@ export default function ProjectSharePage() {
             {portal.taskLists.map((list) => {
               const listTasks = portal.tasks
                 .filter((t) => t.list_id === list.id)
-                .sort((a, b) => a.title.localeCompare(b.title));
+                .sort(compareTaskOrder);
               const idSet = new Set(listTasks.map((t) => t.id));
-              const parents = listTasks.filter(
-                (t) => !t.parent_id || !idSet.has(t.parent_id),
-              );
+              const parents = listTasks
+                .filter((t) => !t.parent_id || !idSet.has(t.parent_id))
+                .sort(compareTaskOrder);
               const childrenOf = (parentId: string) =>
-                listTasks.filter((t) => t.parent_id === parentId);
+                listTasks
+                  .filter((t) => t.parent_id === parentId)
+                  .sort(compareTaskOrder);
 
               return (
                 <div key={list.id}>
@@ -812,6 +817,7 @@ export default function ProjectSharePage() {
                 <MilestoneApprovalCheck
                   interactive
                   pending
+                  glowHover
                   onClick={() => {
                     if (!approveBusy) void confirmApprove();
                   }}

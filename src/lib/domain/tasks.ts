@@ -85,7 +85,14 @@ export function orderTasksParentsFirst<
 export function childTasks(tasks: Task[], parentId: string): Task[] {
   return tasks
     .filter((t) => t.parent_id === parentId)
-    .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+    .sort(compareTaskOrder);
+}
+
+export function compareTaskOrder(
+  a: Pick<Task, "sort_order" | "title">,
+  b: Pick<Task, "sort_order" | "title">,
+): number {
+  return a.sort_order - b.sort_order || a.title.localeCompare(b.title);
 }
 
 export function taskStatusLabel(status: TaskStatus): string {

@@ -2,7 +2,7 @@
 
 import { Check } from "lucide-react";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
-import { assetTooltip } from "@/lib/domain/assets";
+import { assetTooltip, assetViewForApprovalTooltip } from "@/lib/domain/assets";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import { cn } from "@/lib/cn";
 import type { ProjectAssetKind } from "@/lib/types";
@@ -48,16 +48,23 @@ export function MilestoneEssentialSlot({
   label,
   url,
   glowHover = false,
+  approvalTooltip = false,
 }: {
   kind: ProjectAssetKind | null;
   label?: string;
   url?: string;
   /** When true, use the portal green glow on hover (separate from milestone row). */
   glowHover?: boolean;
+  /** Portal copy: "View [label/type] for Approval". */
+  approvalTooltip?: boolean;
 }) {
+  const frameClass =
+    "inline-flex h-8 w-8 shrink-0 items-center justify-center self-center";
   const href = url ? sanitizeExternalUrl(url) : null;
   if (kind && href) {
-    const tip = assetTooltip(label, kind);
+    const tip = approvalTooltip
+      ? assetViewForApprovalTooltip(label, kind)
+      : assetTooltip(label, kind);
     return (
       <a
         href={href}
@@ -65,7 +72,7 @@ export function MilestoneEssentialSlot({
         rel="noopener noreferrer"
         title={tip}
         className={cn(
-          "inline-flex shrink-0 self-center p-1",
+          frameClass,
           glowHover && milestonePortalGlowClass,
         )}
         onClick={(e) => e.stopPropagation()}
@@ -78,8 +85,10 @@ export function MilestoneEssentialSlot({
     <span
       aria-hidden
       title="Essentials Asset Not Set"
-      className="inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded border border-dashed border-[var(--text-muted)]/50 bg-[var(--bg-elevated)]"
-    />
+      className={frameClass}
+    >
+      <span className="flex h-6 w-6 items-center justify-center rounded border border-dashed border-[var(--text-muted)]/50 bg-[var(--bg-elevated)]" />
+    </span>
   );
 }
 
@@ -88,6 +97,7 @@ export function MilestoneApprovalCheck({
   celebrate = false,
   interactive = false,
   pending = false,
+  glowHover = false,
   onClick,
   className,
 }: {
@@ -96,6 +106,8 @@ export function MilestoneApprovalCheck({
   /** Gray until hover (client approve affordance). */
   pending?: boolean;
   interactive?: boolean;
+  /** Portal green glow on hover (approve modal). */
+  glowHover?: boolean;
   onClick?: () => void;
   className?: string;
 }) {
@@ -120,7 +132,8 @@ export function MilestoneApprovalCheck({
         type="button"
         onClick={onClick}
         className={cn(
-          "group/check flex shrink-0 cursor-pointer items-stretch justify-center self-stretch px-0.5",
+          "group/check flex shrink-0 cursor-pointer items-stretch justify-center self-stretch px-1",
+          glowHover && pending && milestonePortalGlowClass,
           className,
         )}
         aria-label="Approve milestone"
@@ -153,6 +166,8 @@ export function ProgressBar({
   footerEnd,
   celebrate,
   essential,
+  essentialGlowHover = false,
+  essentialApprovalTooltip = false,
 }: {
   pct: number;
   label?: string;
@@ -167,6 +182,8 @@ export function ProgressBar({
     label?: string;
     url?: string;
   } | null;
+  essentialGlowHover?: boolean;
+  essentialApprovalTooltip?: boolean;
 }) {
   const clamped = Math.max(0, Math.min(100, Math.round(pct)));
   const isComplete = clamped >= 100;
@@ -179,6 +196,8 @@ export function ProgressBar({
           kind={essential.kind}
           label={essential.label}
           url={essential.url}
+          glowHover={essentialGlowHover}
+          approvalTooltip={essentialApprovalTooltip}
         />
       ) : null}
       <div className="min-w-0 flex-1 space-y-1">

@@ -181,6 +181,7 @@ export interface ProjectPortalPayload {
     parent_id: string | null;
     title: string;
     status: string;
+    sort_order: number;
   }[];
   assets: {
     id: string;
@@ -324,6 +325,7 @@ export function sanitizeProjectPortal(
         parent_id: t.parent_id,
         title: t.title,
         status: t.status,
+        sort_order: t.sort_order,
       })),
     assets: state.project_assets
       .filter((a) => a.project_id === projectId && !a.hide_from_client)

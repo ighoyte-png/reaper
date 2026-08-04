@@ -70,6 +70,14 @@ export function assetTooltip(
   return "Custom";
 }
 
+/** Client portal essentials / milestone slot tooltip. */
+export function assetViewForApprovalTooltip(
+  label: string | null | undefined,
+  kind: ProjectAssetKind | null | undefined,
+): string {
+  return `View ${assetTooltip(label, kind)} for Approval`;
+}
+
 /** Display title for an essentials row: Label first, else Type — Title Case. */
 export function assetDisplayTitle(
   label: string | null | undefined,
