@@ -2062,16 +2062,6 @@ export function ScheduleGrid() {
           <p className="text-sm font-medium">
             {rangeLabel}
           </p>
-          <Select
-            value={capacityGrain}
-            onChange={(v) => setFilter("capacity", v)}
-            className="mt-0 h-8 w-[9.5rem] shrink-0"
-            aria-label="Capacity view"
-            options={[
-              { value: "week", label: "Capacity / week" },
-              { value: "day", label: "Capacity / day" },
-            ]}
-          />
           <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
             <Select
               value={zoom}
@@ -2082,6 +2072,16 @@ export function ScheduleGrid() {
                 { value: "day", label: "By day" },
                 { value: "week", label: "By week" },
                 { value: "month", label: "By month" },
+              ]}
+            />
+            <Select
+              value={capacityGrain}
+              onChange={(v) => setFilter("capacity", v)}
+              className="mt-0 h-8 w-[9.5rem] shrink-0"
+              aria-label="Capacity view"
+              options={[
+                { value: "week", label: "Capacity / week" },
+                { value: "day", label: "Capacity / day" },
               ]}
             />
             {(canManage || isPublicShare) && (
