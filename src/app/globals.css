@@ -236,3 +236,16 @@ a.rich-notes-link {
     animation: task-row-exit-reduced 140ms ease-out forwards;
   }
 }
+
+.task-description-collapsed-fade {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 2.875rem),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - 2.875rem),
+    transparent 100%
+  );
+}

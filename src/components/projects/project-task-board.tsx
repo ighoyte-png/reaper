@@ -47,9 +47,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
-  RichNotesHtml,
-  SimpleRichTextEditor,
-} from "@/components/ui/simple-rich-text";
+  TaskDescriptionCommentsGate,
+  TaskDescriptionCreateField,
+  TaskDescriptionEditor,
+  TaskDescriptionView,
+} from "@/components/projects/task-description";
+import { RichNotesHtml, SimpleRichTextEditor } from "@/components/ui/simple-rich-text";
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
@@ -2107,6 +2110,7 @@ function InlineTaskForm({
   onDelete,
   onDraftChange,
   depth = 0,
+  descriptionViewExpanded = false,
 }: {
   people: Person[];
   allPeople?: Person[];
@@ -2120,6 +2124,8 @@ function InlineTaskForm({
   /** When set (create flow), persist field changes as a local draft. */
   onDraftChange?: (draft: InlineTaskDraft) => void;
   depth?: number;
+  /** View-mode description expand state when opening edit. */
+  descriptionViewExpanded?: boolean;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [assigneeId, setAssigneeId] = useState(
@@ -2243,16 +2249,20 @@ function InlineTaskForm({
               </label>
             </div>
           </div>
-          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-start sm:gap-3">
-            <span className="pt-1.5 text-sm text-[var(--text-muted)]">Notes</span>
-            <SimpleRichTextEditor
+          {onDelete ? (
+            <TaskDescriptionEditor
               value={notes}
               onChange={setNotes}
-              placeholder="Add a note… Use @ to mention"
               mentionPeople={mentionPeople}
-              resizable
+              initialExpanded={descriptionViewExpanded}
             />
-          </div>
+          ) : (
+            <TaskDescriptionCreateField
+              value={notes}
+              onChange={setNotes}
+              mentionPeople={mentionPeople}
+            />
+          )}
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -2344,6 +2354,8 @@ function TaskRow({
   const canEditStatus = ctx.allowStatusEdit;
   const isFocused = ctx.focusTaskId === task.id;
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
+  const [descExpanded, setDescExpanded] = useState(false);
+  const [commentsBlocked, setCommentsBlocked] = useState(false);
   const nestIndent = depth * 16;
   const nestLineLeft =
     depth > 0
@@ -2371,6 +2383,7 @@ function TaskRow({
             due_date: task.due_date,
             notes: task.notes,
           }}
+          descriptionViewExpanded={descExpanded}
           onCancel={() => ctx.setEditingTask(null)}
           onSubmit={(draft) => ctx.saveEditingTask(task.id, draft)}
           onDelete={() => ctx.deleteEditingTask(task.id)}
@@ -2547,7 +2560,7 @@ function TaskRow({
               <StickyNote
                 size={16}
                 className="ml-1 mr-0.5 shrink-0 text-[var(--text-muted)]"
-                aria-label="Task notes"
+                aria-label="Task description"
               />
             </Tooltip>
           ) : null}
@@ -2622,18 +2635,25 @@ function TaskRow({
               <span className="w-2.5 shrink-0" aria-hidden />
               <div className="min-w-0 flex-1 space-y-8">
                 {hasNotes ? (
-                  <div className="py-2">
-                    <RichNotesHtml
-                      html={task.notes}
-                      className="text-sm text-[var(--text)]"
-                    />
-                  </div>
+                  <TaskDescriptionView
+                    html={task.notes}
+                    taskId={task.id}
+                    assigneePersonId={task.assignee_person_id}
+                    viewerPersonId={ctx.myPersonId}
+                    viewerProfileId={ctx.profileId}
+                    taskExpanded={isExpanded}
+                    onExpandedChange={setDescExpanded}
+                    onCommentsBlockedChange={setCommentsBlocked}
+                  />
                 ) : null}
-                <CommentThread
-                  task={task}
-                  comments={taskComments}
-                  ctx={ctx}
-                />
+                <TaskDescriptionCommentsGate blocked={commentsBlocked}>
+                  <CommentThread
+                    task={task}
+                    comments={taskComments}
+                    ctx={ctx}
+                    commentsDisabled={commentsBlocked}
+                  />
+                </TaskDescriptionCommentsGate>
                 <TaskActivityMeta task={task} ctx={ctx} />
               </div>
             </div>
@@ -2751,10 +2771,12 @@ function CommentThread({
   task,
   comments,
   ctx,
+  commentsDisabled = false,
 }: {
   task: Task;
   comments: TaskComment[];
   ctx: BoardCtx;
+  commentsDisabled?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [replying, setReplying] = useState(false);
@@ -2827,7 +2849,8 @@ function CommentThread({
         ) : (
           <button
             type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[color-mix(in_srgb,var(--text)_22%,transparent)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[color-mix(in_srgb,var(--text)_22%,transparent)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={commentsDisabled}
             onClick={() => setReplying(true)}
           >
             <Reply size={13} strokeWidth={1.75} />
