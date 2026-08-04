@@ -17,7 +17,7 @@ import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
-import { publicShareUrl } from "@/lib/share/token";
+import { clientSiteOrigin, publicShareUrl } from "@/lib/share/token";
 import { createClient } from "@/lib/supabase/client";
 import {
   readFileAsDataUrl,
@@ -165,7 +165,7 @@ export default function SettingsPage() {
           setShareEnabled(enabled);
           setShareUrl(
             enabled && token
-              ? publicShareUrl(window.location.origin, token)
+              ? publicShareUrl(clientSiteOrigin(), token)
               : null,
           );
         }
@@ -175,6 +175,7 @@ export default function SettingsPage() {
         const res = await fetch("/api/share");
         const body = (await res.json()) as {
           enabled?: boolean;
+          token?: string | null;
           url?: string | null;
           error?: string;
         };
@@ -186,8 +187,14 @@ export default function SettingsPage() {
           return;
         }
         if (!cancelled) {
-          setShareEnabled(Boolean(body.enabled));
-          setShareUrl(body.url ?? null);
+          const enabled = Boolean(body.enabled);
+          const token = body.token ?? null;
+          setShareEnabled(enabled);
+          setShareUrl(
+            enabled && token
+              ? publicShareUrl(clientSiteOrigin(), token)
+              : null,
+          );
         }
       } catch {
         /* ignore */
@@ -271,12 +278,19 @@ export default function SettingsPage() {
       });
       const body = (await res.json()) as {
         enabled?: boolean;
+        token?: string | null;
         url?: string | null;
         error?: string;
       };
       if (!res.ok) throw new Error(body.error || "Could not update public link");
-      setShareEnabled(Boolean(body.enabled));
-      setShareUrl(body.url ?? null);
+      const enabled = Boolean(body.enabled);
+      const token = body.token ?? null;
+      setShareEnabled(enabled);
+      setShareUrl(
+        enabled && token
+          ? publicShareUrl(clientSiteOrigin(), token)
+          : null,
+      );
       push(
         action === "disable"
           ? "Public Link turned off"

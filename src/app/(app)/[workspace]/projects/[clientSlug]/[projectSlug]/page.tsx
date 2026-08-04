@@ -47,7 +47,7 @@ import {
 } from "@/lib/domain/project-manager-schedule";
 import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sorting";
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
-import { publicProjectShareUrl } from "@/lib/share/token";
+import { clientSiteOrigin, publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
 import {
   MILESTONE_ESSENTIAL_KINDS,
@@ -297,10 +297,7 @@ export default function ProjectDetailPage() {
 
   const shareResult =
     project.share_enabled && project.share_token
-      ? publicProjectShareUrl(
-          typeof window !== "undefined" ? window.location.origin : "",
-          project.share_token,
-        )
+      ? publicProjectShareUrl(clientSiteOrigin(), project.share_token)
       : null;
 
   function goBack() {

@@ -16,3 +16,17 @@ export function publicShareUrl(origin: string, token: string): string {
 export function publicProjectShareUrl(origin: string, token: string): string {
   return `${origin.replace(/\/$/, "")}/share/project/${token}`;
 }
+
+/** Browser origin for share links; falls back when called during SSR. */
+export function clientSiteOrigin(): string {
+  if (typeof window !== "undefined") return window.location.origin;
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (raw) {
+    try {
+      return new URL(raw).origin;
+    } catch {
+      /* fall through */
+    }
+  }
+  return "http://localhost:3000";
+}

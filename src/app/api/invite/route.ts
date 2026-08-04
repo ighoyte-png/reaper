@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { canManage } from "@/lib/auth/roles";
-import { siteOriginFromRequest } from "@/lib/security/request";
+import { assertAllowedSiteOrigin } from "@/lib/security/request";
 
 async function requireManager(request: Request) {
   if (!isSupabaseConfigured()) {
@@ -26,7 +26,7 @@ async function requireManager(request: Request) {
     };
   }
 
-  const originCheck = siteOriginFromRequest(request);
+  const originCheck = assertAllowedSiteOrigin(request);
   if (!originCheck.ok) {
     return {
       error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),

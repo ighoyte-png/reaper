@@ -125,6 +125,7 @@ import { workingDaysBetween } from "@/lib/domain/dates";
 import { uniqueSlug } from "@/lib/slug";
 import {
   generateShareToken,
+  clientSiteOrigin,
   publicProjectShareUrl,
   publicShareUrl,
 } from "@/lib/share/token";
@@ -1835,8 +1836,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             share_enabled = true;
             share_token = generateShareToken();
           }
-          const origin =
-            typeof window !== "undefined" ? window.location.origin : "";
+          const origin = clientSiteOrigin();
           result = {
             enabled: share_enabled,
             token: share_enabled ? share_token : null,
@@ -4082,8 +4082,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
           const row: Project = { ...project, share_enabled, share_token };
           updatedProject = row;
-          const origin =
-            typeof window !== "undefined" ? window.location.origin : "";
+          const origin = clientSiteOrigin();
           result = {
             enabled: share_enabled,
             token: share_enabled ? share_token : null,
