@@ -25,7 +25,14 @@ import { addDays, parseISO } from "date-fns";
 import { assignmentOverlapsDateRange } from "@/lib/domain/recurrence";
 import { toDateKey } from "@/lib/domain/dates";
 import { canEditProject } from "@/lib/domain/project-access";
-import { emptyTaskAuditFields, orderTasksParentsFirst } from "@/lib/domain/tasks";
+import {
+  assigneeSubmittedTaskForReview,
+  buildTaskInReviewBulletin,
+  emptyTaskAuditFields,
+  isTaskInReviewTransition,
+  orderTasksParentsFirst,
+  taskAssignerPersonId,
+} from "@/lib/domain/tasks";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import {
   dispatchTaskNoteMention,
@@ -3243,6 +3250,67 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", row.id);
           runRemoteSoft(() => upsertTaskRow(supabaseRef.current!, row));
+        }
+        // Demo: notify assigner when assignee moves Active → In Review (supabase uses DB trigger).
+        if (
+          mode === "demo" &&
+          existing &&
+          isTaskInReviewTransition(existing, row) &&
+          assigneeSubmittedTaskForReview(row, state.people, actorId)
+        ) {
+          const project =
+            state.projects.find((p) => p.id === row.project_id) ?? null;
+          const assignerPersonId = taskAssignerPersonId(
+            row,
+            state.people,
+            project,
+          );
+          if (
+            assignerPersonId &&
+            assignerPersonId !== row.assignee_person_id
+          ) {
+            const assignee = state.people.find(
+              (p) => p.id === row.assignee_person_id,
+            );
+            const client = project?.client_id
+              ? state.clients.find((c) => c.id === project.client_id)
+              : null;
+            const bulletin = buildTaskInReviewBulletin({
+              id: uid("bulletin"),
+              organizationId: row.organization_id,
+              projectId: row.project_id,
+              assignerPersonId,
+              taskTitle: row.title,
+              assigneeName: assignee?.name ?? null,
+              clientName: client?.name ?? null,
+              projectName: project?.name ?? "Project",
+              createdAt: now,
+            });
+            patch((prev) => ({
+              ...prev,
+              bulletins: [bulletin, ...prev.bulletins],
+            }));
+            const recipients = bulletinUnreadRecipientProfileIds(
+              bulletin,
+              state.people,
+              state.profiles,
+              { pods: state.pods, podMembers: state.pod_members },
+            );
+            const myId = profile?.id;
+            if (myId && recipients.includes(myId)) {
+              patch((prev) =>
+                prev.unread_bulletin_ids.includes(bulletin.id)
+                  ? prev
+                  : {
+                      ...prev,
+                      unread_bulletin_ids: [
+                        ...prev.unread_bulletin_ids,
+                        bulletin.id,
+                      ],
+                    },
+              );
+            }
+          }
         }
         // Desktop notify newly @mentioned people in task notes (org broadcast).
         const prevMentionIds = new Set(

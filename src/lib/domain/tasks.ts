@@ -1,4 +1,11 @@
-import type { Task, TaskList, TaskStatus } from "@/lib/types";
+import type {
+  Bulletin,
+  Person,
+  Project,
+  Task,
+  TaskList,
+  TaskStatus,
+} from "@/lib/types";
 
 /** Default audit fields for newly constructed Task objects (store stamps actor on upsert). */
 export function emptyTaskAuditFields(): Pick<
@@ -145,4 +152,91 @@ export function reindexSortOrders<T extends { id: string; sort_order: number }>(
   items: T[],
 ): T[] {
   return items.map((item, i) => ({ ...item, sort_order: i }));
+}
+
+/** Person who assigned the task — creator profile, else project manager. */
+export function taskAssignerPersonId(
+  task: Pick<Task, "created_by_profile_id" | "assignee_person_id">,
+  people: Pick<Person, "id" | "profile_id">[],
+  project: Pick<Project, "manager_person_id"> | null,
+): string | null {
+  const creatorProfileId = task.created_by_profile_id;
+  if (creatorProfileId) {
+    const creator = people.find((p) => p.profile_id === creatorProfileId);
+    if (creator) return creator.id;
+  }
+  return project?.manager_person_id ?? null;
+}
+
+export function taskInReviewBulletinTitle(opts: {
+  taskTitle: string;
+  assigneeName: string | null;
+  clientName: string | null;
+  projectName: string;
+}): string {
+  const client = opts.clientName?.trim() || "Client";
+  const project = opts.projectName?.trim() || "Project";
+  const title = opts.taskTitle?.trim() || "A task";
+  const assignee = opts.assigneeName?.trim();
+  if (assignee) {
+    return `${assignee} submitted "${title}" for review on the ${client} ${project} Project!`;
+  }
+  return `"${title}" is ready for review on the ${client} ${project} Project!`;
+}
+
+/** Green success bulletin when an assignee moves a task Active → In Review. */
+export function buildTaskInReviewBulletin(opts: {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  assignerPersonId: string;
+  taskTitle: string;
+  assigneeName: string | null;
+  clientName: string | null;
+  projectName: string;
+  createdAt?: string;
+}): Bulletin {
+  return {
+    id: opts.id,
+    organization_id: opts.organizationId,
+    project_id: opts.projectId,
+    title: taskInReviewBulletinTitle({
+      taskTitle: opts.taskTitle,
+      assigneeName: opts.assigneeName,
+      clientName: opts.clientName,
+      projectName: opts.projectName,
+    }),
+    body: "",
+    pinned: false,
+    audience: "people",
+    audience_person_ids: [opts.assignerPersonId],
+    audience_pod_ids: [],
+    tone: "success",
+    created_by_profile_id: null,
+    created_at: opts.createdAt ?? new Date().toISOString(),
+  };
+}
+
+/** Assignee moved task from Active (upcoming) to In Review (active). */
+export function isTaskInReviewTransition(
+  previous: Pick<Task, "status"> | null | undefined,
+  next: Pick<Task, "status">,
+): boolean {
+  return Boolean(previous && previous.status === "upcoming" && next.status === "active");
+}
+
+export function assigneeSubmittedTaskForReview(
+  task: Pick<Task, "assignee_person_id" | "status_changed_by_profile_id">,
+  people: Pick<Person, "id" | "profile_id">[],
+  actorProfileId: string | null,
+): boolean {
+  if (!task.assignee_person_id || !actorProfileId) return false;
+  const assignee = people.find((p) => p.id === task.assignee_person_id);
+  if (!assignee?.profile_id || assignee.profile_id !== actorProfileId) {
+    return false;
+  }
+  return (
+    !task.status_changed_by_profile_id ||
+    task.status_changed_by_profile_id === actorProfileId
+  );
 }
