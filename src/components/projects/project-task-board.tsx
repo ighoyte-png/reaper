@@ -2416,6 +2416,8 @@ function TaskRow({
   const kids = depth === 0 ? ctx.childrenMap.get(task.id) ?? [] : [];
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
+  const multiSelectDrag =
+    ctx.manageLists && ctx.selected.size > 1 && isSelected;
   const canEditStatus = ctx.allowStatusEdit;
   const isFocused = ctx.focusTaskId === task.id;
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
@@ -2523,11 +2525,17 @@ function TaskRow({
           "group flex items-center gap-1.5 px-2 py-1 text-sm",
           task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "bg-[var(--accent)]/10",
-          !ctx.readOnly && "cursor-pointer",
+          multiSelectDrag
+            ? "cursor-grab touch-none active:cursor-grabbing"
+            : !ctx.readOnly && "cursor-pointer",
         )}
         style={{ paddingLeft: 8 }}
+        title={
+          multiSelectDrag ? "Drag to move all selected tasks" : undefined
+        }
+        {...(multiSelectDrag ? { ...attributes, ...listeners } : {})}
         onClick={
-          ctx.readOnly
+          ctx.readOnly || multiSelectDrag
             ? undefined
             : () => {
                 ctx.toggleExpand(task.id);
@@ -2538,17 +2546,19 @@ function TaskRow({
           <button
             type="button"
             className={cn(
-              "cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100",
+              "touch-none p-0.5 text-[var(--text-muted)]",
+              multiSelectDrag
+                ? "cursor-grab opacity-100"
+                : "cursor-grab opacity-0 group-hover:opacity-100",
               depth > 0 && "-translate-x-2",
             )}
             aria-label="Drag to reorder, nest, or move to another list"
             title={
-              ctx.selected.has(task.id) && ctx.selected.size > 1
+              multiSelectDrag
                 ? "Drag to move all selected tasks"
                 : "Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
             }
-            {...attributes}
-            {...listeners}
+            {...(multiSelectDrag ? {} : { ...attributes, ...listeners })}
             onClick={(e) => e.stopPropagation()}
           >
             <GripVertical size={14} />
@@ -2570,6 +2580,7 @@ function TaskRow({
           title={taskStatusLabel(task.status)}
           aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
           disabled={!canEditStatus}
+          onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             if (!canEditStatus) return;
@@ -2581,6 +2592,7 @@ function TaskRow({
             <Link
               href={ctx.hubTaskHref(task.id)}
               className="min-w-0 truncate hover:underline"
+              onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
               <span
@@ -2643,6 +2655,7 @@ function TaskRow({
             <button
               type="button"
               className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
+              onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 ctx.setEditingTask(task);
@@ -2658,6 +2671,7 @@ function TaskRow({
           <button
             type="button"
             className="inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
+            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               ctx.addSubtask(task.list_id, task.id);
@@ -2671,6 +2685,7 @@ function TaskRow({
         {ctx.allowSelect ? (
           <Checkbox
             checked={isSelected}
+            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => {
               const shiftKey =
