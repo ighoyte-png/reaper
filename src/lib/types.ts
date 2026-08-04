@@ -157,6 +157,8 @@ export interface Task {
   parent_id: string | null;
   assignee_person_id: string | null;
   title: string;
+  /** Visual list separator — no assignee, status, or subtasks. */
+  is_divider: boolean;
   status: TaskStatus;
   start_date: string | null;
   due_date: string | null;

@@ -272,7 +272,10 @@ function loadDemoState(): DemoState {
         archived: Boolean(l.archived),
         hide_from_client: Boolean(l.hide_from_client),
       })),
-      tasks: parsed.tasks ?? seed.tasks,
+      tasks: (parsed.tasks ?? seed.tasks).map((t) => ({
+        ...t,
+        is_divider: Boolean(t.is_divider),
+      })),
       task_comments: (parsed.task_comments ?? seed.task_comments).map((c) => ({
         ...c,
         updated_at:
@@ -3224,7 +3227,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
             task.start_date === existing.start_date &&
             task.due_date === existing.due_date &&
             task.notes === existing.notes &&
-            task.sort_order === existing.sort_order;
+            task.sort_order === existing.sort_order &&
+            Boolean(task.is_divider) === Boolean(existing.is_divider);
           if (!statusOnly) return;
         }
         const now = new Date().toISOString();
@@ -3905,6 +3909,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
             assignee_person_id: null,
             title: t.title,
+            is_divider: false,
             status: "upcoming" as const,
             start_date: null,
             due_date: null,

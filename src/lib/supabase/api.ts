@@ -184,6 +184,7 @@ export function mapTask(row: Record<string, unknown>): Task {
       ? String(row.assignee_person_id)
       : null,
     title: String(row.title ?? ""),
+    is_divider: Boolean(row.is_divider),
     status: (row.status as Task["status"]) ?? "upcoming",
     start_date: row.start_date ? String(row.start_date) : null,
     due_date: row.due_date ? String(row.due_date) : null,
@@ -2398,6 +2399,7 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     parent_id: task.parent_id,
     assignee_person_id: task.assignee_person_id,
     title: task.title,
+    is_divider: Boolean(task.is_divider),
     status: task.status,
     start_date: task.start_date,
     due_date: task.due_date,
@@ -2418,7 +2420,20 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
   if (updateError) throw updateError;
   if (data && data.length > 0) return;
 
-  const { error } = await supabase.from("tasks").insert(payload);
+  let { error } = await supabase.from("tasks").insert(payload);
+  if (
+    error &&
+    (/is_divider/i.test(error.message) ||
+      (error.code === "PGRST204" && /is_divider/i.test(error.message)))
+  ) {
+    const { is_divider: _d, ...legacy } = payload;
+    ({ error } = await supabase.from("tasks").insert(legacy));
+    if (!error) {
+      console.warn(
+        "tasks.is_divider missing — apply supabase/migrations/066_task_dividers.sql",
+      );
+    }
+  }
   if (error) throw error;
 }
 

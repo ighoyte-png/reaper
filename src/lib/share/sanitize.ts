@@ -316,6 +316,7 @@ export function sanitizeProjectPortal(
     tasks: state.tasks
       .filter(
         (t) =>
+          !t.is_divider &&
           visibleListIds.has(t.list_id) &&
           (t.project_id === projectId || visibleListIds.has(t.list_id)),
       )

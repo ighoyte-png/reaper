@@ -79,6 +79,7 @@ import {
   emptyTaskAuditFields,
   parentTasks,
   sortTaskLists,
+  taskDividerLabel,
   taskStatusLabel,
   tasksForList,
 } from "@/lib/domain/tasks";
@@ -168,6 +169,8 @@ type BoardCtx = {
   setEditingTask: (task: Task | null) => void;
   saveEditingTask: (taskId: string, draft: InlineTaskDraft) => void;
   deleteEditingTask: (taskId: string) => void;
+  saveDividerTitle: (taskId: string, title: string) => void;
+  deleteDivider: (taskId: string) => void;
   exitingTaskIds: Set<string>;
   onTaskExitComplete: (taskId: string) => void;
   addSubtask: (listId: string, parentId: string) => void;
@@ -428,8 +431,11 @@ export function ProjectTaskBoard({
 
   const childrenMap = useMemo(() => {
     const map = new Map<string, Task[]>();
+    const byId = new Map(visibleTasks.map((t) => [t.id, t]));
     for (const t of visibleTasks) {
       if (!t.parent_id) continue;
+      const parent = byId.get(t.parent_id);
+      if (!parent || parent.is_divider) continue;
       const arr = map.get(t.parent_id) ?? [];
       arr.push(t);
       map.set(t.parent_id, arr);
@@ -449,6 +455,7 @@ export function ProjectTaskBoard({
           visibleTasks.filter((t) => t.list_id === list.id && !t.parent_id),
         );
         for (const parent of parents) {
+          if (parent.is_divider) continue;
           ids.push(parent.id);
           for (const child of childrenMap.get(parent.id) ?? []) {
             ids.push(child.id);
@@ -772,6 +779,7 @@ export function ProjectTaskBoard({
         ? parent.assignee_person_id
         : (viewerPersonId ?? state.people[0]?.id ?? null),
       title: "New subtask",
+      is_divider: false,
       status: "upcoming",
       start_date: null,
       due_date: null,
@@ -797,6 +805,7 @@ export function ProjectTaskBoard({
       parent_id: null,
       assignee_person_id: draft.assignee_person_id,
       title,
+      is_divider: false,
       status: "upcoming",
       start_date: draft.start_date,
       due_date: draft.due_date,
@@ -807,6 +816,40 @@ export function ProjectTaskBoard({
     upsertTask(task);
     clearTaskCreateDraft(profile?.id, listId);
     setDraftingListId(null);
+  }
+
+  function addDivider(listId: string) {
+    if (!manageLists) return;
+    const siblings = visibleTasks.filter(
+      (t) => t.list_id === listId && !t.parent_id,
+    );
+    const task: Task = {
+      id: newId("task"),
+      organization_id: state.organization.id,
+      project_id: projectId,
+      list_id: listId,
+      parent_id: null,
+      assignee_person_id: null,
+      title: "",
+      is_divider: true,
+      status: "upcoming",
+      start_date: null,
+      due_date: null,
+      notes: "",
+      sort_order: siblings.length,
+      ...emptyTaskAuditFields(),
+    };
+    upsertTask(task);
+  }
+
+  function saveDividerTitle(taskId: string, title: string) {
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task || !task.is_divider) return;
+    upsertTask({ ...task, title: title.trim() });
+  }
+
+  function deleteDivider(taskId: string) {
+    beginDeleteTasks([taskId]);
   }
 
   function setEditingTask(task: Task | null) {
@@ -840,6 +883,7 @@ export function ProjectTaskBoard({
   }
 
   function cycleStatus(task: Task) {
+    if (task.is_divider) return;
     if (isPublicShare) return;
     // Schedule compact sidebar stays otherwise read-only; status cycling is allowed.
     if (readOnly && !compact) return;
@@ -1098,14 +1142,16 @@ export function ProjectTaskBoard({
       Math.abs(delta.x) >= INDENT_DRAG_PX &&
       Math.abs(delta.x) >= Math.abs(delta.y) * 0.75;
 
-    // Indent / outdent only for a single dragged task.
+    // Indent / outdent only for a single dragged task (not dividers).
     if (primarilyHorizontal && !multi) {
+      if (task.is_divider) return;
       const childTasks = childTasksOf(task.id);
       if (delta.x > 0) {
         if (task.parent_id || childTasks.length > 0) return;
         const parents = sortByOrder(
           projectTasks.filter(
-            (t) => t.list_id === task.list_id && !t.parent_id,
+            (t) =>
+              t.list_id === task.list_id && !t.parent_id && !t.is_divider,
           ),
         );
         const idx = parents.findIndex((p) => p.id === task.id);
@@ -1175,10 +1221,8 @@ export function ProjectTaskBoard({
     } else if (overData.type === "task") {
       const overTask = projectTasks.find((t) => t.id === over.id);
       if (!overTask) return;
-      // Dropping onto another selected mover: treat as list-end of that scope
-      // after removing movers (index resolved below from without-movers list).
       destListId = overTask.list_id;
-      destParentId = overTask.parent_id;
+      destParentId = overTask.is_divider ? null : overTask.parent_id;
       const destSiblings = sortByOrder(
         projectTasks.filter(
           (t) =>
@@ -1198,6 +1242,7 @@ export function ProjectTaskBoard({
     }
 
     if (destParentId && movingIds.has(destParentId)) return;
+    if (movers.some((m) => m.is_divider)) destParentId = null;
     const anyMoverHasChildren = movers.some(
       (m) => childTasksOf(m.id).length > 0,
     );
@@ -1228,7 +1273,13 @@ export function ProjectTaskBoard({
       const next = [...without];
       next.splice(target, 0, ...movers);
       next.forEach((t, i) => {
-        if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
+        if (t.sort_order !== i) {
+          upsertTask({
+            ...t,
+            parent_id: t.is_divider ? null : t.parent_id,
+            sort_order: i,
+          });
+        }
       });
       return;
     }
@@ -1249,7 +1300,7 @@ export function ProjectTaskBoard({
       upsertTask({
         ...t,
         list_id: destListId,
-        parent_id: destParentId,
+        parent_id: t.is_divider ? null : destParentId,
         sort_order: i,
       });
     });
@@ -1312,6 +1363,8 @@ export function ProjectTaskBoard({
     setEditingTask,
     saveEditingTask,
     deleteEditingTask,
+    saveDividerTitle,
+    deleteDivider,
     exitingTaskIds,
     onTaskExitComplete,
     addSubtask,
@@ -1355,7 +1408,9 @@ export function ProjectTaskBoard({
           ) : (
             activeLists.map((list) => {
               const listParents = parentTasks(
-                visibleTasks.filter((t) => t.list_id === list.id),
+                visibleTasks.filter(
+                  (t) => t.list_id === list.id && !t.is_divider,
+                ),
               );
               return (
                 <section
@@ -1640,6 +1695,7 @@ export function ProjectTaskBoard({
                     setDraftingListId(null);
                   }}
                   onCreateDraft={(draft) => createTaskFromDraft(list.id, draft)}
+                  onAddDivider={() => addDivider(list.id)}
                   onArchive={() =>
                     upsertTaskList({ ...list, archived: true })
                   }
@@ -1748,6 +1804,7 @@ export function ProjectTaskBoard({
                       onCreateDraft={(draft) =>
                         createTaskFromDraft(list.id, draft)
                       }
+                      onAddDivider={() => addDivider(list.id)}
                       onArchive={() =>
                         upsertTaskList({ ...list, archived: true })
                       }
@@ -1849,6 +1906,7 @@ function ListSection({
   onStartDraft,
   onCancelDraft,
   onCreateDraft,
+  onAddDivider,
   onArchive,
   onUnarchive,
   onToggleHideFromClient,
@@ -1865,6 +1923,7 @@ function ListSection({
   onStartDraft: () => void;
   onCancelDraft: () => void;
   onCreateDraft: (draft: InlineTaskDraft) => void;
+  onAddDivider: () => void;
   onArchive: () => void;
   onUnarchive: () => void;
   onToggleHideFromClient: () => void;
@@ -1877,10 +1936,11 @@ function ListSection({
       disabled: !ctx.manageLists,
     });
 
-  const selectableIds = parents.flatMap((p) => [
-    p.id,
-    ...(ctx.childrenMap.get(p.id) ?? []).map((c) => c.id),
-  ]);
+  const selectableIds = parents.flatMap((p) =>
+    p.is_divider
+      ? []
+      : [p.id, ...(ctx.childrenMap.get(p.id) ?? []).map((c) => c.id)],
+  );
   const selectedCount = selectableIds.filter((id) =>
     ctx.selected.has(id),
   ).length;
@@ -2052,9 +2112,13 @@ function ListSection({
               strategy={verticalListSortingStrategy}
               disabled={!ctx.manageLists}
             >
-              {parents.map((t) => (
-                <TaskRow key={t.id} task={t} depth={0} ctx={ctx} />
-              ))}
+              {parents.map((t) =>
+                t.is_divider ? (
+                  <TaskDividerRow key={t.id} task={t} ctx={ctx} />
+                ) : (
+                  <TaskRow key={t.id} task={t} depth={0} ctx={ctx} />
+                ),
+              )}
             </SortableContext>
           )}
           {ctx.manageLists ? (
@@ -2075,7 +2139,7 @@ function ListSection({
                   onSubmit={onCreateDraft}
                 />
               ) : (
-                <div className="px-2 py-1.5 text-left opacity-0 transition-opacity group-hover/list:opacity-100 focus-within:opacity-100">
+                <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-left opacity-0 transition-opacity group-hover/list:opacity-100 focus-within:opacity-100">
                   <Button
                     type="button"
                     variant="secondary"
@@ -2084,6 +2148,14 @@ function ListSection({
                   >
                     <Plus size={12} strokeWidth={1.75} />
                     Add task
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={onAddDivider}
+                  >
+                    Add divider
                   </Button>
                 </div>
               )}
@@ -2371,6 +2443,152 @@ function TaskCommentIndicator({
         )}
       />
     </span>
+  );
+}
+
+function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
+  const label = taskDividerLabel(task.title);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(task.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id: task.id,
+      data: {
+        type: "task",
+        listId: task.list_id,
+        parentId: null,
+      } satisfies TaskDragData,
+      disabled: !ctx.manageLists || editing,
+    });
+
+  useEffect(() => {
+    if (!editing) setDraft(task.title);
+  }, [editing, task.title]);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  function commitEdit() {
+    ctx.saveDividerTitle(task.id, draft);
+    setEditing(false);
+  }
+
+  return (
+    <div
+      id={`task-row-${task.id}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.35 : undefined,
+      }}
+      className="relative my-0.5 py-0.5"
+    >
+      <div
+        ref={setNodeRef}
+        className={cn(
+          "group flex items-center gap-1.5 rounded-md px-2 py-1 text-sm hover:bg-[var(--row-hover)]",
+          ctx.focusTaskId === task.id &&
+            "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25",
+        )}
+        style={{ paddingLeft: 8 }}
+      >
+        {ctx.manageLists ? (
+          <button
+            type="button"
+            className="cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100"
+            aria-label="Drag to reorder divider"
+            title="Drag to reorder"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical size={14} />
+          </button>
+        ) : (
+          <span className="w-4" />
+        )}
+        <span
+          aria-hidden
+          className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[var(--text)]"
+        />
+        {editing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitEdit();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setDraft(task.title);
+                setEditing(false);
+              }
+            }}
+            placeholder="Divider label (optional)"
+            className={cn(inputClass, "min-w-0 flex-1 text-xs")}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div
+            className="flex min-w-0 flex-1 items-center gap-2"
+            onDoubleClick={
+              ctx.manageLists
+                ? (e) => {
+                    e.stopPropagation();
+                    setEditing(true);
+                  }
+                : undefined
+            }
+          >
+            <span className="h-px min-w-4 flex-1 bg-[var(--text)]" aria-hidden />
+            {label ? (
+              <>
+                <span className="shrink-0 whitespace-nowrap text-xs text-[var(--text)]">
+                  ---- {label} ----
+                </span>
+                <span className="h-px min-w-4 flex-1 bg-[var(--text)]" aria-hidden />
+              </>
+            ) : null}
+          </div>
+        )}
+        {ctx.manageLists && !editing ? (
+          <>
+            <button
+              type="button"
+              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+              aria-label="Edit divider label"
+              title="Edit label"
+            >
+              <Pencil size={14} />
+            </button>
+            <button
+              type="button"
+              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--status-over)] group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.deleteDivider(task.id);
+              }}
+              aria-label="Delete divider"
+              title="Delete divider"
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

@@ -180,6 +180,7 @@ export function searchDemoState(
 
   const tasks: SearchHit[] = [];
   for (const t of state.tasks) {
+    if (t.is_divider) continue;
     if (visibleProjectIds && !visibleProjectIds.has(t.project_id)) continue;
     const notes = notesPlainText(t.notes);
     const titleHit = matches(t.title, q);

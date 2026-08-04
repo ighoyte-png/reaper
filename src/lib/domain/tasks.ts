@@ -41,6 +41,16 @@ export function parentTasks(tasks: Task[]): Task[] {
   return tasks.filter((t) => !t.parent_id);
 }
 
+export function isTaskDivider(task: Pick<Task, "is_divider">): boolean {
+  return Boolean(task.is_divider);
+}
+
+/** Label shown centered in a divider row when title is set. */
+export function taskDividerLabel(title: string): string | null {
+  const trimmed = title.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * Order tasks so parents appear before children (stable within each level).
  * Required for FK-safe inserts into tables with parent_id self-references.
