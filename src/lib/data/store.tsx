@@ -32,6 +32,7 @@ import {
   isTaskInReviewTransition,
   orderTasksParentsFirst,
   taskAssignerPersonId,
+  taskThreadNotifyPersonId,
 } from "@/lib/domain/tasks";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import {
@@ -84,6 +85,7 @@ import {
   deleteBulletinUnreadRow,
   deleteMentionUnreadRow,
   deleteMentionUnreadRows,
+  deleteTaskThreadUnreadRow,
   seedBulletinUnreadRows,
   upsertClientRow,
   upsertHolidayCalendarDayRow,
@@ -304,6 +306,15 @@ function loadDemoState(): DemoState {
               typeof (r as { person_id?: unknown }).person_id === "string",
           )
         : (seed.unread_mentions ?? []),
+      unread_task_threads: Array.isArray(parsed.unread_task_threads)
+        ? parsed.unread_task_threads.filter(
+            (r): r is { task_id: string; person_id: string } =>
+              Boolean(r) &&
+              typeof r === "object" &&
+              typeof (r as { task_id?: unknown }).task_id === "string" &&
+              typeof (r as { person_id?: unknown }).person_id === "string",
+          )
+        : (seed.unread_task_threads ?? []),
       project_favorites: Array.isArray(parsed.project_favorites)
         ? parsed.project_favorites.filter(
             (f): f is ProjectFavorite =>
@@ -353,6 +364,7 @@ function emptySupabaseState(): DemoState {
     bulletins: [],
     unread_bulletin_ids: [],
     unread_mentions: [],
+    unread_task_threads: [],
     project_favorites: [],
     pods: [],
     pod_members: [],
@@ -546,6 +558,8 @@ interface DataContextValue {
   dismissBulletin: (id: string) => void;
   /** Mark a tagged comment as seen for a person (removes from unread inbox). */
   dismissMention: (commentId: string, personId: string) => void;
+  /** Mark assigner ↔ assignee task thread as read (opening the task). */
+  dismissTaskThreadUnread: (taskId: string, personId: string) => void;
   upsertProjectTemplate: (
     template: Omit<ProjectTemplate, "organization_id"> & {
       organization_id?: string;
@@ -1107,6 +1121,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         onChange("mention_unreads"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_thread_unreads",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        onChange("task_thread_unreads"),
       )
       .on(
         "postgres_changes",
@@ -3348,6 +3372,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ...prev,
           tasks: prev.tasks.filter((t) => t.id !== id && t.parent_id !== id),
           task_comments: prev.task_comments.filter((c) => c.task_id !== id),
+          unread_task_threads: prev.unread_task_threads.filter(
+            (r) => r.task_id !== id,
+          ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", id);
@@ -3362,6 +3389,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
             : [],
           reactions: Array.isArray(comment.reactions) ? comment.reactions : [],
         } as TaskComment;
+        const task =
+          state.tasks.find((t) => t.id === row.task_id) ?? null;
+        const project = task
+          ? (state.projects.find((p) => p.id === task.project_id) ?? null)
+          : null;
+        const authorPerson = row.author_profile_id
+          ? (state.people.find((p) => p.profile_id === row.author_profile_id) ??
+            null)
+          : null;
+        const threadNotifyId =
+          task && authorPerson
+            ? taskThreadNotifyPersonId(
+                task,
+                authorPerson.id,
+                state.people,
+                project,
+              )
+            : null;
         patch((prev) => {
           const existing = prev.task_comments.find((c) => c.id === row.id);
           const next: TaskComment = {
@@ -3392,12 +3437,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
               { comment_id: next.id, person_id },
             ];
           }
+          let unread_task_threads = prev.unread_task_threads;
+          if (
+            mode === "demo" &&
+            !exists &&
+            threadNotifyId &&
+            !unread_task_threads.some(
+              (r) =>
+                r.task_id === row.task_id && r.person_id === threadNotifyId,
+            )
+          ) {
+            unread_task_threads = [
+              ...unread_task_threads,
+              { task_id: row.task_id, person_id: threadNotifyId },
+            ];
+          }
           return {
             ...prev,
             task_comments: exists
               ? prev.task_comments.map((c) => (c.id === next.id ? next : c))
               : [...prev.task_comments, next],
             unread_mentions,
+            unread_task_threads,
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
@@ -3599,6 +3660,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
           runRemoteSoft(async () => {
             await deleteMentionUnreadRow(supabaseRef.current!, {
               comment_id: commentId,
+              person_id: personId,
+            });
+          });
+        }
+      },
+      dismissTaskThreadUnread: (taskId, personId) => {
+        if (!taskId || !personId) return;
+        patch((prev) => {
+          const next = prev.unread_task_threads.filter(
+            (r) => !(r.task_id === taskId && r.person_id === personId),
+          );
+          if (next.length === prev.unread_task_threads.length) return prev;
+          return { ...prev, unread_task_threads: next };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("task_thread_unreads", taskId);
+          runRemoteSoft(async () => {
+            await deleteTaskThreadUnreadRow(supabaseRef.current!, {
+              task_id: taskId,
               person_id: personId,
             });
           });

@@ -168,6 +168,26 @@ export function taskAssignerPersonId(
   return project?.manager_person_id ?? null;
 }
 
+/** Assigner ↔ assignee counterpart who should see a new task-thread comment. */
+export function taskThreadNotifyPersonId(
+  task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,
+  authorPersonId: string | null,
+  people: Pick<Person, "id" | "profile_id">[],
+  project: Pick<Project, "manager_person_id"> | null,
+): string | null {
+  if (!authorPersonId) return null;
+  const assigneeId = task.assignee_person_id;
+  const assignerId = taskAssignerPersonId(task, people, project);
+  if (!assigneeId || !assignerId) return null;
+  if (authorPersonId === assignerId && authorPersonId !== assigneeId) {
+    return assigneeId;
+  }
+  if (authorPersonId === assigneeId && authorPersonId !== assignerId) {
+    return assignerId;
+  }
+  return null;
+}
+
 export function taskInReviewBulletinTitle(opts: {
   taskTitle: string;
   assigneeName: string | null;

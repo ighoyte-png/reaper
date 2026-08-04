@@ -87,6 +87,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     sessionProfileId: null,
     unread_bulletin_ids: [],
     unread_mentions: [],
+    unread_task_threads: [],
     project_favorites: [],
     pods: [],
     pod_members: [],

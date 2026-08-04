@@ -413,6 +413,7 @@ function emptyWorkspace(): DemoState {
     bulletins: [],
     unread_bulletin_ids: [],
     unread_mentions: [],
+    unread_task_threads: [],
     project_favorites: [],
     pods: [],
     pod_members: [],
@@ -710,6 +711,46 @@ export async function loadOrgBootstrap(
       }))
       .filter((r) => r.comment_id && r.person_id);
   }
+  const people = await Promise.all(
+    (peopleRes.data ?? []).map(async (row) => {
+      const person = mapPerson(row as Record<string, unknown>);
+      return {
+        ...person,
+        avatar_url: await resolveAvatarUrl(supabase, person.avatar_url),
+      };
+    }),
+  );
+  let unread_task_threads: { task_id: string; person_id: string }[] = [];
+  const sessionPersonId = sessionProfileId
+    ? (people.find((p) => p.profile_id === sessionProfileId)?.id ?? null)
+    : null;
+  if (sessionPersonId) {
+    const threadUnreadsRes = await supabase
+      .from("task_thread_unreads")
+      .select("task_id, person_id")
+      .eq("organization_id", orgId)
+      .eq("person_id", sessionPersonId);
+    if (threadUnreadsRes.error) {
+      if (
+        !/relation .*task_thread_unreads.* does not exist/i.test(
+          threadUnreadsRes.error.message,
+        ) &&
+        threadUnreadsRes.error.code !== "42P01"
+      ) {
+        throw threadUnreadsRes.error;
+      }
+      console.warn(
+        "task_thread_unreads missing — apply supabase/migrations/064_task_thread_unreads.sql",
+      );
+    } else {
+      unread_task_threads = (threadUnreadsRes.data ?? [])
+        .map((row) => ({
+          task_id: String((row as { task_id: unknown }).task_id),
+          person_id: String((row as { person_id: unknown }).person_id),
+        }))
+        .filter((r) => r.task_id && r.person_id);
+    }
+  }
   let project_favorites: ProjectFavorite[] = [];
   if (projectFavoritesRes.error) {
     if (
@@ -813,15 +854,7 @@ export async function loadOrgBootstrap(
       mapProject(row as Record<string, unknown>),
     ),
     milestones: [],
-    people: await Promise.all(
-      (peopleRes.data ?? []).map(async (row) => {
-        const person = mapPerson(row as Record<string, unknown>);
-        return {
-          ...person,
-          avatar_url: await resolveAvatarUrl(supabase, person.avatar_url),
-        };
-      }),
-    ),
+    people,
     assignments: [],
     project_members,
     leave_days: [],
@@ -834,6 +867,7 @@ export async function loadOrgBootstrap(
     bulletins,
     unread_bulletin_ids,
     unread_mentions,
+    unread_task_threads,
     project_favorites,
     pods,
     pod_members,
@@ -2682,6 +2716,32 @@ export async function deleteBulletinUnreadRow(
   ) {
     console.warn(
       "bulletin_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
+/** Dismiss unread assigner ↔ assignee thread for a task. */
+export async function deleteTaskThreadUnreadRow(
+  supabase: SupabaseClient,
+  row: {
+    task_id: string;
+    person_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("task_thread_unreads")
+    .delete()
+    .eq("task_id", row.task_id)
+    .eq("person_id", row.person_id);
+  if (!error) return true;
+  if (
+    /relation .*task_thread_unreads.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
+    console.warn(
+      "task_thread_unreads missing — apply supabase/migrations/064_task_thread_unreads.sql",
     );
     return false;
   }

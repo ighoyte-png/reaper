@@ -389,6 +389,8 @@ export interface DemoState {
   unread_bulletin_ids: string[];
   /** Unread @mention inbox rows (comment_id + mentioned person_id). */
   unread_mentions: { comment_id: string; person_id: string }[];
+  /** Tasks with unread assigner ↔ assignee comment thread for a person. */
+  unread_task_threads: { task_id: string; person_id: string }[];
   /** Current profile's starred projects (sort_order = nav tab order). */
   project_favorites: ProjectFavorite[];
   pods: Pod[];

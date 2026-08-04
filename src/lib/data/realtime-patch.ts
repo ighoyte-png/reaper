@@ -40,6 +40,10 @@ export function realtimeEchoId(
     const bid = row.bulletin_id;
     return bid != null ? String(bid) : null;
   }
+  if (table === "task_thread_unreads") {
+    const tid = row.task_id;
+    return tid != null ? String(tid) : null;
+  }
   if (table === "mention_unreads") {
     const cid = row.comment_id;
     const pid = row.person_id;
@@ -273,6 +277,37 @@ export function applyRealtimeTableEvent(
       return {
         ...state,
         unread_bulletin_ids: [...state.unread_bulletin_ids, bulletinId],
+      };
+    }
+    case "task_thread_unreads": {
+      const taskId = String(source.task_id ?? "");
+      const personId = String(source.person_id ?? "");
+      if (!taskId || !personId) return state;
+      const sessionPersonId =
+        state.people.find((p) => p.profile_id === state.sessionProfileId)
+          ?.id ?? null;
+      if (sessionPersonId && personId !== sessionPersonId) return state;
+      if (isDelete) {
+        const next = state.unread_task_threads.filter(
+          (r) => !(r.task_id === taskId && r.person_id === personId),
+        );
+        return next.length === state.unread_task_threads.length
+          ? state
+          : { ...state, unread_task_threads: next };
+      }
+      if (
+        state.unread_task_threads.some(
+          (r) => r.task_id === taskId && r.person_id === personId,
+        )
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        unread_task_threads: [
+          ...state.unread_task_threads,
+          { task_id: taskId, person_id: personId },
+        ],
       };
     }
     case "mention_unreads": {

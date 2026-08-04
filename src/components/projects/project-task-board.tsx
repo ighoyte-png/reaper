@@ -183,8 +183,10 @@ type BoardCtx = {
   ) => void;
   deleteComment: (id: string) => void;
   toggleReaction: (commentId: string, emoji: string) => void;
-  /** Project team available for @mentions. */
+  /** @mention targets on the project team. */
   mentionPeople: Person[];
+  /** Task ids with unread assigner ↔ assignee thread for the viewer. */
+  unreadTaskThreadIds: Set<string>;
 };
 
 type TaskDragData = { type: "task"; listId: string; parentId: string | null };
@@ -308,6 +310,7 @@ export function ProjectTaskBoard({
     newId,
     ensureProjectData,
     dataStatus,
+    dismissTaskThreadUnread,
   } = useData();
   const projectHref = useProjectHref();
   const project = state.projects.find((p) => p.id === projectId);
@@ -371,6 +374,15 @@ export function ProjectTaskBoard({
       canManage: false,
       myPersonId: viewerPersonId,
     });
+
+  const unreadTaskThreadIds = useMemo(() => {
+    if (!viewerPersonId) return new Set<string>();
+    return new Set(
+      state.unread_task_threads
+        .filter((r) => r.person_id === viewerPersonId)
+        .map((r) => r.task_id),
+    );
+  }, [state.unread_task_threads, viewerPersonId]);
 
   const manageLists = viewerCanManage && !readOnly && !isPublicShare;
   const allowSelect =
@@ -493,8 +505,12 @@ export function ProjectTaskBoard({
   function toggleExpand(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
+      const opening = !next.has(id);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      if (opening && viewerPersonId && unreadTaskThreadIds.has(id)) {
+        dismissTaskThreadUnread(id, viewerPersonId);
+      }
       return next;
     });
   }
@@ -924,13 +940,16 @@ export function ProjectTaskBoard({
       next.add(focusTaskId);
       return next;
     });
+    if (viewerPersonId && unreadTaskThreadIds.has(focusTaskId)) {
+      dismissTaskThreadUnread(focusTaskId, viewerPersonId);
+    }
     const t = window.setTimeout(() => {
       document
         .getElementById(`task-row-${focusTaskId}`)
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 150);
     return () => window.clearTimeout(t);
-  }, [focusTaskId, visibleTasks, state.tasks, projectId]);
+  }, [focusTaskId, visibleTasks, state.tasks, projectId, viewerPersonId, unreadTaskThreadIds, dismissTaskThreadUnread]);
 
   // Re-open comment panels that have an unfinished local reply draft.
   useEffect(() => {
@@ -1305,6 +1324,7 @@ export function ProjectTaskBoard({
     deleteComment: deleteTaskComment,
     toggleReaction: toggleTaskCommentReaction,
     mentionPeople,
+    unreadTaskThreadIds,
   };
 
   if (projectDataLoading) {
@@ -2309,6 +2329,51 @@ function InlineTaskForm({
   );
 }
 
+function TaskCommentIndicator({
+  unread,
+  count,
+  expanded,
+  visible,
+}: {
+  unread: boolean;
+  count: number;
+  expanded: boolean;
+  visible: boolean;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-0.5 text-[10px] text-[var(--text-muted)]",
+        !visible && !unread && "opacity-0 group-hover:opacity-100",
+      )}
+      aria-label={unread ? "Unread comments" : undefined}
+    >
+      <span className="relative inline-flex shrink-0">
+        <MessageSquare
+          size={16}
+          className="text-[var(--text-muted)]"
+          strokeWidth={1.75}
+        />
+        {unread ? (
+          <MessageSquare
+            size={16}
+            className="absolute inset-0 fill-[var(--status-near)] text-[var(--status-near)]"
+            strokeWidth={1.75}
+          />
+        ) : null}
+      </span>
+      {count > 0 ? count : null}
+      <ChevronDown
+        size={10}
+        className={cn(
+          "transition-transform duration-200 ease-out motion-reduce:transition-none",
+          expanded ? "rotate-0" : "-rotate-90",
+        )}
+      />
+    </span>
+  );
+}
+
 function TaskRow({
   task,
   depth,
@@ -2537,6 +2602,16 @@ function TaskRow({
             </span>
           )}
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
+          {!ctx.readOnly ? (
+            <TaskCommentIndicator
+              unread={ctx.unreadTaskThreadIds.has(task.id)}
+              count={taskComments.length}
+              expanded={isExpanded}
+              visible={
+                taskComments.length > 0 || ctx.unreadTaskThreadIds.has(task.id)
+              }
+            />
+          ) : null}
           {task.due_date ? (
             <span
               className={cn(
@@ -2563,25 +2638,6 @@ function TaskRow({
                 aria-label="Task description"
               />
             </Tooltip>
-          ) : null}
-          {!ctx.readOnly ? (
-            <span
-              className={cn(
-                "inline-flex shrink-0 items-center gap-0.5 text-[10px] text-[var(--text-muted)]",
-                taskComments.length === 0 && "opacity-0 group-hover:opacity-100",
-              )}
-              aria-hidden
-            >
-              <MessageSquare size={16} />
-              {taskComments.length > 0 ? taskComments.length : null}
-              <ChevronDown
-                size={10}
-                className={cn(
-                  "transition-transform duration-200 ease-out motion-reduce:transition-none",
-                  isExpanded ? "rotate-0" : "-rotate-90",
-                )}
-              />
-            </span>
           ) : null}
           {ctx.canManage && !ctx.readOnly ? (
             <button
