@@ -24,11 +24,11 @@ import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { notesPlainText } from "@/lib/notes-html";
-import { searchDemoState, type SearchHit, type SearchHitKind } from "@/lib/search";
+import { searchDemoState, enrichSearchHits, searchHitTaskIdsMissingStatus, type SearchHit, type SearchHitKind } from "@/lib/search";
 import { taskStatusLabel } from "@/lib/domain/tasks";
 import type { TaskStatus } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
-import { searchOrg } from "@/lib/supabase/api";
+import { fetchTaskStatuses, searchOrg } from "@/lib/supabase/api";
 
 const KIND_ORDER: SearchHitKind[] = ["project", "client", "task", "comment"];
 
@@ -95,7 +95,7 @@ export function GlobalSearch({
 }) {
   const mounted = useMounted();
   const router = useRouter();
-  const { mode, state, isPublicShare, canManage, myPerson, profile } = useData();
+  const { mode, state, isPublicShare, canManage, myPerson, profile, ensureOrgTasks } = useData();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -132,6 +132,16 @@ export function GlobalSearch({
   }, [open]);
 
   useEffect(() => {
+    if (!open || isPublicShare || mode !== "supabase") return;
+    void ensureOrgTasks();
+  }, [open, isPublicShare, mode, ensureOrgTasks]);
+
+  useEffect(() => {
+    if (!open || hits.length === 0) return;
+    setHits((prev) => enrichSearchHits(prev, state.tasks));
+  }, [open, hits.length, state.tasks]);
+
+  useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -164,7 +174,14 @@ export function GlobalSearch({
           next = searchDemoState(stateRef.current, q, 40, accessRef.current);
         } else {
           const client = createClient();
+          const orgId = stateRef.current.organization.id;
           next = await searchOrg(client, q);
+          next = enrichSearchHits(next, stateRef.current.tasks);
+          const missing = searchHitTaskIdsMissingStatus(next);
+          if (missing.length > 0 && orgId) {
+            const statuses = await fetchTaskStatuses(client, orgId, missing);
+            next = enrichSearchHits(next, [], statuses);
+          }
         }
         if (reqId.current !== id) return;
         setHits(next);
@@ -307,6 +324,9 @@ export function GlobalSearch({
                       const index = flat.indexOf(hit);
                       const active = index === activeIndex;
                       const snippet = notesPlainText(hit.snippet || "");
+                      const showStatus =
+                        (hit.kind === "task" || hit.kind === "comment") &&
+                        hit.task_status;
                       return (
                         <li key={`${hit.kind}-${hit.id}`}>
                           <button
@@ -328,13 +348,14 @@ export function GlobalSearch({
                               className="mt-0.5 shrink-0 text-[var(--text-muted)]"
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-2">
+                              <span className="flex items-center justify-between gap-2">
                                 <span className="min-w-0 truncate text-sm font-medium text-[var(--text)]">
                                   {hit.title}
                                 </span>
-                                {(hit.kind === "task" || hit.kind === "comment") &&
-                                hit.task_status ? (
-                                  <SearchTaskStatusChip status={hit.task_status} />
+                                {showStatus ? (
+                                  <SearchTaskStatusChip
+                                    status={hit.task_status!}
+                                  />
                                 ) : null}
                               </span>
                               {hit.subtitle ? (

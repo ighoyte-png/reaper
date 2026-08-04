@@ -25,6 +25,7 @@ import type {
   Task,
   TaskComment,
   TaskList,
+  TaskStatus,
   TemplateMilestone,
   TemplateTask,
   TemplateTaskList,
@@ -3343,6 +3344,36 @@ export async function seedDemoWorkspace(
       "bulletins insert skipped — apply supabase/migrations/015_pm_execution.sql",
     );
   }
+}
+
+/** Task id → status for search hits when RPC omits task_status. */
+export async function fetchTaskStatuses(
+  supabase: SupabaseClient,
+  orgId: string,
+  taskIds: string[],
+): Promise<Map<string, TaskStatus>> {
+  const ids = [...new Set(taskIds.filter(Boolean))];
+  if (!orgId || ids.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("id, status")
+    .eq("organization_id", orgId)
+    .in("id", ids);
+  if (error) throw error;
+
+  const out = new Map<string, TaskStatus>();
+  for (const row of data ?? []) {
+    const status = (row as { status?: unknown }).status;
+    if (
+      status === "upcoming" ||
+      status === "active" ||
+      status === "complete"
+    ) {
+      out.set(String((row as { id: unknown }).id), status);
+    }
+  }
+  return out;
 }
 
 /** Org-wide deep search (requires migration 058). */

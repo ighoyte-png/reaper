@@ -1,7 +1,7 @@
 import { canManage } from "@/lib/auth/roles";
 import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { notesPlainText } from "@/lib/notes-html";
-import type { DemoState, Role, TaskStatus } from "@/lib/types";
+import type { DemoState, Role, Task, TaskStatus } from "@/lib/types";
 
 export type SearchHitKind = "client" | "project" | "task" | "comment";
 
@@ -24,6 +24,42 @@ export type SearchAccessContext = {
   role?: Role | null;
   personId?: string | null;
 };
+
+/** Fill task_status from local task rows when RPC omits it (pre-migration 065). */
+export function searchHitTaskIdsMissingStatus(hits: SearchHit[]): string[] {
+  const ids = new Set<string>();
+  for (const hit of hits) {
+    if (hit.task_status) continue;
+    if (hit.kind === "task") ids.add(hit.id);
+    else if (hit.kind === "comment" && hit.task_id) ids.add(hit.task_id);
+  }
+  return [...ids];
+}
+
+export function enrichSearchHits(
+  hits: SearchHit[],
+  tasks: readonly Pick<Task, "id" | "status">[],
+  extraStatuses?: ReadonlyMap<string, TaskStatus>,
+): SearchHit[] {
+  const byId = new Map<string, TaskStatus>();
+  for (const t of tasks) byId.set(t.id, t.status);
+  if (extraStatuses) {
+    for (const [id, status] of extraStatuses) byId.set(id, status);
+  }
+  if (byId.size === 0) return hits;
+  let changed = false;
+  const out = hits.map((hit) => {
+    if (hit.task_status) return hit;
+    if (hit.kind !== "task" && hit.kind !== "comment") return hit;
+    const taskId = hit.kind === "task" ? hit.id : hit.task_id;
+    if (!taskId) return hit;
+    const status = byId.get(taskId);
+    if (!status) return hit;
+    changed = true;
+    return { ...hit, task_status: status };
+  });
+  return changed ? out : hits;
+}
 
 function matches(haystack: string, q: string): boolean {
   return haystack.toLowerCase().includes(q);

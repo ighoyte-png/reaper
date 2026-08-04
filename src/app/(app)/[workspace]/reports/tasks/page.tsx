@@ -24,6 +24,7 @@ import {
 } from "@/components/projects/project-manager-filter-bar";
 import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
 import { ExpandPanel } from "@/components/ui/expand-panel";
+import { DateInput, inputClass } from "@/components/ui/form";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
@@ -36,6 +37,27 @@ import { cn } from "@/lib/cn";
 import type { Client, Person, Project, Task } from "@/lib/types";
 
 const EMPTY_SECTION = "Huzzah! Nothing here to worry about!";
+const COMPLETED_PAGE_SIZE = 10;
+
+function sortCompletedTasks(tasks: Task[]): Task[] {
+  return [...tasks].sort((a, b) => {
+    const aKey = a.status_changed_at ?? a.due_date ?? a.created_at ?? "";
+    const bKey = b.status_changed_at ?? b.due_date ?? b.created_at ?? "";
+    return bKey.localeCompare(aKey);
+  });
+}
+
+function taskMatchesDateRange(
+  task: Task,
+  from: string | null,
+  to: string | null,
+): boolean {
+  if (!from && !to) return true;
+  if (!task.due_date) return false;
+  if (from && task.due_date < from) return false;
+  if (to && task.due_date > to) return false;
+  return true;
+}
 
 type ProjectFilter = "all" | string;
 type SortKey =
@@ -503,6 +525,9 @@ function TasksReportContent() {
     project: "",
     pm: "all",
     mine: "0",
+    from: "",
+    to: "",
+    cp: "1",
   });
   const projectFilter: ProjectFilter = filters.project || "all";
   // Members (and View As member) force My Tasks. Org-wide public share stays All/PM.
@@ -514,6 +539,9 @@ function TasksReportContent() {
       ? state.people.find((p) => p.id === assigneePersonId)
       : null) ?? myPerson;
   const showMyTasksChip = effectiveCanManage && Boolean(myTasksPerson);
+  const dateFrom = filters.from || null;
+  const dateTo = filters.to || null;
+  const completedPage = Math.max(1, parseInt(filters.cp || "1", 10) || 1);
   const [expandedClientIds, setExpandedClientIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -531,15 +559,18 @@ function TasksReportContent() {
   }, [filters.project, state.projects, setFilters]);
 
   function selectProjectFilter(next: ProjectFilter) {
-    setFilter("project", next === "all" ? "" : next);
+    setFilters({
+      project: next === "all" ? "" : next,
+      ...(myTasksMode ? { cp: "1" } : {}),
+    });
   }
 
   function selectMyTasks(on: boolean) {
     if (on) {
-      setFilters({ mine: "1", pm: "all" });
+      setFilters({ mine: "1", pm: "all", cp: "1" });
       return;
     }
-    setFilter("mine", "0");
+    setFilters({ mine: "0", from: "", to: "", cp: "1" });
   }
 
   const projectById = useMemo(
@@ -660,7 +691,11 @@ function TasksReportContent() {
     useProjectManagerFilter(state.projects, state.people, {
       value: filters.pm,
       onChange: (next) => {
-        setFilters({ pm: next, mine: next === "all" ? filters.mine : "0" });
+        setFilters({
+          pm: next,
+          mine: next === "all" ? filters.mine : "0",
+          ...(myTasksMode ? { cp: "1" } : {}),
+        });
       },
     });
 
@@ -697,58 +732,104 @@ function TasksReportContent() {
     myTasksMode,
   ]);
 
+  const bucketTasks = useMemo(() => {
+    if (!myTasksMode) return scopedTasks;
+    return scopedTasks.filter((t) => taskMatchesDateRange(t, dateFrom, dateTo));
+  }, [scopedTasks, myTasksMode, dateFrom, dateTo]);
+
   const overdueTasks = useMemo(
     () =>
-      scopedTasks.filter(
+      bucketTasks.filter(
         (t) => t.status !== "complete" && t.due_date && t.due_date < todayKey,
       ),
-    [scopedTasks, todayKey],
+    [bucketTasks, todayKey],
   );
 
   const dueTodayTasks = useMemo(
     () =>
-      scopedTasks.filter(
+      bucketTasks.filter(
         (t) =>
           t.status !== "complete" && t.due_date && t.due_date === todayKey,
       ),
-    [scopedTasks, todayKey],
+    [bucketTasks, todayKey],
   );
 
   const dueTomorrowTasks = useMemo(
     () =>
-      scopedTasks.filter(
+      bucketTasks.filter(
         (t) =>
           t.status !== "complete" &&
           t.due_date &&
           t.due_date === tomorrowKey,
       ),
-    [scopedTasks, tomorrowKey],
+    [bucketTasks, tomorrowKey],
   );
 
   const dueSoonTasks = useMemo(
     () =>
-      scopedTasks.filter(
+      bucketTasks.filter(
         (t) =>
           t.status !== "complete" &&
           t.due_date &&
           t.due_date > tomorrowKey &&
           t.due_date <= dueSoonEndKey,
       ),
-    [scopedTasks, tomorrowKey, dueSoonEndKey],
+    [bucketTasks, tomorrowKey, dueSoonEndKey],
   );
 
   const noDueDateTasks = useMemo(
-    () => scopedTasks.filter((t) => t.status !== "complete" && !t.due_date),
-    [scopedTasks],
+    () => bucketTasks.filter((t) => t.status !== "complete" && !t.due_date),
+    [bucketTasks],
   );
 
-  const recentlyCompleted = useMemo(
+  const allCompletedTasks = useMemo(
     () =>
-      scopedTasks
-        .filter((t) => t.status === "complete")
-        .sort((a, b) => (b.due_date ?? "").localeCompare(a.due_date ?? ""))
-        .slice(0, 40),
-    [scopedTasks],
+      sortCompletedTasks(
+        bucketTasks.filter((t) => t.status === "complete"),
+      ),
+    [bucketTasks],
+  );
+
+  const completedTotalPages = Math.max(
+    1,
+    Math.ceil(allCompletedTasks.length / COMPLETED_PAGE_SIZE),
+  );
+  const safeCompletedPage = Math.min(completedPage, completedTotalPages);
+
+  useEffect(() => {
+    if (!myTasksMode) return;
+    if (completedPage !== safeCompletedPage) {
+      setFilter("cp", String(safeCompletedPage));
+    }
+  }, [
+    myTasksMode,
+    completedPage,
+    safeCompletedPage,
+    setFilter,
+  ]);
+
+  const recentlyCompleted = useMemo(() => {
+    if (!myTasksMode) {
+      return sortCompletedTasks(
+        scopedTasks.filter((t) => t.status === "complete"),
+      ).slice(0, 40);
+    }
+    const start = (safeCompletedPage - 1) * COMPLETED_PAGE_SIZE;
+    return allCompletedTasks.slice(start, start + COMPLETED_PAGE_SIZE);
+  }, [
+    myTasksMode,
+    scopedTasks,
+    allCompletedTasks,
+    safeCompletedPage,
+  ]);
+
+  const completedRangeStart =
+    allCompletedTasks.length === 0
+      ? 0
+      : (safeCompletedPage - 1) * COMPLETED_PAGE_SIZE + 1;
+  const completedRangeEnd = Math.min(
+    safeCompletedPage * COMPLETED_PAGE_SIZE,
+    allCompletedTasks.length,
   );
 
   const showPmBar =
@@ -897,6 +978,48 @@ function TasksReportContent() {
             </div>
           ) : null}
 
+          {myTasksMode ? (
+            <section
+              className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
+              aria-label="Due date filter"
+            >
+              <h2 className="mb-3 text-sm font-semibold">Due Date</h2>
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="grid gap-1 text-sm">
+                  <span className="text-[var(--text-muted)]">From</span>
+                  <DateInput
+                    className={cn(inputClass, "mt-0 h-8")}
+                    value={filters.from}
+                    onChange={(e) =>
+                      setFilters({ from: e.target.value, cp: "1" })
+                    }
+                  />
+                </label>
+                <label className="grid gap-1 text-sm">
+                  <span className="text-[var(--text-muted)]">To</span>
+                  <DateInput
+                    className={cn(inputClass, "mt-0 h-8")}
+                    value={filters.to}
+                    onChange={(e) =>
+                      setFilters({ to: e.target.value, cp: "1" })
+                    }
+                  />
+                </label>
+                {dateFrom || dateTo ? (
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                    onClick={() =>
+                      setFilters({ from: "", to: "", cp: "1" })
+                    }
+                  >
+                    Clear dates
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
           <section>
             <div className="mb-3 flex items-center gap-2">
               <AlertTriangle size={14} className="text-[var(--status-over)]" />
@@ -999,12 +1122,17 @@ function TasksReportContent() {
           )}
 
           <section>
-            <div className="mb-3 flex items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <CheckCircle2
                 size={14}
                 className="text-[var(--status-healthy)]"
               />
-              <h2 className="text-sm font-semibold">Recently Completed</h2>
+              <h2 className="text-sm font-semibold">
+                Recently Completed
+                {myTasksMode && allCompletedTasks.length > 0
+                  ? ` (${allCompletedTasks.length})`
+                  : ""}
+              </h2>
             </div>
             <TaskTable
               {...tableProps}
@@ -1012,6 +1140,39 @@ function TasksReportContent() {
               emptyLabel={EMPTY_SECTION}
               defaultSortKey="end"
             />
+            {myTasksMode && allCompletedTasks.length > COMPLETED_PAGE_SIZE ? (
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-[var(--text-muted)]">
+                  Showing {completedRangeStart}–{completedRangeEnd} of{" "}
+                  {allCompletedTasks.length}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={safeCompletedPage <= 1}
+                    onClick={() =>
+                      setFilter("cp", String(safeCompletedPage - 1))
+                    }
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs tabular-nums text-[var(--text-muted)]">
+                    Page {safeCompletedPage} of {completedTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={safeCompletedPage >= completedTotalPages}
+                    onClick={() =>
+                      setFilter("cp", String(safeCompletedPage + 1))
+                    }
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       </div>
