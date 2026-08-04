@@ -1,7 +1,7 @@
 import { canManage } from "@/lib/auth/roles";
 import { projectIdsForPerson } from "@/lib/domain/project-access";
 import { notesPlainText } from "@/lib/notes-html";
-import type { DemoState, Role } from "@/lib/types";
+import type { DemoState, Role, TaskStatus } from "@/lib/types";
 
 export type SearchHitKind = "client" | "project" | "task" | "comment";
 
@@ -14,6 +14,8 @@ export type SearchHit = {
   project_id: string | null;
   task_id: string | null;
   client_id: string | null;
+  /** Parent task status for task/comment hits. */
+  task_status: TaskStatus | null;
   hit_rank: number;
 };
 
@@ -101,6 +103,7 @@ export function searchDemoState(
       project_id: null,
       task_id: null,
       client_id: c.id,
+      task_status: null,
       hit_rank:
         (nameHit ? 3 : 0) +
         (emailHit || contactHit ? 2 : 0) +
@@ -132,6 +135,7 @@ export function searchDemoState(
       project_id: p.id,
       task_id: null,
       client_id: p.client_id,
+      task_status: null,
       hit_rank:
         (nameHit ? 3 : 0) + (notesHit ? 1 : 0) + (viaClient ? 2 : 0),
     });
@@ -155,6 +159,7 @@ export function searchDemoState(
       project_id: t.project_id,
       task_id: t.id,
       client_id: project?.client_id ?? null,
+      task_status: t.status,
       hit_rank: (titleHit ? 3 : 0) + (notesHit ? 1 : 0),
     });
   }
@@ -177,6 +182,7 @@ export function searchDemoState(
       project_id: task.project_id,
       task_id: c.task_id,
       client_id: project?.client_id ?? null,
+      task_status: task.status,
       hit_rank: 2,
     });
   }

@@ -25,6 +25,8 @@ import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { notesPlainText } from "@/lib/notes-html";
 import { searchDemoState, type SearchHit, type SearchHitKind } from "@/lib/search";
+import { taskStatusLabel } from "@/lib/domain/tasks";
+import type { TaskStatus } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import { searchOrg } from "@/lib/supabase/api";
 
@@ -64,6 +66,24 @@ function flattenHits(hits: SearchHit[]): SearchHit[] {
     hits.filter((h) => h.kind === kind),
   );
   return groups.flat();
+}
+
+function SearchTaskStatusChip({ status }: { status: TaskStatus }) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium leading-none",
+        status === "complete" &&
+          "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)]",
+        status === "active" &&
+          "bg-[var(--task-active-bg)] text-[var(--task-active-fg)]",
+        status === "upcoming" &&
+          "bg-[var(--task-upcoming-bg)] text-[var(--task-upcoming-fg)]",
+      )}
+    >
+      {taskStatusLabel(status)}
+    </span>
+  );
 }
 
 export function GlobalSearch({
@@ -308,8 +328,14 @@ export function GlobalSearch({
                               className="mt-0.5 shrink-0 text-[var(--text-muted)]"
                             />
                             <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-medium text-[var(--text)]">
-                                {hit.title}
+                              <span className="flex items-center gap-2">
+                                <span className="min-w-0 truncate text-sm font-medium text-[var(--text)]">
+                                  {hit.title}
+                                </span>
+                                {(hit.kind === "task" || hit.kind === "comment") &&
+                                hit.task_status ? (
+                                  <SearchTaskStatusChip status={hit.task_status} />
+                                ) : null}
                               </span>
                               {hit.subtitle ? (
                                 <span className="mt-0.5 block truncate text-xs text-[var(--text-muted)]">

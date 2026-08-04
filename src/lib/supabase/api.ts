@@ -3382,6 +3382,12 @@ export async function searchOrg(
     project_id: row.project_id ? String(row.project_id) : null,
     task_id: row.task_id ? String(row.task_id) : null,
     client_id: row.client_id ? String(row.client_id) : null,
+    task_status:
+      row.task_status === "upcoming" ||
+      row.task_status === "active" ||
+      row.task_status === "complete"
+        ? (String(row.task_status) as SearchHit["task_status"])
+        : null,
     hit_rank: Number(row.hit_rank ?? 0),
   }));
 }
