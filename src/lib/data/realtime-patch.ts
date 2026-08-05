@@ -8,6 +8,7 @@ import {
   mapProjectAsset,
   mapTask,
   mapTaskComment,
+  mapTaskList,
 } from "@/lib/supabase/api";
 import type { DemoState, PodMember } from "@/lib/types";
 
@@ -121,6 +122,27 @@ export function applyRealtimeTableEvent(
       }
       const mapped = mapTask(newRecord as Record<string, unknown>);
       return { ...state, tasks: upsertById(state.tasks, mapped) };
+    }
+    case "task_lists": {
+      if (isDelete) {
+        const id = String(oldRecord?.id ?? "");
+        if (!id) return state;
+        const nextLists = state.task_lists.filter((l) => l.id !== id);
+        const nextTasks = state.tasks.filter((t) => t.list_id !== id);
+        if (
+          nextLists.length === state.task_lists.length &&
+          nextTasks.length === state.tasks.length
+        ) {
+          return state;
+        }
+        return {
+          ...state,
+          task_lists: nextLists,
+          tasks: nextTasks,
+        };
+      }
+      const mapped = mapTaskList(newRecord as Record<string, unknown>);
+      return { ...state, task_lists: upsertById(state.task_lists, mapped) };
     }
     case "project_assets": {
       if (isDelete) {

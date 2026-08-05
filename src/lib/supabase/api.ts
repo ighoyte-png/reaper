@@ -159,7 +159,7 @@ export function mapProjectAsset(row: Record<string, unknown>): ProjectAsset {
   };
 }
 
-function mapTaskList(row: Record<string, unknown>): TaskList {
+export function mapTaskList(row: Record<string, unknown>): TaskList {
   return {
     id: String(row.id),
     organization_id: String(row.organization_id),

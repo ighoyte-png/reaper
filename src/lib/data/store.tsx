@@ -958,6 +958,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         for (const ev of batch) {
           if (
             ev.table === "tasks" ||
+            ev.table === "task_lists" ||
             ev.table === "project_assets" ||
             ev.table === "milestones" ||
             ev.table === "task_comments" ||
@@ -970,6 +971,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             }
             if (
               ev.table === "tasks" ||
+              ev.table === "task_lists" ||
               ev.table === "project_assets" ||
               ev.table === "milestones"
             ) {
@@ -1221,6 +1223,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
             filter: `project_id=eq.${projectId}`,
           },
           onChange("tasks"),
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "task_lists",
+            filter: `project_id=eq.${projectId}`,
+          },
+          onChange("task_lists"),
         )
         .on(
           "postgres_changes",
@@ -3235,10 +3247,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("task_lists", row.id);
           runRemoteSoft(() => upsertTaskListRow(supabaseRef.current!, row));
         }
       },
       deleteTaskList: (id) => {
+        noteLocalWrite("task_lists", id);
         patch((prev) => ({
           ...prev,
           task_lists: prev.task_lists.filter((l) => l.id !== id),
