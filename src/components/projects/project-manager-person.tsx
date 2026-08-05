@@ -31,6 +31,19 @@ export function ContractorTag({ className }: { className?: string }) {
   );
 }
 
+export function SandboxTag({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]",
+        className,
+      )}
+    >
+      Sandbox
+    </span>
+  );
+}
+
 /** Same chrome as Project Manager tag; used for pod managers / section labels. */
 export function ManagerTag({
   className,

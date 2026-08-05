@@ -14,7 +14,7 @@ import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
-import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
+import { ProjectManagerPerson, SandboxTag } from "@/components/projects/project-manager-person";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
@@ -832,6 +832,7 @@ function ProjectCard({
   burn?: ReturnType<typeof budgetBurn>;
 }) {
   const { state } = useData();
+  const isSandbox = Boolean(project.sandbox_mode);
   const burn =
     burnProp ?? budgetBurn(project, state.assignments, state.people);
   const health = budgetHealth(burn);
@@ -855,8 +856,9 @@ function ProjectCard({
           {project.name}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          {isSandbox ? <SandboxTag /> : null}
           <ProjectStatusTag status={project.status} />
-          {project.budget_monthly_reset ? (
+          {!isSandbox && project.budget_monthly_reset ? (
             <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               Monthly
             </span>
@@ -867,20 +869,22 @@ function ProjectCard({
         {overallPct != null ? (
           <ProgressBar pct={overallPct} label="Overall Progress" />
         ) : null}
-        <div className="space-y-2">
-          <div
-            className={cn(
-              "text-xs",
-              health === "over" && "text-[var(--status-over)]",
-              health === "near" && "text-[var(--status-near)]",
-              (health === "healthy" || health === "none") &&
-                "text-[var(--text-muted)]",
-            )}
-          >
-            Total {burn.totalHours}h
+        {!isSandbox ? (
+          <div className="space-y-2">
+            <div
+              className={cn(
+                "text-xs",
+                health === "over" && "text-[var(--status-over)]",
+                health === "near" && "text-[var(--status-near)]",
+                (health === "healthy" || health === "none") &&
+                  "text-[var(--text-muted)]",
+              )}
+            >
+              Total {burn.totalHours}h
+            </div>
+            <BurnBar burn={burn} compact />
           </div>
-          <BurnBar burn={burn} compact />
-        </div>
+        ) : null}
         {manager ? (
           <div className="border-t border-[var(--border)] pt-3">
             <ProjectManagerPerson person={manager} showTag />

@@ -8,7 +8,7 @@ import { ChevronDown, ChevronRight, Copy, ExternalLink, Link2, Pencil, Plus, Ref
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { ProjectManagerPerson, ContractorTag } from "@/components/projects/project-manager-person";
+import { ProjectManagerPerson, ContractorTag, SandboxTag } from "@/components/projects/project-manager-person";
 import { BudgetCard } from "@/components/budgets/budget-card";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
@@ -456,6 +456,7 @@ export default function ProjectDetailPage() {
               </button>
             ) : null}
             <ProjectStatusTag status={project.status} className="shrink-0" />
+            {isSandbox ? <SandboxTag className="shrink-0" /> : null}
           </div>
         </div>
         {project.notes ? (
