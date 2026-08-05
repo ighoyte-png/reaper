@@ -68,13 +68,46 @@ function ExpandToggle({
 function useContentHeight(
   deps: unknown[],
   measure: () => number | null,
+  /** When set, remeasure on size changes (e.g. late-loading attachment images). */
+  observeRef?: { current: HTMLElement | null },
 ): number {
   const [height, setHeight] = useState(0);
-  useLayoutEffect(() => {
-    const next = measure();
+  const measureRef = useRef(measure);
+  measureRef.current = measure;
+
+  const update = useCallback(() => {
+    const next = measureRef.current();
     if (next != null) setHeight(next);
+  }, []);
+
+  useLayoutEffect(() => {
+    update();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- measure reads DOM for deps
   }, deps);
+
+  useEffect(() => {
+    const el = observeRef?.current;
+    if (!el) return;
+
+    const onLoadCapture = (e: Event) => {
+      if ((e.target as HTMLElement | null)?.tagName === "IMG") update();
+    };
+    el.addEventListener("load", onLoadCapture, true);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => update());
+      ro.observe(el);
+    }
+
+    return () => {
+      el.removeEventListener("load", onLoadCapture, true);
+      ro?.disconnect();
+    };
+    // Re-bind when content deps change so newly inserted images are observed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [update, observeRef, ...deps]);
+
   return height;
 }
 
@@ -104,10 +137,14 @@ export function TaskDescriptionView({
   const [expanded, setExpanded] = useState(false);
   const initRef = useRef(false);
 
-  const fullHeight = useContentHeight([html], () => {
-    const el = measureRef.current;
-    return el ? el.scrollHeight : null;
-  });
+  const fullHeight = useContentHeight(
+    [html],
+    () => {
+      const el = measureRef.current;
+      return el ? el.scrollHeight : null;
+    },
+    measureRef,
+  );
 
   const exceeds =
     fullHeight > TASK_DESCRIPTION_COLLAPSED_MAX_PX + 1;
@@ -172,9 +209,13 @@ export function TaskDescriptionView({
   ]);
 
   const showCollapsed = exceeds && !expanded;
+  // Only clamp while collapsed. When short / expanded, avoid locking maxHeight
+  // to a stale pre-image measure (attachment imgs resolve after first paint).
   const animMaxHeight = showCollapsed
     ? TASK_DESCRIPTION_COLLAPSED_MAX_PX
-    : fullHeight;
+    : exceeds && fullHeight > 0
+      ? fullHeight
+      : undefined;
 
   const commentsBlocked =
     assigneeFirstView && exceeds && expanded;
@@ -211,9 +252,11 @@ export function TaskDescriptionView({
             DESC_HEIGHT_TRANSITION,
             showCollapsed && "task-description-collapsed-fade cursor-pointer",
           )}
-          style={{
-            maxHeight: animMaxHeight > 0 ? animMaxHeight : undefined,
-          }}
+          style={
+            animMaxHeight != null
+              ? { maxHeight: animMaxHeight }
+              : undefined
+          }
           role={showCollapsed ? "button" : undefined}
           tabIndex={showCollapsed ? 0 : undefined}
           aria-label={
@@ -292,10 +335,14 @@ export const TaskDescriptionEditor = forwardRef<
 
   // Full unclipped height — not the collapsed editor viewport (which would
   // hide the +/− toggle until the user types).
-  const fullHeight = useContentHeight([value], () => {
-    const el = measureRef.current;
-    return el ? el.scrollHeight : null;
-  });
+  const fullHeight = useContentHeight(
+    [value],
+    () => {
+      const el = measureRef.current;
+      return el ? el.scrollHeight : null;
+    },
+    measureRef,
+  );
 
   const exceeds = fullHeight > TASK_DESCRIPTION_COLLAPSED_MAX_PX + 1;
   // Collapsed: fixed max height (scroll inside editor). Expanded: uncapped so
