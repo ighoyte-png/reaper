@@ -29,7 +29,7 @@ import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
-import { projectIdsForPerson } from "@/lib/domain/project-access";
+import { projectIdsForPerson, projectHasSandboxWipeRisk } from "@/lib/domain/project-access";
 import { projectDateProgress } from "@/lib/domain/progress";
 import {
   findPmProjectAssignments,
@@ -62,6 +62,7 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
     notes: "",
     manager_person_id: null,
     hide_from_public_share: false,
+    sandbox_mode: false,
   };
 }
 
@@ -107,6 +108,7 @@ function ProjectsPageContent() {
     upsertAssignment,
     deleteAssignment,
     ensureScheduleRange,
+    clearProjectSandboxTrackedData,
     newId,
     isPublicShare,
     myPerson,
@@ -332,25 +334,46 @@ function ProjectsPageContent() {
     pmHoursOverride?: number,
   ) {
     try {
-      await upsertProject({
-        ...project,
-        budget_hours:
-          project.budget_mode === "hours" ? project.budget_hours : null,
-        budget_amount:
-          project.budget_mode === "amount" ? project.budget_amount : null,
-        budget_monthly_reset:
-          project.budget_mode === "hours"
-            ? project.budget_monthly_reset
-            : false,
-      });
-      await setProjectMembers(project.id, members);
-      if (templateToApply) {
-        await applyProjectTemplate(project.id, templateToApply);
+      const prior = state.projects.find((p) => p.id === project.id);
+      let toSave = { ...project };
+      if (toSave.sandbox_mode) {
+        toSave = {
+          ...toSave,
+          manager_person_id: null,
+        };
+        if (!prior?.sandbox_mode) {
+          const wiped = await clearProjectSandboxTrackedData(toSave.id);
+          toSave = { ...toSave, ...wiped };
+        }
       }
 
-      const managerId = project.manager_person_id;
+      await upsertProject({
+        ...toSave,
+        budget_hours:
+          toSave.budget_mode === "hours" ? toSave.budget_hours : null,
+        budget_amount:
+          toSave.budget_mode === "amount" ? toSave.budget_amount : null,
+        budget_monthly_reset:
+          toSave.budget_mode === "hours"
+            ? toSave.budget_monthly_reset
+            : false,
+      });
+      await setProjectMembers(toSave.id, members);
+      if (templateToApply) {
+        await applyProjectTemplate(toSave.id, templateToApply);
+      }
+
+      if (toSave.sandbox_mode) {
+        closeProjectForm();
+        push(
+          templateToApply ? "Project created from template" : "Project saved",
+        );
+        return;
+      }
+
+      const managerId = toSave.manager_person_id;
       const existing = managerId
-        ? findPmProjectAssignments(state.assignments, managerId, project.id)
+        ? findPmProjectAssignments(state.assignments, managerId, toSave.id)
         : [];
       const hoursForIntent =
         pmHoursOverride ??
@@ -363,12 +386,12 @@ function ProjectsPageContent() {
             : resolvePmScheduleIntent({
                 pmDailyHours: hoursForIntent,
                 managerPersonId: managerId,
-                startDate: project.start_date,
-                endDate: project.end_date,
+                startDate: toSave.start_date,
+                endDate: toSave.end_date,
                 existing,
                 datesChanged: projectTimelineDatesChanged(
                   pmBaselineDates,
-                  project,
+                  toSave,
                 ),
               });
 
@@ -381,7 +404,7 @@ function ProjectsPageContent() {
         setPmPrompt({
           kind: intent.kind,
           hours: intent.hours,
-          project,
+          project: toSave,
           members,
           templateToApply: "",
         });
@@ -391,7 +414,7 @@ function ProjectsPageContent() {
         );
         return;
       } else if (intent.kind === "create") {
-        await applyPmSchedule(project, intent.hours);
+        await applyPmSchedule(toSave, intent.hours);
       }
 
       closeProjectForm();
@@ -638,6 +661,16 @@ function ProjectsPageContent() {
             onChange={setEditing}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
+            sandboxWipeRisk={
+              Boolean(editing) &&
+              state.projects.some((p) => p.id === editing.id) &&
+              !editing.sandbox_mode &&
+              projectHasSandboxWipeRisk(
+                editing,
+                state.assignments,
+                state.milestones,
+              )
+            }
             showTemplateSelect={!state.projects.some((p) => p.id === editing.id)}
             templates={state.project_templates}
             templateId={createTemplateId}

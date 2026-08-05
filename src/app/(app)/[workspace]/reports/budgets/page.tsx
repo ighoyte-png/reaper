@@ -22,6 +22,7 @@ import {
   sortClientsByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
+import { nonSandboxProjects } from "@/lib/domain/project-access";
 import { cn } from "@/lib/cn";
 import type { Client, Project } from "@/lib/types";
 
@@ -60,13 +61,13 @@ function BudgetsReportContent() {
   const clientFilter = filters.client as ClientFilter;
 
   const projects = sortProjectsByClientThenName(
-    state.projects,
+    nonSandboxProjects(state.projects),
     state.clients,
   );
   const clients = sortClientsByName(state.clients);
 
   const { managerTabs, managerFilter, setManagerFilter } =
-    useProjectManagerFilter(state.projects, state.people, {
+    useProjectManagerFilter(nonSandboxProjects(state.projects), state.people, {
       value: filters.pm,
       onChange: (next) => setFilter("pm", next),
     });

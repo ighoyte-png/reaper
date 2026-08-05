@@ -383,6 +383,7 @@ export function ProjectTaskBoard({
     canEditProject(project, {
       canManage: false,
       myPersonId: viewerPersonId,
+      projectMembers: state.project_members,
     });
 
   const unreadTaskThreadIds = useMemo(() => {

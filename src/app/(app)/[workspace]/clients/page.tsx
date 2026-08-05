@@ -127,6 +127,7 @@ function emptyProject(
     notes: "",
     manager_person_id: null,
     hide_from_public_share: false,
+    sandbox_mode: false,
   };
 }
 

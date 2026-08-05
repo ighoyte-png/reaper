@@ -109,17 +109,61 @@ export function projectAssigneePeople(
     );
 }
 
-/** Org managers, or the person set as Project Manager on this project. */
+/** Org managers, the project's PM, or any roster member on a sandbox project. */
 export function canEditProject(
   project: Project | null | undefined,
   opts: {
     canManage: boolean;
     myPersonId: string | null | undefined;
+    /** Required for sandbox roster PM powers. */
+    projectMembers?: ProjectMember[];
   },
 ): boolean {
   if (!project) return false;
   if (opts.canManage) return true;
-  return Boolean(
-    opts.myPersonId && project.manager_person_id === opts.myPersonId,
-  );
+  if (!opts.myPersonId) return false;
+  if (project.manager_person_id === opts.myPersonId) return true;
+  if (project.sandbox_mode && opts.projectMembers) {
+    return opts.projectMembers.some(
+      (m) => m.project_id === project.id && m.person_id === opts.myPersonId,
+    );
+  }
+  return false;
+}
+
+export function isSandboxProject(
+  project: Pick<Project, "sandbox_mode"> | null | undefined,
+): boolean {
+  return Boolean(project?.sandbox_mode);
+}
+
+export function nonSandboxProjects<T extends Pick<Project, "sandbox_mode">>(
+  projects: T[],
+): T[] {
+  return projects.filter((p) => !p.sandbox_mode);
+}
+
+/** True when enabling sandbox would wipe schedule/budget/timeline/milestone data. */
+export function projectHasSandboxWipeRisk(
+  project: Pick<
+    Project,
+    | "id"
+    | "start_date"
+    | "end_date"
+    | "budget_mode"
+    | "budget_hours"
+    | "budget_amount"
+    | "manager_person_id"
+  >,
+  assignments: Pick<Assignment, "project_id">[],
+  milestones: { project_id: string }[],
+): boolean {
+  if (assignments.some((a) => a.project_id === project.id)) return true;
+  if (milestones.some((m) => m.project_id === project.id)) return true;
+  if (project.start_date || project.end_date) return true;
+  if (project.manager_person_id) return true;
+  if (project.budget_mode !== "none") return true;
+  if ((project.budget_hours ?? 0) > 0) return true;
+  if (project.budget_amount != null) return true;
+  return false;
 }

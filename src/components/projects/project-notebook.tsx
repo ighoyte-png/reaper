@@ -37,11 +37,20 @@ import type { ProjectAsset, ProjectAssetKind } from "@/lib/types";
 
 type FormMode = "link" | "note" | null;
 
-export function ProjectNotebook({ projectId }: { projectId: string }) {
+export function ProjectNotebook({
+  projectId,
+  canEditOverride,
+}: {
+  projectId: string;
+  /** When set (e.g. sandbox roster PM powers), overrides org-manager gate. */
+  canEditOverride?: boolean;
+}) {
   const { state, canManage: roleCanManage, upsertProjectAsset, deleteProjectAsset, newId } =
     useData();
   const viewAs = useViewAsOptional();
-  const canManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
+  const orgCanManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
+  const canManage =
+    canEditOverride !== undefined ? canEditOverride : orgCanManage;
   const assets = useMemo(
     () =>
       state.project_assets

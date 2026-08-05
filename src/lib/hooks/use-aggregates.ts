@@ -46,6 +46,7 @@ export function useProjectBurnsMap(): {
     if (rpcBurns && mode === "supabase") return rpcBurns;
     const map = new Map<string, BudgetBurn>();
     for (const p of state.projects) {
+      if (p.sandbox_mode) continue;
       map.set(p.id, budgetBurn(p, state.assignments, state.people));
     }
     return map;

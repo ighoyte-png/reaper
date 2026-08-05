@@ -92,6 +92,7 @@ function mapProject(row: Record<string, unknown>): Project {
     share_enabled: Boolean(row.share_enabled),
     share_token: row.share_token ? String(row.share_token) : null,
     hide_from_public_share: Boolean(row.hide_from_public_share),
+    sandbox_mode: Boolean(row.sandbox_mode),
   };
 }
 
@@ -1544,6 +1545,7 @@ export async function upsertProjectRow(
     share_enabled: Boolean(project.share_enabled),
     share_token: project.share_token ?? null,
     hide_from_public_share: Boolean(project.hide_from_public_share),
+    sandbox_mode: Boolean(project.sandbox_mode),
   };
 
   const missingMonthly = (message: string, code?: string) =>
@@ -1557,6 +1559,10 @@ export async function upsertProjectRow(
   const missingHideFromShare = (message: string, code?: string) =>
     /Could not find the 'hide_from_public_share' column/i.test(message) ||
     (code === "PGRST204" && /hide_from_public_share/i.test(message));
+
+  const missingSandbox = (message: string, code?: string) =>
+    /Could not find the 'sandbox_mode' column/i.test(message) ||
+    (code === "PGRST204" && /sandbox_mode/i.test(message));
 
   const missingSlug = (message: string, code?: string) =>
     /Could not find the 'slug' column/i.test(message) ||
@@ -1577,9 +1583,22 @@ export async function upsertProjectRow(
 
   let { error } = await supabase.from("projects").upsert(payload);
 
+  // Retry without sandbox_mode if migration 071 is not applied yet.
+  if (error && missingSandbox(error.message, error.code)) {
+    const { sandbox_mode: _s, ...rest } = payload;
+    const retry = await supabase.from("projects").upsert(rest);
+    if (!retry.error) {
+      console.warn(
+        "projects.sandbox_mode missing — apply supabase/migrations/071_project_sandbox_mode.sql",
+      );
+      return;
+    }
+    error = retry.error;
+  }
+
   // Retry without hide_from_public_share if migration 042 is not applied yet.
   if (error && missingHideFromShare(error.message, error.code)) {
-    const { hide_from_public_share: _h, ...rest } = payload;
+    const { hide_from_public_share: _h, sandbox_mode: _s, ...rest } = payload;
     const retry = await supabase.from("projects").upsert(rest);
     if (!retry.error) {
       console.warn(
@@ -2064,6 +2083,24 @@ export async function deleteAssignmentRow(
 ) {
   const { error } = await supabase.from("assignments").delete().eq("id", id);
   if (error) throw error;
+}
+
+/** Wipe schedule/budget/timeline/milestone data when enabling sandbox mode. */
+export async function clearProjectSandboxTrackedDataRows(
+  supabase: SupabaseClient,
+  projectId: string,
+) {
+  const { error: asgErr } = await supabase
+    .from("assignments")
+    .delete()
+    .eq("project_id", projectId);
+  if (asgErr) throw asgErr;
+
+  const { error: msErr } = await supabase
+    .from("milestones")
+    .delete()
+    .eq("project_id", projectId);
+  if (msErr) throw msErr;
 }
 
 export async function upsertMilestoneRow(
@@ -3148,6 +3185,7 @@ export async function seedDemoWorkspace(
     share_enabled: false,
     share_token: null as string | null,
     hide_from_public_share: Boolean(p.hide_from_public_share),
+    sandbox_mode: Boolean(p.sandbox_mode),
   }));
 
   const people = seed.people.map((p) => ({

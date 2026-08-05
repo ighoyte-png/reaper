@@ -602,10 +602,11 @@ function TasksReportContent() {
   const projectsWithTasks = useMemo(() => {
     return state.projects
       .filter((p) => (projectTaskCounts.get(p.id) ?? 0) > 0)
+      .filter((p) => myTasksMode || !p.sandbox_mode)
       .sort((a, b) =>
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
       );
-  }, [state.projects, projectTaskCounts]);
+  }, [state.projects, projectTaskCounts, myTasksMode]);
 
   const sidebarGroups = useMemo(() => {
     const byClient = new Map<string | "none", Project[]>();
@@ -702,6 +703,8 @@ function TasksReportContent() {
     return scopeBaseTasks.filter((task) => {
       const project = projectById.get(task.project_id);
       if (!project) return false;
+      // Sandbox tasks only appear in My Tasks (plus dashboard Pulse / mentions).
+      if (!myTasksMode && project.sandbox_mode) return false;
       if (projectFilter !== "all" && task.project_id !== projectFilter) {
         return false;
       }

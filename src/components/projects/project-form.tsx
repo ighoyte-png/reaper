@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Field, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import {
   PodFilterBar,
   usePodFilter,
@@ -22,11 +23,18 @@ import type {
 
 const DEFAULT_PROJECT_COLOR = "#3498DB";
 
+const SANDBOX_ENABLE_WARNING =
+  "Changing this Project to Sandbox Mode will Remove any Assignments on the Schedule Page, Remove Budgets, Timelines, Milestones and any Other Associated Data with Reporting.";
+
+const SANDBOX_DESCRIPTION =
+  "Enable Sandbox Mode to create a project that is 'off the record'. Sandbox Mode projects allow all Team Members to contribute equally, there is no Project Manager. Sandbox Projects can be used for brainstorming new ideas, discussing concepts for a future project, really anything that you can think of. Keep it isolated from the rest of the 'real work'!";
+
 const TABS = [
   { id: "details", label: "Details" },
   { id: "team", label: "Team" },
   { id: "timeline", label: "Timeline" },
   { id: "budget", label: "Budget" },
+  { id: "sandbox", label: "Sandbox Mode" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -49,6 +57,7 @@ export function ProjectForm({
   showTemplateSelect = false,
   pmDailyHours,
   onPmDailyHoursChange,
+  sandboxWipeRisk = false,
 }: {
   project: Omit<Project, "organization_id">;
   clients: { id: string; name: string; color?: string }[];
@@ -69,6 +78,8 @@ export function ProjectForm({
   /** Optional PM daily hours for schedule booking (null/undefined = blank). */
   pmDailyHours?: number | null;
   onPmDailyHoursChange?: (hours: number | null) => void;
+  /** When true, enabling sandbox prompts a wipe warning. */
+  sandboxWipeRisk?: boolean;
 }) {
   const [tab, setTab] = useState<TabId>("details");
   const { showPods, podTabs, podFilter, setPodFilter } = usePodFilter(pods);
@@ -91,8 +102,30 @@ export function ProjectForm({
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 
+  const visibleTabs = useMemo(
+    () =>
+      TABS.filter((item) => {
+        if (
+          project.sandbox_mode &&
+          (item.id === "timeline" || item.id === "budget")
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [project.sandbox_mode],
+  );
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.id === tab)) {
+      setTab("details");
+    }
+  }, [visibleTabs, tab]);
+
   const showPmHours =
-    Boolean(project.manager_person_id) && Boolean(onPmDailyHoursChange);
+    Boolean(project.manager_person_id) &&
+    Boolean(onPmDailyHoursChange) &&
+    !project.sandbox_mode;
 
   function setMode(mode: BudgetMode) {
     onChange({
@@ -105,6 +138,24 @@ export function ProjectForm({
     });
   }
 
+  function toggleSandbox(enable: boolean) {
+    if (enable) {
+      if (sandboxWipeRisk && !window.confirm(SANDBOX_ENABLE_WARNING)) {
+        return;
+      }
+      onChange({
+        ...project,
+        sandbox_mode: true,
+        manager_person_id: null,
+      });
+      return;
+    }
+    onChange({
+      ...project,
+      sandbox_mode: false,
+    });
+  }
+
   return (
     <div className="flex min-h-[22rem] flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-3 sm:flex-row sm:gap-0">
@@ -112,7 +163,7 @@ export function ProjectForm({
           className="flex shrink-0 gap-1 overflow-x-auto border-b border-[var(--border)] pb-2 sm:w-40 sm:flex-col sm:gap-0.5 sm:overflow-visible sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3"
           aria-label="Project sections"
         >
-          {TABS.map((item) => (
+          {visibleTabs.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -299,6 +350,7 @@ export function ProjectForm({
                   )}
                 </div>
               </Field>
+              {!project.sandbox_mode ? (
               <Field label="Project manager">
                 <Select
                   searchable
@@ -320,6 +372,12 @@ export function ProjectForm({
                   ]}
                 />
               </Field>
+              ) : (
+                <p className="text-sm text-[var(--text-muted)]">
+                  Sandbox Mode is on — all team members share project
+                  management powers. There is no Project Manager.
+                </p>
+              )}
             </>
           ) : null}
 
@@ -468,6 +526,31 @@ export function ProjectForm({
                 </Field>
               ) : null}
             </>
+          ) : null}
+
+          {tab === "sandbox" ? (
+            <div className="space-y-4">
+              <Button
+                type="button"
+                variant={project.sandbox_mode ? "secondary" : "primary"}
+                onClick={() => toggleSandbox(!project.sandbox_mode)}
+              >
+                {project.sandbox_mode
+                  ? "Disable Sandbox Mode"
+                  : "Enable Sandbox Mode"}
+              </Button>
+              <p className="text-sm leading-relaxed text-[var(--text-muted)]">
+                {SANDBOX_DESCRIPTION}
+              </p>
+              {project.sandbox_mode ? (
+                <p className="text-xs leading-snug text-[var(--text-muted)]">
+                  Save to apply. Enabling Sandbox Mode permanently removes
+                  schedule assignments, budgets, timelines, and milestones
+                  (tasks are kept). Disabling restores the standard project
+                  layout with blank schedule/budget data.
+                </p>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>

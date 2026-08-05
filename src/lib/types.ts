@@ -91,6 +91,11 @@ export interface Project {
   share_token?: string | null;
   /** When true, omit from org-wide public share (schedule, reports, etc.). */
   hide_from_public_share: boolean;
+  /**
+   * Off-the-record collaborative project: roster members share PM powers,
+   * no schedule/budget/reporting (except My Tasks / mentions / Task Pulse).
+   */
+  sandbox_mode: boolean;
 }
 
 export interface Milestone {

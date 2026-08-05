@@ -156,6 +156,7 @@ export default function ReportsPage() {
   const plannedHoursAcrossSchedule = useMemo(() => {
     let sum = 0;
     for (const p of state.projects) {
+      if (p.sandbox_mode) continue;
       const burn = burns.get(p.id);
       if (burn) sum += burn.plannedHours;
       else {
@@ -246,6 +247,7 @@ export default function ReportsPage() {
     let near = 0;
     let over = 0;
     const rows = state.projects
+      .filter((p) => !p.sandbox_mode)
       .map((p) => {
         const burn =
           burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people);
@@ -277,7 +279,13 @@ export default function ReportsPage() {
 
   const tasks = useMemo(() => {
     if (taskStats) return taskStats;
-    const openTasks = state.tasks.filter((t) => t.status !== "complete");
+    const sandboxIds = new Set(
+      state.projects.filter((p) => p.sandbox_mode).map((p) => p.id),
+    );
+    const tasksScoped = state.tasks.filter(
+      (t) => !sandboxIds.has(t.project_id),
+    );
+    const openTasks = tasksScoped.filter((t) => t.status !== "complete");
     const overdue = openTasks.filter((t) => t.due_date && t.due_date < todayKey);
     const inProgress = openTasks.filter(
       (t) =>
@@ -293,7 +301,7 @@ export default function ReportsPage() {
         t.due_date &&
         t.due_date >= todayKey,
     );
-    const complete = state.tasks.filter((t) => t.status === "complete");
+    const complete = tasksScoped.filter((t) => t.status === "complete");
     return {
       overdue: overdue.length,
       noDue: noDue.length,
@@ -302,7 +310,7 @@ export default function ReportsPage() {
       complete: complete.length,
       open: openTasks.length,
     };
-  }, [taskStats, state.tasks, todayKey]);
+  }, [taskStats, state.tasks, state.projects, todayKey]);
 
   if (!canManage && !isPublicShare) {
     return (

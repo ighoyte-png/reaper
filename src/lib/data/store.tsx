@@ -105,6 +105,7 @@ import {
   upsertProjectAssetRow,
   upsertProjectFavoriteRow,
   upsertProjectRow,
+  clearProjectSandboxTrackedDataRows,
   reorderProjectFavoriteRows,
   setProjectMembersRows,
   upsertProjectTemplateRow,
@@ -220,6 +221,7 @@ function loadDemoState(): DemoState {
         share_enabled: Boolean(p.share_enabled),
         share_token: p.share_token ?? null,
         hide_from_public_share: Boolean(p.hide_from_public_share),
+        sandbox_mode: Boolean(p.sandbox_mode),
       })),
       clients: (parsed.clients ?? seed.clients).map((c) => ({
         ...c,
@@ -450,6 +452,19 @@ interface DataContextValue {
   upsertProject: (
     project: Omit<Project, "organization_id"> & { organization_id?: string },
   ) => Promise<Project>;
+  /**
+   * When enabling sandbox: delete assignments + milestones for the project and
+   * return field overrides (timeline/budget/manager cleared). Does not touch tasks.
+   */
+  clearProjectSandboxTrackedData: (projectId: string) => Promise<{
+    start_date: null;
+    end_date: null;
+    budget_hours: null;
+    budget_amount: null;
+    budget_mode: "none";
+    budget_monthly_reset: false;
+    manager_person_id: null;
+  }>;
   /** Replace explicit team members for a project. */
   setProjectMembers: (
     projectId: string,
@@ -2250,6 +2265,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         return row;
       },
+      clearProjectSandboxTrackedData: async (projectId) => {
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            clearProjectSandboxTrackedDataRows(
+              supabaseRef.current!,
+              projectId,
+            ),
+          );
+        }
+        patch((prev) => ({
+          ...prev,
+          assignments: prev.assignments.filter(
+            (a) => a.project_id !== projectId,
+          ),
+          milestones: prev.milestones.filter((m) => m.project_id !== projectId),
+        }));
+        return {
+          start_date: null,
+          end_date: null,
+          budget_hours: null,
+          budget_amount: null,
+          budget_mode: "none" as const,
+          budget_monthly_reset: false as const,
+          manager_person_id: null,
+        };
+      },
       setProjectMembers: async (projectId, personIds) => {
         const orgId = state.organization.id;
         const unique = [...new Set(personIds)];
@@ -3270,6 +3311,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const mayEditDetails = canEditProject(project, {
           canManage: manage,
           myPersonId: myPerson?.id,
+          projectMembers: state.project_members,
         });
         if (!mayEditDetails) {
           if (!existing) return;

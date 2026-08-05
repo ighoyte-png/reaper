@@ -33,11 +33,13 @@ import {
 } from "@/lib/domain/progress";
 import {
   canEditProject,
+  projectHasSandboxWipeRisk,
   projectIdsForPerson,
   projectManagerPerson,
   projectTeamPersonIds,
   showProjectManagerUi,
 } from "@/lib/domain/project-access";
+import { SandboxIcon } from "@/components/projects/sandbox-icon";
 import { isProjectFavorited } from "@/lib/domain/project-favorites";
 import {
   existingPmDailyHours,
@@ -99,6 +101,7 @@ export default function ProjectDetailPage() {
     upsertAssignment,
     deleteAssignment,
     ensureScheduleRange,
+    clearProjectSandboxTrackedData,
     newId,
     isPublicShare,
     profile,
@@ -152,7 +155,9 @@ export default function ProjectDetailPage() {
   const canEdit = canEditProject(project, {
     canManage,
     myPersonId: myPerson?.id ?? effectivePersonId ?? null,
+    projectMembers: state.project_members,
   });
+  const isSandbox = Boolean(project?.sandbox_mode);
 
   useEffect(() => {
     if (!project?.id) return;
@@ -323,7 +328,7 @@ export default function ProjectDetailPage() {
         onBack={goBack}
         actions={
           <>
-            {canManage ? (
+            {canManage && !isSandbox ? (
               <Link
                 href={projectBudgetHref}
                 className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
@@ -331,12 +336,14 @@ export default function ProjectDetailPage() {
                 Budget
               </Link>
             ) : null}
+            {!isSandbox ? (
             <Link
               href={appHref("/schedule")}
               className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
             >
               Schedule
             </Link>
+            ) : null}
             {canEdit ? (
               <button
                 type="button"
@@ -554,8 +561,20 @@ export default function ProjectDetailPage() {
             />
           </div>
 
-          {/* Sidebar: Progress → Essentials → Budget → Client portal */}
+          {/* Sidebar: Progress/Sandbox → Essentials → Budget → Client portal */}
           <div className="space-y-4">
+            {isSandbox ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <h2 className="mb-4 text-sm font-semibold">Sandbox</h2>
+                <div className="flex justify-center px-4 py-6">
+                  <SandboxIcon className="w-1/2 max-w-[11rem]" />
+                </div>
+                <p className="mt-1 text-center text-xs leading-snug text-[var(--text-muted)]">
+                  Off the record — equal team access, no schedule or budget
+                  tracking.
+                </p>
+              </section>
+            ) : (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">Progress</h2>
@@ -654,7 +673,6 @@ export default function ProjectDetailPage() {
                         upsertMilestone({
                           ...m,
                           client_approved: approved,
-                          // PM toggle never writes client-approval byline fields.
                           ...(approved
                             ? {}
                             : {
@@ -684,9 +702,14 @@ export default function ProjectDetailPage() {
                 </div>
               ) : null}
             </section>
+            )}
 
-            <ProjectNotebook projectId={project.id} />
+            <ProjectNotebook
+              projectId={project.id}
+              canEditOverride={isSandbox ? canEdit : undefined}
+            />
 
+            {!isSandbox ? (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <h2 className="mb-2 text-sm font-semibold">Budget</h2>
               <BudgetCard
@@ -705,8 +728,9 @@ export default function ProjectDetailPage() {
                 Open this project&apos;s budget
               </Link>
             </section>
+            ) : null}
 
-            {canEdit || (isPublicShare && shareResult) ? (
+            {!isSandbox && (canEdit || (isPublicShare && shareResult)) ? (
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <Link2 size={14} className="text-[var(--text-muted)]" />
@@ -844,6 +868,15 @@ export default function ProjectDetailPage() {
             onChange={setDraft}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
+            sandboxWipeRisk={
+              Boolean(draft) &&
+              !draft.sandbox_mode &&
+              projectHasSandboxWipeRisk(
+                draft,
+                state.assignments,
+                state.milestones,
+              )
+            }
             onSave={async () => {
               if (!draft.name.trim()) return;
               if (!draft.client_id) {
@@ -851,42 +884,34 @@ export default function ProjectDetailPage() {
                 return;
               }
               try {
+                const prior = state.projects.find((p) => p.id === draft.id);
+                let toSave = { ...draft };
+                if (toSave.sandbox_mode) {
+                  toSave = { ...toSave, manager_person_id: null };
+                  if (!prior?.sandbox_mode) {
+                    const wiped = await clearProjectSandboxTrackedData(
+                      toSave.id,
+                    );
+                    toSave = { ...toSave, ...wiped };
+                  }
+                }
+
                 const saved = await upsertProject({
-                  ...draft,
+                  ...toSave,
                   budget_hours:
-                    draft.budget_mode === "hours" ? draft.budget_hours : null,
+                    toSave.budget_mode === "hours"
+                      ? toSave.budget_hours
+                      : null,
                   budget_amount:
-                    draft.budget_mode === "amount" ? draft.budget_amount : null,
+                    toSave.budget_mode === "amount"
+                      ? toSave.budget_amount
+                      : null,
                   budget_monthly_reset:
-                    draft.budget_mode === "hours"
-                      ? Boolean(draft.budget_monthly_reset)
+                    toSave.budget_mode === "hours"
+                      ? Boolean(toSave.budget_monthly_reset)
                       : false,
                 });
-                await setProjectMembers(draft.id, memberIds);
-
-                const managerId = draft.manager_person_id;
-                const existing = managerId
-                  ? findPmProjectAssignments(
-                      state.assignments,
-                      managerId,
-                      draft.id,
-                    )
-                  : [];
-                const hoursForIntent =
-                  pmDailyHours != null && pmDailyHours > 0
-                    ? pmDailyHours
-                    : null;
-                const intent = resolvePmScheduleIntent({
-                  pmDailyHours: hoursForIntent,
-                  managerPersonId: managerId,
-                  startDate: draft.start_date,
-                  endDate: draft.end_date,
-                  existing,
-                  datesChanged: projectTimelineDatesChanged(
-                    pmBaselineDates,
-                    draft,
-                  ),
-                });
+                await setProjectMembers(toSave.id, memberIds);
 
                 const closeEdit = () => {
                   setEditing(false);
@@ -896,20 +921,51 @@ export default function ProjectDetailPage() {
                   setPmBaselineDates(null);
                 };
 
+                if (toSave.sandbox_mode) {
+                  closeEdit();
+                  push("Project saved");
+                  router.replace(projectHref(saved));
+                  return;
+                }
+
+                const managerId = toSave.manager_person_id;
+                const existing = managerId
+                  ? findPmProjectAssignments(
+                      state.assignments,
+                      managerId,
+                      toSave.id,
+                    )
+                  : [];
+                const hoursForIntent =
+                  pmDailyHours != null && pmDailyHours > 0
+                    ? pmDailyHours
+                    : null;
+                const intent = resolvePmScheduleIntent({
+                  pmDailyHours: hoursForIntent,
+                  managerPersonId: managerId,
+                  startDate: toSave.start_date,
+                  endDate: toSave.end_date,
+                  existing,
+                  datesChanged: projectTimelineDatesChanged(
+                    pmBaselineDates,
+                    toSave,
+                  ),
+                });
+
                 const applyPm = async (hours: number) => {
                   if (
-                    !draft.manager_person_id ||
-                    !draft.start_date ||
-                    !draft.end_date
+                    !toSave.manager_person_id ||
+                    !toSave.start_date ||
+                    !toSave.end_date
                   ) {
                     return;
                   }
                   const result = await applyProjectManagerScheduleTime({
                     organizationId: state.organization.id,
-                    projectId: draft.id,
-                    managerPersonId: draft.manager_person_id,
-                    startDate: draft.start_date,
-                    endDate: draft.end_date,
+                    projectId: toSave.id,
+                    managerPersonId: toSave.manager_person_id,
+                    startDate: toSave.start_date,
+                    endDate: toSave.end_date,
                     hoursPerDay: hours,
                     assignments: state.assignments,
                     leaveDays: state.leave_days,
@@ -943,7 +999,7 @@ export default function ProjectDetailPage() {
                   setPmPrompt({
                     kind: intent.kind,
                     hours: intent.hours,
-                    project: draft,
+                    project: toSave,
                   });
                   push("Project saved");
                   router.replace(projectHref(saved));
