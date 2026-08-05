@@ -2540,7 +2540,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
             !isExiting &&
             "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25",
         )}
-        style={{ paddingLeft: ctx.manageLists ? 8 : 0 }}
+        style={{ paddingLeft: 8 }}
         onAnimationEnd={(e) => {
           if (!isExiting) return;
           if (e.target !== e.currentTarget) return;
@@ -2752,7 +2752,7 @@ function TaskRow({
   const nestIndent = depth * 16;
   const nestLineLeft =
     depth > 0
-      ? (ctx.manageLists ? 8 : 0) +
+      ? 8 +
         (depth - 1) * 16 +
         (ctx.manageLists ? 16 + 6 + 5 - 2 + 3 - 2 : 5 - 2 + 3 - 2) -
         nestIndent
@@ -2858,7 +2858,7 @@ function TaskRow({
             ? "cursor-grab touch-none active:cursor-grabbing"
             : !ctx.readOnly && "cursor-pointer",
         )}
-        style={{ paddingLeft: ctx.manageLists ? 8 : 0 }}
+        style={{ paddingLeft: 8 }}
         title={
           multiSelectDrag ? "Drag to move all selected tasks" : undefined
         }
@@ -3009,7 +3009,9 @@ function TaskRow({
             <Plus size={14} />
           </button>
         ) : null}
-        <TaskStatusTag status={task.status} className="shrink-0" />
+        {!ctx.compact ? (
+          <TaskStatusTag status={task.status} className="shrink-0" />
+        ) : null}
         {ctx.allowSelect ? (
           <Checkbox
             checked={isSelected}

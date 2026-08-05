@@ -25,8 +25,7 @@ import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { notesPlainText } from "@/lib/notes-html";
 import { searchDemoState, enrichSearchHits, searchHitTaskIdsMissingStatus, type SearchHit, type SearchHitKind } from "@/lib/search";
-import { taskStatusLabel } from "@/lib/domain/tasks";
-import type { TaskStatus } from "@/lib/types";
+import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import { createClient } from "@/lib/supabase/client";
 import { fetchTaskStatuses, searchOrg } from "@/lib/supabase/api";
 
@@ -66,24 +65,6 @@ function flattenHits(hits: SearchHit[]): SearchHit[] {
     hits.filter((h) => h.kind === kind),
   );
   return groups.flat();
-}
-
-function SearchTaskStatusChip({ status }: { status: TaskStatus }) {
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium leading-none",
-        status === "complete" &&
-          "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)]",
-        status === "active" &&
-          "bg-[var(--task-active-bg)] text-[var(--task-active-fg)]",
-        status === "upcoming" &&
-          "bg-[var(--task-upcoming-bg)] text-[var(--task-upcoming-fg)]",
-      )}
-    >
-      {taskStatusLabel(status)}
-    </span>
-  );
 }
 
 export function GlobalSearch({
@@ -353,8 +334,9 @@ export function GlobalSearch({
                                   {hit.title}
                                 </span>
                                 {showStatus ? (
-                                  <SearchTaskStatusChip
+                                  <TaskStatusTag
                                     status={hit.task_status!}
+                                    className="shrink-0"
                                   />
                                 ) : null}
                               </span>
