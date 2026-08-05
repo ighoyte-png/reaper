@@ -224,6 +224,22 @@ export function taskThreadNotifyPersonId(
   return null;
 }
 
+/** @mentioned people (except the author) who should see the task-thread badge. */
+export function taskThreadMentionNotifyPersonIds(
+  mentionedPersonIds: string[] | undefined | null,
+  authorPersonId: string | null,
+): string[] {
+  if (!mentionedPersonIds?.length) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of mentionedPersonIds) {
+    if (!id || id === authorPersonId || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
 export function taskInReviewBulletinTitle(opts: {
   taskTitle: string;
   assigneeName: string | null;

@@ -2494,24 +2494,55 @@ export async function upsertTaskCommentRow(
   }
   if (error) throw error;
 
-  const { error: delErr } = await supabase
+  const ids = [...new Set(comment.mentioned_person_ids ?? [])];
+  const idSet = new Set(ids);
+
+  const existingMentionsRes = await supabase
     .from("task_comment_mentions")
-    .delete()
+    .select("person_id")
     .eq("comment_id", comment.id);
-  if (delErr) {
+  if (existingMentionsRes.error) {
     if (
-      /relation .*task_comment_mentions.* does not exist/i.test(delErr.message) ||
-      delErr.code === "42P01"
+      /relation .*task_comment_mentions.* does not exist/i.test(
+        existingMentionsRes.error.message,
+      ) ||
+      existingMentionsRes.error.code === "42P01"
     ) {
       console.warn(
         "task_comment_mentions missing — apply supabase/migrations/025_assets_milestones_mentions.sql",
       );
       return;
     }
-    throw delErr;
+    throw existingMentionsRes.error;
   }
 
-  const ids = [...new Set(comment.mentioned_person_ids ?? [])];
+  const existingMentioned = new Set(
+    (existingMentionsRes.data ?? []).map((r) => String(r.person_id)),
+  );
+  const mentionsToRemove = [...existingMentioned].filter((id) => !idSet.has(id));
+  const mentionsToAdd = ids.filter((id) => !existingMentioned.has(id));
+
+  if (mentionsToRemove.length > 0) {
+    const { error: delErr } = await supabase
+      .from("task_comment_mentions")
+      .delete()
+      .eq("comment_id", comment.id)
+      .in("person_id", mentionsToRemove);
+    if (delErr) throw delErr;
+  }
+  if (mentionsToAdd.length > 0) {
+    const { error: insErr } = await supabase
+      .from("task_comment_mentions")
+      .insert(
+        mentionsToAdd.map((person_id) => ({
+          comment_id: comment.id,
+          person_id,
+          organization_id: comment.organization_id,
+        })),
+      );
+    if (insErr) throw insErr;
+  }
+
   if (ids.length === 0) {
     await supabase
       .from("mention_unreads")
@@ -2519,14 +2550,6 @@ export async function upsertTaskCommentRow(
       .eq("comment_id", comment.id);
     return;
   }
-  const { error: insErr } = await supabase.from("task_comment_mentions").insert(
-    ids.map((person_id) => ({
-      comment_id: comment.id,
-      person_id,
-      organization_id: comment.organization_id,
-    })),
-  );
-  if (insErr) throw insErr;
 
   const existingRes = await supabase
     .from("mention_unreads")
@@ -2549,7 +2572,6 @@ export async function upsertTaskCommentRow(
   const existing = new Set(
     (existingRes.data ?? []).map((r) => String(r.person_id)),
   );
-  const idSet = new Set(ids);
   const toRemove = [...existing].filter((id) => !idSet.has(id));
   const toAdd = ids.filter((id) => !existing.has(id));
 

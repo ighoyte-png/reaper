@@ -32,6 +32,7 @@ import {
   isTaskInReviewTransition,
   orderTasksParentsFirst,
   taskAssignerPersonId,
+  taskThreadMentionNotifyPersonIds,
   taskThreadNotifyPersonId,
 } from "@/lib/domain/tasks";
 import { extractMentionPersonIds } from "@/lib/mentions";
@@ -3483,19 +3484,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
             ];
           }
           let unread_task_threads = prev.unread_task_threads;
-          if (
-            mode === "demo" &&
-            !exists &&
-            threadNotifyId &&
-            !unread_task_threads.some(
-              (r) =>
-                r.task_id === row.task_id && r.person_id === threadNotifyId,
-            )
-          ) {
-            unread_task_threads = [
-              ...unread_task_threads,
-              { task_id: row.task_id, person_id: threadNotifyId },
-            ];
+          if (mode === "demo") {
+            const addThreadUnread = (person_id: string) => {
+              if (
+                unread_task_threads.some(
+                  (r) =>
+                    r.task_id === row.task_id && r.person_id === person_id,
+                )
+              ) {
+                return;
+              }
+              unread_task_threads = [
+                ...unread_task_threads,
+                { task_id: row.task_id, person_id },
+              ];
+            };
+            if (!exists && threadNotifyId) {
+              addThreadUnread(threadNotifyId);
+            }
+            for (const person_id of taskThreadMentionNotifyPersonIds(
+              next.mentioned_person_ids,
+              authorPerson?.id ?? null,
+            )) {
+              if (prevMentioned.has(person_id)) continue;
+              addThreadUnread(person_id);
+            }
           }
           return {
             ...prev,
