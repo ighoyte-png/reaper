@@ -33,6 +33,21 @@ function testNotesSanitize() {
   assert(!link.includes("javascript:"), "block javascript: href");
   assert(link.includes("https://example.com"), "allow https href");
   assert(notesHasContent("<p>hi</p>"), "has content");
+  const attId = "00000000-0000-4000-8000-000000000099";
+  const imgOk = sanitizeNotesHtml(
+    `<img data-attachment-id="${attId}" src="https://cdn.example/x.png" alt="x">`,
+  );
+  assert(imgOk.includes(`data-attachment-id="${attId}"`), "allow attachment img");
+  assert(imgOk.includes("https://cdn.example/x.png"), "keep https img src");
+  const imgBad = sanitizeNotesHtml(
+    `<img src="data:image/png;base64,abc" data-attachment-id="${attId}">`,
+  );
+  assert(!imgBad.includes("data:image"), "strip data: img src");
+  assert(imgBad.includes(`data-attachment-id="${attId}"`), "keep attachment id");
+  assert(
+    !sanitizeNotesHtml(`<img src="https://evil.com/x.png">`).includes("<img"),
+    "reject img without attachment id",
+  );
 }
 
 function testSafeUrl() {

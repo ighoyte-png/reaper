@@ -3,6 +3,7 @@ import { createDemoSeed } from "@/lib/demo/seed";
 import { parseAssetKind } from "@/lib/domain/milestones";
 import { orderTasksParentsFirst } from "@/lib/domain/tasks";
 import { resolveAvatarUrl } from "@/lib/supabase/avatar";
+import { isR2Configured, getStorageProvider } from "@/lib/storage";
 import type {
   Assignment,
   Bulletin,
@@ -350,6 +351,9 @@ function mapPerson(row: Record<string, unknown>): Person {
       ? String(row.holiday_calendar_id)
       : null,
     avatar_url: row.avatar_url ? String(row.avatar_url) : null,
+    avatar_attachment_id: row.avatar_attachment_id
+      ? String(row.avatar_attachment_id)
+      : null,
     hide_from_schedule: Boolean(row.hide_from_schedule),
     hide_from_utilization: Boolean(
       row.hide_from_utilization ?? row.hide_from_schedule,
@@ -762,14 +766,11 @@ export async function loadOrgBootstrap(
       }))
       .filter((r) => r.comment_id && r.person_id);
   }
-  const people = await Promise.all(
-    (peopleRes.data ?? []).map(async (row) => {
-      const person = mapPerson(row as Record<string, unknown>);
-      return {
-        ...person,
-        avatar_url: await resolveAvatarUrl(supabase, person.avatar_url),
-      };
-    }),
+  const people = await resolvePeopleAvatars(
+    supabase,
+    (peopleRes.data ?? []).map((row) =>
+      mapPerson(row as Record<string, unknown>),
+    ),
   );
   let unread_task_threads: { task_id: string; person_id: string }[] = [];
   const sessionPersonId = sessionProfileId
@@ -1345,6 +1346,56 @@ export async function rpcOrgTaskStats(
     upcoming_count: num(r.upcoming_count),
     in_progress_count: num(r.in_progress_count),
   };
+}
+
+async function resolvePeopleAvatars(
+  supabase: SupabaseClient,
+  people: Person[],
+): Promise<Person[]> {
+  const attachmentIds = people
+    .map((p) => p.avatar_attachment_id)
+    .filter((id): id is string => Boolean(id));
+
+  const signedByAttachmentId = new Map<string, string>();
+
+  if (attachmentIds.length > 0 && isR2Configured()) {
+    const { data: rows } = await supabase
+      .from("attachments")
+      .select("id, storage_key, ready")
+      .in("id", attachmentIds)
+      .eq("ready", true);
+
+    if (rows?.length) {
+      const storage = getStorageProvider();
+      await Promise.all(
+        rows.map(async (row) => {
+          try {
+            const url = await storage.createSignedDownloadUrl(
+              String(row.storage_key),
+            );
+            signedByAttachmentId.set(String(row.id), url);
+          } catch (err) {
+            console.warn("Failed to sign avatar attachment URL", err);
+          }
+        }),
+      );
+    }
+  }
+
+  return Promise.all(
+    people.map(async (person) => {
+      if (person.avatar_attachment_id) {
+        const signed = signedByAttachmentId.get(person.avatar_attachment_id);
+        if (signed) {
+          return { ...person, avatar_url: signed };
+        }
+      }
+      return {
+        ...person,
+        avatar_url: await resolveAvatarUrl(supabase, person.avatar_url),
+      };
+    }),
+  );
 }
 
 /** Org public share: bootstrap + scoped share body (not full historical assignments). */
@@ -2004,6 +2055,7 @@ export async function upsertPersonRow(
     timezone: person.timezone,
     holiday_calendar_id: person.holiday_calendar_id,
     avatar_url: person.avatar_url,
+    avatar_attachment_id: person.avatar_attachment_id,
     hide_from_schedule: Boolean(person.hide_from_schedule),
     hide_from_utilization: Boolean(person.hide_from_utilization),
     is_contractor: Boolean(person.is_contractor),
@@ -3364,6 +3416,7 @@ export async function seedDemoWorkspace(
       ? remapId(ids, p.holiday_calendar_id)
       : null,
     avatar_url: p.avatar_url,
+    avatar_attachment_id: p.avatar_attachment_id ?? null,
     hide_from_schedule: Boolean(p.hide_from_schedule),
     hide_from_utilization: Boolean(p.hide_from_utilization),
     is_contractor: Boolean(p.is_contractor),

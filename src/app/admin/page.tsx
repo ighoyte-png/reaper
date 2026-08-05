@@ -33,6 +33,8 @@ export default function PlatformAdminPage() {
 
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [allowSignup, setAllowSignup] = useState(true);
+  const [maxImageMb, setMaxImageMb] = useState(10);
+  const [maxDocumentMb, setMaxDocumentMb] = useState(25);
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -67,8 +69,19 @@ export default function PlatformAdminPage() {
       if (settingsRes.ok) {
         const s = (await settingsRes.json()) as {
           allow_workspace_signup?: boolean;
+          max_image_bytes?: number;
+          max_document_bytes?: number;
         };
         setAllowSignup(Boolean(s.allow_workspace_signup));
+        if (typeof s.max_image_bytes === "number" && s.max_image_bytes > 0) {
+          setMaxImageMb(Math.round(s.max_image_bytes / (1024 * 1024)));
+        }
+        if (
+          typeof s.max_document_bytes === "number" &&
+          s.max_document_bytes > 0
+        ) {
+          setMaxDocumentMb(Math.round(s.max_document_bytes / (1024 * 1024)));
+        }
       }
       if (listRes.ok) {
         const body = (await listRes.json()) as { workspaces?: WorkspaceRow[] };
@@ -92,6 +105,23 @@ export default function PlatformAdminPage() {
     }
     void load();
   }, [ready, isAuthenticated, router, load]);
+
+  async function saveStorageLimits() {
+    const res = await fetch("/api/platform/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        max_image_bytes: Math.round(maxImageMb * 1024 * 1024),
+        max_document_bytes: Math.round(maxDocumentMb * 1024 * 1024),
+      }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      push(body.error ?? "Could not update storage limits", "warning");
+      return;
+    }
+    push("Storage limits updated");
+  }
 
   async function toggleSignup(next: boolean) {
     setAllowSignup(next);
@@ -301,6 +331,42 @@ export default function PlatformAdminPage() {
             />
             Allow new workspace creation
           </label>
+        </Panel>
+
+        <Panel>
+          <h2 className="text-sm font-semibold">Upload size limits</h2>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
+            Max file sizes for R2 attachments (images and documents).
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <Field label="Max image size (MB)">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                className={inputClass}
+                value={maxImageMb}
+                onChange={(e) => setMaxImageMb(Number(e.target.value) || 1)}
+              />
+            </Field>
+            <Field label="Max document size (MB)">
+              <input
+                type="number"
+                min={1}
+                max={200}
+                className={inputClass}
+                value={maxDocumentMb}
+                onChange={(e) =>
+                  setMaxDocumentMb(Number(e.target.value) || 1)
+                }
+              />
+            </Field>
+          </div>
+          <div className="mt-3">
+            <Button variant="secondary" size="sm" onClick={() => void saveStorageLimits()}>
+              Save limits
+            </Button>
+          </div>
         </Panel>
 
         <Panel>

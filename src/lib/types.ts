@@ -288,6 +288,8 @@ export interface Person {
   holiday_calendar_id: string | null;
   /** Public URL for profile photo (Storage or data URL in demo). */
   avatar_url: string | null;
+  /** R2 attachment for profile photo (supabase + R2). */
+  avatar_attachment_id: string | null;
   /**
    * When true, omit from schedule rows (management-only or project-basis
    * contractors who are not part of resource planning).

@@ -15,7 +15,9 @@ export function notesPlainText(html: string): string {
 }
 
 export function notesHasContent(html: string | null | undefined): boolean {
-  return Boolean(html && notesPlainText(html));
+  if (!html) return false;
+  if (/data-attachment-id=["'][0-9a-f-]{36}["']/i.test(html)) return true;
+  return Boolean(notesPlainText(html));
 }
 
 /** Plain-text preview truncated to a word budget (for tooltips). */
@@ -71,7 +73,9 @@ function decodeHtmlEntities(text: string): string {
 export function notesToEditorHtml(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (/<\/?(?:p|strong|b|u|a|br|span|ul|ol|li|h1|h2|h3)\b/i.test(trimmed)) {
+  if (
+    /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li|h1|h2|h3|img)\b/i.test(trimmed)
+  ) {
     // Re-sanitize so double-encoded entities (&amp;nbsp;) are normalized
     // before TipTap parses the document.
     return sanitizeNotesHtml(trimmed) || trimmed;
@@ -92,11 +96,29 @@ const ALLOWED_TAGS = new Set([
   "B",
   "U",
   "A",
+  "IMG",
   "SPAN",
   "UL",
   "OL",
   "LI",
 ]);
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isAttachmentUuid(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return UUID_RE.test(value.trim());
+}
+
+function sanitizeAttachmentSrc(src: string | null | undefined): string | null {
+  if (!src) return null;
+  const t = src.trim();
+  if (!t) return null;
+  if (/^(data:|blob:)/i.test(t)) return null;
+  if (/^https?:\/\//i.test(t) || /^\/(?!\/)/.test(t)) return t;
+  return null;
+}
 
 function sanitizeHref(href: string | null): string | null {
   if (!href) return null;
@@ -210,11 +232,28 @@ function renderNodes(nodes: WalkNode[]): string {
         return `<span data-type="mention" data-id="${escapeText(id)}" data-label="${escapeText(label)}" class="mention">@${escapeText(label.replace(/^@/, ""))}</span>`;
       }
       if (tag === "A") {
+        const attachmentId = node.attrs?.["data-attachment-id"];
+        if (attachmentId && isAttachmentUuid(attachmentId)) {
+          const href =
+            sanitizeHref(node.attrs?.href ?? null) ||
+            `/api/storage/${attachmentId}/url`;
+          const target = node.attrs?.target === "_self" ? "_self" : "_blank";
+          const rel = target === "_blank" ? ' rel="noopener noreferrer"' : "";
+          return `<a href="${escapeText(href)}" data-attachment-id="${escapeText(attachmentId)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
+        }
         const href = sanitizeHref(node.attrs?.href ?? null);
         if (!href) return inner;
         const target = node.attrs?.target === "_self" ? "_self" : "_blank";
         const rel = target === "_blank" ? ' rel="noopener noreferrer"' : "";
         return `<a href="${escapeText(href)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
+      }
+      if (tag === "IMG") {
+        const attachmentId = node.attrs?.["data-attachment-id"];
+        if (!isAttachmentUuid(attachmentId)) return "";
+        const safeSrc = sanitizeAttachmentSrc(node.attrs?.src ?? null);
+        const alt = escapeText(node.attrs?.alt ?? "");
+        const srcAttr = safeSrc ? ` src="${escapeText(safeSrc)}"` : "";
+        return `<img data-attachment-id="${escapeText(attachmentId!)}"${srcAttr} alt="${alt}" />`;
       }
       if (tag === "UL") return `<ul>${inner}</ul>`;
       if (tag === "OL") return `<ol>${inner}</ol>`;
@@ -227,6 +266,18 @@ function renderNodes(nodes: WalkNode[]): string {
       return `<p>${inner}</p>`;
     })
     .join("");
+}
+
+/** Collect attachment UUIDs referenced in sanitized note HTML. */
+export function extractAttachmentIdsFromNotesHtml(html: string): string[] {
+  const ids = new Set<string>();
+  const re = /data-attachment-id=["']([0-9a-f-]{36})["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const id = m[1]!.toLowerCase();
+    if (isAttachmentUuid(id)) ids.add(id);
+  }
+  return [...ids];
 }
 
 /** Allow only safe note markup — isomorphic (browser + server). Never fail open. */

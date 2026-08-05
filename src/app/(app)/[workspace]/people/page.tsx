@@ -42,11 +42,7 @@ import {
 } from "@/lib/domain/leave";
 import { personAvatarColor, randomAvatarColor, sortPeopleContractorsLast } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
-import { createClient } from "@/lib/supabase/client";
-import {
-  readFileAsDataUrl,
-  uploadPersonAvatar,
-} from "@/lib/supabase/avatar";
+import { uploadPersonAvatarFile } from "@/lib/storage/avatar-upload";
 
 const PEOPLE_FILTER_DEFAULTS: { pod: string } = { pod: "all" };
 
@@ -70,6 +66,7 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   timezone: "America/Los_Angeles",
   holiday_calendar_id: null,
   avatar_url: null,
+  avatar_attachment_id: null,
   hide_from_schedule: false,
   hide_from_utilization: false,
   is_contractor: false,
@@ -258,21 +255,40 @@ function PeoplePageContent() {
     setSaveBusy(true);
     try {
       let avatar_url = editing.avatar_url;
+      let avatar_attachment_id = editing.avatar_attachment_id;
       if (avatarFile) {
-        if (mode === "supabase") {
-          const supabase = createClient();
-          avatar_url = await uploadPersonAvatar(
-            supabase,
-            state.organization.id,
-            editing.id,
-            avatarFile,
-          );
-        } else {
-          avatar_url = await readFileAsDataUrl(avatarFile);
+        const uploaded = await uploadPersonAvatarFile({
+          mode,
+          organizationId: state.organization.id,
+          personId: editing.id,
+          file: avatarFile,
+        });
+        avatar_url = uploaded.avatarUrl;
+        avatar_attachment_id = uploaded.avatarAttachmentId;
+      } else if (
+        !avatar_url &&
+        avatar_attachment_id &&
+        mode === "supabase"
+      ) {
+        const res = await fetch(`/api/storage/${avatar_attachment_id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(body.error || "Could not remove photo");
         }
+        avatar_attachment_id = null;
       }
       const avatar_color = editing.avatar_color ?? randomAvatarColor();
-      const row = { ...editing, email, avatar_url, avatar_color };
+      const row = {
+        ...editing,
+        email,
+        avatar_url,
+        avatar_attachment_id,
+        avatar_color,
+      };
       await upsertPerson(row);
       await setPersonPods(row.id, selectedPodIds);
 
@@ -685,7 +701,11 @@ function PeoplePageContent() {
             onClearAvatar={() => {
               setAvatarFile(null);
               setAvatarPreview(null);
-              setEditing({ ...editing, avatar_url: null });
+              setEditing({
+                ...editing,
+                avatar_url: null,
+                avatar_attachment_id: null,
+              });
               if (avatarInputRef.current) {
                 avatarInputRef.current.value = "";
               }

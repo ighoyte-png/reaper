@@ -18,11 +18,7 @@ import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useViewAs } from "@/lib/view-as";
 import { clientSiteOrigin, publicShareUrl } from "@/lib/share/token";
-import { createClient } from "@/lib/supabase/client";
-import {
-  readFileAsDataUrl,
-  uploadPersonAvatar,
-} from "@/lib/supabase/avatar";
+import { uploadPersonAvatarFile } from "@/lib/storage/avatar-upload";
 import { isAdmin } from "@/lib/auth/roles";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
@@ -339,19 +335,17 @@ export default function SettingsPage() {
     if (!myPerson) return;
     setAvatarBusy(true);
     try {
-      let avatarUrl: string;
-      if (mode === "supabase") {
-        const supabase = createClient();
-        avatarUrl = await uploadPersonAvatar(
-          supabase,
-          state.organization.id,
-          myPerson.id,
-          file,
-        );
-      } else {
-        avatarUrl = await readFileAsDataUrl(file);
-      }
-      await updatePersonAvatar(myPerson.id, avatarUrl);
+      const { avatarUrl, avatarAttachmentId } = await uploadPersonAvatarFile({
+        mode,
+        organizationId: state.organization.id,
+        personId: myPerson.id,
+        file,
+      });
+      await updatePersonAvatar(
+        myPerson.id,
+        avatarUrl,
+        avatarAttachmentId,
+      );
       push("Photo updated", "success");
     } catch (err) {
       push(

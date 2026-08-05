@@ -516,6 +516,7 @@ interface DataContextValue {
   updatePersonAvatar: (
     personId: string,
     avatarUrl: string | null,
+    avatarAttachmentId?: string | null,
   ) => Promise<void>;
   deletePerson: (id: string) => void;
   /** Create or update a pod (managers/admins). */
@@ -1383,6 +1384,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
     },
     [runRemote],
+  );
+
+  const cleanupEntityAttachments = useCallback(
+    (entityType: "comment" | "task_note", entityId: string) => {
+      if (mode !== "supabase") return;
+      void fetch("/api/storage/cleanup-entity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entityType, entityId }),
+      }).catch((err) => {
+        console.warn("Attachment cleanup failed", err);
+      });
+    },
+    [mode],
   );
 
 
@@ -2479,17 +2494,58 @@ export function DataProvider({ children }: { children: ReactNode }) {
           await runRemote(() => upsertPersonRow(supabaseRef.current!, row));
         }
       },
-      updatePersonAvatar: async (personId, avatarUrl) => {
-        patch((prev) => ({
-          ...prev,
-          people: prev.people.map((p) =>
-            p.id === personId ? { ...p, avatar_url: avatarUrl } : p,
-          ),
-        }));
+      updatePersonAvatar: async (personId, avatarUrl, avatarAttachmentId) => {
+        let existingAttachmentId: string | null = null;
+        patch((prev) => {
+          const person = prev.people.find((p) => p.id === personId);
+          existingAttachmentId = person?.avatar_attachment_id ?? null;
+          return {
+            ...prev,
+            people: prev.people.map((p) =>
+              p.id === personId
+                ? {
+                    ...p,
+                    avatar_url: avatarUrl,
+                    avatar_attachment_id:
+                      avatarAttachmentId !== undefined
+                        ? avatarAttachmentId
+                        : avatarUrl
+                          ? p.avatar_attachment_id
+                          : null,
+                  }
+                : p,
+            ),
+          };
+        });
         if (mode === "supabase" && supabaseRef.current) {
-          await runRemote(() =>
-            updatePersonAvatarRow(supabaseRef.current!, personId, avatarUrl),
-          );
+          if (avatarUrl === null) {
+            if (existingAttachmentId) {
+              await runRemote(async () => {
+                const res = await fetch(
+                  `/api/storage/${existingAttachmentId}`,
+                  { method: "DELETE" },
+                );
+                if (!res.ok) {
+                  const body = (await res.json().catch(() => ({}))) as {
+                    error?: string;
+                  };
+                  throw new Error(body.error || "Could not remove photo");
+                }
+              });
+            } else {
+              await runRemote(() =>
+                updatePersonAvatarRow(supabaseRef.current!, personId, null),
+              );
+            }
+          } else if (!avatarAttachmentId) {
+            await runRemote(() =>
+              updatePersonAvatarRow(
+                supabaseRef.current!,
+                personId,
+                avatarUrl,
+              ),
+            );
+          }
         }
       },
       deletePerson: (id) => {
@@ -3527,6 +3583,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteTask: (id) => {
+        const commentIds = state.task_comments
+          .filter((c) => c.task_id === id)
+          .map((c) => c.id);
         patch((prev) => ({
           ...prev,
           tasks: prev.tasks.filter((t) => t.id !== id && t.parent_id !== id),
@@ -3536,6 +3595,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
+          cleanupEntityAttachments("task_note", id);
+          for (const commentId of commentIds) {
+            cleanupEntityAttachments("comment", commentId);
+          }
           noteLocalWrite("tasks", id);
           runRemoteSoft(() => deleteTaskRow(supabaseRef.current!, id));
         }
@@ -3656,6 +3719,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
+          cleanupEntityAttachments("comment", id);
           noteLocalWrite("task_comments", id);
           noteLocalWrite("task_comment_mentions", id);
           noteLocalWrite("mention_unreads", id);

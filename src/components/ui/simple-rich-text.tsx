@@ -1,26 +1,38 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
+import type { Extensions } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Mention from "@tiptap/extension-mention";
 import Underline from "@tiptap/extension-underline";
+import Image from "@tiptap/extension-image";
 import {
   Bold,
   Link as LinkIcon,
   List,
   ListOrdered,
+  Paperclip,
   Underline as UnderlineIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { notesToEditorHtml, sanitizeNotesHtml } from "@/lib/notes-html";
+import {
+  extractAttachmentIdsFromNotesHtml,
+  notesToEditorHtml,
+  sanitizeNotesHtml,
+} from "@/lib/notes-html";
 import type { MentionPerson } from "@/lib/mentions";
 import { createMentionSuggestion } from "@/components/ui/mention-suggestion";
 import { ensureDesktopNotificationPermission } from "@/lib/desktop-notifications";
 import { Field, Modal, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import {
+  resolveAttachmentDisplayUrl,
+  uploadFileToR2,
+} from "@/lib/storage/client-upload";
+import type { AttachmentEntityType } from "@/lib/storage/types";
 
 const editorContentClass = cn(
   "min-h-[4.5rem] px-2 py-2 text-sm leading-relaxed text-[var(--text)] outline-none",
@@ -70,6 +82,34 @@ function scrollSelectionIntoEditor(view: {
     /* ignore invalid positions */
   }
   return true;
+}
+
+const AttachmentImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      "data-attachment-id": {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute("data-attachment-id"),
+        renderHTML: (attributes) => {
+          const id = attributes["data-attachment-id"];
+          if (!id) return {};
+          return { "data-attachment-id": id };
+        },
+      },
+    };
+  },
+});
+
+function imageFilesFromDataTransfer(dt: DataTransfer | null): File[] {
+  if (!dt) return [];
+  const files: File[] = [];
+  for (let i = 0; i < dt.files.length; i++) {
+    const f = dt.files[i];
+    if (f && f.type.startsWith("image/")) files.push(f);
+  }
+  return files;
 }
 
 function normalizeLinkUrl(raw: string): string | null {
@@ -161,6 +201,11 @@ export function SimpleRichTextEditor({
   editorMaxHeight,
   editorOverflowY,
   autoGrow = false,
+  enableAttachments = false,
+  attachmentEntityType,
+  attachmentEntityId = null,
+  onAttachmentError,
+  isDemo = false,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -173,8 +218,23 @@ export function SimpleRichTextEditor({
   editorOverflowY?: "auto" | "hidden";
   /** Grow with content (comment / new task description). */
   autoGrow?: boolean;
+  enableAttachments?: boolean;
+  attachmentEntityType?: AttachmentEntityType;
+  attachmentEntityId?: string | null;
+  onAttachmentError?: (msg: string) => void;
+  isDemo?: boolean;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const onAttachmentErrorRef = useRef(onAttachmentError);
+  onAttachmentErrorRef.current = onAttachmentError;
+
+  const attachmentsActive =
+    enableAttachments &&
+    Boolean(attachmentEntityType) &&
+    Boolean(attachmentEntityId) &&
+    !isDemo;
   const [linkDraft, setLinkDraft] = useState<LinkDraft>({
     title: "",
     href: "https://",
@@ -186,8 +246,56 @@ export function SimpleRichTextEditor({
     .sort()
     .join(",");
 
-  const extensions = useMemo(() => {
-    const base = [
+  const edRef = useRef<Editor | null>(null);
+
+  const uploadAttachment = useMemo(() => {
+    return async (file: File, imagesOnly: boolean) => {
+      if (!attachmentsActive || !attachmentEntityType || !attachmentEntityId) {
+        return;
+      }
+      setUploading(true);
+      try {
+        const { attachmentId, mimeType } = await uploadFileToR2({
+          file,
+          entityType: attachmentEntityType,
+          entityId: attachmentEntityId,
+          imagesOnly,
+        });
+        const displayUrl = await resolveAttachmentDisplayUrl(attachmentId);
+        if (mimeType.startsWith("image/")) {
+          edRef.current
+            ?.chain()
+            .focus(undefined, { scrollIntoView: false })
+            .setImage({
+              src: displayUrl || "",
+              alt: file.name,
+              "data-attachment-id": attachmentId,
+            } as { src: string; alt?: string; "data-attachment-id": string })
+            .run();
+        } else {
+          const label = file.name || "Attachment";
+          const href = displayUrl || "#";
+          edRef.current
+            ?.chain()
+            .focus(undefined, { scrollIntoView: false })
+            .insertContent(
+              `<p><a href="${href}" data-attachment-id="${attachmentId}" target="_blank" rel="noopener noreferrer">${label.replace(/</g, "&lt;")}</a></p>`,
+            )
+            .run();
+        }
+      } catch (err) {
+        onAttachmentErrorRef.current?.(
+          err instanceof Error ? err.message : "Upload failed",
+        );
+      } finally {
+        setUploading(false);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachmentsActive, attachmentEntityType, attachmentEntityId]);
+
+  const extensions = useMemo((): Extensions => {
+    const base: Extensions = [
       StarterKit.configure({
         blockquote: false,
         code: false,
@@ -208,6 +316,18 @@ export function SimpleRichTextEditor({
       }),
       Underline,
     ];
+
+    if (attachmentsActive) {
+      base.push(
+        AttachmentImage.configure({
+          inline: true,
+          allowBase64: false,
+          HTMLAttributes: {
+            class: "max-w-full rounded-md",
+          },
+        }),
+      );
+    }
 
     if (!mentionPeople || mentionPeople.length === 0) return base;
 
@@ -236,7 +356,7 @@ export function SimpleRichTextEditor({
     ];
     // peopleKey captures identity of the list without unstable array refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peopleKey]);
+  }, [peopleKey, attachmentsActive]);
 
   const editor = useEditor(
     {
@@ -249,14 +369,34 @@ export function SimpleRichTextEditor({
           "data-placeholder": placeholder,
         },
         handleScrollToSelection: (view) => scrollSelectionIntoEditor(view),
+        handlePaste: (view, event) => {
+          if (!attachmentsActive) return false;
+          const files = imageFilesFromDataTransfer(event.clipboardData);
+          if (files.length === 0) return false;
+          event.preventDefault();
+          void uploadAttachment(files[0]!, true);
+          return true;
+        },
+        handleDrop: (view, event) => {
+          if (!attachmentsActive) return false;
+          const files = imageFilesFromDataTransfer(event.dataTransfer);
+          if (files.length === 0) return false;
+          event.preventDefault();
+          void uploadAttachment(files[0]!, true);
+          return true;
+        },
       },
       onUpdate: ({ editor: ed }) => {
         const html = ed.isEmpty ? "" : ed.getHTML();
         onChange(html);
       },
     },
-    [extensions],
+    [extensions, attachmentsActive, uploadAttachment],
   );
+
+  useEffect(() => {
+    edRef.current = editor;
+  }, [editor]);
 
   useEffect(() => {
     if (!editor) return;
@@ -397,7 +537,39 @@ export function SimpleRichTextEditor({
         >
           <LinkIcon size={14} strokeWidth={2.5} />
         </ToolbarButton>
+        {attachmentsActive ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  void uploadAttachment(
+                    file,
+                    file.type.startsWith("image/"),
+                  );
+                }
+                e.target.value = "";
+              }}
+            />
+            <ToolbarButton
+              label="Attach file"
+              active={false}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Paperclip size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+          </>
+        ) : null}
       </div>
+      {uploading ? (
+        <p className="border-b border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
+          Uploading…
+        </p>
+      ) : null}
       <div
         data-reaper-editor-scroll=""
         className={cn(autoGrow && "overflow-visible")}
@@ -535,11 +707,57 @@ export function RichNotesHtml({
   className?: string;
 }) {
   const safe = sanitizeNotesHtml(html);
-  if (!safe) return null;
+  const [displayHtml, setDisplayHtml] = useState(safe);
+
+  useEffect(() => {
+    const sanitized = sanitizeNotesHtml(html);
+    if (!sanitized) {
+      setDisplayHtml("");
+      return;
+    }
+    const ids = extractAttachmentIdsFromNotesHtml(sanitized);
+    if (ids.length === 0) {
+      setDisplayHtml(sanitized);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      let next = sanitized;
+      for (const id of ids) {
+        const url = await resolveAttachmentDisplayUrl(id);
+        if (!url || cancelled) continue;
+        const re = new RegExp(
+          `(<img[^>]*data-attachment-id=["']${id}["'][^>]*)(/?>)`,
+          "gi",
+        );
+        next = next.replace(re, (match, prefix: string, end: string) => {
+          if (/src=["'][^"']+["']/i.test(prefix)) {
+            return match.replace(
+              /src=["'][^"']*["']/i,
+              `src="${url.replace(/"/g, "&quot;")}"`,
+            );
+          }
+          return `${prefix} src="${url.replace(/"/g, "&quot;")}"${end}`;
+        });
+        const linkRe = new RegExp(
+          `(<a[^>]*data-attachment-id=["']${id}["'][^>]*href=["'])[^"']*(["'])`,
+          "gi",
+        );
+        next = next.replace(linkRe, `$1${url.replace(/"/g, "&quot;")}$2`);
+      }
+      if (!cancelled) setDisplayHtml(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [html]);
+
+  if (!displayHtml) return null;
   return (
     <span
       className={cn(
         "rich-notes block leading-relaxed [&_a]:pointer-events-auto",
+        "[&_img]:my-2 [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md",
         "[&_p]:m-0 [&_p+p]:mt-2",
         "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
         "[&_h2]:m-0 [&_h2]:mt-2.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
@@ -554,7 +772,7 @@ export function RichNotesHtml({
         "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
         className,
       )}
-      dangerouslySetInnerHTML={{ __html: safe }}
+      dangerouslySetInnerHTML={{ __html: displayHtml }}
     />
   );
 }

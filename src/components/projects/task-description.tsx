@@ -250,12 +250,20 @@ export function TaskDescriptionEditor({
   onChange,
   mentionPeople,
   initialExpanded = false,
+  taskId,
+  enableAttachments = false,
+  isDemo = false,
+  onAttachmentError,
 }: {
   value: string;
   onChange: (html: string) => void;
   mentionPeople?: MentionPerson[];
   /** Match view-mode collapse when opening edit. */
   initialExpanded?: boolean;
+  taskId?: string | null;
+  enableAttachments?: boolean;
+  isDemo?: boolean;
+  onAttachmentError?: (msg: string) => void;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const measureRef = useRef<HTMLDivElement>(null);
@@ -303,6 +311,11 @@ export function TaskDescriptionEditor({
           editorMaxHeight={editorMaxHeight}
           editorOverflowY={expanded ? undefined : "auto"}
           autoGrow={expanded}
+          enableAttachments={enableAttachments}
+          attachmentEntityType="task_note"
+          attachmentEntityId={taskId ?? null}
+          isDemo={isDemo}
+          onAttachmentError={onAttachmentError}
         />
         {exceeds ? (
           <ExpandToggle
@@ -320,10 +333,18 @@ export function TaskDescriptionCreateField({
   value,
   onChange,
   mentionPeople,
+  taskId,
+  enableAttachments = false,
+  isDemo = false,
+  onAttachmentError,
 }: {
   value: string;
   onChange: (html: string) => void;
   mentionPeople?: MentionPerson[];
+  taskId?: string | null;
+  enableAttachments?: boolean;
+  isDemo?: boolean;
+  onAttachmentError?: (msg: string) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -337,6 +358,11 @@ export function TaskDescriptionCreateField({
         mentionPeople={mentionPeople}
         className="mt-0 w-full"
         autoGrow
+        enableAttachments={enableAttachments}
+        attachmentEntityType="task_note"
+        attachmentEntityId={taskId ?? null}
+        isDemo={isDemo}
+        onAttachmentError={onAttachmentError}
       />
     </div>
   );

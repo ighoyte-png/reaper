@@ -209,7 +209,12 @@ type BoardCtx = {
   toggleExpand: (id: string) => void;
   collapseExpanded: (ids: string[]) => void;
   childrenMap: Map<string, Task[]>;
-  addComment: (taskId: string, html: string, mentionedPersonIds: string[]) => void;
+  addComment: (
+    taskId: string,
+    html: string,
+    mentionedPersonIds: string[],
+    commentId?: string,
+  ) => void;
   editComment: (
     comment: TaskComment,
     html: string,
@@ -219,6 +224,9 @@ type BoardCtx = {
   toggleReaction: (commentId: string, emoji: string) => void;
   /** @mention targets on the project team. */
   mentionPeople: Person[];
+  mode: "demo" | "supabase";
+  newId: (prefix: string) => string;
+  onAttachmentError: (msg: string) => void;
   /** Task ids with unread assigner ↔ assignee thread for the viewer. */
   unreadTaskThreadIds: Set<string>;
   boardView: TaskBoardView;
@@ -365,6 +373,7 @@ export function ProjectTaskBoard({
     ensureProjectData,
     dataStatus,
     dismissTaskThreadUnread,
+    mode,
   } = useData();
   const { push: toast } = useToast();
   const projectHref = useProjectHref();
@@ -947,7 +956,11 @@ export function ProjectTaskBoard({
     upsertTask(task);
   }
 
-  function createTaskFromDraft(listId: string, draft: InlineTaskDraft) {
+  function createTaskFromDraft(
+    listId: string,
+    draft: InlineTaskDraft,
+    attachmentTaskId?: string,
+  ) {
     if (!manageLists || isListGanttLocked(listId)) return;
     const title = draft.title.trim();
     if (!title) return;
@@ -955,7 +968,7 @@ export function ProjectTaskBoard({
       (t) => t.list_id === listId && t.parent_id === null,
     );
     const task: Task = {
-      id: newId("task"),
+      id: attachmentTaskId ?? newId("task"),
       organization_id: state.organization.id,
       project_id: projectId,
       list_id: listId,
@@ -1102,10 +1115,11 @@ export function ProjectTaskBoard({
     taskId: string,
     html: string,
     mentionedPersonIds: string[],
+    commentId?: string,
   ) {
     if (!profile) return;
     upsertTaskComment({
-      id: newId("tcom"),
+      id: commentId ?? newId("tcom"),
       organization_id: state.organization.id,
       task_id: taskId,
       author_profile_id: profile.id,
@@ -1611,6 +1625,9 @@ export function ProjectTaskBoard({
     deleteComment: deleteTaskComment,
     toggleReaction: toggleTaskCommentReaction,
     mentionPeople,
+    mode,
+    newId,
+    onAttachmentError: (msg) => toast(msg, "warning"),
     unreadTaskThreadIds,
     boardView: view,
     isListGanttLocked,
@@ -2010,7 +2027,9 @@ export function ProjectTaskBoard({
                     clearTaskCreateDraft(profile?.id, list.id);
                     setDraftingListId(null);
                   }}
-                  onCreateDraft={(draft) => createTaskFromDraft(list.id, draft)}
+                  onCreateDraft={(draft, attachmentTaskId) =>
+                    createTaskFromDraft(list.id, draft, attachmentTaskId)
+                  }
                   onAddDivider={() => addDivider(list.id)}
                   onArchive={() => {
                     if (guardGanttStructuralEdit(list.id)) return;
@@ -2127,8 +2146,8 @@ export function ProjectTaskBoard({
                         clearTaskCreateDraft(profile?.id, list.id);
                         setDraftingListId(null);
                       }}
-                      onCreateDraft={(draft) =>
-                        createTaskFromDraft(list.id, draft)
+                      onCreateDraft={(draft, attachmentTaskId) =>
+                        createTaskFromDraft(list.id, draft, attachmentTaskId)
                       }
                       onAddDivider={() => addDivider(list.id)}
                       onArchive={() => {
@@ -2284,7 +2303,7 @@ function ListSection({
   drafting: boolean;
   onStartDraft: () => void;
   onCancelDraft: () => void;
-  onCreateDraft: (draft: InlineTaskDraft) => void;
+  onCreateDraft: (draft: InlineTaskDraft, attachmentTaskId?: string) => void;
   onAddDivider: () => void;
   onArchive: () => void;
   onUnarchive: () => void;
@@ -2586,6 +2605,9 @@ function ListSection({
                   }
                   onCancel={onCancelDraft}
                   onSubmit={onCreateDraft}
+                  storageMode={ctx.mode}
+                  newId={ctx.newId}
+                  onAttachmentError={ctx.onAttachmentError}
                 />
               ) : (
                 <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-left opacity-0 transition-opacity group-hover/list:opacity-100 focus-within:opacity-100">
@@ -2653,6 +2675,10 @@ function InlineTaskForm({
   depth = 0,
   descriptionViewExpanded = false,
   allowClientReview = false,
+  taskIdForAttachments = null,
+  storageMode = "demo",
+  newId,
+  onAttachmentError,
 }: {
   people: Person[];
   allPeople?: Person[];
@@ -2661,7 +2687,7 @@ function InlineTaskForm({
   status?: TaskStatus;
   submitLabel: string;
   onCancel: () => void;
-  onSubmit: (draft: InlineTaskDraft) => void;
+  onSubmit: (draft: InlineTaskDraft, attachmentTaskId?: string) => void;
   onDelete?: () => void;
   /** When set (create flow), persist field changes as a local draft. */
   onDraftChange?: (draft: InlineTaskDraft) => void;
@@ -2669,7 +2695,14 @@ function InlineTaskForm({
   /** View-mode description expand state when opening edit. */
   descriptionViewExpanded?: boolean;
   allowClientReview?: boolean;
+  taskIdForAttachments?: string | null;
+  storageMode?: "demo" | "supabase";
+  newId?: (prefix: string) => string;
+  onAttachmentError?: (msg: string) => void;
 }) {
+  const [draftTaskId] = useState(
+    () => taskIdForAttachments ?? newId?.("task") ?? crypto.randomUUID(),
+  );
   const [title, setTitle] = useState(initial?.title ?? "");
   const [assigneeId, setAssigneeId] = useState(
     initial?.assignee_person_id ?? "",
@@ -2715,7 +2748,7 @@ function InlineTaskForm({
       due_date: dueDate || null,
       notes,
       is_client_review: isClientReview,
-    });
+    }, draftTaskId);
   }
 
   const statusSquareClass =
@@ -2824,12 +2857,20 @@ function InlineTaskForm({
               onChange={setNotes}
               mentionPeople={mentionPeople}
               initialExpanded={descriptionViewExpanded}
+              taskId={draftTaskId}
+              enableAttachments={storageMode === "supabase"}
+              isDemo={storageMode === "demo"}
+              onAttachmentError={onAttachmentError}
             />
           ) : (
             <TaskDescriptionCreateField
               value={notes}
               onChange={setNotes}
               mentionPeople={mentionPeople}
+              taskId={draftTaskId}
+              enableAttachments={storageMode === "supabase"}
+              isDemo={storageMode === "demo"}
+              onAttachmentError={onAttachmentError}
             />
           )}
         </div>
@@ -3252,6 +3293,9 @@ function TaskRow({
           }}
           allowClientReview={Boolean(task.parent_id)}
           descriptionViewExpanded={descExpanded}
+          taskIdForAttachments={task.id}
+          storageMode={ctx.mode}
+          onAttachmentError={ctx.onAttachmentError}
           onCancel={() => ctx.setEditingTask(null)}
           onSubmit={(draft) => ctx.saveEditingTask(task.id, draft)}
           onDelete={() => ctx.deleteEditingTask(task.id)}
@@ -3703,6 +3747,7 @@ function CommentThread({
 }) {
   const [draft, setDraft] = useState("");
   const [replying, setReplying] = useState(false);
+  const [draftCommentId] = useState(() => ctx.newId("tcom"));
   const sorted = [...comments].sort((a, b) =>
     a.created_at.localeCompare(b.created_at),
   );
@@ -3728,7 +3773,12 @@ function CommentThread({
 
   function submitReply() {
     if (!notesHasContent(draft)) return;
-    ctx.addComment(task.id, draft, extractMentionPersonIds(draft));
+    ctx.addComment(
+      task.id,
+      draft,
+      extractMentionPersonIds(draft),
+      draftCommentId,
+    );
     setDraft("");
     setReplying(false);
     clearCommentDraft(ctx.profileId, task.id);
@@ -3751,6 +3801,11 @@ function CommentThread({
               onChange={updateDraft}
               placeholder="Add a comment... Use @ to mention"
               mentionPeople={ctx.mentionPeople}
+              enableAttachments={ctx.mode === "supabase"}
+              attachmentEntityType="comment"
+              attachmentEntityId={draftCommentId}
+              isDemo={ctx.mode === "demo"}
+              onAttachmentError={ctx.onAttachmentError}
             />
             <div className="flex flex-wrap gap-2">
               <button
@@ -3857,6 +3912,11 @@ function CommentItem({
               onChange={setDraft}
               placeholder="Edit comment... Use @ to mention"
               mentionPeople={ctx.mentionPeople}
+              enableAttachments={ctx.mode === "supabase"}
+              attachmentEntityType="comment"
+              attachmentEntityId={comment.id}
+              isDemo={ctx.mode === "demo"}
+              onAttachmentError={ctx.onAttachmentError}
             />
             <div className="flex flex-wrap gap-2">
               <button
