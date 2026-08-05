@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Field, inputClass, DateInput } from "@/components/ui/form";
+import { Field, inputClass, DateInput, ConfirmDialog } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
@@ -198,6 +198,8 @@ export function ProjectForm({
     }
   }, [visibleTabs, tab]);
 
+  const [confirmSandbox, setConfirmSandbox] = useState(false);
+
   const showPmHours =
     Boolean(project.manager_person_id) &&
     Boolean(onPmDailyHoursChange) &&
@@ -214,16 +216,21 @@ export function ProjectForm({
     });
   }
 
+  function enableSandbox() {
+    onChange({
+      ...project,
+      sandbox_mode: true,
+      manager_person_id: null,
+    });
+  }
+
   function toggleSandbox(enable: boolean) {
     if (enable) {
-      if (sandboxWipeRisk && !window.confirm(SANDBOX_ENABLE_WARNING)) {
+      if (sandboxWipeRisk) {
+        setConfirmSandbox(true);
         return;
       }
-      onChange({
-        ...project,
-        sandbox_mode: true,
-        manager_person_id: null,
-      });
+      enableSandbox();
       return;
     }
     onChange({
@@ -800,6 +807,18 @@ export function ProjectForm({
           </button>
         </div>
       </div>
+      {confirmSandbox ? (
+        <ConfirmDialog
+          title="Enable Sandbox Mode?"
+          message={SANDBOX_ENABLE_WARNING}
+          confirmLabel="Enable"
+          onCancel={() => setConfirmSandbox(false)}
+          onConfirm={() => {
+            setConfirmSandbox(false);
+            enableSandbox();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

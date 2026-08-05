@@ -413,6 +413,7 @@ export function ProjectTaskBoard({
     id: string;
     name: string;
   } | null>(null);
+  const [ganttStructuralNotice, setGanttStructuralNotice] = useState(false);
   const [view, setView] = useState<TaskBoardView>("list");
 
   function setTaskView(next: TaskBoardView) {
@@ -499,7 +500,7 @@ export function ProjectTaskBoard({
   function guardGanttStructuralEdit(listId: string): boolean {
     const list = listById.get(listId);
     if (!list?.gantt_enabled || !isPm || view === "gantt") return false;
-    window.alert(GANTT_STRUCTURAL_EDIT_MSG);
+    setGanttStructuralNotice(true);
     return true;
   }
 
@@ -2236,6 +2237,16 @@ export function ProjectTaskBoard({
           onConfirm={deleteSelectedTasks}
         />
       ) : null}
+      {ganttStructuralNotice ? (
+        <ConfirmDialog
+          mode="notice"
+          title="Edit in Gantt view"
+          message={GANTT_STRUCTURAL_EDIT_MSG}
+          confirmLabel="Got it"
+          onCancel={() => setGanttStructuralNotice(false)}
+          onConfirm={() => setGanttStructuralNotice(false)}
+        />
+      ) : null}
     </>
   );
 }
@@ -2345,6 +2356,7 @@ function ListSection({
 }) {
   const listLocked = ctx.isListGanttLocked(list.id);
   const listManage = ctx.manageLists && !listLocked;
+  const [confirmEnableGantt, setConfirmEnableGantt] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: list.id,
@@ -2368,6 +2380,7 @@ function ListSection({
     selectableIds.some((id) => ctx.expanded.has(id));
 
   return (
+    <>
     <section
       style={{
         transform: CSS.Transform.toString(transform),
@@ -2435,15 +2448,10 @@ function ListSection({
                   )}
                   onClick={() => {
                     if (!list.gantt_enabled) {
-                      if (
-                        !window.confirm(
-                          "Enabling Gantt View Will Lock all Editing to the Project Manager of This Project.",
-                        )
-                      ) {
-                        return;
-                      }
+                      setConfirmEnableGantt(true);
+                      return;
                     }
-                    onUpdateList({ gantt_enabled: !list.gantt_enabled });
+                    onUpdateList({ gantt_enabled: false });
                   }}
                   aria-label={
                     list.gantt_enabled
@@ -2665,6 +2673,20 @@ function ListSection({
           ) : null}
       </ExpandPanel>
     </section>
+    {confirmEnableGantt ? (
+      <ConfirmDialog
+        title="Enable Gantt view?"
+        message="Enabling Gantt View Will Lock all Editing to the Project Manager of This Project."
+        confirmLabel="Enable"
+        tone="accent"
+        onCancel={() => setConfirmEnableGantt(false)}
+        onConfirm={() => {
+          setConfirmEnableGantt(false);
+          onUpdateList({ gantt_enabled: true });
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 

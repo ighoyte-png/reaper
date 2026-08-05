@@ -111,8 +111,9 @@ export function Modal({
 export function ConfirmDialog({
   title,
   message,
-  confirmLabel = "Delete",
-  tone = "danger",
+  confirmLabel,
+  tone,
+  mode = "confirm",
   onConfirm,
   onCancel,
   children,
@@ -123,6 +124,8 @@ export function ConfirmDialog({
   confirmLabel?: string;
   /** danger = red destructive; accent = primary action */
   tone?: "danger" | "accent";
+  /** notice = single OK/Got it button (no Cancel) */
+  mode?: "confirm" | "notice";
   onConfirm: () => void;
   onCancel: () => void;
   children?: ReactNode;
@@ -131,6 +134,10 @@ export function ConfirmDialog({
   const mounted = useMounted();
   if (!mounted) return null;
 
+  const resolvedTone = tone ?? (mode === "notice" ? "accent" : "danger");
+  const resolvedLabel =
+    confirmLabel ?? (mode === "notice" ? "OK" : "Delete");
+
   return createPortal(
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl">
@@ -138,16 +145,18 @@ export function ConfirmDialog({
         <p className="mt-2 text-sm text-[var(--text-muted)]">{message}</p>
         {children}
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" size="lg" onClick={onCancel}>
-            Cancel
-          </Button>
+          {mode === "confirm" ? (
+            <Button variant="secondary" size="lg" onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : null}
           <Button
-            variant={tone === "accent" ? "primary" : "destructive"}
+            variant={resolvedTone === "accent" ? "primary" : "destructive"}
             size="lg"
             disabled={confirmDisabled}
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {resolvedLabel}
           </Button>
         </div>
       </div>
