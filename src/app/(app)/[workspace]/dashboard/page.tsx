@@ -35,6 +35,7 @@ import { panelClass } from "@/components/ui/panel";
 import { CapacityBar } from "@/components/ui/capacity-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { RichNotesHtml } from "@/components/ui/simple-rich-text";
+import { LinkifiedText } from "@/components/ui/linkified-text";
 import {
   ConfirmDialog,
   Field,
@@ -2318,9 +2319,25 @@ function BulletinBoard({
                       {b.title}
                     </div>
                     {b.body ? (
-                      <p className="mt-1 text-xs text-[var(--text-muted)]">
-                        {b.body}
-                      </p>
+                      /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(
+                        b.body,
+                      ) ? (
+                        <div
+                          className="rich-notes mt-1 text-xs text-[var(--text-muted)]"
+                          onClick={(e) => {
+                            if ((e.target as HTMLElement).closest("a")) {
+                              e.stopPropagation();
+                            }
+                          }}
+                        >
+                          <RichNotesHtml html={b.body} />
+                        </div>
+                      ) : (
+                        <LinkifiedText
+                          text={b.body}
+                          className="mt-1 text-xs text-[var(--text-muted)]"
+                        />
+                      )
                     ) : null}
                     <div className="mt-1 text-[11px] text-[var(--text-muted)]">
                       {b.created_at.slice(0, 10)}
