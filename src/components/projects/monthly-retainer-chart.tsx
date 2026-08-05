@@ -174,13 +174,12 @@ function MonthBarColumn({
       className={cn(
         "relative flex h-full min-w-0 flex-1 items-end justify-center",
         onMonthSelect && "cursor-pointer",
-        selected && "rounded-t ring-2 ring-[var(--accent)] ring-offset-1",
       )}
       title={`${bar.label}: ${formatValue(total)}${
         cap > 0 ? ` / ${formatValue(cap)}` : ""
       }${futureMonth ? " (planned)" : ""}`}
     >
-      {current ? (
+      {selected ? (
         <div
           className="absolute inset-x-0 bottom-0 top-0 bg-[var(--accent)]/10"
           aria-hidden
