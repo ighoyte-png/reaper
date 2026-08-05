@@ -481,30 +481,29 @@ export default function ProjectDetailPage() {
               <ul className="flex flex-wrap gap-x-4 gap-y-2">
                 {(showManagers && manager ? teamWithoutManager : team).map(
                   (p) => (
-                    <li
-                      key={p.id}
-                      className="flex min-w-0 items-start gap-2 text-sm"
-                    >
-                      <PersonAvatar
-                        avatarUrl={p.avatar_url}
-                        avatarAttachmentId={p.avatar_attachment_id}
-                        name={p.name}
-                        size="team"
-                        fallback="initials"
-                      />
-                      <div className="min-w-0 text-left">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="truncate font-medium leading-tight">
-                            {p.name}
-                          </span>
-                          {!isPublicShare && p.is_contractor ? (
-                            <ContractorTag />
-                          ) : null}
-                        </div>
-                        {p.role_title ? (
-                          <div className="truncate text-xs text-[var(--text-muted)]">
-                            {p.role_title}
+                    <li key={p.id} className="min-w-0">
+                      <div className="flex min-w-0 flex-col gap-2">
+                        <div className="flex min-w-0 items-center gap-2 text-sm">
+                          <PersonAvatar
+                            avatarUrl={p.avatar_url}
+                            avatarAttachmentId={p.avatar_attachment_id}
+                            name={p.name}
+                            size="team"
+                            fallback="initials"
+                          />
+                          <div className="min-w-0 text-left">
+                            <div className="truncate font-medium leading-tight">
+                              {p.name}
+                            </div>
+                            {p.role_title ? (
+                              <div className="truncate text-xs text-[var(--text-muted)]">
+                                {p.role_title}
+                              </div>
+                            ) : null}
                           </div>
+                        </div>
+                        {!isPublicShare && p.is_contractor ? (
+                          <ContractorTag className="self-start" />
                         ) : null}
                       </div>
                     </li>
