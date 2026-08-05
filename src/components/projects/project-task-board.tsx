@@ -2647,6 +2647,9 @@ function ListSection({
           )}
           {milestone ? (
             <div className="flex items-center gap-1.5 px-2 py-1 text-sm">
+              {listManage ? (
+                <span className="w-[18px] shrink-0" aria-hidden />
+              ) : null}
               <Star
                 size={10}
                 className={cn(
