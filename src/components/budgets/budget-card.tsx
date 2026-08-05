@@ -63,7 +63,8 @@ export function BudgetCard({
         project,
         state.assignments,
         state.people,
-        new Date(year, 0, 1),
+        year,
+        new Date(),
         membersForProject,
       )
     : [];

@@ -1001,10 +1001,10 @@ export function calendarYearBars(
   project: Project,
   assignments: Assignment[],
   people: Person[],
+  year: number,
   asOf: Date = new Date(),
   projectMembers: ProjectMember[] = [],
 ): MonthBurnBar[] {
-  const year = asOf.getFullYear();
   const mode = normalizeBudgetMode(
     project.budget_mode,
     project.budget_hours,
@@ -1060,7 +1060,13 @@ export function calendarYearHourBars(
   assignments: Assignment[],
   asOf: Date = new Date(),
 ): MonthBurnBar[] {
-  return calendarYearBars(project, assignments, [], asOf);
+  return calendarYearBars(
+    project,
+    assignments,
+    [],
+    asOf.getFullYear(),
+    asOf,
+  );
 }
 
 /** Hours for one assignment occurrence overlapping [fromKey, toKey] inclusive. */

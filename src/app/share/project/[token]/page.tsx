@@ -211,7 +211,8 @@ export default function ProjectSharePage() {
             portal.hoursRetainer.assignments,
           ),
           [],
-          new Date(chartYear, 0, 1),
+          chartYear,
+          new Date(),
         )
       : [];
 

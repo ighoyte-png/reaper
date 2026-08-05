@@ -180,17 +180,23 @@ function MonthBarColumn({
         cap > 0 ? ` / ${formatValue(cap)}` : ""
       }${futureMonth ? " (planned)" : ""}`}
     >
+      {current ? (
+        <div
+          className="absolute inset-x-0 bottom-0 top-0 bg-[var(--accent)]/10"
+          aria-hidden
+        />
+      ) : null}
       {total <= 0 ? (
         <div
           className={cn(
-            "w-full rounded-t bg-[var(--border)]",
+            "relative z-[1] w-full rounded-t bg-[var(--border)]",
             compact ? "max-w-[28px] h-0.5" : "max-w-[37px] h-1",
           )}
         />
       ) : showCapLine && overCap > 0 ? (
         <div
           className={cn(
-            "relative flex w-full flex-col justify-end overflow-hidden rounded-t",
+            "relative z-[1] flex w-full flex-col justify-end overflow-hidden rounded-t",
             compact ? "max-w-[28px]" : "max-w-[37px]",
           )}
           style={{ height: `${valuePct}%` }}
@@ -204,7 +210,7 @@ function MonthBarColumn({
       ) : (
         <div
           className={cn(
-            "relative flex w-full flex-col justify-end overflow-hidden rounded-t",
+            "relative z-[1] flex w-full flex-col justify-end overflow-hidden rounded-t",
             compact ? "max-w-[28px]" : "max-w-[37px]",
           )}
           style={{ height: `${Math.max(valuePct, 4)}%` }}

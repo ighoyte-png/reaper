@@ -127,7 +127,8 @@ export default function ProjectBudgetDetailPage() {
             project,
             state.assignments,
             state.people,
-            new Date(year, 0, 1),
+            year,
+            new Date(),
             projectMembers,
           )
         : [],

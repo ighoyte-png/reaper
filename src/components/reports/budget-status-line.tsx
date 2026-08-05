@@ -25,7 +25,7 @@ export function BudgetStatusLine({
       <span className="inline-flex items-center gap-1.5">
         <StatCountBadge
           count={tracked}
-          className="bg-[var(--text)] text-[var(--bg)]"
+          className="bg-[var(--status-unavailable)]"
         />
         Tracked Projects
       </span>
