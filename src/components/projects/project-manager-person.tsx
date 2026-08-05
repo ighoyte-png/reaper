@@ -81,23 +81,23 @@ export function ProjectManagerPerson({
     | "avatar_color"
   >;
   size?: "team" | "row" | "sm" | "lg";
-  /** Show the shared “Project Manager” pill below the person. */
+  /** Show the shared “Project Manager” pill under the name/title column. */
   showTag?: boolean;
   className?: string;
   nameClassName?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
-      <div className="flex min-w-0 items-center gap-2">
-        <PersonAvatar
-          avatarUrl={person.avatar_url}
-          avatarAttachmentId={person.avatar_attachment_id}
-          name={person.name}
-          size={size}
-          fallback="initials"
-          color={person.avatar_color}
-        />
-        <div className="min-w-0 text-left">
+    <div className={cn("flex min-w-0 items-start gap-2", className)}>
+      <PersonAvatar
+        avatarUrl={person.avatar_url}
+        avatarAttachmentId={person.avatar_attachment_id}
+        name={person.name}
+        size={size}
+        fallback="initials"
+        color={person.avatar_color}
+      />
+      <div className="flex min-w-0 flex-col gap-2 text-left">
+        <div className="min-w-0">
           <div
             className={cn(
               "truncate text-left text-sm font-medium leading-tight",
@@ -112,8 +112,8 @@ export function ProjectManagerPerson({
             </div>
           ) : null}
         </div>
+        {showTag ? <ProjectManagerTag className="self-start" /> : null}
       </div>
-      {showTag ? <ProjectManagerTag className="self-start" /> : null}
     </div>
   );
 }

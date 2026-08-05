@@ -473,27 +473,31 @@ function PeoplePageContent() {
             color={personAvatarColor(person)}
             size="lg"
           />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex min-w-0 flex-1 flex-col gap-2">
+            <div className="min-w-0">
               <div className="truncate text-sm font-semibold leading-tight">
                 {person.name}
               </div>
-              {isManager ? <ManagerTag /> : null}
-              {person.is_contractor ? <ContractorTag /> : null}
+              {person.role_title ? (
+                <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                  {person.role_title}
+                </div>
+              ) : null}
+              {person.office ? (
+                <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                  City: {person.office}
+                </div>
+              ) : null}
+              {linkedProfile ? (
+                <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                  Access: {accessLabel(linkedProfile.role)}
+                </div>
+              ) : null}
             </div>
-            {person.role_title ? (
-              <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-                {person.role_title}
-              </div>
-            ) : null}
-            {person.office ? (
-              <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-                City: {person.office}
-              </div>
-            ) : null}
-            {linkedProfile ? (
-              <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
-                Access: {accessLabel(linkedProfile.role)}
+            {isManager || person.is_contractor ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {isManager ? <ManagerTag /> : null}
+                {person.is_contractor ? <ContractorTag /> : null}
               </div>
             ) : null}
           </div>

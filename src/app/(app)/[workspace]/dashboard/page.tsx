@@ -1604,12 +1604,7 @@ function DashboardIdentityCard({
           }
         />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-sm font-semibold">{displayName}</span>
-            {!isPublicIdentity && identityPerson?.is_contractor ? (
-              <ContractorTag />
-            ) : null}
-          </div>
+          <div className="text-sm font-semibold">{displayName}</div>
           {displayTitle ? (
             <div className="mt-0.5 text-xs text-[var(--text-muted)]">
               {displayTitle}
@@ -1631,6 +1626,11 @@ function DashboardIdentityCard({
                   {pod.name}
                 </span>
               ))}
+            </div>
+          ) : null}
+          {!isPublicIdentity && identityPerson?.is_contractor ? (
+            <div className="mt-2">
+              <ContractorTag />
             </div>
           ) : null}
           {isPublicIdentity ? (

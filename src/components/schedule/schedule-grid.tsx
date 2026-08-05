@@ -5258,11 +5258,8 @@ function AssignmentAssignerDetails({
           color={person.avatar_color}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <div className="truncate text-sm font-semibold leading-tight">
-              {person.name}
-            </div>
-            <ProjectManagerTag />
+          <div className="truncate text-sm font-semibold leading-tight">
+            {person.name}
           </div>
           {person.role_title ? (
             <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
@@ -5287,6 +5284,9 @@ function AssignmentAssignerDetails({
               ))}
             </div>
           ) : null}
+          <div className="mt-2">
+            <ProjectManagerTag />
+          </div>
           {assignedLabel || showModified ? (
             <div className="mt-2 space-y-0.5 text-xs text-[var(--text-muted)]">
               {assignedLabel ? <div>Assigned: {assignedLabel}</div> : null}
