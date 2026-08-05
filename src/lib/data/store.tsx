@@ -33,7 +33,7 @@ import {
   orderTasksParentsFirst,
   taskAssignerPersonId,
   taskThreadMentionNotifyPersonIds,
-  taskThreadNotifyPersonId,
+  taskThreadNotifyPersonIds,
 } from "@/lib/domain/tasks";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import {
@@ -3458,15 +3458,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? (state.people.find((p) => p.profile_id === row.author_profile_id) ??
             null)
           : null;
-        const threadNotifyId =
-          task && authorPerson
-            ? taskThreadNotifyPersonId(
-                task,
-                authorPerson.id,
-                state.people,
-                project,
-              )
-            : null;
         patch((prev) => {
           const existing = prev.task_comments.find((c) => c.id === row.id);
           const next: TaskComment = {
@@ -3513,15 +3504,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 { task_id: row.task_id, person_id },
               ];
             };
-            if (!exists && threadNotifyId) {
-              addThreadUnread(threadNotifyId);
-            }
-            for (const person_id of taskThreadMentionNotifyPersonIds(
-              next.mentioned_person_ids,
-              authorPerson?.id ?? null,
-            )) {
-              if (prevMentioned.has(person_id)) continue;
-              addThreadUnread(person_id);
+            if (!exists && task && authorPerson) {
+              const commentsForNotify = [
+                ...prev.task_comments.filter(
+                  (c) => c.task_id === row.task_id && c.id !== next.id,
+                ),
+                next,
+              ];
+              for (const person_id of taskThreadNotifyPersonIds(
+                task,
+                authorPerson.id,
+                state.people,
+                project,
+                commentsForNotify,
+              )) {
+                addThreadUnread(person_id);
+              }
+            } else {
+              for (const person_id of taskThreadMentionNotifyPersonIds(
+                next.mentioned_person_ids,
+                authorPerson?.id ?? null,
+              )) {
+                if (prevMentioned.has(person_id)) continue;
+                addThreadUnread(person_id);
+              }
             }
           }
           return {

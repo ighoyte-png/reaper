@@ -3,6 +3,7 @@ import type {
   Person,
   Project,
   Task,
+  TaskComment,
   TaskList,
   TaskStatus,
 } from "@/lib/types";
@@ -236,6 +237,65 @@ export function taskThreadMentionNotifyPersonIds(
     if (!id || id === authorPersonId || seen.has(id)) continue;
     seen.add(id);
     out.push(id);
+  }
+  return out;
+}
+
+/**
+ * People subscribed to a task thread from prior activity: comment authors +
+ * anyone @mentioned on any comment on the task.
+ */
+export function taskThreadSubscriberPersonIds(
+  taskId: string,
+  comments: Pick<
+    TaskComment,
+    "task_id" | "author_profile_id" | "mentioned_person_ids"
+  >[],
+  people: Pick<Person, "id" | "profile_id">[],
+): string[] {
+  const profileToPerson = new Map<string, string>();
+  for (const p of people) {
+    if (p.profile_id) profileToPerson.set(p.profile_id, p.id);
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (personId: string | null | undefined) => {
+    if (!personId || seen.has(personId)) return;
+    seen.add(personId);
+    out.push(personId);
+  };
+  for (const c of comments) {
+    if (c.task_id !== taskId) continue;
+    add(profileToPerson.get(c.author_profile_id) ?? null);
+    for (const id of c.mentioned_person_ids ?? []) add(id);
+  }
+  return out;
+}
+
+/**
+ * Full notify set for a new comment: assigner↔assignee counterpart plus other
+ * thread subscribers (authors / @mentions), excluding the author.
+ */
+export function taskThreadNotifyPersonIds(
+  task: Pick<Task, "id" | "assignee_person_id" | "created_by_profile_id">,
+  authorPersonId: string | null,
+  people: Pick<Person, "id" | "profile_id">[],
+  project: Pick<Project, "manager_person_id"> | null,
+  comments: Pick<
+    TaskComment,
+    "task_id" | "author_profile_id" | "mentioned_person_ids"
+  >[],
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (personId: string | null | undefined) => {
+    if (!personId || personId === authorPersonId || seen.has(personId)) return;
+    seen.add(personId);
+    out.push(personId);
+  };
+  add(taskThreadNotifyPersonId(task, authorPersonId, people, project));
+  for (const id of taskThreadSubscriberPersonIds(task.id, comments, people)) {
+    add(id);
   }
   return out;
 }
