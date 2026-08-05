@@ -2061,6 +2061,10 @@ export async function upsertPersonRow(
     is_contractor: Boolean(person.is_contractor),
     avatar_color: person.avatar_color || null,
   };
+  // R2 avatars: attachment id is source of truth; don't write ephemeral signed URLs.
+  if (payload.avatar_attachment_id) {
+    payload.avatar_url = null;
+  }
   const { error } = await supabase.from("people").upsert(payload);
   if (!error) return;
 
@@ -2165,10 +2169,21 @@ export async function updatePersonAvatarRow(
   supabase: SupabaseClient,
   personId: string,
   avatarUrl: string | null,
+  avatarAttachmentId?: string | null,
 ) {
+  const payload: {
+    avatar_url: string | null;
+    avatar_attachment_id?: string | null;
+  } = {
+    // Never persist short-lived R2 signed URLs; display code re-signs from attachment id.
+    avatar_url: avatarAttachmentId ? null : avatarUrl,
+  };
+  if (avatarAttachmentId !== undefined) {
+    payload.avatar_attachment_id = avatarAttachmentId;
+  }
   const { error } = await supabase
     .from("people")
-    .update({ avatar_url: avatarUrl })
+    .update(payload)
     .eq("id", personId);
   if (error) throw error;
 }

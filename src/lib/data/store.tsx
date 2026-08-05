@@ -2491,6 +2491,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
+          // Strip ephemeral signed URLs in the API layer when attachment id is set.
           await runRemote(() => upsertPersonRow(supabaseRef.current!, row));
         }
       },
@@ -2499,26 +2500,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
         patch((prev) => {
           const person = prev.people.find((p) => p.id === personId);
           existingAttachmentId = person?.avatar_attachment_id ?? null;
+          const nextAttachmentId =
+            avatarAttachmentId !== undefined
+              ? avatarAttachmentId
+              : avatarUrl
+                ? person?.avatar_attachment_id ?? null
+                : null;
           return {
             ...prev,
             people: prev.people.map((p) =>
               p.id === personId
                 ? {
                     ...p,
+                    // Keep a display URL in memory; DB stores attachment id (+ null url for R2).
                     avatar_url: avatarUrl,
-                    avatar_attachment_id:
-                      avatarAttachmentId !== undefined
-                        ? avatarAttachmentId
-                        : avatarUrl
-                          ? p.avatar_attachment_id
-                          : null,
+                    avatar_attachment_id: nextAttachmentId,
                   }
                 : p,
             ),
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
-          if (avatarUrl === null) {
+          if (avatarUrl === null && !avatarAttachmentId) {
             if (existingAttachmentId) {
               await runRemote(async () => {
                 const res = await fetch(
@@ -2534,15 +2537,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
               });
             } else {
               await runRemote(() =>
-                updatePersonAvatarRow(supabaseRef.current!, personId, null),
+                updatePersonAvatarRow(
+                  supabaseRef.current!,
+                  personId,
+                  null,
+                  null,
+                ),
               );
             }
-          } else if (!avatarAttachmentId) {
+          } else {
             await runRemote(() =>
               updatePersonAvatarRow(
                 supabaseRef.current!,
                 personId,
-                avatarUrl,
+                avatarAttachmentId ? null : avatarUrl,
+                avatarAttachmentId !== undefined
+                  ? avatarAttachmentId
+                  : undefined,
               ),
             );
           }
