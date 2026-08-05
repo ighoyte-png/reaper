@@ -13,18 +13,46 @@ import {
 
 type ChartTab = "progress" | "weekly";
 
+const contractorColor = "var(--status-healthy)";
+
+function ChartLegend({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <p className="mt-2 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+      <span className="inline-flex items-center gap-1">
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{ backgroundColor: contractorColor }}
+          aria-hidden
+        />
+        Contractor
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span
+          className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]"
+          aria-hidden
+        />
+        Internal
+      </span>
+    </p>
+  );
+}
+
 /** Project progress / hours-per-week charts matching budget detail layout. */
 export function ProjectProgressCharts({
   points,
   budgetHours,
   budgetAmount,
   unit = "hours",
+  contractorBaseline = 0,
   className,
 }: {
   points: WeeklyProgressPoint[];
   budgetHours?: number | null;
   budgetAmount?: number | null;
   unit?: "hours" | "amount";
+  /** Flat contractor commitment shown as a green baseline on the progress chart. */
+  contractorBaseline?: number;
   className?: string;
 }) {
   const [tab, setTab] = useState<ChartTab>("progress");
@@ -56,11 +84,15 @@ export function ProjectProgressCharts({
         />
       </div>
       {tab === "progress" ? (
-        <ProgressLineChart
-          points={points}
-          unit={unit}
-          budgetCap={budgetCap ?? null}
-        />
+        <>
+          <ProgressLineChart
+            points={points}
+            unit={unit}
+            budgetCap={budgetCap ?? null}
+            contractorBaseline={contractorBaseline}
+          />
+          <ChartLegend show={contractorBaseline > 0} />
+        </>
       ) : (
         <HoursPerWeekChart points={points} unit={unit} />
       )}
@@ -166,10 +198,12 @@ function ProgressLineChart({
   points,
   unit,
   budgetCap,
+  contractorBaseline = 0,
 }: {
   points: WeeklyProgressPoint[];
   unit: "hours" | "amount";
   budgetCap: number | null;
+  contractorBaseline?: number;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const hatchId = useId().replace(/:/g, "");
@@ -183,10 +217,17 @@ function ProgressLineChart({
   const plotH = h - padT - padB;
 
   const hasBudget = budgetCap != null && budgetCap > 0;
+  const hasContractorBaseline = contractorBaseline > 0;
   const dataMax = Math.max(
-    ...points.map((p) =>
-      Math.max(pointValue(p, "used", unit), pointValue(p, "planned", unit)),
-    ),
+    ...points.map((p) => {
+      const internalUsed = pointValue(p, "used", unit);
+      const internalPlanned = pointValue(p, "planned", unit);
+      return Math.max(
+        contractorBaseline + internalUsed,
+        contractorBaseline + internalPlanned,
+      );
+    }),
+    hasContractorBaseline ? contractorBaseline : 0,
     1,
   );
   const { maxY, ticks: yTicks } = useMemo(
@@ -218,12 +259,16 @@ function ProgressLineChart({
     return padT + plotH - (v / maxY) * plotH;
   }
 
-  /** Display Y: used through handoff, planned afterward. */
-  function valueAt(i: number) {
+  /** Display Y: used through handoff, planned afterward; offset by contractor baseline. */
+  function internalValueAt(i: number) {
     const p = points[i]!;
     if (i < handoffIdx) return pointValue(p, "used", unit);
     if (i === handoffIdx) return pointValue(p, "used", unit);
     return pointValue(p, "planned", unit);
+  }
+
+  function valueAt(i: number) {
+    return contractorBaseline + internalValueAt(i);
   }
 
   function pathSegment(from: number, to: number) {
@@ -262,6 +307,9 @@ function ProgressLineChart({
   }, [points]);
 
   const budgetY = hasBudget ? yAt(budgetCap!) : null;
+  const contractorY = hasContractorBaseline ? yAt(contractorBaseline) : null;
+  const firstX = xAt(0);
+  const lastX = xAt(points.length - 1);
   const weekBandW =
     points.length <= 1 ? plotW * 0.08 : plotW / (points.length - 1);
   const thisWeekX =
@@ -416,6 +464,32 @@ function ProgressLineChart({
           </g>
         ) : null}
 
+        {contractorY != null ? (
+          <g>
+            <line
+              x1={firstX}
+              x2={lastX}
+              y1={contractorY}
+              y2={contractorY}
+              stroke={contractorColor}
+              strokeWidth={1.25}
+              strokeLinecap="round"
+            />
+            <circle
+              cx={firstX}
+              cy={contractorY}
+              r={2}
+              fill={contractorColor}
+            />
+            <circle
+              cx={lastX}
+              cy={contractorY}
+              r={2}
+              fill={contractorColor}
+            />
+          </g>
+        ) : null}
+
         {budgetY != null ? (
           <line
             x1={padL}
@@ -514,6 +588,11 @@ function ProgressLineChart({
                 <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
                   {formatDetailValue(hoverVal, unit)}
                 </div>
+                {hasContractorBaseline ? (
+                  <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+                    incl. {formatDetailValue(contractorBaseline, unit)} contractor
+                  </div>
+                ) : null}
               </div>
               {hasBudget ? (
                 <div className="min-w-0">

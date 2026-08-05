@@ -23,7 +23,7 @@ import {
   sortPods,
   type PodFilter,
 } from "@/lib/domain/pods";
-import { scheduleVisiblePeople } from "@/lib/domain/people";
+import { utilizationVisiblePeople } from "@/lib/domain/people";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 
@@ -51,9 +51,9 @@ function UtilizationReportContent() {
     if (!pods.some((p) => p.id === podFilter)) setPodFilter("all");
   }, [podFilter, pods]);
 
-  /** Default: everyone on the schedule. Pod chips optionally narrow. */
+  /** Default: everyone in utilization reporting. Pod chips optionally narrow. */
   const scopedPeople = useMemo(() => {
-    const visible = scheduleVisiblePeople(state.people);
+    const visible = utilizationVisiblePeople(state.people);
     if (podFilter === "all") return visible;
     return filterPeopleByPod(
       visible,

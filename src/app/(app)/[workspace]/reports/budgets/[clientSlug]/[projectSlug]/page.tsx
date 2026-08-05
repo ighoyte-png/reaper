@@ -11,7 +11,7 @@ import {
 } from "@/components/budgets/cumulative-hours-chart";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
-import { PersonAvatar } from "@/components/people/person-avatar";
+import { ContractorTag } from "@/components/projects/project-manager-person";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
@@ -32,9 +32,15 @@ import {
   weeklyProgressSeries,
   type MonthBurnBar,
 } from "@/lib/domain/budget";
+import { PersonAvatar } from "@/components/people/person-avatar";
+import {
+  contractorCommitted,
+  isProjectBasisContractor,
+} from "@/lib/domain/contractor";
 import { toDateKey } from "@/lib/domain/dates";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
+import type { ProjectMember } from "@/lib/types";
 
 export default function ProjectBudgetDetailPage() {
   const params = useParams<{ clientSlug: string; projectSlug: string }>();
@@ -83,12 +89,27 @@ export default function ProjectBudgetDetailPage() {
 
   const isRetainer = Boolean(project?.budget_monthly_reset);
 
+  const projectMembers = useMemo(
+    () =>
+      project
+        ? state.project_members.filter((m) => m.project_id === project.id)
+        : [],
+    [project, state.project_members],
+  );
+
   const burn = useMemo(
     () =>
       project
-        ? budgetBurn(project, state.assignments, state.people)
+        ? budgetBurn(
+            project,
+            state.assignments,
+            state.people,
+            false,
+            new Date(),
+            projectMembers,
+          )
         : null,
-    [project, state.assignments, state.people],
+    [project, state.assignments, state.people, projectMembers],
   );
 
   const hoursFx = useMemo(
@@ -107,17 +128,24 @@ export default function ProjectBudgetDetailPage() {
             state.assignments,
             state.people,
             new Date(year, 0, 1),
+            projectMembers,
           )
         : [],
-    [project, state.assignments, state.people, year],
+    [project, state.assignments, state.people, year, projectMembers],
   );
 
   const weeklyPoints = useMemo(
     () =>
       project
-        ? weeklyProgressSeries(project, state.assignments, new Date(), state.people)
+        ? weeklyProgressSeries(
+            project,
+            state.assignments,
+            new Date(),
+            state.people,
+            projectMembers,
+          )
         : [],
-    [project, state.assignments, state.people],
+    [project, state.assignments, state.people, projectMembers],
   );
 
   const yearTotals = useMemo(() => {
@@ -140,7 +168,13 @@ export default function ProjectBudgetDetailPage() {
     return { hours, amount };
   }, [project, state.assignments, state.people, year]);
 
-  const team = useMemo(() => {
+  const membersByPerson = useMemo(() => {
+    const map = new Map<string, ProjectMember>();
+    for (const m of projectMembers) map.set(m.person_id, m);
+    return map;
+  }, [projectMembers]);
+
+  const staffTeam = useMemo(() => {
     if (!project) return [];
     const ids = new Set<string>();
     for (const a of state.assignments) {
@@ -151,8 +185,22 @@ export default function ProjectBudgetDetailPage() {
         ids.add(t.assignee_person_id);
       }
     }
-    return sortPeopleByName(state.people.filter((p) => ids.has(p.id)));
+    return sortPeopleByName(
+      state.people.filter(
+        (p) => ids.has(p.id) && !isProjectBasisContractor(p),
+      ),
+    );
   }, [project, state.assignments, state.tasks, state.people]);
+
+  const contractorRoster = useMemo(() => {
+    if (!project) return [];
+    const ids = new Set(projectMembers.map((m) => m.person_id));
+    return sortPeopleByName(
+      state.people.filter(
+        (p) => ids.has(p.id) && isProjectBasisContractor(p),
+      ),
+    );
+  }, [project, projectMembers, state.people]);
 
   const periodRange = useMemo(() => {
     if (periodMode === "year") {
@@ -199,8 +247,8 @@ export default function ProjectBudgetDetailPage() {
   }
 
   const teamPeriod = useMemo(() => {
-    if (!project) return [];
-    const rows = team.map((person) => {
+    if (!project) return { staff: [], contractors: [] };
+    const staff = staffTeam.map((person) => {
       const split = personHoursSplitInRange(
         person.id,
         project.id,
@@ -215,10 +263,57 @@ export default function ProjectBudgetDetailPage() {
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
+        isContractor: false as const,
       };
     });
-    return rows.sort((a, b) => b.totalHours - a.totalHours);
-  }, [project, team, state.assignments, periodRange]);
+    const contractors = contractorRoster.map((person) => {
+      const member = membersByPerson.get(person.id);
+      const mode = member?.contractor_mode ?? null;
+      const isCommit =
+        mode === "fixed_fee" ||
+        mode === "hours" ||
+        (mode == null && person.hide_from_schedule);
+      if (isCommit) {
+        const committed = contractorCommitted(person, member);
+        return {
+          id: person.id,
+          name: person.name,
+          avatar_url: person.avatar_url,
+          usedHours: committed.hours,
+          plannedHours: committed.hours,
+          totalHours: committed.hours,
+          isContractor: true as const,
+        };
+      }
+      const split = personHoursSplitInRange(
+        person.id,
+        project.id,
+        state.assignments,
+        periodRange.start,
+        periodRange.end,
+      );
+      return {
+        id: person.id,
+        name: person.name,
+        avatar_url: person.avatar_url,
+        usedHours: split.usedHours,
+        plannedHours: split.futureHours,
+        totalHours: split.usedHours + split.futureHours,
+        isContractor: true as const,
+      };
+    });
+    return {
+      staff: staff.sort((a, b) => b.totalHours - a.totalHours),
+      contractors: contractors.sort((a, b) => b.totalHours - a.totalHours),
+    };
+  }, [
+    project,
+    staffTeam,
+    contractorRoster,
+    membersByPerson,
+    state.assignments,
+    periodRange,
+  ]);
 
   const periodRevenueCost = useMemo(() => {
     if (!project) return { revenue: 0, cost: 0 };
@@ -283,6 +378,10 @@ export default function ProjectBudgetDetailPage() {
   );
   const health = budgetHealth(burn);
   const chartUnit = mode === "amount" ? "amount" : "hours";
+  const contractorBaseline =
+    chartUnit === "amount"
+      ? (burn.contractorAmount ?? 0)
+      : (burn.contractorHours ?? 0);
   const showHoursMetrics = mode === "hours";
   const showAmountMetrics = mode === "amount";
   const monthlyCap =
@@ -624,6 +723,7 @@ export default function ProjectBudgetDetailPage() {
               unit={chartUnit}
               budgetHours={mode === "hours" ? project.budget_hours : null}
               budgetAmount={mode === "amount" ? project.budget_amount : null}
+              contractorBaseline={contractorBaseline}
             />
           )}
         </section>
@@ -744,7 +844,8 @@ export default function ProjectBudgetDetailPage() {
                 ? ` · ${periodRange.label}`
                 : ` · ${year}`}
             </h2>
-            {teamPeriod.length === 0 ? (
+            {teamPeriod.staff.length === 0 &&
+            teamPeriod.contractors.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">
                 No one assigned yet.
               </p>
@@ -760,32 +861,21 @@ export default function ProjectBudgetDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {teamPeriod.map((row) => (
-                      <tr
-                        key={row.id}
-                        className="border-b border-[var(--border)]/60"
-                      >
-                        <td className="py-2 pr-2">
-                          <div className="flex items-center gap-2">
-                            <PersonAvatar
-                              avatarUrl={row.avatar_url}
-                              name={row.name}
-                              size="xs"
-                              fallback="initials"
-                            />
-                            <span className="min-w-0 truncate">{row.name}</span>
-                          </div>
-                        </td>
-                        <td className="py-2 text-right tabular-nums">
-                          {formatHours(row.usedHours)}
-                        </td>
-                        <td className="py-2 text-right tabular-nums">
-                          {formatHours(row.plannedHours)}
-                        </td>
-                        <td className="py-2 text-right tabular-nums">
-                          {formatHours(row.totalHours)}
+                    {teamPeriod.staff.map((row) => (
+                      <TeamRow key={row.id} row={row} />
+                    ))}
+                    {teamPeriod.contractors.length > 0 ? (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          className="border-b border-[var(--border)]/60 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]"
+                        >
+                          Contractors
                         </td>
                       </tr>
+                    ) : null}
+                    {teamPeriod.contractors.map((row) => (
+                      <TeamRow key={row.id} row={row} showContractorTag />
                     ))}
                   </tbody>
                 </table>
@@ -796,6 +886,47 @@ export default function ProjectBudgetDetailPage() {
         </div>
       </div>
     </PageContainer>
+  );
+}
+
+function TeamRow({
+  row,
+  showContractorTag = false,
+}: {
+  row: {
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    usedHours: number;
+    plannedHours: number;
+    totalHours: number;
+  };
+  showContractorTag?: boolean;
+}) {
+  return (
+    <tr className="border-b border-[var(--border)]/60">
+      <td className="py-2 pr-2">
+        <div className="flex items-center gap-2">
+          <PersonAvatar
+            avatarUrl={row.avatar_url}
+            name={row.name}
+            size="xs"
+            fallback="initials"
+          />
+          <span className="min-w-0 truncate">{row.name}</span>
+          {showContractorTag ? <ContractorTag /> : null}
+        </div>
+      </td>
+      <td className="py-2 text-right tabular-nums">
+        {formatHours(row.usedHours)}
+      </td>
+      <td className="py-2 text-right tabular-nums">
+        {formatHours(row.plannedHours)}
+      </td>
+      <td className="py-2 text-right tabular-nums">
+        {formatHours(row.totalHours)}
+      </td>
+    </tr>
   );
 }
 

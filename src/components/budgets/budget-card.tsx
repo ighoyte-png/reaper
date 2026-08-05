@@ -29,9 +29,19 @@ export function BudgetCard({
 }) {
   const { state } = useData();
   const { burns } = useProjectBurnsMap();
+  const membersForProject = state.project_members.filter(
+    (m) => m.project_id === project.id,
+  );
   const burn =
     burns.get(project.id) ??
-    budgetBurn(project, state.assignments, state.people);
+    budgetBurn(
+      project,
+      state.assignments,
+      state.people,
+      false,
+      new Date(),
+      membersForProject,
+    );
   const health = budgetHealth(burn);
   const hoursFx = projectHoursForecast(
     project,
@@ -54,6 +64,7 @@ export function BudgetCard({
         state.assignments,
         state.people,
         new Date(year, 0, 1),
+        membersForProject,
       )
     : [];
 

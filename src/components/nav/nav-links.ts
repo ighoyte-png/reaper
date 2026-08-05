@@ -16,11 +16,13 @@ export type NavLinkDef = {
   manageOnly: boolean;
   /** Shown only when the effective viewer is a member (not manager/admin). */
   memberOnly?: boolean;
+  /** Hidden for contractor members (non-managers). */
+  contractorMemberHidden?: boolean;
 };
 
 export const primaryNavLinks: NavLinkDef[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, manageOnly: false },
-  { href: "/schedule", label: "Schedule", icon: CalendarRange, manageOnly: false },
+  { href: "/schedule", label: "Schedule", icon: CalendarRange, manageOnly: false, contractorMemberHidden: true },
   { href: "/projects", label: "Projects", icon: FolderKanban, manageOnly: false },
   {
     href: "/reports/tasks",

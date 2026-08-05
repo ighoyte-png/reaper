@@ -26,6 +26,7 @@ import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar"
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import { ContractorTag } from "@/components/projects/project-manager-person";
 import { UtilizationHeatmap } from "@/components/heatmap/utilization-heatmap";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { Button, buttonClass } from "@/components/ui/button";
@@ -84,6 +85,8 @@ import {
   occurrenceCoversDay,
 } from "@/lib/domain/recurrence";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
+import { isFullyHiddenFromPlanning } from "@/lib/domain/contractor";
+import { utilizationVisiblePeople } from "@/lib/domain/people";
 import { taskUrgency, dueDateToneClass, type TaskUrgency } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
 import type {
@@ -195,6 +198,15 @@ export default function DashboardPage() {
   const scopePersonalCapacity = !showingAsManager;
   const focusPerson = identityPerson;
 
+  /** Viewer hide flags (linked person or View As target). */
+  const viewerHideFromSchedule = Boolean(focusPerson?.hide_from_schedule);
+  const viewerHideFromUtilization = Boolean(focusPerson?.hide_from_utilization);
+  const viewerFullyHidden = focusPerson
+    ? isFullyHiddenFromPlanning(focusPerson)
+    : false;
+  const showScheduleWidgets = !viewerHideFromSchedule;
+  const showUtilizationWidgets = !viewerHideFromUtilization;
+
   /**
    * Org-wide people scope for the viewer: pod managers see only their pod(s),
    * other managers/admins see everyone. Public share always sees the whole
@@ -270,7 +282,7 @@ export default function DashboardPage() {
           ? [myPerson]
           : [];
     }
-    const schedulable = state.people.filter((p) => !p.hide_from_schedule);
+    const utilVisible = utilizationVisiblePeople(state.people);
     if (isPodUtilization) {
       const ids = new Set<string>();
       for (const pod of viewerPods) {
@@ -278,9 +290,9 @@ export default function DashboardPage() {
           ids.add(id);
         }
       }
-      return sortPeopleByName(schedulable.filter((p) => ids.has(p.id)));
+      return sortPeopleByName(utilVisible.filter((p) => ids.has(p.id)));
     }
-    return sortPeopleByName(schedulable);
+    return sortPeopleByName(utilVisible);
   }, [
     showOrgKpis,
     focusPerson,
@@ -809,7 +821,12 @@ export default function DashboardPage() {
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Dashboard" />
 
-      <div className="flex flex-col gap-4 py-3 sm:py-5 lg:grid lg:grid-cols-3 lg:items-start">
+      <div
+        className={cn(
+          "flex flex-col gap-4 py-3 sm:py-5 lg:grid lg:grid-cols-3",
+          viewerFullyHidden ? "lg:items-stretch" : "lg:items-start",
+        )}
+      >
         {/*
           Mobile: `contents` flattens children into the parent flex so order-*
           can interleave identity / notifications / bulletin / rest.
@@ -871,7 +888,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="order-5 space-y-4 lg:order-none">
-            {showOrgDashboard ? (
+            {showOrgDashboard && !viewerFullyHidden ? (
               <ProjectHealthBudget
                 canManage={showOrgDashboard}
                 atRisk={atRisk}
@@ -882,19 +899,32 @@ export default function DashboardPage() {
                 clients={state.clients}
               />
             ) : null}
-            <DashboardCapacityLeave
-              canManage={showOrgDashboard}
-              peopleLoad={peopleLoad}
-              approvedLeave={approvedLeave}
-              upcomingLeaveBlocks={upcomingLeaveBlocks}
-              people={leaveCalendarPeople}
-              appHref={appHref}
-            />
+            {showScheduleWidgets ? (
+              <DashboardCapacityLeave
+                canManage={showOrgDashboard}
+                peopleLoad={peopleLoad}
+                approvedLeave={approvedLeave}
+                upcomingLeaveBlocks={upcomingLeaveBlocks}
+                people={leaveCalendarPeople}
+                appHref={appHref}
+              />
+            ) : null}
           </div>
         </aside>
 
-        <div className="contents lg:col-span-2 lg:row-start-1 lg:flex lg:min-w-0 lg:flex-col lg:gap-4">
-          <div className="order-2 grid gap-4 sm:grid-cols-2 lg:order-none">
+        <div
+          className={cn(
+            "contents lg:col-span-2 lg:row-start-1 lg:flex lg:min-w-0 lg:flex-col lg:gap-4",
+            viewerFullyHidden && "lg:min-h-0 lg:flex-1",
+          )}
+        >
+          <div
+            className={cn(
+              "order-2 grid gap-4 sm:grid-cols-2 lg:order-none",
+              viewerFullyHidden &&
+                "min-h-0 flex-1 items-stretch lg:grid-rows-1",
+            )}
+          >
             <TaggedCommentsPanel
               taggedComments={taggedComments}
               projectHref={projectHref}
@@ -903,6 +933,7 @@ export default function DashboardPage() {
                 dismissMention(commentId, mentionPersonId);
               }}
               compact
+              stretch={viewerFullyHidden}
             />
             <TaskPulse
               overdue={pulseOverdueTasks}
@@ -916,9 +947,11 @@ export default function DashboardPage() {
               projectHref={projectHref}
               viewAllHref={myTasksHref}
               compact
+              stretch={viewerFullyHidden}
             />
           </div>
 
+          {!viewerFullyHidden ? (
           <div className="order-4 min-w-0 space-y-4 lg:order-none">
             <div
               className={cn(
@@ -934,7 +967,7 @@ export default function DashboardPage() {
                 <ActiveProjectsHealthCard stats={projectHealthStats} />
               ) : null}
 
-              {showOrgKpis ? (
+              {showOrgKpis && showUtilizationWidgets ? (
                 <KpiCard
                   title={
                     isPodUtilization
@@ -1008,39 +1041,44 @@ export default function DashboardPage() {
               <ActiveProjectsHealthCard stats={projectHealthStats} />
             ) : null}
 
-            <TodaySchedule
-              assignments={scheduleDayAssignments}
-              scheduleDayKey={scheduleDay.dayKey}
-              viewingToday={scheduleDay.isToday}
-              projects={state.projects}
-              clients={state.clients}
-              person={
-                (personalPersonId
-                  ? state.people.find((p) => p.id === personalPersonId)
-                  : null) ?? focusPerson
-              }
-              appHref={appHref}
-              projectHref={projectHref}
-            />
-
-            <section className={panelClass()}>
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <WidgetTitle icon={LayoutGrid}>People Utilization</WidgetTitle>
-                {showOrgKpis ? (
-                  <Link
-                    href={appHref("/reports/utilization")}
-                    className={buttonClass({ variant: "secondary" })}
-                  >
-                    Full Report
-                  </Link>
-                ) : null}
-              </div>
-              <UtilizationHeatmap
-                weeks={4}
-                personIds={utilizationHeatmapPersonIds}
+            {showScheduleWidgets ? (
+              <TodaySchedule
+                assignments={scheduleDayAssignments}
+                scheduleDayKey={scheduleDay.dayKey}
+                viewingToday={scheduleDay.isToday}
+                projects={state.projects}
+                clients={state.clients}
+                person={
+                  (personalPersonId
+                    ? state.people.find((p) => p.id === personalPersonId)
+                    : null) ?? focusPerson
+                }
+                appHref={appHref}
+                projectHref={projectHref}
               />
-            </section>
+            ) : null}
+
+            {showUtilizationWidgets ? (
+              <section className={panelClass()}>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <WidgetTitle icon={LayoutGrid}>People Utilization</WidgetTitle>
+                  {showOrgKpis ? (
+                    <Link
+                      href={appHref("/reports/utilization")}
+                      className={buttonClass({ variant: "secondary" })}
+                    >
+                      Full Report
+                    </Link>
+                  ) : null}
+                </div>
+                <UtilizationHeatmap
+                  weeks={4}
+                  personIds={utilizationHeatmapPersonIds}
+                />
+              </section>
+            ) : null}
           </div>
+          ) : null}
         </div>
       </div>
     </PageContainer>
@@ -1196,6 +1234,7 @@ function TaggedCommentsPanel({
   projectHref,
   onDismiss,
   compact = false,
+  stretch = false,
 }: {
   taggedComments: {
     comment: TaskComment;
@@ -1206,10 +1245,16 @@ function TaggedCommentsPanel({
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   onDismiss: (commentId: string) => void;
   compact?: boolean;
+  stretch?: boolean;
 }) {
   const total = taggedComments.length;
   return (
-    <section className={panelClass()}>
+    <section
+      className={cn(
+        panelClass(),
+        stretch && "flex min-h-0 flex-1 flex-col",
+      )}
+    >
       <div className="mb-3 flex items-center gap-2">
         <MessageSquare
           size={14}
@@ -1232,8 +1277,9 @@ function TaggedCommentsPanel({
         <ul
           className={cn(
             "space-y-2",
-            "max-h-72 overflow-y-auto",
-            !compact && "max-h-96",
+            stretch
+              ? "min-h-0 flex-1 overflow-y-auto"
+              : cn("max-h-72 overflow-y-auto", !compact && "max-h-96"),
           )}
         >
           {taggedComments.map(({ comment, task, project, author }) => (
@@ -1434,7 +1480,12 @@ function DashboardIdentityCard({
           }
         />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">{displayName}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-sm font-semibold">{displayName}</span>
+            {!isPublicIdentity && identityPerson?.is_contractor ? (
+              <ContractorTag />
+            ) : null}
+          </div>
           {displayTitle ? (
             <div className="mt-0.5 text-xs text-[var(--text-muted)]">
               {displayTitle}
@@ -1823,6 +1874,7 @@ function TaskPulse({
   projectHref,
   viewAllHref,
   compact = false,
+  stretch = false,
 }: {
   overdue: Task[];
   urgentByGroup: Map<TaskUrgency, Task[]>;
@@ -1835,6 +1887,7 @@ function TaskPulse({
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   viewAllHref: string;
   compact?: boolean;
+  stretch?: boolean;
 }) {
   function row(task: Task, overdueRow: boolean) {
     const assignee = task.assignee_person_id
@@ -1863,7 +1916,12 @@ function TaskPulse({
     : URGENCY_GROUPS;
 
   return (
-    <section className={panelClass()}>
+    <section
+      className={cn(
+        panelClass(),
+        stretch && "flex min-h-0 flex-1 flex-col",
+      )}
+    >
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <Pin
@@ -1891,7 +1949,12 @@ function TaskPulse({
           Nothing overdue or urgent right now.
         </p>
       ) : (
-        <div className="max-h-72 space-y-3 overflow-y-auto">
+        <div
+          className={cn(
+            "space-y-3 overflow-y-auto",
+            stretch ? "min-h-0 flex-1" : "max-h-72",
+          )}
+        >
           {overdue.length > 0 ? (
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--status-over)]">

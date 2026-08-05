@@ -30,7 +30,7 @@ import {
   budgetHealth,
   formatHours,
 } from "@/lib/domain/budget";
-import { scheduleVisiblePeople } from "@/lib/domain/people";
+import { utilizationVisiblePeople } from "@/lib/domain/people";
 import {
   personIdsInPod,
   podsForPerson,
@@ -217,11 +217,11 @@ function ReportsPageContent() {
   }, [state.projects, scopeMine, managedProjectIds]);
 
   /**
-   * Utilization overview: all schedule-visible people, optionally scoped
+   * Utilization overview: all utilization-visible people, optionally scoped
    * to managed/member pods when “Projects and Pods I Manage” is on.
    */
   const orgScopedPeople = useMemo(() => {
-    const visible = scheduleVisiblePeople(state.people);
+    const visible = utilizationVisiblePeople(state.people);
     if (!scopeMine || utilPodIds.length === 0) return visible;
     const ids = new Set<string>();
     for (const podId of utilPodIds) {

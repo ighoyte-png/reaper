@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useMemo, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Clock, Mail, Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
@@ -9,7 +9,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { PersonForm, accessLabel } from "@/components/people/person-form";
 import { PodFilterBar } from "@/components/people/pod-filter-bar";
 import { PodsEditorModal } from "@/components/people/pods-editor-modal";
-import { ManagerTag } from "@/components/projects/project-manager-person";
+import { ContractorTag, ManagerTag } from "@/components/projects/project-manager-person";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,8 @@ import {
   leaveKindLabel,
   normalizeLeaveKind,
 } from "@/lib/domain/leave";
-import { personAvatarColor, randomAvatarColor } from "@/lib/domain/people";
+import { personAvatarColor, randomAvatarColor, sortPeopleContractorsLast } from "@/lib/domain/people";
+import { sortPeopleByName } from "@/lib/domain/sorting";
 import { createClient } from "@/lib/supabase/client";
 import {
   readFileAsDataUrl,
@@ -70,6 +71,8 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   holiday_calendar_id: null,
   avatar_url: null,
   hide_from_schedule: false,
+  hide_from_utilization: false,
+  is_contractor: false,
   avatar_color: null,
 });
 
@@ -340,27 +343,83 @@ function PeoplePageContent() {
     );
   }
 
-  const peopleCards: { person: Person; isManager: boolean }[] = selectedPod
-    ? (() => {
-        const manager = selectedPod.manager_person_id
-          ? state.people.find((p) => p.id === selectedPod.manager_person_id)
-          : undefined;
-        const members = peopleInPod(
-          selectedPod,
-          state.people,
-          state.pod_members,
-        ).filter((p) => p.id !== selectedPod.manager_person_id);
-        return [
-          ...(manager ? [{ person: manager, isManager: true }] : []),
-          ...members.map((person) => ({ person, isManager: false })),
-        ];
-      })()
-    : filterPeopleByPod(
-        state.people,
-        state.pods,
-        state.pod_members,
-        podFilter,
-      ).map((person) => ({ person, isManager: false }));
+  const peopleSections = useMemo((): {
+    heading?: string;
+    cards: { person: Person; isManager: boolean }[];
+  }[] => {
+    if (selectedPod) {
+      const manager = selectedPod.manager_person_id
+        ? state.people.find((p) => p.id === selectedPod.manager_person_id)
+        : undefined;
+      const members = sortPeopleContractorsLast(
+        peopleInPod(selectedPod, state.people, state.pod_members).filter(
+          (p) => p.id !== selectedPod.manager_person_id,
+        ),
+      );
+      return [
+        {
+          cards: [
+            ...(manager ? [{ person: manager, isManager: true }] : []),
+            ...members.map((person) => ({ person, isManager: false })),
+          ],
+        },
+      ];
+    }
+
+    const filtered = filterPeopleByPod(
+      state.people,
+      state.pods,
+      state.pod_members,
+      podFilter,
+    );
+
+    if (podFilter === "all") {
+      const nonContractors = sortPeopleByName(
+        filtered.filter((p) => !p.is_contractor),
+      );
+      const contractors = sortPeopleByName(
+        filtered.filter((p) => p.is_contractor),
+      );
+      const sections: {
+        heading?: string;
+        cards: { person: Person; isManager: boolean }[];
+      }[] = [
+        {
+          cards: nonContractors.map((person) => ({
+            person,
+            isManager: false,
+          })),
+        },
+      ];
+      if (contractors.length > 0) {
+        sections.push({
+          heading: "Contractors",
+          cards: contractors.map((person) => ({ person, isManager: false })),
+        });
+      }
+      return sections;
+    }
+
+    return [
+      {
+        cards: sortPeopleContractorsLast(filtered).map((person) => ({
+          person,
+          isManager: false,
+        })),
+      },
+    ];
+  }, [
+    selectedPod,
+    state.people,
+    state.pods,
+    state.pod_members,
+    podFilter,
+  ]);
+
+  const peopleCardCount = peopleSections.reduce(
+    (n, section) => n + section.cards.length,
+    0,
+  );
 
   function renderPersonCard(person: Person, isManager: boolean) {
     const booked = personBookedHoursInRange(
@@ -403,6 +462,7 @@ function PeoplePageContent() {
                 {person.name}
               </div>
               {isManager ? <ManagerTag /> : null}
+              {person.is_contractor ? <ContractorTag /> : null}
             </div>
             {person.role_title ? (
               <div className="mt-1 truncate text-xs text-[var(--text-muted)]">
@@ -578,15 +638,24 @@ function PeoplePageContent() {
               No people yet
             </p>
           )
-        ) : peopleCards.length === 0 ? (
+        ) : peopleCardCount === 0 ? (
           <p className="py-16 text-center text-sm text-[var(--text-muted)]">
             No people in this pod yet.
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {peopleCards.map(({ person, isManager }) =>
-              renderPersonCard(person, isManager),
-            )}
+            {peopleSections.map((section, sectionIndex) => (
+              <div key={section.heading ?? sectionIndex} className="contents">
+                {section.heading ? (
+                  <h2 className="col-span-full mt-2 text-sm font-semibold first:mt-0">
+                    {section.heading}
+                  </h2>
+                ) : null}
+                {section.cards.map(({ person, isManager }) =>
+                  renderPersonCard(person, isManager),
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

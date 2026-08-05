@@ -35,6 +35,10 @@ import {
   resolvePmScheduleIntent,
 } from "@/lib/domain/project-manager-schedule";
 import { sortClientsByName } from "@/lib/domain/sorting";
+import {
+  buildProjectMembersPayload,
+  type ContractorTerms,
+} from "@/lib/domain/contractor";
 import { cn } from "@/lib/cn";
 import type { Client, ClientStatus, Project } from "@/lib/types";
 
@@ -199,6 +203,9 @@ function ClientsPageContent() {
     "organization_id"
   > | null>(null);
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [contractorTerms, setContractorTerms] = useState<
+    Record<string, ContractorTerms>
+  >({});
   const [createTemplateId, setCreateTemplateId] = useState("");
   const [pendingCreateApply, setPendingCreateApply] = useState(false);
   const [pmDailyHours, setPmDailyHours] = useState<number | null>(null);
@@ -295,6 +302,7 @@ function ClientsPageContent() {
 
   function startProjectForClient(clientId: string) {
     setMemberIds([]);
+    setContractorTerms({});
     setCreateTemplateId("");
     setPendingCreateApply(false);
     setPmDailyHours(null);
@@ -332,6 +340,7 @@ function ClientsPageContent() {
   async function saveFollowUpProject(
     project: Omit<Project, "organization_id">,
     members: string[],
+    terms: Record<string, ContractorTerms>,
     templateToApply: string,
   ) {
     try {
@@ -346,7 +355,10 @@ function ClientsPageContent() {
             ? project.budget_monthly_reset
             : false,
       });
-      await setProjectMembers(saved.id, members);
+      await setProjectMembers(
+        saved.id,
+        buildProjectMembersPayload(members, terms, state.people),
+      );
       if (templateToApply) {
         await applyProjectTemplate(saved.id, templateToApply);
       }
@@ -369,6 +381,7 @@ function ClientsPageContent() {
       const finish = () => {
         setProjectDraft(null);
         setMemberIds([]);
+        setContractorTerms({});
         setCreateTemplateId("");
         setPmDailyHours(null);
       };
@@ -837,6 +850,7 @@ function ClientsPageContent() {
           onClose={() => {
             setProjectDraft(null);
             setMemberIds([]);
+            setContractorTerms({});
             setCreateTemplateId("");
             setPendingCreateApply(false);
           }}
@@ -849,6 +863,8 @@ function ClientsPageContent() {
             podMembers={state.pod_members}
             memberIds={memberIds}
             onMemberIdsChange={setMemberIds}
+            contractorTerms={contractorTerms}
+            onContractorTermsChange={setContractorTerms}
             onChange={setProjectDraft}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
@@ -879,11 +895,17 @@ function ClientsPageContent() {
                 setPendingCreateApply(true);
                 return;
               }
-              void saveFollowUpProject(projectDraft, memberIds, "");
+              void saveFollowUpProject(
+                projectDraft,
+                memberIds,
+                contractorTerms,
+                "",
+              );
             }}
             onCancel={() => {
               setProjectDraft(null);
               setMemberIds([]);
+              setContractorTerms({});
               setCreateTemplateId("");
               setPendingCreateApply(false);
               setPmDailyHours(null);
@@ -900,7 +922,12 @@ function ClientsPageContent() {
           onConfirm={() => {
             const templateToApply = createTemplateId;
             setPendingCreateApply(false);
-            void saveFollowUpProject(projectDraft, memberIds, templateToApply);
+            void saveFollowUpProject(
+              projectDraft,
+              memberIds,
+              contractorTerms,
+              templateToApply,
+            );
           }}
         />
       ) : null}

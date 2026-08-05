@@ -9,6 +9,7 @@ import {
 import { isWeekend, parseISO } from "date-fns";
 
 export function dailyCapacityHours(person: Person): number {
+  if (person.hide_from_schedule && person.hide_from_utilization) return 0;
   return person.capacity_hours_week / 5;
 }
 

@@ -25,16 +25,25 @@ const hatchStyle = {
 function barSplit(
   bar: MonthBurnBar,
   unit: "hours" | "amount",
-): { used: number; future: number; total: number } {
+): {
+  used: number;
+  future: number;
+  contractor: number;
+  total: number;
+} {
   if (unit === "amount") {
+    const contractor = bar.contractorAmount;
     const used = bar.usedAmount;
     const future = bar.futureAmount;
-    return { used, future, total: used + future };
+    return { used, future, contractor, total: used + future + contractor };
   }
+  const contractor = bar.contractorHours;
   const used = bar.usedHours;
   const future = bar.futureHours;
-  return { used, future, total: used + future };
+  return { used, future, contractor, total: used + future + contractor };
 }
+
+const contractorColor = "var(--status-healthy)";
 
 function MonthBarColumn({
   bar,
@@ -42,6 +51,7 @@ function MonthBarColumn({
   total,
   used,
   future,
+  contractor,
   maxValue,
   cap,
   showCapLine,
@@ -54,6 +64,7 @@ function MonthBarColumn({
   total: number;
   used: number;
   future: number;
+  contractor: number;
   maxValue: number;
   cap: number;
   showCapLine: boolean;
@@ -80,11 +91,13 @@ function MonthBarColumn({
   }
 
   const showSplit = current && used > 0 && future > 0;
+  const hasContractor = contractor > 0;
 
-  function renderWithinBar(heightPct: number) {
+  function renderInternalBar(heightPct: number) {
     if (showSplit) {
-      const usedPct = total > 0 ? (used / total) * 100 : 0;
-      const futurePct = total > 0 ? (future / total) * 100 : 0;
+      const internalTotal = used + future;
+      const usedPct = internalTotal > 0 ? (used / internalTotal) * 100 : 0;
+      const futurePct = internalTotal > 0 ? (future / internalTotal) * 100 : 0;
       return (
         <div
           className="relative flex w-full flex-col justify-end overflow-hidden"
@@ -112,6 +125,32 @@ function MonthBarColumn({
       >
         {hatched ? (
           <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderStackedBar(heightPct: number) {
+    const contractorPct = total > 0 ? (contractor / total) * 100 : 0;
+    const internalPct = total > 0 ? ((used + future) / total) * 100 : 0;
+    return (
+      <div
+        className="relative flex w-full flex-col justify-end overflow-hidden"
+        style={{ height: `${heightPct}%` }}
+      >
+        {hasContractor ? (
+          <div
+            className="w-full shrink-0"
+            style={{
+              height: `${contractorPct}%`,
+              backgroundColor: contractorColor,
+            }}
+          />
+        ) : null}
+        {internalPct > 0 ? (
+          <div className="min-h-0 w-full flex-1">
+            {renderInternalBar(100)}
+          </div>
         ) : null}
       </div>
     );
@@ -160,7 +199,7 @@ function MonthBarColumn({
             className="w-full bg-[var(--status-over)]"
             style={{ height: `${(overPct / valuePct) * 100}%` }}
           />
-          {renderWithinBar((withinPct / valuePct) * 100)}
+          {hasContractor ? renderStackedBar((withinPct / valuePct) * 100) : renderInternalBar((withinPct / valuePct) * 100)}
         </div>
       ) : (
         <div
@@ -170,7 +209,7 @@ function MonthBarColumn({
           )}
           style={{ height: `${Math.max(valuePct, 4)}%` }}
         >
-          {renderWithinBar(100)}
+          {hasContractor ? renderStackedBar(100) : renderInternalBar(100)}
         </div>
       )}
     </div>
@@ -209,6 +248,9 @@ export function ProjectYearBurnChart({
   );
   const capPct = maxValue <= 0 ? 0 : (cap / maxValue) * 100;
   const showCapLine = unit === "hours" && cap > 0;
+  const hasContractor = bars.some((b) =>
+    unit === "amount" ? b.contractorAmount > 0 : b.contractorHours > 0,
+  );
 
   function formatValue(n: number): string {
     if (unit === "amount") return formatMoney(n);
@@ -266,7 +308,7 @@ export function ProjectYearBurnChart({
           />
         ) : null}
         {bars.map((bar) => {
-          const { used, future, total } = barSplit(bar, unit);
+          const { used, future, contractor, total } = barSplit(bar, unit);
           return (
             <MonthBarColumn
               key={bar.key}
@@ -275,6 +317,7 @@ export function ProjectYearBurnChart({
               total={total}
               used={used}
               future={future}
+              contractor={contractor}
               maxValue={maxValue}
               cap={cap}
               showCapLine={showCapLine}
@@ -310,12 +353,34 @@ export function ProjectYearBurnChart({
             Monthly cap {formatValue(cap)}
             <span className="ml-1 text-[#ef4444]">— —</span>
             <span className="ml-2">· hatched = future / planned</span>
+            {hasContractor ? (
+              <span className="ml-2">
+                ·{" "}
+                <span
+                  className="inline-block h-2 w-2 rounded-full align-middle"
+                  style={{ backgroundColor: contractorColor }}
+                />{" "}
+                contractor
+              </span>
+            ) : null}
           </p>
         ) : (
           <p className="mt-1 text-[10px] text-[var(--text-muted)]">
             {unit === "amount"
               ? "Planned billable spend by month"
               : "Planned hours by month"}
+            {hasContractor ? (
+              <span className="ml-2">
+                ·{" "}
+                <span
+                  className="inline-block h-2 w-2 rounded-full align-middle"
+                  style={{ backgroundColor: contractorColor }}
+                />{" "}
+                contractor ·{" "}
+                <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)] align-middle" />{" "}
+                internal
+              </span>
+            ) : null}
           </p>
         )
       ) : null}

@@ -30,6 +30,10 @@ import { useViewAs } from "@/lib/view-as";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { projectIdsForPerson, projectHasSandboxWipeRisk } from "@/lib/domain/project-access";
+import {
+  buildProjectMembersPayload,
+  contractorTermsFromProjectMembers,
+} from "@/lib/domain/contractor";
 import { projectDateProgress } from "@/lib/domain/progress";
 import {
   findPmProjectAssignments,
@@ -43,6 +47,7 @@ import {
 } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { Client, Project, ProjectStatus } from "@/lib/types";
+import type { ContractorTerms } from "@/lib/domain/contractor";
 
 function emptyProject(id: string): Omit<Project, "organization_id"> {
   return {
@@ -124,6 +129,9 @@ function ProjectsPageContent() {
     null,
   );
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [contractorTerms, setContractorTerms] = useState<
+    Record<string, ContractorTerms>
+  >({});
   const [createTemplateId, setCreateTemplateId] = useState("");
   const [pendingCreateApply, setPendingCreateApply] = useState(false);
   const [pmDailyHours, setPmDailyHours] = useState<number | null>(null);
@@ -141,6 +149,7 @@ function ProjectsPageContent() {
 
   function openNewProject(partial?: Partial<Omit<Project, "organization_id">>) {
     setMemberIds([]);
+    setContractorTerms({});
     setCreateTemplateId("");
     setPmDailyHours(null);
     setPmBaselineDates(null);
@@ -150,6 +159,7 @@ function ProjectsPageContent() {
   function closeProjectForm() {
     setEditing(null);
     setMemberIds([]);
+    setContractorTerms({});
     setCreateTemplateId("");
     setPendingCreateApply(false);
     setPmDailyHours(null);
@@ -329,6 +339,7 @@ function ProjectsPageContent() {
   async function saveProject(
     project: Omit<Project, "organization_id">,
     members: string[],
+    terms: Record<string, ContractorTerms>,
     templateToApply: string,
     pmAction: "auto" | "apply" | "skip" = "auto",
     pmHoursOverride?: number,
@@ -358,7 +369,10 @@ function ProjectsPageContent() {
             ? toSave.budget_monthly_reset
             : false,
       });
-      await setProjectMembers(toSave.id, members);
+      await setProjectMembers(
+        toSave.id,
+        buildProjectMembersPayload(members, terms, state.people),
+      );
       if (templateToApply) {
         await applyProjectTemplate(toSave.id, templateToApply);
       }
@@ -658,6 +672,8 @@ function ProjectsPageContent() {
             podMembers={state.pod_members}
             memberIds={memberIds}
             onMemberIdsChange={setMemberIds}
+            contractorTerms={contractorTerms}
+            onContractorTermsChange={setContractorTerms}
             onChange={setEditing}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
@@ -698,7 +714,7 @@ function ProjectsPageContent() {
                 setPendingCreateApply(true);
                 return;
               }
-              await saveProject(editing, memberIds, "");
+              await saveProject(editing, memberIds, contractorTerms, "");
             }}
             onCancel={closeProjectForm}
           />
@@ -713,7 +729,12 @@ function ProjectsPageContent() {
           onConfirm={async () => {
             const templateToApply = createTemplateId;
             setPendingCreateApply(false);
-            await saveProject(editing, memberIds, templateToApply);
+            await saveProject(
+              editing,
+              memberIds,
+              contractorTerms,
+              templateToApply,
+            );
           }}
         />
       ) : null}

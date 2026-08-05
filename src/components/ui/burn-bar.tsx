@@ -7,6 +7,8 @@ const hatchStyle = {
     "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
 } as const;
 
+const contractorColor = "var(--status-healthy)";
+
 export function BurnBar({
   burn,
   compact = false,
@@ -24,11 +26,20 @@ export function BurnBar({
   const health = budgetHealth(burn);
   const isAmount = burn.mode === "amount";
   const budget = isAmount ? (burn.totalAmount ?? 0) : burn.totalHours;
-  const used = isAmount ? burn.usedAmount : burn.usedHours;
-  const future = isAmount ? burn.futureAmount : burn.futureHours;
+  const contractorPlanned = isAmount
+    ? burn.contractorAmount
+    : burn.contractorHours;
+  const internalUsed = isAmount
+    ? burn.usedAmount - burn.contractorUsedAmount
+    : burn.usedHours - burn.contractorUsedHours;
+  const internalFuture = isAmount
+    ? burn.futureAmount - burn.contractorFutureAmount
+    : burn.futureHours - burn.contractorFutureHours;
+  const hasContractor = contractorPlanned > 0;
 
-  const usedPct = budget > 0 ? (used / budget) * 100 : 0;
-  const futurePct = budget > 0 ? (future / budget) * 100 : 0;
+  const contractorPct = budget > 0 ? (contractorPlanned / budget) * 100 : 0;
+  const usedPct = budget > 0 ? (internalUsed / budget) * 100 : 0;
+  const futurePct = budget > 0 ? (internalFuture / budget) * 100 : 0;
 
   const fillClass = clsx(
     health === "over" && "bg-[var(--status-over)]",
@@ -36,8 +47,12 @@ export function BurnBar({
     (health === "healthy" || health === "none") && "bg-[var(--accent)]",
   );
 
+  const hasContractorSeg = contractorPct > 0;
   const hasUsed = usedPct > 0;
   const hasFuture = futurePct > 0;
+
+  const totalUsed = isAmount ? burn.usedAmount : burn.usedHours;
+  const totalFuture = isAmount ? burn.futureAmount : burn.futureHours;
 
   return (
     <div className="min-w-0">
@@ -72,19 +87,38 @@ export function BurnBar({
           compact ? "h-3.5" : "h-4",
         )}
         title={
-          future > 0
+          totalFuture > 0
             ? isAmount
-              ? `${formatMoney(used)} used · ${formatMoney(future)} planned`
-              : `${formatHours(used)} used · ${formatHours(future)} planned`
+              ? `${formatMoney(totalUsed)} used · ${formatMoney(totalFuture)} planned`
+              : `${formatHours(totalUsed)} used · ${formatHours(totalFuture)} planned`
             : undefined
         }
       >
+        {hasContractorSeg ? (
+          <div
+            className={clsx(
+              "h-full shrink-0",
+              !hasUsed && !hasFuture && "rounded-full",
+              hasUsed || hasFuture ? "rounded-l-full" : "",
+            )}
+            style={{
+              width: `${contractorPct}%`,
+              backgroundColor: contractorColor,
+            }}
+          />
+        ) : null}
         {hasUsed ? (
           <div
             className={clsx(
               "h-full shrink-0",
               fillClass,
-              hasFuture ? "rounded-l-full" : "rounded-full",
+              hasFuture
+                ? hasContractorSeg
+                  ? ""
+                  : "rounded-l-full"
+                : hasContractorSeg
+                  ? "rounded-r-full"
+                  : "rounded-full",
             )}
             style={{ width: `${usedPct}%` }}
           />
@@ -94,7 +128,7 @@ export function BurnBar({
             className={clsx(
               "relative h-full min-w-0 shrink-0 overflow-hidden",
               fillClass,
-              hasUsed
+              hasUsed || hasContractorSeg
                 ? "rounded-r-full border-l border-[var(--progress-approved-hatch)]"
                 : "rounded-full",
             )}
@@ -103,7 +137,7 @@ export function BurnBar({
             <div
               className={clsx(
                 "absolute inset-0",
-                hasUsed ? "rounded-r-full" : "rounded-full",
+                hasUsed || hasContractorSeg ? "rounded-r-full" : "rounded-full",
               )}
               style={hatchStyle}
               aria-hidden
@@ -111,6 +145,25 @@ export function BurnBar({
           </div>
         ) : null}
       </div>
+      {hasContractor && !compact ? (
+        <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="inline-block h-2 w-2 rounded-full"
+              style={{ backgroundColor: contractorColor }}
+              aria-hidden
+            />
+            Contractor
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]"
+              aria-hidden
+            />
+            Internal
+          </span>
+        </p>
+      ) : null}
     </div>
   );
 }

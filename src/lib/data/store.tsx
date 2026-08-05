@@ -149,6 +149,7 @@ import type {
   Project,
   ProjectAsset,
   ProjectFavorite,
+  ProjectMember,
   ProjectTemplate,
   Role,
   Task,
@@ -195,6 +196,11 @@ function loadDemoState(): DemoState {
         ...p,
         holiday_calendar_id: p.holiday_calendar_id ?? null,
         avatar_url: p.avatar_url ?? null,
+        hide_from_schedule: Boolean(p.hide_from_schedule),
+        hide_from_utilization: Boolean(
+          (p as Person).hide_from_utilization ?? p.hide_from_schedule,
+        ),
+        is_contractor: Boolean((p as Person).is_contractor),
       })),
       leave_days: (parsed.leave_days ?? seed.leave_days).map((l) => ({
         ...l,
@@ -268,7 +274,19 @@ function loadDemoState(): DemoState {
         hide_from_client: Boolean(a.hide_from_client),
       })),
       project_members: Array.isArray(parsed.project_members)
-        ? parsed.project_members
+        ? parsed.project_members.map((m) => ({
+            project_id: m.project_id,
+            person_id: m.person_id,
+            organization_id: m.organization_id,
+            contractor_mode:
+              m.contractor_mode === "fixed_fee" ||
+              m.contractor_mode === "hours" ||
+              m.contractor_mode === "scheduled"
+                ? m.contractor_mode
+                : null,
+            contractor_fixed_fee: m.contractor_fixed_fee ?? null,
+            contractor_hours: m.contractor_hours ?? null,
+          }))
         : seed.project_members,
       task_lists: (parsed.task_lists ?? seed.task_lists).map((l) => ({
         ...l,
@@ -465,10 +483,20 @@ interface DataContextValue {
     budget_monthly_reset: false;
     manager_person_id: null;
   }>;
-  /** Replace explicit team members for a project. */
+  /** Replace explicit team members for a project (optional contractor terms). */
   setProjectMembers: (
     projectId: string,
-    personIds: string[],
+    members:
+      | string[]
+      | Array<
+          Pick<
+            ProjectMember,
+            | "person_id"
+            | "contractor_mode"
+            | "contractor_fixed_fee"
+            | "contractor_hours"
+          >
+        >,
   ) => Promise<void>;
   deleteProject: (id: string) => void;
   /** Star / unstar a project for the current profile. */
@@ -2291,13 +2319,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
           manager_person_id: null,
         };
       },
-      setProjectMembers: async (projectId, personIds) => {
+      setProjectMembers: async (projectId, members) => {
         const orgId = state.organization.id;
-        const unique = [...new Set(personIds)];
-        const rows = unique.map((person_id) => ({
+        const normalized = members.map((m) =>
+          typeof m === "string"
+            ? {
+                person_id: m,
+                contractor_mode: null as ProjectMember["contractor_mode"],
+                contractor_fixed_fee: null as number | null,
+                contractor_hours: null as number | null,
+              }
+            : {
+                person_id: m.person_id,
+                contractor_mode: m.contractor_mode ?? null,
+                contractor_fixed_fee: m.contractor_fixed_fee ?? null,
+                contractor_hours: m.contractor_hours ?? null,
+              },
+        );
+        const seen = new Set<string>();
+        const unique = normalized.filter((m) => {
+          if (seen.has(m.person_id)) return false;
+          seen.add(m.person_id);
+          return true;
+        });
+        const rows = unique.map((m) => ({
           project_id: projectId,
-          person_id,
+          person_id: m.person_id,
           organization_id: orgId,
+          contractor_mode: m.contractor_mode,
+          contractor_fixed_fee: m.contractor_fixed_fee,
+          contractor_hours: m.contractor_hours,
         }));
         if (mode === "supabase" && supabaseRef.current) {
           await runRemote(() =>

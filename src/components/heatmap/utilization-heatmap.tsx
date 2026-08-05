@@ -13,6 +13,7 @@ import {
   utilizationPct,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
+import { utilizationVisiblePeople } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { CapacityLevel } from "@/lib/types";
@@ -103,9 +104,9 @@ export function UtilizationHeatmap({
   );
   const people = sortPeopleByName(
     personIds == null
-      ? state.people.filter((p) => !p.hide_from_schedule)
-      : state.people.filter(
-          (p) => personIds.includes(p.id) && !p.hide_from_schedule,
+      ? utilizationVisiblePeople(state.people)
+      : utilizationVisiblePeople(
+          state.people.filter((p) => personIds.includes(p.id)),
         ),
   );
 
@@ -124,9 +125,7 @@ export function UtilizationHeatmap({
       const weekEndKey = toDateKey(weekEnd(anchors[anchors.length - 1]!));
       const ids =
         personIds == null
-          ? state.people
-              .filter((p) => !p.hide_from_schedule)
-              .map((p) => p.id)
+          ? utilizationVisiblePeople(state.people).map((p) => p.id)
           : personIds;
       const rows = await fetchPersonUtilizationWeeksRpc(
         weekStartKey,

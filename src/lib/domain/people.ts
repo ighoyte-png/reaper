@@ -1,10 +1,14 @@
 import { PRESET_COLORS } from "@/lib/domain/colors";
 import type { Person } from "@/lib/types";
 
-/** People who appear on the schedule and in capacity/utilization aggregates. */
-export function scheduleVisiblePeople(people: Person[]): Person[] {
-  return people.filter((p) => !p.hide_from_schedule);
-}
+export {
+  scheduleVisiblePeople,
+  utilizationVisiblePeople,
+  isFullyHiddenFromPlanning,
+  isFullTimeStyleContractor,
+  isProjectBasisContractor,
+  sortPeopleContractorsLast,
+} from "@/lib/domain/contractor";
 
 /** Pick a random color from the shared client palette. */
 export function randomAvatarColor(): string {

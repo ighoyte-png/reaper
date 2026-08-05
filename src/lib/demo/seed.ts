@@ -315,6 +315,8 @@ export function createDemoSeed(): DemoState {
         holiday_calendar_id: "cal-us",
         avatar_url: null,
         hide_from_schedule: false,
+        hide_from_utilization: false,
+        is_contractor: false,
         avatar_color: "#673AB7",
       },
       {
@@ -333,6 +335,8 @@ export function createDemoSeed(): DemoState {
         holiday_calendar_id: "cal-us",
         avatar_url: null,
         hide_from_schedule: false,
+        hide_from_utilization: false,
+        is_contractor: false,
         avatar_color: "#F48FB1",
       },
       {
@@ -351,6 +355,8 @@ export function createDemoSeed(): DemoState {
         holiday_calendar_id: "cal-us",
         avatar_url: null,
         hide_from_schedule: false,
+        hide_from_utilization: false,
+        is_contractor: false,
         avatar_color: "#00ACC1",
       },
       {
@@ -369,6 +375,8 @@ export function createDemoSeed(): DemoState {
         holiday_calendar_id: "cal-ca",
         avatar_url: null,
         hide_from_schedule: false,
+        hide_from_utilization: false,
+        is_contractor: false,
         avatar_color: "#00796B",
       },
       {
@@ -387,6 +395,8 @@ export function createDemoSeed(): DemoState {
         holiday_calendar_id: "cal-us",
         avatar_url: null,
         hide_from_schedule: false,
+        hide_from_utilization: false,
+        is_contractor: false,
         avatar_color: "#8D6E63",
       },
     ],

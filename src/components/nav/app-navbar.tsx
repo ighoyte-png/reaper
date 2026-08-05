@@ -82,7 +82,11 @@ export function AppNavbar() {
     [state.unread_bulletin_ids],
   );
   const { open, setOpen, toggle } = useMobileNav();
+  const isMemberContractor = Boolean(
+    myPerson?.is_contractor && !effectiveCanManage,
+  );
   const links = primaryNavLinks.filter((l) => {
+    if (isMemberContractor && l.contractorMemberHidden) return false;
     if (l.memberOnly) return !effectiveCanManage;
     return effectiveCanManage || !l.manageOnly;
   });

@@ -14,6 +14,11 @@ import { loginPathWithNext, stripWorkspacePrefix } from "@/lib/paths";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 import { MentionDesktopListener } from "@/components/notifications/mention-desktop-listener";
 
+function isSchedulePath(pathname: string, workspaceSlug: string): boolean {
+  const path = stripWorkspacePrefix(pathname, workspaceSlug);
+  return path === "/schedule" || path.startsWith("/schedule/");
+}
+
 /** Paths members cannot access — redirect here while Viewing As a member. */
 function isManageOnlyPath(pathname: string, workspaceSlug: string): boolean {
   const path = stripWorkspacePrefix(pathname, workspaceSlug);
@@ -153,25 +158,40 @@ function ViewAsRouteGuard() {
   const pathname = usePathname();
   const router = useRouter();
   const { viewAsPersonId, effectiveCanManage } = useViewAs();
-  const { state } = useData();
+  const { state, myPerson } = useData();
   const appHref = useAppHref();
 
+  const isMemberContractor = Boolean(
+    myPerson?.is_contractor && !effectiveCanManage,
+  );
+
   useEffect(() => {
-    if (!viewAsPersonId) return;
-    // Always keep Settings on the signed-in account — never the View As target.
-    if (isSettingsPath(pathname, state.organization.slug)) {
-      router.replace(appHref("/dashboard"));
-      return;
+    const slug = state.organization.slug;
+
+    if (viewAsPersonId) {
+      // Always keep Settings on the signed-in account — never the View As target.
+      if (isSettingsPath(pathname, slug)) {
+        router.replace(appHref("/dashboard"));
+        return;
+      }
+      if (!effectiveCanManage && isManageOnlyPath(pathname, slug)) {
+        router.replace(appHref("/dashboard"));
+        return;
+      }
     }
-    if (
-      !effectiveCanManage &&
-      isManageOnlyPath(pathname, state.organization.slug)
-    ) {
-      router.replace(appHref("/dashboard"));
+
+    if (isMemberContractor) {
+      if (
+        isSchedulePath(pathname, slug) ||
+        isManageOnlyPath(pathname, slug)
+      ) {
+        router.replace(appHref("/dashboard"));
+      }
     }
   }, [
     viewAsPersonId,
     effectiveCanManage,
+    isMemberContractor,
     pathname,
     router,
     state.organization.slug,

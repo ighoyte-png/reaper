@@ -71,7 +71,7 @@ export function podsForPerson(
  * - members → self only
  * - managers who manage ≥1 pod → union of those pods
  * - other managers/admins → all people
- * Always excludes hide_from_schedule people (except when focusing self).
+ * Always excludes hide_from_utilization people (except when focusing self).
  */
 export function defaultPeopleScopeForViewer(
   people: Person[],
@@ -92,7 +92,7 @@ export function defaultPeopleScopeForViewer(
     return person ? [person] : [];
   }
 
-  const schedulable = people.filter((p) => !p.hide_from_schedule);
+  const utilVisible = people.filter((p) => !p.hide_from_utilization);
 
   if (!canManage(opts.role)) {
     const id = opts.myPersonId;
@@ -101,17 +101,17 @@ export function defaultPeopleScopeForViewer(
     return person ? [person] : [];
   }
 
-  if (!opts.myPersonId) return sortPeopleByName(schedulable);
+  if (!opts.myPersonId) return sortPeopleByName(utilVisible);
 
   const managed = podsManagedBy(opts.myPersonId, pods);
-  if (managed.length === 0) return sortPeopleByName(schedulable);
+  if (managed.length === 0) return sortPeopleByName(utilVisible);
 
   const ids = new Set<string>();
   for (const pod of managed) {
     for (const id of personIdsInPod(pod, podMembers)) ids.add(id);
   }
   return sortPeopleByName(
-    schedulable.filter((p) => ids.has(p.id)),
+    utilVisible.filter((p) => ids.has(p.id)),
   );
 }
 

@@ -347,7 +347,29 @@ function mapPerson(row: Record<string, unknown>): Person {
       : null,
     avatar_url: row.avatar_url ? String(row.avatar_url) : null,
     hide_from_schedule: Boolean(row.hide_from_schedule),
+    hide_from_utilization: Boolean(
+      row.hide_from_utilization ?? row.hide_from_schedule,
+    ),
+    is_contractor: Boolean(row.is_contractor),
     avatar_color: row.avatar_color ? String(row.avatar_color) : null,
+  };
+}
+
+function mapProjectMember(row: Record<string, unknown>): ProjectMember {
+  const mode = row.contractor_mode;
+  const contractor_mode =
+    mode === "fixed_fee" || mode === "hours" || mode === "scheduled"
+      ? mode
+      : null;
+  return {
+    project_id: String(row.project_id),
+    person_id: String(row.person_id),
+    organization_id: String(row.organization_id),
+    contractor_mode,
+    contractor_fixed_fee:
+      row.contractor_fixed_fee == null ? null : num(row.contractor_fixed_fee),
+    contractor_hours:
+      row.contractor_hours == null ? null : num(row.contractor_hours),
   };
 }
 
@@ -673,13 +695,9 @@ export async function loadOrgBootstrap(
 
   const project_members: ProjectMember[] = projectMembersRes.error
     ? []
-    : (projectMembersRes.data ?? []).map((row) => ({
-        project_id: String((row as { project_id: unknown }).project_id),
-        person_id: String((row as { person_id: unknown }).person_id),
-        organization_id: String(
-          (row as { organization_id: unknown }).organization_id,
-        ),
-      }));
+    : (projectMembersRes.data ?? []).map((row) =>
+        mapProjectMember(row as Record<string, unknown>),
+      );
 
   const bulletins: Bulletin[] = bulletinsRes.error
     ? []
@@ -1880,12 +1898,20 @@ export async function setPodMembersRows(
   }
 }
 
-/** Replace the explicit team roster for a project. */
+/** Replace the explicit team roster for a project (including contractor terms). */
 export async function setProjectMembersRows(
   supabase: SupabaseClient,
   projectId: string,
   organizationId: string,
-  personIds: string[],
+  members: Array<
+    Pick<
+      ProjectMember,
+      | "person_id"
+      | "contractor_mode"
+      | "contractor_fixed_fee"
+      | "contractor_hours"
+    >
+  > | string[],
 ) {
   const { error: delErr } = await supabase
     .from("project_members")
@@ -1904,16 +1930,55 @@ export async function setProjectMembersRows(
     throw delErr;
   }
 
-  const ids = [...new Set(personIds)];
-  if (ids.length === 0) return;
+  const normalized = members.map((m) =>
+    typeof m === "string"
+      ? {
+          person_id: m,
+          contractor_mode: null as ProjectMember["contractor_mode"],
+          contractor_fixed_fee: null as number | null,
+          contractor_hours: null as number | null,
+        }
+      : m,
+  );
+  const seen = new Set<string>();
+  const rows = normalized.filter((m) => {
+    if (seen.has(m.person_id)) return false;
+    seen.add(m.person_id);
+    return true;
+  });
+  if (rows.length === 0) return;
+
   const { error: insErr } = await supabase.from("project_members").insert(
-    ids.map((person_id) => ({
+    rows.map((m) => ({
       project_id: projectId,
-      person_id,
+      person_id: m.person_id,
       organization_id: organizationId,
+      contractor_mode: m.contractor_mode,
+      contractor_fixed_fee: m.contractor_fixed_fee,
+      contractor_hours: m.contractor_hours,
     })),
   );
-  if (insErr) throw insErr;
+  if (insErr) {
+    // Older schemas without contractor columns — retry bare roster.
+    if (
+      /contractor_/i.test(insErr.message) ||
+      (insErr.code === "PGRST204" && /contractor_/i.test(insErr.message))
+    ) {
+      console.warn(
+        "project_members contractor columns missing — apply supabase/migrations/072_contractor_people_and_terms.sql",
+      );
+      const retry = await supabase.from("project_members").insert(
+        rows.map((m) => ({
+          project_id: projectId,
+          person_id: m.person_id,
+          organization_id: organizationId,
+        })),
+      );
+      if (retry.error) throw retry.error;
+      return;
+    }
+    throw insErr;
+  }
 }
 
 export async function upsertPersonRow(
@@ -1936,6 +2001,8 @@ export async function upsertPersonRow(
     holiday_calendar_id: person.holiday_calendar_id,
     avatar_url: person.avatar_url,
     hide_from_schedule: Boolean(person.hide_from_schedule),
+    hide_from_utilization: Boolean(person.hide_from_utilization),
+    is_contractor: Boolean(person.is_contractor),
     avatar_color: person.avatar_color || null,
   };
   const { error } = await supabase.from("people").upsert(payload);
@@ -1956,19 +2023,28 @@ export async function upsertPersonRow(
   const missingColorCol =
     /Could not find the 'avatar_color' column/i.test(error.message) ||
     (error.code === "PGRST204" && /avatar_color/i.test(error.message));
+  const missingContractorCols =
+    /Could not find the '(is_contractor|hide_from_utilization)' column/i.test(
+      error.message,
+    ) ||
+    (error.code === "PGRST204" &&
+      /(is_contractor|hide_from_utilization)/i.test(error.message));
 
   if (
     missingEmailCol ||
     missingCalCol ||
     missingAvatarCol ||
     missingHideCol ||
-    missingColorCol
+    missingColorCol ||
+    missingContractorCols
   ) {
     const {
       email: _e,
       holiday_calendar_id: _c,
       avatar_url: _a,
       hide_from_schedule: _h,
+      hide_from_utilization: _hu,
+      is_contractor: _ic,
       avatar_color: _ac,
       ...rest
     } = payload;
@@ -1982,6 +2058,12 @@ export async function upsertPersonRow(
       ...(missingHideCol
         ? {}
         : { hide_from_schedule: payload.hide_from_schedule }),
+      ...(missingContractorCols
+        ? {}
+        : {
+            hide_from_utilization: payload.hide_from_utilization,
+            is_contractor: payload.is_contractor,
+          }),
       ...(missingColorCol ? {} : { avatar_color: payload.avatar_color }),
     };
     const retry = await supabase.from("people").upsert(retryPayload);
@@ -2004,6 +2086,11 @@ export async function upsertPersonRow(
     if (missingHideCol || missingColorCol) {
       console.warn(
         "people hide_from_schedule/avatar_color missing — apply supabase/migrations/053_people_schedule_avatar_pm_edit.sql",
+      );
+    }
+    if (missingContractorCols) {
+      console.warn(
+        "people contractor columns missing — apply supabase/migrations/072_contractor_people_and_terms.sql",
       );
     }
     return;
@@ -3206,6 +3293,8 @@ export async function seedDemoWorkspace(
       : null,
     avatar_url: p.avatar_url,
     hide_from_schedule: Boolean(p.hide_from_schedule),
+    hide_from_utilization: Boolean(p.hide_from_utilization),
+    is_contractor: Boolean(p.is_contractor),
     avatar_color: p.avatar_color,
   }));
 

@@ -171,7 +171,7 @@ export function PersonForm({
                   }
                 />
               </Field>
-              <Field label="Work email">
+              <Field label="Work Email">
                 <input
                   type="email"
                   required={isNew}
@@ -189,7 +189,7 @@ export function PersonForm({
                   password.
                 </p>
               ) : null}
-              <Field label="Role title">
+              <Field label="Role Title">
                 <input
                   className={inputClass}
                   value={person.role_title}
@@ -257,7 +257,7 @@ export function PersonForm({
 
           {activeTab === "capacity" ? (
             <>
-              <Field label="Holiday calendar">
+              <Field label="Holiday Calendar">
                 <Select
                   searchable
                   value={person.holiday_calendar_id ?? ""}
@@ -278,41 +278,24 @@ export function PersonForm({
                   ]}
                 />
               </Field>
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={Boolean(person.hide_from_schedule)}
-                  onChange={(e) =>
-                    onChange({
-                      ...person,
-                      hide_from_schedule: e.target.checked,
-                    })
-                  }
-                />
-                <span>
-                  Hide from schedule &amp; capacity
-                  <span className="block text-xs text-[var(--text-muted)]">
-                    Management-only accounts stay off the schedule and out of
-                    utilization capacity.
-                  </span>
-                </span>
-              </label>
-              <Field label="Capacity hrs/week">
-                <input
-                  type="number"
-                  className={inputClass}
-                  value={person.capacity_hours_week}
-                  onChange={(e) =>
-                    onChange({
-                      ...person,
-                      capacity_hours_week: Number(e.target.value) || 0,
-                    })
-                  }
-                />
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Cost rate">
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Capacity Hrs/Week">
+                  <input
+                    type="number"
+                    className={inputClass}
+                    disabled={
+                      person.hide_from_schedule && person.hide_from_utilization
+                    }
+                    value={person.capacity_hours_week}
+                    onChange={(e) =>
+                      onChange({
+                        ...person,
+                        capacity_hours_week: Number(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </Field>
+                <Field label="Cost Rate">
                   <input
                     type="number"
                     className={inputClass}
@@ -325,7 +308,7 @@ export function PersonForm({
                     }
                   />
                 </Field>
-                <Field label="Bill rate">
+                <Field label="Bill Rate">
                   <input
                     type="number"
                     className={inputClass}
@@ -339,6 +322,79 @@ export function PersonForm({
                   />
                 </Field>
               </div>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={Boolean(person.hide_from_schedule)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    onChange({
+                      ...person,
+                      hide_from_schedule: checked,
+                      hide_from_utilization: checked
+                        ? true
+                        : person.hide_from_utilization,
+                    });
+                  }}
+                />
+                <span>
+                  Hide from Schedule
+                  <span className="block text-xs text-[var(--text-muted)]">
+                    Hiding a Person from the Schedule removes them from being
+                    visible on the Schedule page. Used for Managers that are not
+                    assigned work, or Contractors working with fixed fees and are
+                    not part of your resource planning.
+                  </span>
+                </span>
+              </label>
+              <label
+                className={cn(
+                  "flex items-start gap-2 text-sm",
+                  person.hide_from_schedule && "opacity-50",
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={Boolean(person.hide_from_utilization)}
+                  disabled={person.hide_from_schedule}
+                  onChange={(e) =>
+                    onChange({
+                      ...person,
+                      hide_from_utilization: e.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  Hide from Utilization
+                  <span className="block text-xs text-[var(--text-muted)]">
+                    Hiding a Person from Utilization removes them from any
+                    Utilization reporting in the dashboards and Reporting pages.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={Boolean(person.is_contractor)}
+                  onChange={(e) =>
+                    onChange({
+                      ...person,
+                      is_contractor: e.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  Contractor
+                  <span className="block text-xs text-[var(--text-muted)]">
+                    Assigning a person as a Contractor is best suited for
+                    external staff who are hired to work on projects and are an
+                    extension of your team.
+                  </span>
+                </span>
+              </label>
             </>
           ) : null}
 

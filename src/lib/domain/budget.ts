@@ -1,5 +1,16 @@
 import { addWeeks, endOfMonth, format, startOfMonth } from "date-fns";
-import type { Assignment, BudgetBurn, Person, Project } from "@/lib/types";
+import type {
+  Assignment,
+  BudgetBurn,
+  ContractorMode,
+  Person,
+  Project,
+  ProjectMember,
+} from "@/lib/types";
+import {
+  contractorCommitted,
+  isProjectBasisContractor,
+} from "@/lib/domain/contractor";
 import { expandAssignmentInRange } from "@/lib/domain/recurrence";
 import { assignmentHoursWithRecurrence } from "@/lib/domain/recurrence";
 import {
@@ -8,6 +19,184 @@ import {
   weekStart,
   workingDaysBetween,
 } from "@/lib/domain/dates";
+
+function effectiveContractorMode(
+  person: Person,
+  member: Pick<ProjectMember, "contractor_mode"> | null | undefined,
+): ContractorMode | null {
+  if (!isProjectBasisContractor(person)) return null;
+  const mode = member?.contractor_mode ?? null;
+  if (mode === "fixed_fee" || mode === "hours" || mode === "scheduled") {
+    return mode;
+  }
+  return person.hide_from_schedule ? "fixed_fee" : "scheduled";
+}
+
+function classifyProjectPeople(
+  projectId: string,
+  assignments: Assignment[],
+  people: Person[],
+  projectMembers: ProjectMember[],
+): {
+  internalIds: Set<string>;
+  contractorScheduledIds: Set<string>;
+  contractorCommitIds: Set<string>;
+  membersByPerson: Map<string, ProjectMember>;
+  peopleById: Map<string, Person>;
+} {
+  const membersByPerson = new Map<string, ProjectMember>();
+  for (const m of projectMembers) {
+    if (m.project_id === projectId) membersByPerson.set(m.person_id, m);
+  }
+  const peopleById = new Map(people.map((p) => [p.id, p]));
+  const rosterIds = new Set<string>();
+  for (const m of projectMembers) {
+    if (m.project_id === projectId) rosterIds.add(m.person_id);
+  }
+  for (const a of assignments) {
+    if (a.project_id === projectId) rosterIds.add(a.person_id);
+  }
+
+  const internalIds = new Set<string>();
+  const contractorScheduledIds = new Set<string>();
+  const contractorCommitIds = new Set<string>();
+
+  for (const personId of rosterIds) {
+    const person = peopleById.get(personId);
+    if (!person) continue;
+    const member = membersByPerson.get(personId);
+    const mode = effectiveContractorMode(person, member);
+    if (mode === "fixed_fee" || mode === "hours") {
+      contractorCommitIds.add(personId);
+    } else if (mode === "scheduled") {
+      contractorScheduledIds.add(personId);
+    } else {
+      internalIds.add(personId);
+    }
+  }
+
+  return {
+    internalIds,
+    contractorScheduledIds,
+    contractorCommitIds,
+    membersByPerson,
+    peopleById,
+  };
+}
+
+function projectHoursInDateRangeForPeople(
+  projectId: string,
+  assignments: Assignment[],
+  fromKey: string,
+  toKey: string,
+  personIds: Set<string>,
+  includeTentative = false,
+): number {
+  if (toKey < fromKey || personIds.size === 0) return 0;
+  return assignments
+    .filter(
+      (a) =>
+        a.project_id === projectId &&
+        personIds.has(a.person_id) &&
+        (includeTentative || a.status === "confirmed"),
+    )
+    .reduce((sum, a) => {
+      const occs = expandAssignmentInRange(a, fromKey, toKey);
+      return (
+        sum +
+        occs.reduce(
+          (s, occ) => s + occurrenceHoursInRange(occ, fromKey, toKey),
+          0,
+        )
+      );
+    }, 0);
+}
+
+function projectBillableAmountInDateRangeForPeople(
+  projectId: string,
+  assignments: Assignment[],
+  people: Person[],
+  fromKey: string,
+  toKey: string,
+  personIds: Set<string>,
+  includeTentative = false,
+): number {
+  if (toKey < fromKey || personIds.size === 0) return 0;
+  const byId = new Map(people.map((p) => [p.id, p]));
+  let sum = 0;
+  for (const a of assignments) {
+    if (a.project_id !== projectId) continue;
+    if (!personIds.has(a.person_id)) continue;
+    if (!includeTentative && a.status !== "confirmed") continue;
+    const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+    for (const occ of expandAssignmentInRange(a, fromKey, toKey)) {
+      sum += occurrenceHoursInRange(occ, fromKey, toKey) * rate;
+    }
+  }
+  return sum;
+}
+
+function contractorCommitmentTotals(
+  projectId: string,
+  commitIds: Set<string>,
+  membersByPerson: Map<string, ProjectMember>,
+  peopleById: Map<string, Person>,
+  assignments: Assignment[],
+  rangeStart: string,
+  rangeEnd: string,
+  includeTentative: boolean,
+): {
+  usedHours: number;
+  futureHours: number;
+  usedAmount: number;
+  futureAmount: number;
+} {
+  let usedHours = 0;
+  let usedAmount = 0;
+  for (const personId of commitIds) {
+    const person = peopleById.get(personId);
+    if (!person) continue;
+    const member = membersByPerson.get(personId);
+    const scheduledHours = projectHoursInDateRangeForPeople(
+      projectId,
+      assignments,
+      rangeStart,
+      rangeEnd,
+      new Set([personId]),
+      includeTentative,
+    );
+    const scheduledAmount = projectBillableAmountInDateRangeForPeople(
+      projectId,
+      assignments,
+      [...peopleById.values()],
+      rangeStart,
+      rangeEnd,
+      new Set([personId]),
+      includeTentative,
+    );
+    const committed = contractorCommitted(person, member, {
+      scheduledHours,
+      scheduledAmount,
+    });
+    usedHours += committed.hours;
+    usedAmount += committed.amount;
+  }
+  return {
+    usedHours,
+    futureHours: 0,
+    usedAmount,
+    futureAmount: 0,
+  };
+}
+
+/** Month key (yyyy-MM) for fixed-fee / hours contractor commitment attribution. */
+export function contractorCommitmentMonthKey(
+  project: Project,
+  asOf: Date = new Date(),
+): string {
+  if (project.start_date) return project.start_date.slice(0, 7);
+  return format(asOf, "yyyy-MM");
+}
 
 export function normalizeBudgetMode(
   mode: string | null | undefined,
@@ -108,6 +297,7 @@ export function budgetBurn(
   people: Person[],
   includeTentative = false,
   asOf: Date = new Date(),
+  projectMembers: ProjectMember[] = [],
 ): BudgetBurn {
   const mode = normalizeBudgetMode(
     project.budget_mode,
@@ -130,48 +320,182 @@ export function budgetBurn(
   const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
   const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
 
-  const usedHours =
-    usedEnd >= rangeStart
-      ? projectHoursInDateRange(
-          project.id,
-          assignments,
-          rangeStart,
-          usedEnd,
-          includeTentative,
-        )
-      : 0;
-  const futureHours =
-    futureStart <= rangeEnd
-      ? projectHoursInDateRange(
-          project.id,
-          assignments,
-          futureStart,
-          rangeEnd,
-          includeTentative,
-        )
-      : 0;
-  const plannedHours = usedHours + futureHours;
+  const hasContractorTerms = projectMembers.some(
+    (m) => m.project_id === project.id,
+  );
+  const classified = hasContractorTerms
+    ? classifyProjectPeople(
+        project.id,
+        assignments,
+        people,
+        projectMembers,
+      )
+    : null;
 
-  const byId = new Map(people.map((p) => [p.id, p]));
-  function amountInRange(from: string, to: string): number {
-    if (to < from) return 0;
-    let sum = 0;
-    for (const a of assignments) {
-      if (a.project_id !== project.id) continue;
-      if (!includeTentative && a.status !== "confirmed") continue;
-      const rate = byId.get(a.person_id)?.bill_rate ?? 0;
-      for (const occ of expandAssignmentInRange(a, from, to)) {
-        sum += occurrenceHoursInRange(occ, from, to) * rate;
-      }
+  let internalUsedHours = 0;
+  let internalFutureHours = 0;
+  let internalUsedAmount = 0;
+  let internalFutureAmount = 0;
+  let contractorUsedHours = 0;
+  let contractorFutureHours = 0;
+  let contractorUsedAmount = 0;
+  let contractorFutureAmount = 0;
+
+  if (classified) {
+    const {
+      internalIds,
+      contractorScheduledIds,
+      contractorCommitIds,
+      membersByPerson,
+      peopleById,
+    } = classified;
+
+    if (usedEnd >= rangeStart) {
+      internalUsedHours = projectHoursInDateRangeForPeople(
+        project.id,
+        assignments,
+        rangeStart,
+        usedEnd,
+        internalIds,
+        includeTentative,
+      );
+      contractorUsedHours = projectHoursInDateRangeForPeople(
+        project.id,
+        assignments,
+        rangeStart,
+        usedEnd,
+        contractorScheduledIds,
+        includeTentative,
+      );
+      internalUsedAmount = projectBillableAmountInDateRangeForPeople(
+        project.id,
+        assignments,
+        people,
+        rangeStart,
+        usedEnd,
+        internalIds,
+        includeTentative,
+      );
+      contractorUsedAmount = projectBillableAmountInDateRangeForPeople(
+        project.id,
+        assignments,
+        people,
+        rangeStart,
+        usedEnd,
+        contractorScheduledIds,
+        includeTentative,
+      );
+      const commitUsed = contractorCommitmentTotals(
+        project.id,
+        contractorCommitIds,
+        membersByPerson,
+        peopleById,
+        assignments,
+        rangeStart,
+        rangeEnd,
+        includeTentative,
+      );
+      contractorUsedHours += commitUsed.usedHours;
+      contractorUsedAmount += commitUsed.usedAmount;
     }
-    return sum;
+    if (futureStart <= rangeEnd) {
+      internalFutureHours = projectHoursInDateRangeForPeople(
+        project.id,
+        assignments,
+        futureStart,
+        rangeEnd,
+        internalIds,
+        includeTentative,
+      );
+      contractorFutureHours = projectHoursInDateRangeForPeople(
+        project.id,
+        assignments,
+        futureStart,
+        rangeEnd,
+        contractorScheduledIds,
+        includeTentative,
+      );
+      internalFutureAmount = projectBillableAmountInDateRangeForPeople(
+        project.id,
+        assignments,
+        people,
+        futureStart,
+        rangeEnd,
+        internalIds,
+        includeTentative,
+      );
+      contractorFutureAmount = projectBillableAmountInDateRangeForPeople(
+        project.id,
+        assignments,
+        people,
+        futureStart,
+        rangeEnd,
+        contractorScheduledIds,
+        includeTentative,
+      );
+    }
+  } else {
+    internalUsedHours =
+      usedEnd >= rangeStart
+        ? projectHoursInDateRange(
+            project.id,
+            assignments,
+            rangeStart,
+            usedEnd,
+            includeTentative,
+          )
+        : 0;
+    internalFutureHours =
+      futureStart <= rangeEnd
+        ? projectHoursInDateRange(
+            project.id,
+            assignments,
+            futureStart,
+            rangeEnd,
+            includeTentative,
+          )
+        : 0;
+    internalUsedAmount =
+      usedEnd >= rangeStart
+        ? projectBillableAmountInDateRange(
+            project.id,
+            assignments,
+            people,
+            rangeStart,
+            usedEnd,
+            includeTentative,
+          )
+        : 0;
+    internalFutureAmount =
+      futureStart <= rangeEnd
+        ? projectBillableAmountInDateRange(
+            project.id,
+            assignments,
+            people,
+            futureStart,
+            rangeEnd,
+            includeTentative,
+          )
+        : 0;
   }
 
-  const usedAmount =
-    usedEnd >= rangeStart ? amountInRange(rangeStart, usedEnd) : 0;
-  const futureAmount =
-    futureStart <= rangeEnd ? amountInRange(futureStart, rangeEnd) : 0;
+  const usedHours = internalUsedHours + contractorUsedHours;
+  const futureHours = internalFutureHours + contractorFutureHours;
+  const plannedHours = usedHours + futureHours;
+  const usedAmount = internalUsedAmount + contractorUsedAmount;
+  const futureAmount = internalFutureAmount + contractorFutureAmount;
   const plannedAmount = usedAmount + futureAmount;
+  const contractorHours = contractorUsedHours + contractorFutureHours;
+  const contractorAmount = contractorUsedAmount + contractorFutureAmount;
+
+  const contractorFields = {
+    contractorHours,
+    contractorAmount,
+    contractorUsedHours,
+    contractorFutureHours,
+    contractorUsedAmount,
+    contractorFutureAmount,
+  };
 
   if (mode === "none") {
     return {
@@ -189,6 +513,7 @@ export function budgetBurn(
       remainingAmount: null,
       amountOverBy: 0,
       mode: "none",
+      ...contractorFields,
     };
   }
 
@@ -213,6 +538,7 @@ export function budgetBurn(
       remainingAmount,
       amountOverBy: Math.max(0, plannedAmount - totalAmount),
       mode: "amount",
+      ...contractorFields,
     };
   }
 
@@ -233,6 +559,7 @@ export function budgetBurn(
     remainingAmount: null,
     amountOverBy: 0,
     mode: "hours",
+    ...contractorFields,
   };
 }
 
@@ -292,20 +619,225 @@ export interface MonthBurnBar {
   plannedHours: number;
   /** Planned billable $ for the month (hours × bill rates). */
   plannedAmount: number;
-  /** Hours scheduled through today (or full month if past). */
+  /** Internal schedule hours through today (or full month if past). */
   usedHours: number;
-  /** Hours scheduled from tomorrow onward (or full month if future). */
+  /** Internal schedule hours from tomorrow onward (or full month if future). */
   futureHours: number;
-  /** Billable $ through today (or full month if past). */
+  /** Internal billable $ through today (or full month if past). */
   usedAmount: number;
-  /** Billable $ from tomorrow onward (or full month if future). */
+  /** Internal billable $ from tomorrow onward (or full month if future). */
   futureAmount: number;
+  /** Contractor hours in month (used + future). */
+  contractorHours: number;
+  contractorAmount: number;
+  contractorUsedHours: number;
+  contractorFutureHours: number;
+  contractorUsedAmount: number;
+  contractorFutureAmount: number;
   /** Primary bar value (hours or $ depending on chart context). */
   value: number;
   /** Soft monthly cap for over-coloring; 0 means scale against the year’s max. */
   cap: number;
   budgetHours: number;
   pct: number;
+}
+
+function monthBurnSplit(
+  project: Project,
+  assignments: Assignment[],
+  people: Person[],
+  year: number,
+  monthIndex: number,
+  asOf: Date,
+  projectMembers: ProjectMember[],
+): {
+  usedHours: number;
+  futureHours: number;
+  usedAmount: number;
+  futureAmount: number;
+  contractorHours: number;
+  contractorAmount: number;
+  contractorUsedHours: number;
+  contractorFutureHours: number;
+  contractorUsedAmount: number;
+  contractorFutureAmount: number;
+  plannedHours: number;
+  plannedAmount: number;
+} {
+  const monthStart = toDateKey(startOfMonth(new Date(year, monthIndex, 1)));
+  const monthEnd = toDateKey(endOfMonth(new Date(year, monthIndex, 1)));
+  const monthKey = format(new Date(year, monthIndex, 1), "yyyy-MM");
+  const commitMonthKey = contractorCommitmentMonthKey(project, asOf);
+
+  const hasContractorTerms = projectMembers.some(
+    (m) => m.project_id === project.id,
+  );
+  if (!hasContractorTerms) {
+    const split = projectHoursSplitInRange(
+      project.id,
+      assignments,
+      people,
+      monthStart,
+      monthEnd,
+      asOf,
+    );
+    const plannedHours = projectPlannedHours(project.id, assignments, false, {
+      year,
+      monthIndex,
+    });
+    const plannedAmount = projectPlannedAmount(
+      project.id,
+      assignments,
+      people,
+      false,
+      { year, monthIndex },
+    );
+    return {
+      ...split,
+      contractorHours: 0,
+      contractorAmount: 0,
+      contractorUsedHours: 0,
+      contractorFutureHours: 0,
+      contractorUsedAmount: 0,
+      contractorFutureAmount: 0,
+      plannedHours,
+      plannedAmount,
+    };
+  }
+
+  const {
+    internalIds,
+    contractorScheduledIds,
+    contractorCommitIds,
+    membersByPerson,
+    peopleById,
+  } = classifyProjectPeople(
+    project.id,
+    assignments,
+    people,
+    projectMembers,
+  );
+
+  const todayKey = toDateKey(asOf);
+  const tomorrow = new Date(asOf);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = toDateKey(tomorrow);
+  const usedEnd = todayKey < monthEnd ? todayKey : monthEnd;
+  const futureStart = tomorrowKey > monthStart ? tomorrowKey : monthStart;
+
+  let internalUsedHours = 0;
+  let internalFutureHours = 0;
+  let contractorUsedHours = 0;
+  let contractorFutureHours = 0;
+  let internalUsedAmount = 0;
+  let internalFutureAmount = 0;
+  let contractorUsedAmount = 0;
+  let contractorFutureAmount = 0;
+
+  if (usedEnd >= monthStart) {
+    internalUsedHours = projectHoursInDateRangeForPeople(
+      project.id,
+      assignments,
+      monthStart,
+      usedEnd,
+      internalIds,
+    );
+    contractorUsedHours = projectHoursInDateRangeForPeople(
+      project.id,
+      assignments,
+      monthStart,
+      usedEnd,
+      contractorScheduledIds,
+    );
+    internalUsedAmount = projectBillableAmountInDateRangeForPeople(
+      project.id,
+      assignments,
+      people,
+      monthStart,
+      usedEnd,
+      internalIds,
+    );
+    contractorUsedAmount = projectBillableAmountInDateRangeForPeople(
+      project.id,
+      assignments,
+      people,
+      monthStart,
+      usedEnd,
+      contractorScheduledIds,
+    );
+    if (monthKey === commitMonthKey) {
+      const commit = contractorCommitmentTotals(
+        project.id,
+        contractorCommitIds,
+        membersByPerson,
+        peopleById,
+        assignments,
+        monthStart,
+        monthEnd,
+        false,
+      );
+      contractorUsedHours += commit.usedHours;
+      contractorUsedAmount += commit.usedAmount;
+    }
+  }
+  if (futureStart <= monthEnd) {
+    internalFutureHours = projectHoursInDateRangeForPeople(
+      project.id,
+      assignments,
+      futureStart,
+      monthEnd,
+      internalIds,
+    );
+    contractorFutureHours = projectHoursInDateRangeForPeople(
+      project.id,
+      assignments,
+      futureStart,
+      monthEnd,
+      contractorScheduledIds,
+    );
+    internalFutureAmount = projectBillableAmountInDateRangeForPeople(
+      project.id,
+      assignments,
+      people,
+      futureStart,
+      monthEnd,
+      internalIds,
+    );
+    contractorFutureAmount = projectBillableAmountInDateRangeForPeople(
+      project.id,
+      assignments,
+      people,
+      futureStart,
+      monthEnd,
+      contractorScheduledIds,
+    );
+  }
+
+  const plannedHours =
+    internalUsedHours +
+    internalFutureHours +
+    contractorUsedHours +
+    contractorFutureHours;
+  const plannedAmount =
+    internalUsedAmount +
+    internalFutureAmount +
+    contractorUsedAmount +
+    contractorFutureAmount;
+
+  return {
+    usedHours: internalUsedHours,
+    futureHours: internalFutureHours,
+    usedAmount: internalUsedAmount,
+    futureAmount: internalFutureAmount,
+    contractorHours: contractorUsedHours + contractorFutureHours,
+    contractorAmount: contractorUsedAmount + contractorFutureAmount,
+    contractorUsedHours,
+    contractorFutureHours,
+    contractorUsedAmount,
+    contractorFutureAmount,
+    plannedHours,
+    plannedAmount,
+  };
 }
 
 /** Used vs future hours/$ in [rangeStart, rangeEnd] using today/tomorrow split. */
@@ -418,6 +950,7 @@ export function monthlyHourBars(
   assignments: Assignment[],
   months = 6,
   asOf: Date = new Date(),
+  projectMembers: ProjectMember[] = [],
 ): MonthBurnBar[] {
   const budgetHours = project.budget_hours ?? 0;
   const out: MonthBurnBar[] = [];
@@ -425,38 +958,39 @@ export function monthlyHourBars(
     const d = new Date(asOf.getFullYear(), asOf.getMonth() - i, 1);
     const year = d.getFullYear();
     const monthIndex = d.getMonth();
-    const plannedHours = projectPlannedHours(project.id, assignments, false, {
-      year,
-      monthIndex,
-    });
-    const monthStart = toDateKey(startOfMonth(d));
-    const monthEnd = toDateKey(endOfMonth(d));
-    const split = projectHoursSplitInRange(
-      project.id,
+    const split = monthBurnSplit(
+      project,
       assignments,
       [],
-      monthStart,
-      monthEnd,
+      year,
+      monthIndex,
       asOf,
+      projectMembers,
     );
     out.push({
       key: format(d, "yyyy-MM"),
       label: format(d, "MMM yyyy"),
       year,
       monthIndex,
-      plannedHours,
-      plannedAmount: 0,
+      plannedHours: split.plannedHours,
+      plannedAmount: split.plannedAmount,
       usedHours: split.usedHours,
       futureHours: split.futureHours,
       usedAmount: split.usedAmount,
       futureAmount: split.futureAmount,
-      value: plannedHours,
+      contractorHours: split.contractorHours,
+      contractorAmount: split.contractorAmount,
+      contractorUsedHours: split.contractorUsedHours,
+      contractorFutureHours: split.contractorFutureHours,
+      contractorUsedAmount: split.contractorUsedAmount,
+      contractorFutureAmount: split.contractorFutureAmount,
+      value: split.plannedHours,
       cap: budgetHours,
       budgetHours,
       pct:
         budgetHours <= 0
           ? 0
-          : Math.min(999, (plannedHours / budgetHours) * 100),
+          : Math.min(999, (split.plannedHours / budgetHours) * 100),
     });
   }
   return out;
@@ -468,6 +1002,7 @@ export function calendarYearBars(
   assignments: Assignment[],
   people: Person[],
   asOf: Date = new Date(),
+  projectMembers: ProjectMember[] = [],
 ): MonthBurnBar[] {
   const year = asOf.getFullYear();
   const mode = normalizeBudgetMode(
@@ -482,45 +1017,38 @@ export function calendarYearBars(
   const out: MonthBurnBar[] = [];
   for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
     const d = new Date(year, monthIndex, 1);
-    const plannedHours = projectPlannedHours(project.id, assignments, false, {
+    const split = monthBurnSplit(
+      project,
+      assignments,
+      people,
       year,
       monthIndex,
-    });
-    const plannedAmount = projectPlannedAmount(
-      project.id,
-      assignments,
-      people,
-      false,
-      { year, monthIndex },
-    );
-    const monthStart = toDateKey(startOfMonth(d));
-    const monthEnd = toDateKey(endOfMonth(d));
-    const split = projectHoursSplitInRange(
-      project.id,
-      assignments,
-      people,
-      monthStart,
-      monthEnd,
       asOf,
+      projectMembers,
     );
-    const value = mode === "amount" ? plannedAmount : plannedHours;
+    const value = mode === "amount" ? split.plannedAmount : split.plannedHours;
     const cap = mode === "amount" ? 0 : monthlyHourCap;
     out.push({
       key: format(d, "yyyy-MM"),
       label: format(d, "MMM yyyy"),
       year,
       monthIndex,
-      plannedHours,
-      plannedAmount,
+      plannedHours: split.plannedHours,
+      plannedAmount: split.plannedAmount,
       usedHours: split.usedHours,
       futureHours: split.futureHours,
       usedAmount: split.usedAmount,
       futureAmount: split.futureAmount,
+      contractorHours: split.contractorHours,
+      contractorAmount: split.contractorAmount,
+      contractorUsedHours: split.contractorUsedHours,
+      contractorFutureHours: split.contractorFutureHours,
+      contractorUsedAmount: split.contractorUsedAmount,
+      contractorFutureAmount: split.contractorFutureAmount,
       value,
       cap,
       budgetHours: monthlyHourCap,
-      pct:
-        cap <= 0 ? 0 : Math.min(999, (value / cap) * 100),
+      pct: cap <= 0 ? 0 : Math.min(999, (value / cap) * 100),
     });
   }
   return out;
@@ -876,6 +1404,7 @@ export function weeklyProgressSeries(
   assignments: Assignment[],
   asOf: Date = new Date(),
   people: Person[] = [],
+  projectMembers: ProjectMember[] = [],
 ): WeeklyProgressPoint[] {
   const span = projectDateSpan(project, assignments);
   if (!span) return [];
@@ -892,6 +1421,54 @@ export function weeklyProgressSeries(
   const trackAmount = people.length > 0;
   let guard = 0;
 
+  const hasContractorTerms = projectMembers.some(
+    (m) => m.project_id === project.id,
+  );
+  const classified = hasContractorTerms
+    ? classifyProjectPeople(
+        project.id,
+        assignments,
+        people,
+        projectMembers,
+      )
+    : null;
+  const internalIds = classified?.internalIds ?? null;
+
+  function weekHoursInRange(from: string, to: string): number {
+    if (to < from) return 0;
+    if (internalIds) {
+      return projectHoursInDateRangeForPeople(
+        project.id,
+        assignments,
+        from,
+        to,
+        internalIds,
+      );
+    }
+    return projectHoursInDateRange(project.id, assignments, from, to);
+  }
+
+  function weekAmountInRange(from: string, to: string): number {
+    if (to < from) return 0;
+    if (internalIds) {
+      return projectBillableAmountInDateRangeForPeople(
+        project.id,
+        assignments,
+        people,
+        from,
+        to,
+        internalIds,
+      );
+    }
+    return projectBillableAmountInDateRange(
+      project.id,
+      assignments,
+      people,
+      from,
+      to,
+    );
+  }
+
   while (cursor <= end && guard < 260) {
     guard += 1;
     const ws = weekStart(cursor);
@@ -904,12 +1481,7 @@ export function weeklyProgressSeries(
 
     const weekHours =
       rangeTo >= rangeFrom
-        ? projectHoursInDateRange(
-            project.id,
-            assignments,
-            rangeFrom,
-            rangeTo,
-          )
+        ? weekHoursInRange(rangeFrom, rangeTo)
         : 0;
     cumPlanned += weekHours;
 
@@ -917,12 +1489,7 @@ export function weeklyProgressSeries(
     if (rangeFrom <= todayKey && rangeTo >= rangeFrom) {
       const usedTo = rangeTo < todayKey ? rangeTo : todayKey;
       if (usedTo >= rangeFrom) {
-        weekUsed = projectHoursInDateRange(
-          project.id,
-          assignments,
-          rangeFrom,
-          usedTo,
-        );
+        weekUsed = weekHoursInRange(rangeFrom, usedTo);
       }
     }
     cumUsed += weekUsed;
@@ -930,24 +1497,12 @@ export function weeklyProgressSeries(
     let weekAmount = 0;
     let weekUsedAmount = 0;
     if (trackAmount && rangeTo >= rangeFrom) {
-      weekAmount = projectBillableAmountInDateRange(
-        project.id,
-        assignments,
-        people,
-        rangeFrom,
-        rangeTo,
-      );
+      weekAmount = weekAmountInRange(rangeFrom, rangeTo);
       cumPlannedAmount += weekAmount;
       if (rangeFrom <= todayKey && rangeTo >= rangeFrom) {
         const usedTo = rangeTo < todayKey ? rangeTo : todayKey;
         if (usedTo >= rangeFrom) {
-          weekUsedAmount = projectBillableAmountInDateRange(
-            project.id,
-            assignments,
-            people,
-            rangeFrom,
-            usedTo,
-          );
+          weekUsedAmount = weekAmountInRange(rangeFrom, usedTo);
         }
       }
       cumUsedAmount += weekUsedAmount;

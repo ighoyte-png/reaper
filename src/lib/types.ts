@@ -278,10 +278,17 @@ export interface Person {
   /** Public URL for profile photo (Storage or data URL in demo). */
   avatar_url: string | null;
   /**
-   * When true, omit from schedule rows and from capacity/utilization aggregates
-   * (management-only accounts that should not skew team load).
+   * When true, omit from schedule rows (management-only or project-basis
+   * contractors who are not part of resource planning).
    */
   hide_from_schedule: boolean;
+  /**
+   * When true, omit from utilization/capacity aggregates. Auto-forced when
+   * hide_from_schedule is true.
+   */
+  hide_from_utilization: boolean;
+  /** External staff tag; may use project-basis budget terms when not FT-style. */
+  is_contractor: boolean;
   /** Initials circle background when avatar_url is empty (client palette hex). */
   avatar_color: string | null;
 }
@@ -328,11 +335,18 @@ export interface Assignment {
   edited_by_profile_id: string | null;
 }
 
+/** Per-project contractor compensation mode. */
+export type ContractorMode = "fixed_fee" | "hours" | "scheduled";
+
 /** Explicit project team roster (may also appear via schedule/tasks). */
 export interface ProjectMember {
   project_id: string;
   person_id: string;
   organization_id: string;
+  /** Project-basis contractor compensation mode (null for staff / FT-style). */
+  contractor_mode: ContractorMode | null;
+  contractor_fixed_fee: number | null;
+  contractor_hours: number | null;
 }
 
 /** Per-user starred project (nav tabs + sidebars). */
@@ -429,6 +443,13 @@ export interface BudgetBurn {
   amountOverBy: number;
   /** Active ledger for this burn (exclusive: never both hours and amount). */
   mode: BudgetMode;
+  /** Project-basis contractor commitment + scheduled hours (green). */
+  contractorHours: number;
+  contractorAmount: number;
+  contractorUsedHours: number;
+  contractorFutureHours: number;
+  contractorUsedAmount: number;
+  contractorFutureAmount: number;
 }
 
 export type CapacityLevel =

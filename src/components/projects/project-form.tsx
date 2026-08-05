@@ -8,15 +8,27 @@ import {
   PodFilterBar,
   usePodFilter,
 } from "@/components/people/pod-filter-bar";
+import { ContractorTag } from "@/components/projects/project-manager-person";
 import { cn } from "@/lib/cn";
+import {
+  contractorAmountFromHours,
+  contractorHoursFromFixedFee,
+  defaultContractorTermsForPerson,
+  isFullTimeStyleContractor,
+  isProjectBasisContractor,
+  sortPeopleContractorsLast,
+  type ContractorTerms,
+} from "@/lib/domain/contractor";
 import { filterPeopleByPod } from "@/lib/domain/pods";
-import { roundAssignmentHours } from "@/lib/domain/budget";
+import { formatHours, formatMoney, roundAssignmentHours } from "@/lib/domain/budget";
 import type {
   BudgetMode,
+  ContractorMode,
   Person,
   Pod,
   PodMember,
   Project,
+  ProjectMember,
   ProjectStatus,
   ProjectTemplate,
 } from "@/lib/types";
@@ -47,6 +59,8 @@ export function ProjectForm({
   podMembers = [],
   memberIds,
   onMemberIdsChange,
+  contractorTerms = {},
+  onContractorTermsChange,
   onChange,
   onSave,
   onCancel,
@@ -66,6 +80,16 @@ export function ProjectForm({
   podMembers?: PodMember[];
   memberIds: string[];
   onMemberIdsChange: (ids: string[]) => void;
+  contractorTerms?: Record<
+    string,
+    Pick<
+      ProjectMember,
+      "contractor_mode" | "contractor_fixed_fee" | "contractor_hours"
+    >
+  >;
+  onContractorTermsChange?: (
+    next: Record<string, ContractorTerms>,
+  ) => void;
   onChange: (p: Omit<Project, "organization_id">) => void;
   onSave: () => void;
   onCancel: () => void;
@@ -96,8 +120,60 @@ export function ProjectForm({
       podMembers,
       podFilter,
     );
-    return filtered;
+    return sortPeopleContractorsLast(filtered);
   }, [peopleSorted, pods, podMembers, podFilter]);
+
+  const projectBasisTeamMembers = useMemo(() => {
+    const byId = new Map(people.map((p) => [p.id, p]));
+    return memberIds
+      .map((id) => byId.get(id))
+      .filter((p): p is Person => Boolean(p && isProjectBasisContractor(p)));
+  }, [memberIds, people]);
+
+  const fullTimeStyleTeamMembers = useMemo(() => {
+    const byId = new Map(people.map((p) => [p.id, p]));
+    return memberIds
+      .map((id) => byId.get(id))
+      .filter((p): p is Person => Boolean(p && isFullTimeStyleContractor(p)));
+  }, [memberIds, people]);
+
+  function setContractorTerms(
+    personId: string,
+    patch: Partial<ContractorTerms>,
+  ) {
+    if (!onContractorTermsChange) return;
+    const existing =
+      contractorTerms[personId] ??
+      defaultContractorTermsForPerson(
+        people.find((p) => p.id === personId)!,
+      );
+    onContractorTermsChange({
+      ...contractorTerms,
+      [personId]: { ...existing, ...patch },
+    });
+  }
+
+  function toggleTeamMember(person: Person, checked: boolean) {
+    if (checked) {
+      onMemberIdsChange([...memberIds, person.id]);
+      if (
+        onContractorTermsChange &&
+        isProjectBasisContractor(person) &&
+        !contractorTerms[person.id]
+      ) {
+        onContractorTermsChange({
+          ...contractorTerms,
+          [person.id]: defaultContractorTermsForPerson(person),
+        });
+      }
+      return;
+    }
+    onMemberIdsChange(memberIds.filter((id) => id !== person.id));
+    if (onContractorTermsChange && contractorTerms[person.id]) {
+      const { [person.id]: _removed, ...rest } = contractorTerms;
+      onContractorTermsChange(rest);
+    }
+  }
   const templatesSorted = [...templates].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
@@ -327,22 +403,21 @@ export function ProjectForm({
                           <input
                             type="checkbox"
                             checked={checked}
-                            onChange={(e) => {
-                              onMemberIdsChange(
-                                e.target.checked
-                                  ? [...memberIds, p.id]
-                                  : memberIds.filter((id) => id !== p.id),
-                              );
-                            }}
+                            onChange={(e) =>
+                              toggleTeamMember(p, e.target.checked)
+                            }
                           />
-                          <span className="min-w-0 truncate">
-                            {p.name}
-                            {p.role_title ? (
-                              <span className="text-[var(--text-muted)]">
-                                {" "}
-                                · {p.role_title}
-                              </span>
-                            ) : null}
+                          <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate">
+                            <span className="min-w-0 truncate">
+                              {p.name}
+                              {p.role_title ? (
+                                <span className="text-[var(--text-muted)]">
+                                  {" "}
+                                  · {p.role_title}
+                                </span>
+                              ) : null}
+                            </span>
+                            {p.is_contractor ? <ContractorTag /> : null}
                           </span>
                         </label>
                       );
@@ -524,6 +599,146 @@ export function ProjectForm({
                     }
                   />
                 </Field>
+              ) : null}
+              {fullTimeStyleTeamMembers.length > 0 ? (
+                <p className="text-xs leading-snug text-[var(--text-muted)]">
+                  {fullTimeStyleTeamMembers.length === 1
+                    ? `${fullTimeStyleTeamMembers[0]!.name} is a contractor on the schedule — no per-project terms needed.`
+                    : `${fullTimeStyleTeamMembers.length} contractors on the schedule use their profile rates — no per-project terms needed.`}
+                </p>
+              ) : null}
+              {projectBasisTeamMembers.length > 0 ? (
+                <div className="space-y-4 border-t border-[var(--border)] pt-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                    Contractor terms
+                  </p>
+                  {projectBasisTeamMembers.map((person) => {
+                    const terms =
+                      contractorTerms[person.id] ??
+                      defaultContractorTermsForPerson(person);
+                    const mode = terms.contractor_mode ?? "fixed_fee";
+                    const fixedFee = terms.contractor_fixed_fee ?? 0;
+                    const hours = terms.contractor_hours ?? 0;
+                    const computedHours = contractorHoursFromFixedFee(
+                      fixedFee,
+                      person,
+                    );
+                    const computedAmount = contractorAmountFromHours(
+                      hours,
+                      person,
+                    );
+
+                    return (
+                      <div
+                        key={person.id}
+                        className="space-y-2 rounded-md border border-[var(--border)] p-3"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium">
+                            {person.name}
+                          </span>
+                          <ContractorTag />
+                        </div>
+                        <div className="flex flex-wrap gap-3 text-sm">
+                          {(
+                            [
+                              { value: "fixed_fee", label: "Fixed Fee" },
+                              { value: "hours", label: "Hours" },
+                              {
+                                value: "scheduled",
+                                label: "Use Scheduled Time",
+                                disabled: person.hide_from_schedule,
+                              },
+                            ] as const
+                          ).map((opt) => (
+                            <label
+                              key={opt.value}
+                              className={cn(
+                                "flex cursor-pointer items-center gap-1.5",
+                                "disabled" in opt && opt.disabled
+                                  ? "cursor-not-allowed opacity-40"
+                                  : "",
+                              )}
+                            >
+                              <input
+                                type="radio"
+                                name={`contractor-mode-${person.id}`}
+                                checked={mode === opt.value}
+                                disabled={"disabled" in opt && opt.disabled}
+                                onChange={() =>
+                                  setContractorTerms(person.id, {
+                                    contractor_mode: opt.value as ContractorMode,
+                                  })
+                                }
+                              />
+                              {opt.label}
+                            </label>
+                          ))}
+                        </div>
+                        {mode === "fixed_fee" ? (
+                          <div className="space-y-1">
+                            <label className="block text-xs text-[var(--text-muted)]">
+                              Fixed fee ($)
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              className={inputClass}
+                              value={terms.contractor_fixed_fee ?? ""}
+                              onChange={(e) =>
+                                setContractorTerms(person.id, {
+                                  contractor_fixed_fee:
+                                    e.target.value === ""
+                                      ? null
+                                      : Number(e.target.value) || 0,
+                                })
+                              }
+                            />
+                            {fixedFee > 0 ? (
+                              <p className="text-[11px] text-[var(--text-muted)]">
+                                ≈ {formatHours(computedHours)} at profile rate
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {mode === "hours" ? (
+                          <div className="space-y-1">
+                            <label className="block text-xs text-[var(--text-muted)]">
+                              Hours
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              className={inputClass}
+                              value={terms.contractor_hours ?? ""}
+                              onChange={(e) =>
+                                setContractorTerms(person.id, {
+                                  contractor_hours:
+                                    e.target.value === ""
+                                      ? null
+                                      : Number(e.target.value) || 0,
+                                })
+                              }
+                            />
+                            {hours > 0 ? (
+                              <p className="text-[11px] text-[var(--text-muted)]">
+                                ≈ {formatMoney(computedAmount)} at profile rate
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        {mode === "scheduled" ? (
+                          <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                            Budget uses scheduled assignment hours for this
+                            contractor.
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
               ) : null}
             </>
           ) : null}

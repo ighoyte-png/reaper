@@ -8,7 +8,7 @@ import { ChevronDown, ChevronRight, Copy, ExternalLink, Link2, Pencil, Plus, Ref
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
-import { ProjectManagerPerson } from "@/components/projects/project-manager-person";
+import { ProjectManagerPerson, ContractorTag } from "@/components/projects/project-manager-person";
 import { BudgetCard } from "@/components/budgets/budget-card";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
@@ -48,6 +48,12 @@ import {
   resolvePmScheduleIntent,
 } from "@/lib/domain/project-manager-schedule";
 import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sorting";
+import {
+  buildProjectMembersPayload,
+  contractorTermsFromProjectMembers,
+  sortPeopleContractorsLast,
+  type ContractorTerms,
+} from "@/lib/domain/contractor";
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { clientSiteOrigin, publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
@@ -119,6 +125,9 @@ export default function ProjectDetailPage() {
     null,
   );
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [contractorTerms, setContractorTerms] = useState<
+    Record<string, ContractorTerms>
+  >({});
   const [pmDailyHours, setPmDailyHours] = useState<number | null>(null);
   const [pmBaselineDates, setPmBaselineDates] = useState<{
     start_date: string | null;
@@ -212,11 +221,9 @@ export default function ProjectDetailPage() {
       state.assignments,
       state.tasks,
     );
-    return state.people
-      .filter((p) => ids.has(p.id))
-      .sort((a, b) =>
-        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-      );
+    return sortPeopleContractorsLast(
+      state.people.filter((p) => ids.has(p.id)),
+    );
   }, [
     project,
     state.assignments,
@@ -359,6 +366,12 @@ export default function ProjectDetailPage() {
                       .filter((m) => m.project_id === project.id)
                       .map((m) => m.person_id),
                   );
+                  setContractorTerms(
+                    contractorTermsFromProjectMembers(
+                      project.id,
+                      state.project_members,
+                    ),
+                  );
                   setPmBaselineDates({
                     start_date: project.start_date,
                     end_date: project.end_date,
@@ -456,8 +469,13 @@ export default function ProjectDetailPage() {
                         fallback="initials"
                       />
                       <div className="min-w-0 text-left">
-                        <div className="truncate font-medium leading-tight">
-                          {p.name}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="truncate font-medium leading-tight">
+                            {p.name}
+                          </span>
+                          {!isPublicShare && p.is_contractor ? (
+                            <ContractorTag />
+                          ) : null}
                         </div>
                         {p.role_title ? (
                           <div className="truncate text-xs text-[var(--text-muted)]">
@@ -853,6 +871,7 @@ export default function ProjectDetailPage() {
             setEditing(false);
             setDraft(null);
             setMemberIds([]);
+            setContractorTerms({});
             setPmDailyHours(null);
             setPmBaselineDates(null);
           }}
@@ -865,6 +884,8 @@ export default function ProjectDetailPage() {
             podMembers={state.pod_members}
             memberIds={memberIds}
             onMemberIdsChange={setMemberIds}
+            contractorTerms={contractorTerms}
+            onContractorTermsChange={setContractorTerms}
             onChange={setDraft}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
@@ -911,12 +932,20 @@ export default function ProjectDetailPage() {
                       ? Boolean(toSave.budget_monthly_reset)
                       : false,
                 });
-                await setProjectMembers(toSave.id, memberIds);
+                await setProjectMembers(
+                  toSave.id,
+                  buildProjectMembersPayload(
+                    memberIds,
+                    contractorTerms,
+                    state.people,
+                  ),
+                );
 
                 const closeEdit = () => {
                   setEditing(false);
                   setDraft(null);
                   setMemberIds([]);
+                  setContractorTerms({});
                   setPmDailyHours(null);
                   setPmBaselineDates(null);
                 };
@@ -1022,6 +1051,7 @@ export default function ProjectDetailPage() {
               setEditing(false);
               setDraft(null);
               setMemberIds([]);
+              setContractorTerms({});
               setPmDailyHours(null);
               setPmBaselineDates(null);
             }}
