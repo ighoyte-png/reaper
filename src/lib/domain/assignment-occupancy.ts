@@ -1,11 +1,42 @@
-import type { Assignment } from "@/lib/types";
+import type { Assignment, LeaveDay } from "@/lib/types";
 import { workingDaysBetween } from "@/lib/domain/dates";
+import { isOnFullDayLeave } from "@/lib/domain/capacity";
 import {
   expandAssignmentInRange,
   expandAssignmentsInRange,
   occurrenceCoversDay,
 } from "@/lib/domain/recurrence";
 import { punchAssignmentOnDate } from "@/lib/domain/leave-override";
+
+export type ClampResizeResult = { value: string; leaveTrimmed: boolean };
+
+function mergeFullDayLeaveIntoOccupied(
+  personId: string,
+  rangeStart: string,
+  rangeEnd: string,
+  occupied: Set<string>,
+  leaveDays?: LeaveDay[],
+): void {
+  if (!leaveDays?.length) return;
+  for (const day of workingDaysBetween(rangeStart, rangeEnd)) {
+    if (isOnFullDayLeave(personId, day, leaveDays)) occupied.add(day);
+  }
+}
+
+function leaveBlockedBetween(
+  personId: string,
+  fromExclusive: string,
+  toInclusive: string,
+  leaveDays?: LeaveDay[],
+): boolean {
+  if (!leaveDays?.length || toInclusive <= fromExclusive) return false;
+  for (const day of workingDaysBetween(fromExclusive, toInclusive)) {
+    if (day > fromExclusive && isOnFullDayLeave(personId, day, leaveDays)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /**
  * True when `candidate` would share any working day with another assignment
@@ -75,7 +106,8 @@ export function clipRangeToFreeDays(
   rangeEnd: string,
   assignments: Assignment[],
   excludeAssignmentId?: string | null,
-): { start: string; end: string } | null {
+  leaveDays?: LeaveDay[],
+): { start: string; end: string; leaveTrimmed: boolean } | null {
   const lo = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
   const hi = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
   const days = workingDaysBetween(lo, hi);
@@ -89,6 +121,7 @@ export function clipRangeToFreeDays(
     assignments,
     excludeAssignmentId,
   );
+  mergeFullDayLeaveIntoOccupied(personId, lo, hi, occupied, leaveDays);
   if (occupied.has(originDay) || !days.includes(originDay)) return null;
 
   const originIndex = days.indexOf(originDay);
@@ -98,7 +131,12 @@ export function clipRangeToFreeDays(
   while (endIdx < days.length - 1 && !occupied.has(days[endIdx + 1])) {
     endIdx += 1;
   }
-  return { start: days[startIdx], end: days[endIdx] };
+  const start = days[startIdx];
+  const end = days[endIdx];
+  const leaveTrimmed =
+    leaveBlockedBetween(personId, end, hi, leaveDays) ||
+    leaveBlockedBetween(personId, lo, start, leaveDays);
+  return { start, end, leaveTrimmed };
 }
 
 /**
@@ -112,8 +150,11 @@ export function clampResizeEnd(
   desiredEnd: string,
   assignments: Assignment[],
   excludeAssignmentId: string,
-): string {
-  if (desiredEnd < start) return start;
+  leaveDays?: LeaveDay[],
+): ClampResizeResult {
+  if (desiredEnd < start) {
+    return { value: start, leaveTrimmed: false };
+  }
   const occupied = occupiedDaysForRow(
     personId,
     projectId,
@@ -121,6 +162,13 @@ export function clampResizeEnd(
     desiredEnd,
     assignments,
     excludeAssignmentId,
+  );
+  mergeFullDayLeaveIntoOccupied(
+    personId,
+    start,
+    desiredEnd,
+    occupied,
+    leaveDays,
   );
   const days = workingDaysBetween(start, desiredEnd);
   let end = start;
@@ -132,7 +180,10 @@ export function clampResizeEnd(
     if (occupied.has(day)) break;
     end = day;
   }
-  return end;
+  return {
+    value: end,
+    leaveTrimmed: leaveBlockedBetween(personId, end, desiredEnd, leaveDays),
+  };
 }
 
 /**
@@ -145,8 +196,11 @@ export function clampResizeStart(
   end: string,
   assignments: Assignment[],
   excludeAssignmentId: string,
-): string {
-  if (desiredStart > end) return end;
+  leaveDays?: LeaveDay[],
+): ClampResizeResult {
+  if (desiredStart > end) {
+    return { value: end, leaveTrimmed: false };
+  }
   const occupied = occupiedDaysForRow(
     personId,
     projectId,
@@ -154,6 +208,13 @@ export function clampResizeStart(
     end,
     assignments,
     excludeAssignmentId,
+  );
+  mergeFullDayLeaveIntoOccupied(
+    personId,
+    desiredStart,
+    end,
+    occupied,
+    leaveDays,
   );
   const days = workingDaysBetween(desiredStart, end);
   let start = end;
@@ -166,7 +227,10 @@ export function clampResizeStart(
     if (occupied.has(day)) break;
     start = day;
   }
-  return start;
+  return {
+    value: start,
+    leaveTrimmed: leaveBlockedBetween(personId, desiredStart, start, leaveDays),
+  };
 }
 
 function assignmentSpanDays(a: Assignment): number {

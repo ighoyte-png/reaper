@@ -70,6 +70,7 @@ export function projectTimelineDatesChanged(
 /**
  * Mon–Fri template for the first project week, clipped to [start, end].
  * `recurrence_end_date` is the project end date.
+ * @deprecated Prefer buildPmScheduleAssignments for mid-week starts.
  */
 export function buildPmWeeklyAssignment(args: {
   id: string;
@@ -80,39 +81,115 @@ export function buildPmWeeklyAssignment(args: {
   endDate: string;
   hoursPerDay: number;
 }): Assignment | null {
-  const lo =
-    args.startDate <= args.endDate ? args.startDate : args.endDate;
-  const hi =
-    args.startDate <= args.endDate ? args.endDate : args.startDate;
-  const days = workingDaysBetween(lo, hi);
-  if (days.length === 0) return null;
+  const rows = buildPmScheduleAssignments({
+    ...args,
+    newId: () => args.id,
+  });
+  return rows[0] ?? null;
+}
 
-  const first = days[0];
-  const weekDays = getWeekdays(weekStart(parseISO(first)))
-    .map(toDateKey)
-    .filter((d) => d >= lo && d <= hi);
-  if (weekDays.length === 0) return null;
-
+function pmAssignmentRow(
+  args: {
+    id: string;
+    organizationId: string;
+    personId: string;
+    projectId: string;
+    hoursPerDay: number;
+  },
+  start: string,
+  end: string,
+  recurrence: Assignment["recurrence"],
+  recurrenceEnd: string | null,
+): Assignment {
   const hours = Math.max(0.01, roundAssignmentHours(args.hoursPerDay));
-
   return {
     id: args.id,
     organization_id: args.organizationId,
     person_id: args.personId,
     project_id: args.projectId,
-    start_date: weekDays[0],
-    end_date: weekDays[weekDays.length - 1],
+    start_date: start,
+    end_date: end,
     hours_per_day: hours,
     allocation_pct: null,
     status: "confirmed",
     notes: "Project management",
-    recurrence: "weekly",
-    recurrence_end_date: hi,
+    recurrence,
+    recurrence_end_date: recurrenceEnd,
     recurrence_exceptions: [],
     created_at: new Date().toISOString(),
     edited_at: null,
     edited_by_profile_id: null,
   };
+}
+
+/**
+ * PM schedule rows: optional partial first week, then weekly Mon–Fri through
+ * project end (last occurrence clipped by recurrence_end_date).
+ */
+export function buildPmScheduleAssignments(args: {
+  newId: () => string;
+  organizationId: string;
+  personId: string;
+  projectId: string;
+  startDate: string;
+  endDate: string;
+  hoursPerDay: number;
+}): Assignment[] {
+  const lo =
+    args.startDate <= args.endDate ? args.startDate : args.endDate;
+  const hi =
+    args.startDate <= args.endDate ? args.endDate : args.startDate;
+  const days = workingDaysBetween(lo, hi);
+  if (days.length === 0) return [];
+
+  const weekAnchor = weekStart(parseISO(lo));
+  const monday = toDateKey(getWeekdays(weekAnchor)[0]);
+  const friday = toDateKey(getWeekdays(weekAnchor)[4]);
+
+  if (lo <= monday) {
+    return [
+      pmAssignmentRow(
+        { ...args, id: args.newId() },
+        monday,
+        friday,
+        "weekly",
+        hi,
+      ),
+    ];
+  }
+
+  const firstEnd = friday <= hi ? friday : hi;
+  const firstDays = workingDaysBetween(lo, firstEnd);
+  if (firstDays.length === 0) return [];
+
+  const rows: Assignment[] = [
+    pmAssignmentRow(
+      { ...args, id: args.newId() },
+      firstDays[0],
+      firstDays[firstDays.length - 1],
+      "none",
+      null,
+    ),
+  ];
+
+  if (friday >= hi) return rows;
+
+  const seriesMonday = nextWorkingDay(friday);
+  if (seriesMonday > hi) return rows;
+
+  const seriesFriday = toDateKey(
+    getWeekdays(weekStart(parseISO(seriesMonday)))[4],
+  );
+  rows.push(
+    pmAssignmentRow(
+      { ...args, id: args.newId() },
+      seriesMonday,
+      seriesFriday,
+      "weekly",
+      hi,
+    ),
+  );
+  return rows;
 }
 
 export type PmScheduleIntent =

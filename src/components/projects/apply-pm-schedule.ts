@@ -1,7 +1,7 @@
 import { applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isFullDayLeave } from "@/lib/domain/leave";
 import {
-  buildPmWeeklyAssignment,
+  buildPmScheduleAssignments,
   findPmProjectAssignments,
   fullDayLeaveDatesInRange,
 } from "@/lib/domain/project-manager-schedule";
@@ -51,8 +51,8 @@ export async function applyProjectManagerScheduleTime(args: {
     }
   }
 
-  const series = buildPmWeeklyAssignment({
-    id: args.newId("asg"),
+  const rows = buildPmScheduleAssignments({
+    newId: () => args.newId("asg"),
     organizationId: args.organizationId,
     personId: args.managerPersonId,
     projectId: args.projectId,
@@ -60,7 +60,7 @@ export async function applyProjectManagerScheduleTime(args: {
     endDate: hi,
     hoursPerDay: args.hoursPerDay,
   });
-  if (!series) {
+  if (rows.length === 0) {
     return { created: false, reason: "No working days in that timeline" };
   }
 
@@ -73,7 +73,9 @@ export async function applyProjectManagerScheduleTime(args: {
     args.deleteAssignment(a.id);
   }
 
-  args.upsertAssignment(series);
+  for (const row of rows) {
+    args.upsertAssignment(row);
+  }
 
   const leaveDates = fullDayLeaveDatesInRange(
     leaveDays,
@@ -88,9 +90,8 @@ export async function applyProjectManagerScheduleTime(args: {
   );
   if (leaveDates.length === 0) return { created: true };
 
-  // Start from the new series only — do not punch other projects.
   const { upserts, deletes } = applyFullDayLeaveOverrideForDates(
-    [series],
+    rows,
     args.managerPersonId,
     leaveDates,
     args.newId,

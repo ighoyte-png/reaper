@@ -73,6 +73,8 @@ import {
   splitWeeklySeriesForInstance,
   withRecurrenceException,
 } from "@/lib/domain/recurrence-split";
+import { applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
+import { fullDayLeaveDatesInRange } from "@/lib/domain/project-manager-schedule";
 import {
   assignmentPlacementConflicts,
   clampResizeEnd,
@@ -348,6 +350,8 @@ export function ScheduleGrid() {
     weeklyInstance: boolean;
     previewStart: string;
     previewEnd: string;
+    /** True when resize was shortened to avoid full-day leave/holiday. */
+    leaveTrimmed: boolean;
   } | null>(null);
   /** Live geometry for a weekly occurrence being dragged/resized. */
   const [dragPreview, setDragPreview] = useState<{
@@ -388,6 +392,7 @@ export function ScheduleGrid() {
     after: Assignment;
     occurrenceStart: string;
     occurrenceEnd: string;
+    leaveTrimmed?: boolean;
   } | null>(null);
   const [deletePrompt, setDeletePrompt] = useState<{
     assignment: Assignment;
@@ -1181,6 +1186,58 @@ export function ScheduleGrid() {
     assignmentsRef.current = assignmentsRef.current.filter((a) => a.id !== id);
   }
 
+  function punchAssignmentLeaveHoles(
+    rows: Assignment[],
+    personId: string,
+    rangeStart: string,
+    rangeEnd: string,
+  ): boolean {
+    const leaveDates = fullDayLeaveDatesInRange(
+      state.leave_days,
+      personId,
+      rangeStart,
+      rangeEnd,
+      (leave) =>
+        isFullDayLeave({
+          kind: leave.kind as LeaveKind,
+          hours_per_day: leave.hours_per_day,
+        }),
+    );
+    if (leaveDates.length === 0) return false;
+    const { upserts, deletes } = applyFullDayLeaveOverrideForDates(
+      rows,
+      personId,
+      leaveDates,
+      newId,
+    );
+    for (const id of deletes) {
+      deleteAssignment(id);
+      assignmentsRef.current = assignmentsRef.current.filter((a) => a.id !== id);
+    }
+    for (const row of upserts) {
+      upsertAssignment(row);
+      const idx = assignmentsRef.current.findIndex((a) => a.id === row.id);
+      if (idx >= 0) assignmentsRef.current[idx] = row;
+      else assignmentsRef.current = [...assignmentsRef.current, row];
+    }
+    return true;
+  }
+
+  function assignmentRangeBounds(rows: Assignment[]): {
+    start: string;
+    end: string;
+  } | null {
+    if (rows.length === 0) return null;
+    let start = rows[0].start_date;
+    let end = rows[0].end_date;
+    for (const row of rows) {
+      if (row.start_date < start) start = row.start_date;
+      const rowEnd = row.recurrence_end_date ?? row.end_date;
+      if (rowEnd > end) end = rowEnd;
+    }
+    return { start, end };
+  }
+
   function trackedSetLeaveBlock(args: {
     personId: string;
     startDate: string;
@@ -1385,6 +1442,20 @@ export function ScheduleGrid() {
         undoRemoveIds,
         toast: "Updated this and all future",
       });
+      const bounds = assignmentRangeBounds(upserts);
+      if (
+        bounds &&
+        punchAssignmentLeaveHoles(
+          upserts,
+          pending.after.person_id,
+          bounds.start,
+          bounds.end,
+        )
+      ) {
+        push("Trimmed around time off to avoid overlap", "warning");
+      } else if (pending.leaveTrimmed) {
+        push("Trimmed around time off to avoid overlap", "warning");
+      }
       selectAssignment(split.futureSeries.id, {
         start: split.futureSeries.start_date,
         end: split.futureSeries.end_date,
@@ -1411,6 +1482,29 @@ export function ScheduleGrid() {
       newId,
       organizationId: state.organization.id,
     });
+    const finalizeUpserts = (
+      upserts: Assignment[],
+      selectId: string,
+      selectStart: string,
+      selectEnd: string,
+    ) => {
+      const bounds = assignmentRangeBounds(upserts);
+      if (
+        bounds &&
+        punchAssignmentLeaveHoles(
+          upserts,
+          pending.after.person_id,
+          bounds.start,
+          bounds.end,
+        )
+      ) {
+        push("Trimmed around time off to avoid overlap", "warning");
+      } else if (pending.leaveTrimmed) {
+        push("Trimmed around time off to avoid overlap", "warning");
+      }
+      selectAssignment(selectId, { start: selectStart, end: selectEnd });
+    };
+
     if (split.keepSeries) {
       trackedAssignmentBatch({
         upserts: [
@@ -1425,6 +1519,16 @@ export function ScheduleGrid() {
         ],
         toast: "Updated this instance only",
       });
+      finalizeUpserts(
+        [
+          split.keepSeries,
+          ...(split.continuation ? [split.continuation] : []),
+          split.instance,
+        ],
+        split.instance.id,
+        split.instance.start_date,
+        split.instance.end_date,
+      );
     } else {
       trackedAssignmentBatch({
         upserts: [
@@ -1439,11 +1543,16 @@ export function ScheduleGrid() {
         ],
         toast: "Updated this instance only",
       });
+      finalizeUpserts(
+        [
+          ...(split.continuation ? [split.continuation] : []),
+          split.instance,
+        ],
+        split.instance.id,
+        split.instance.start_date,
+        split.instance.end_date,
+      );
     }
-    selectAssignment(split.instance.id, {
-      start: split.instance.start_date,
-      end: split.instance.end_date,
-    });
   }
 
   /** Clear assignment/leave selection (keeps project filter & toolbar state). */
@@ -1555,6 +1664,8 @@ export function ScheduleGrid() {
       startDate,
       endDate,
       state.assignments,
+      undefined,
+      state.leave_days,
     );
     if (!clipped) {
       push("That day is already booked", "warning");
@@ -1584,6 +1695,15 @@ export function ScheduleGrid() {
         ? "Weekly recurring assignment created"
         : "Assignment created",
     );
+    if (clipped.leaveTrimmed) {
+      punchAssignmentLeaveHoles(
+        [row],
+        personId,
+        clipped.start,
+        clipped.end,
+      );
+      push("Trimmed around time off to avoid overlap", "warning");
+    }
     focusHoursAfterCreateRef.current = row.id;
     setSidebarPanelTab("edit");
     selectAssignment(row.id);
@@ -1612,6 +1732,7 @@ export function ScheduleGrid() {
         row.end_date,
         state.assignments,
         row.id,
+        state.leave_days,
       );
       if (!clipped) {
         push("That range overlaps another block on this project", "warning");
@@ -1626,21 +1747,24 @@ export function ScheduleGrid() {
           start_date: clipped.start,
           end_date: clipped.end,
         };
-        if (
-          assignmentPlacementConflicts(
-            row,
-            state.assignments,
-            padStart,
-            padEnd,
-          )
-        ) {
-          push("That range overlaps another block on this project", "warning");
-          return;
+        if (clipped.leaveTrimmed) {
+          push("Trimmed around time off to avoid overlap", "warning");
         }
-      } else {
+      }
+      if (
+        assignmentPlacementConflicts(
+          row,
+          state.assignments,
+          padStart,
+          padEnd,
+        )
+      ) {
         push("That range overlaps another block on this project", "warning");
         return;
       }
+    } else {
+      push("That range overlaps another block on this project", "warning");
+      return;
     }
     trackedUpsert(row, toast);
     if (editForm?.id === row.id) {
@@ -1867,7 +1991,11 @@ export function ScheduleGrid() {
             after,
             occurrenceStart: snap.occurrenceStart,
             occurrenceEnd: snap.occurrenceEnd,
+            leaveTrimmed: snap.leaveTrimmed,
           });
+          if (snap.leaveTrimmed) {
+            push("Trimmed around time off to avoid overlap", "warning");
+          }
           setGridDragging(false);
           return;
         }
@@ -1886,10 +2014,29 @@ export function ScheduleGrid() {
             after,
             occurrenceStart: snap.occurrenceStart,
             occurrenceEnd: snap.occurrenceEnd,
+            leaveTrimmed: snap.leaveTrimmed,
           });
-        } else {
+          if (snap.leaveTrimmed) {
+            push("Trimmed around time off to avoid overlap", "warning");
+          }
+        } else if (after) {
           pushUndo({ kind: "restore", assignment: { ...snap.before } });
-          push("Assignment saved");
+          const bounds = assignmentRangeBounds([after]);
+          if (
+            bounds &&
+            punchAssignmentLeaveHoles(
+              [after],
+              after.person_id,
+              bounds.start,
+              bounds.end,
+            )
+          ) {
+            push("Trimmed around time off to avoid overlap", "warning");
+          } else if (snap.leaveTrimmed) {
+            push("Trimmed around time off to avoid overlap", "warning");
+          } else {
+            push("Assignment saved");
+          }
           warnBudget(snap.before.project_id, assignmentsRef.current);
         }
       } else {
@@ -2970,6 +3117,8 @@ export function ScheduleGrid() {
                                   rawStart,
                                   rawEnd,
                                   state.assignments,
+                                  undefined,
+                                  state.leave_days,
                                 );
                                 if (clipped) {
                                   setDraft({
@@ -3005,14 +3154,19 @@ export function ScheduleGrid() {
                                     col.endKey >= minEnd
                                       ? col.endKey
                                       : minEnd;
-                                  const end = clampResizeEnd(
+                                  const endResult = clampResizeEnd(
                                     current.person_id,
                                     current.project_id,
                                     snap.occurrenceStart,
                                     desiredEnd,
                                     checkAssignments,
                                     "__weekly_preview__",
+                                    state.leave_days,
                                   );
+                                  const end = endResult.value;
+                                  if (endResult.leaveTrimmed) {
+                                    snap.leaveTrimmed = true;
+                                  }
                                   if (end !== snap.previewEnd) {
                                     snap.dirty = true;
                                     snap.previewStart = snap.occurrenceStart;
@@ -3031,14 +3185,19 @@ export function ScheduleGrid() {
                                     col.startKey <= maxStart
                                       ? col.startKey
                                       : maxStart;
-                                  const start = clampResizeStart(
+                                  const startResult = clampResizeStart(
                                     current.person_id,
                                     current.project_id,
                                     desiredStart,
                                     snap.occurrenceEnd,
                                     checkAssignments,
                                     "__weekly_preview__",
+                                    state.leave_days,
                                   );
+                                  const start = startResult.value;
+                                  if (startResult.leaveTrimmed) {
+                                    snap.leaveTrimmed = true;
+                                  }
                                   if (start !== snap.previewStart) {
                                     snap.dirty = true;
                                     snap.previewStart = start;
@@ -3091,14 +3250,19 @@ export function ScheduleGrid() {
                                   col.endKey >= minEnd
                                     ? col.endKey
                                     : minEnd;
-                                const end = clampResizeEnd(
+                                const endResult = clampResizeEnd(
                                   current.person_id,
                                   current.project_id,
                                   snap.before.start_date,
                                   desiredEnd,
                                   state.assignments,
                                   snap.id,
+                                  state.leave_days,
                                 );
+                                const end = endResult.value;
+                                if (endResult.leaveTrimmed) {
+                                  snap.leaveTrimmed = true;
+                                }
                                 if (end !== current.end_date) {
                                   snap.dirty = true;
                                   upsertAssignment({
@@ -3112,14 +3276,19 @@ export function ScheduleGrid() {
                                   col.startKey <= maxStart
                                     ? col.startKey
                                     : maxStart;
-                                const start = clampResizeStart(
+                                const startResult = clampResizeStart(
                                   current.person_id,
                                   current.project_id,
                                   desiredStart,
                                   snap.before.end_date,
                                   state.assignments,
                                   snap.id,
+                                  state.leave_days,
                                 );
+                                const start = startResult.value;
+                                if (startResult.leaveTrimmed) {
+                                  snap.leaveTrimmed = true;
+                                }
                                 if (start !== current.start_date) {
                                   snap.dirty = true;
                                   upsertAssignment({
@@ -3345,6 +3514,7 @@ export function ScheduleGrid() {
                                           weeklyInstance,
                                           previewStart: occ.start_date,
                                           previewEnd: occ.end_date,
+                                          leaveTrimmed: false,
                                         };
                                         if (weeklyInstance) {
                                           setDragPreview({
@@ -3440,6 +3610,7 @@ export function ScheduleGrid() {
                                                 weeklyInstance,
                                                 previewStart: occ.start_date,
                                                 previewEnd: occ.end_date,
+                                                leaveTrimmed: false,
                                               };
                                               if (weeklyInstance) {
                                                 setDragPreview({
@@ -3496,6 +3667,7 @@ export function ScheduleGrid() {
                                                 weeklyInstance,
                                                 previewStart: occ.start_date,
                                                 previewEnd: occ.end_date,
+                                                leaveTrimmed: false,
                                               };
                                               if (weeklyInstance) {
                                                 setDragPreview({
@@ -3629,6 +3801,7 @@ export function ScheduleGrid() {
                                           weeklyInstance,
                                           previewStart: primary.start_date,
                                           previewEnd: primary.end_date,
+                                          leaveTrimmed: false,
                                         };
                                         if (weeklyInstance) {
                                           setDragPreview({

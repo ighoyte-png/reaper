@@ -2980,6 +2980,7 @@ function TaskRow({
           ) : null}
           {hasNotes ? (
             <Tooltip
+              align={ctx.compact && ctx.readOnly ? "end" : "center"}
               content={
                 <span className="whitespace-pre-wrap">
                   {notesPreviewText(task.notes, 20)}

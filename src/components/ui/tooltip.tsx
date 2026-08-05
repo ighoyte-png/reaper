@@ -15,10 +15,13 @@ export function Tooltip({
   content,
   children,
   className,
+  /** `end` anchors the tooltip's right edge to the trigger (grows left). */
+  align = "center",
 }: {
   content: ReactNode;
   children: ReactNode;
   className?: string;
+  align?: "center" | "end";
 }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ top: number; left: number } | null>(
@@ -47,7 +50,7 @@ export function Tooltip({
     const rect = el.getBoundingClientRect();
     setCoords({
       top: rect.top - 6,
-      left: rect.left + rect.width / 2,
+      left: align === "end" ? rect.right : rect.left + rect.width / 2,
     });
   }
 
@@ -57,7 +60,8 @@ export function Tooltip({
       return;
     }
     updatePosition();
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reposition when align changes
+  }, [open, align]);
 
   useEffect(() => {
     if (!open) return;
@@ -68,7 +72,8 @@ export function Tooltip({
       window.removeEventListener("scroll", onScrollOrResize, true);
       window.removeEventListener("resize", onScrollOrResize);
     };
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- align affects updatePosition
+  }, [open, align]);
 
   useEffect(() => () => clearClose(), []);
 
@@ -85,7 +90,10 @@ export function Tooltip({
         ref={tipRef}
         id={id}
         role="tooltip"
-        className="pointer-events-auto fixed z-[200] w-max max-w-[260px] -translate-x-1/2 -translate-y-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-2 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg"
+        className={cn(
+          "pointer-events-auto fixed z-[200] w-max max-w-[260px] -translate-y-full rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-2.5 py-2 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-lg",
+          align === "end" ? "-translate-x-full" : "-translate-x-1/2",
+        )}
         style={{ top: coords.top, left: coords.left }}
         onMouseEnter={() => {
           clearClose();
