@@ -130,6 +130,7 @@ export function formatAttachmentSize(bytes: number): string {
 }
 
 const urlCache = new Map<string, { url: string; expiresAt: number }>();
+const urlInflight = new Map<string, Promise<string | null>>();
 
 export async function resolveAttachmentDisplayUrl(
   attachmentId: string,
@@ -137,15 +138,25 @@ export async function resolveAttachmentDisplayUrl(
   const cached = urlCache.get(attachmentId);
   if (cached && cached.expiresAt > Date.now()) return cached.url;
 
-  const res = await fetch(`/api/storage/${attachmentId}/url`);
-  if (!res.ok) return null;
-  const data = (await res.json()) as { url?: string };
-  if (!data.url) return null;
-  urlCache.set(attachmentId, {
-    url: data.url,
-    expiresAt: Date.now() + 45 * 60 * 1000,
+  const existing = urlInflight.get(attachmentId);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const res = await fetch(`/api/storage/${attachmentId}/url`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { url?: string };
+    if (!data.url) return null;
+    urlCache.set(attachmentId, {
+      url: data.url,
+      expiresAt: Date.now() + 45 * 60 * 1000,
+    });
+    return data.url;
+  })().finally(() => {
+    urlInflight.delete(attachmentId);
   });
-  return data.url;
+
+  urlInflight.set(attachmentId, promise);
+  return promise;
 }
 
 /** Signed URL with Content-Disposition: attachment (forces download). */

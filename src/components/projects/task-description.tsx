@@ -77,7 +77,8 @@ function useContentHeight(
 
   const update = useCallback(() => {
     const next = measureRef.current();
-    if (next != null) setHeight(next);
+    if (next == null) return;
+    setHeight((prev) => (Math.abs(prev - next) < 2 ? prev : next));
   }, []);
 
   useLayoutEffect(() => {
@@ -89,20 +90,30 @@ function useContentHeight(
     const el = observeRef?.current;
     if (!el) return;
 
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        update();
+      });
+    };
+
     const onLoadCapture = (e: Event) => {
-      if ((e.target as HTMLElement | null)?.tagName === "IMG") update();
+      if ((e.target as HTMLElement | null)?.tagName === "IMG") schedule();
     };
     el.addEventListener("load", onLoadCapture, true);
 
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
-      ro = new ResizeObserver(() => update());
+      ro = new ResizeObserver(() => schedule());
       ro.observe(el);
     }
 
     return () => {
       el.removeEventListener("load", onLoadCapture, true);
       ro?.disconnect();
+      if (raf) window.cancelAnimationFrame(raf);
     };
     // Re-bind when content deps change so newly inserted images are observed.
     // eslint-disable-next-line react-hooks/exhaustive-deps

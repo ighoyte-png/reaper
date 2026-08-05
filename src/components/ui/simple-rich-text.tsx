@@ -930,47 +930,60 @@ export function RichNotesHtml({
   html: string;
   className?: string;
 }) {
-  const safe = sanitizeNotesHtml(html);
-  const [displayHtml, setDisplayHtml] = useState(safe);
+  const [displayHtml, setDisplayHtml] = useState(() =>
+    prepareRichNotesDisplayHtml(html),
+  );
 
   useEffect(() => {
-    const sanitized = sanitizeNotesHtml(html);
-    if (!sanitized) {
+    const prepared = prepareRichNotesDisplayHtml(html);
+    if (!prepared) {
       setDisplayHtml("");
       return;
     }
-    const ids = extractAttachmentIdsFromNotesHtml(sanitized);
+    const ids = extractAttachmentIdsFromNotesHtml(prepared);
     if (ids.length === 0) {
-      setDisplayHtml(sanitized);
+      setDisplayHtml(prepared);
       return;
     }
+
+    // Paint placeholders immediately — never flash expired/broken signed URLs.
+    setDisplayHtml(prepared);
+
     let cancelled = false;
     void (async () => {
-      let next = sanitized;
-      for (const id of ids) {
-        const url = await resolveAttachmentDisplayUrl(id);
-        if (!url || cancelled) continue;
+      const resolved = await Promise.all(
+        ids.map(async (id) => {
+          const url = await resolveAttachmentDisplayUrl(id);
+          return [id, url] as const;
+        }),
+      );
+      if (cancelled) return;
+
+      let next = prepared;
+      for (const [id, url] of resolved) {
+        if (!url) continue;
+        const safeUrl = url.replace(/"/g, "&quot;");
         const re = new RegExp(
-          `(<img[^>]*data-attachment-id=["']${id}["'][^>]*)(/?>)`,
+          `<img\\b([^>]*\\bdata-attachment-id=["']${id}["'][^>]*)>`,
           "gi",
         );
-        next = next.replace(re, (match, prefix: string, end: string) => {
-          if (/src=["'][^"']+["']/i.test(prefix)) {
-            return match.replace(
-              /src=["'][^"']*["']/i,
-              `src="${url.replace(/"/g, "&quot;")}"`,
-            );
-          }
-          return `${prefix} src="${url.replace(/"/g, "&quot;")}"${end}`;
+        next = next.replace(re, (_match, attrs: string) => {
+          let nextAttrs = attrs
+            .replace(/\s*src=["'][^"']*["']/i, "")
+            .replace(/\s*class=["'][^"']*rich-notes-img-pending[^"']*["']/i, "")
+            .replace(/\s*class=["']\s*["']/i, "");
+          nextAttrs = `${nextAttrs} src="${safeUrl}"`.replace(/\s+/g, " ");
+          return `<img${nextAttrs}>`;
         });
         const linkRe = new RegExp(
           `(<a[^>]*data-attachment-id=["']${id}["'][^>]*href=["'])[^"']*(["'])`,
           "gi",
         );
-        next = next.replace(linkRe, `$1${url.replace(/"/g, "&quot;")}$2`);
+        next = next.replace(linkRe, `$1${safeUrl}$2`);
       }
-      if (!cancelled) setDisplayHtml(next);
+      setDisplayHtml((prev) => (prev === next ? prev : next));
     })();
+
     return () => {
       cancelled = true;
     };
@@ -982,6 +995,7 @@ export function RichNotesHtml({
       className={cn(
         "rich-notes block leading-relaxed [&_a]:pointer-events-auto",
         "[&_img]:my-2 [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md",
+        "[&_img.rich-notes-img-pending]:min-h-32 [&_img.rich-notes-img-pending]:w-full [&_img.rich-notes-img-pending]:max-w-md [&_img.rich-notes-img-pending]:animate-pulse [&_img.rich-notes-img-pending]:object-cover [&_img.rich-notes-img-pending]:bg-[color-mix(in_srgb,var(--text-muted)_14%,transparent)]",
         "[&_p]:m-0 [&_p+p]:mt-2",
         "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
         "[&_h2]:m-0 [&_h2]:mt-2.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
@@ -998,5 +1012,45 @@ export function RichNotesHtml({
       )}
       dangerouslySetInnerHTML={{ __html: displayHtml }}
     />
+  );
+}
+
+/** Soft skeleton while signed URLs resolve — avoids broken-image icons. */
+const ATTACHMENT_IMG_PLACEHOLDER =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270">` +
+      `<rect width="480" height="270" rx="12" fill="#888888" fill-opacity="0.12"/>` +
+      `</svg>`,
+  );
+
+function prepareRichNotesDisplayHtml(html: string): string {
+  const sanitized = sanitizeNotesHtml(html);
+  if (!sanitized) return "";
+  if (!/data-attachment-id=/i.test(sanitized)) return sanitized;
+
+  return sanitized.replace(
+    /<img\b([^>]*\bdata-attachment-id=["'][0-9a-f-]{36}["'][^>]*)>/gi,
+    (_full, attrs: string) => {
+      let nextAttrs = String(attrs)
+        .replace(/\s*src=["'][^"']*["']/i, "")
+        .replace(/\s*class=["']([^"']*)["']/i, (_m, cls: string) => {
+          const cleaned = cls
+            .split(/\s+/)
+            .filter((c) => c && c !== "rich-notes-img-pending")
+            .join(" ");
+          return cleaned ? ` class="${cleaned} rich-notes-img-pending"` : "";
+        });
+      if (!/\bclass=/i.test(nextAttrs)) {
+        nextAttrs += ` class="rich-notes-img-pending"`;
+      } else if (!/rich-notes-img-pending/.test(nextAttrs)) {
+        nextAttrs = nextAttrs.replace(
+          /\bclass=["']([^"']*)["']/,
+          `class="$1 rich-notes-img-pending"`,
+        );
+      }
+      nextAttrs += ` src="${ATTACHMENT_IMG_PLACEHOLDER}"`;
+      return `<img${nextAttrs}>`;
+    },
   );
 }
