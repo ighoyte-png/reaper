@@ -127,6 +127,12 @@ export function PersonForm({
                 <div className="mt-2 flex items-center gap-3">
                   <PersonAvatar
                     avatarUrl={avatarPreview}
+                    avatarAttachmentId={
+                      avatarPreview?.startsWith("blob:") ||
+                      avatarPreview?.startsWith("data:")
+                        ? null
+                        : person.avatar_attachment_id
+                    }
                     name={person.name}
                     color={personAvatarColor(person)}
                     size="lg"
@@ -148,9 +154,11 @@ export function PersonForm({
                       className="h-8 w-fit cursor-pointer rounded-[var(--radius-md)] border border-[var(--border)] px-2.5 text-xs"
                       onClick={() => avatarInputRef.current?.click()}
                     >
-                      {avatarPreview ? "Change Photo" : "Upload Photo"}
+                      {avatarPreview || person.avatar_attachment_id
+                        ? "Change Photo"
+                        : "Upload Photo"}
                     </button>
-                    {avatarPreview ? (
+                    {avatarPreview || person.avatar_attachment_id ? (
                       <button
                         type="button"
                         className="w-fit cursor-pointer text-xs text-[var(--text-muted)]"

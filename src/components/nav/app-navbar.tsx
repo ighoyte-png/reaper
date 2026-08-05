@@ -253,6 +253,7 @@ export function AppNavbar() {
               >
                 <PersonAvatar
                   avatarUrl={myPerson?.avatar_url}
+                  avatarAttachmentId={myPerson?.avatar_attachment_id}
                   name={accountName}
                   size="team"
                 />
@@ -278,6 +279,7 @@ export function AppNavbar() {
                     <div className="flex items-start gap-3">
                       <PersonAvatar
                         avatarUrl={myPerson?.avatar_url}
+                        avatarAttachmentId={myPerson?.avatar_attachment_id}
                         name={accountName}
                         size="sm"
                         className="mt-0.5 ring-2 ring-[var(--bg)]"

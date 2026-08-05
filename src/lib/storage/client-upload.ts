@@ -136,6 +136,12 @@ export function formatAttachmentSize(bytes: number): string {
 const urlCache = new Map<string, { url: string; expiresAt: number }>();
 const urlInflight = new Map<string, Promise<string | null>>();
 
+/** Drop cached signed URL so the next resolve fetches a fresh one. */
+export function invalidateAttachmentDisplayUrl(attachmentId: string) {
+  urlCache.delete(attachmentId);
+  urlInflight.delete(attachmentId);
+}
+
 export async function resolveAttachmentDisplayUrl(
   attachmentId: string,
 ): Promise<string | null> {
@@ -152,6 +158,7 @@ export async function resolveAttachmentDisplayUrl(
     if (!data.url) return null;
     urlCache.set(attachmentId, {
       url: data.url,
+      // Refresh before the typical 1h R2 signed-URL TTL.
       expiresAt: Date.now() + 45 * 60 * 1000,
     });
     return data.url;

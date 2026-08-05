@@ -468,6 +468,7 @@ function PeoplePageContent() {
         <div className="flex items-start gap-3">
           <PersonAvatar
             avatarUrl={person.avatar_url}
+            avatarAttachmentId={person.avatar_attachment_id}
             name={person.name}
             color={personAvatarColor(person)}
             size="lg"

@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import {
+  invalidateAttachmentDisplayUrl,
+  resolveAttachmentDisplayUrl,
+} from "@/lib/storage/client-upload";
 
 function personInitials(name: string): string {
   return name
@@ -33,8 +37,12 @@ const SIZE_CLASS = {
   xl: "h-24 w-24 text-base",
 } as const;
 
+/** Re-sign before typical 1h R2 URL expiry while the avatar stays mounted. */
+const REFRESH_MS = 40 * 60 * 1000;
+
 export function PersonAvatar({
   avatarUrl,
+  avatarAttachmentId,
   name,
   className,
   size = "md",
@@ -43,6 +51,8 @@ export function PersonAvatar({
   color,
 }: {
   avatarUrl: string | null | undefined;
+  /** Durable R2 attachment id — preferred over expired signed avatarUrl. */
+  avatarAttachmentId?: string | null;
   name?: string;
   className?: string;
   size?: keyof typeof SIZE_CLASS;
@@ -52,24 +62,70 @@ export function PersonAvatar({
   /** Initials circle background (client palette hex). */
   color?: string | null;
 }) {
+  const [displayUrl, setDisplayUrl] = useState<string | null>(
+    avatarUrl ?? null,
+  );
   const [imageFailed, setImageFailed] = useState(false);
+  const retryingRef = useRef(false);
   const sizeClass = SIZE_CLASS[size];
   const label = name?.trim() || "";
+  const attachmentId = avatarAttachmentId?.trim() || null;
 
   useEffect(() => {
     setImageFailed(false);
-  }, [avatarUrl]);
+    retryingRef.current = false;
 
-  const showPhoto = Boolean(avatarUrl) && !imageFailed;
+    if (!attachmentId) {
+      setDisplayUrl(avatarUrl ?? null);
+      return;
+    }
+
+    let cancelled = false;
+    const load = async (force: boolean) => {
+      if (force) invalidateAttachmentDisplayUrl(attachmentId);
+      const url = await resolveAttachmentDisplayUrl(attachmentId);
+      if (cancelled) return;
+      setDisplayUrl(url ?? avatarUrl ?? null);
+      if (url) setImageFailed(false);
+    };
+
+    void load(false);
+    const timer = window.setInterval(() => {
+      void load(true);
+    }, REFRESH_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [attachmentId, avatarUrl]);
+
+  const showPhoto = Boolean(displayUrl) && !imageFailed;
 
   if (showPhoto) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={avatarUrl!}
+        src={displayUrl!}
         alt={label ? `${label} photo` : "Person photo"}
         title={title ?? (label || undefined)}
-        onError={() => setImageFailed(true)}
+        onError={() => {
+          if (attachmentId && !retryingRef.current) {
+            retryingRef.current = true;
+            invalidateAttachmentDisplayUrl(attachmentId);
+            void resolveAttachmentDisplayUrl(attachmentId).then((url) => {
+              if (url) {
+                setDisplayUrl(url);
+                setImageFailed(false);
+                retryingRef.current = false;
+              } else {
+                setImageFailed(true);
+              }
+            });
+            return;
+          }
+          setImageFailed(true);
+        }}
         className={cn(
           "shrink-0 rounded-full object-cover bg-[var(--bg-elevated)]",
           sizeClass,

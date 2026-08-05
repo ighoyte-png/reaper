@@ -155,6 +155,7 @@ function InitialsAvatar({ person }: { person: Person }) {
   return (
     <PersonAvatar
       avatarUrl={person.avatar_url}
+      avatarAttachmentId={person.avatar_attachment_id}
       name={person.name}
       size="xs"
       fallback="initials"
@@ -4031,6 +4032,7 @@ function CommentItem({
     <div className="group flex items-start gap-2.5">
       <PersonAvatar
         avatarUrl={authorPerson?.avatar_url}
+        avatarAttachmentId={authorPerson?.avatar_attachment_id}
         name={displayName}
         size="row"
         fallback="initials"

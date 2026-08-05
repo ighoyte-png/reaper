@@ -4778,6 +4778,7 @@ const PersonScheduleSection = memo(function PersonScheduleSection({
               </button>
               <PersonAvatar
                 avatarUrl={person.avatar_url}
+                avatarAttachmentId={person.avatar_attachment_id}
                 name={person.name}
                 size="row"
                 fallback="initials"
@@ -5248,6 +5249,7 @@ function AssignmentAssignerDetails({
       <div className="flex items-start gap-3">
         <PersonAvatar
           avatarUrl={person.avatar_url}
+          avatarAttachmentId={person.avatar_attachment_id}
           name={person.name}
           size="lg"
           fallback="initials"

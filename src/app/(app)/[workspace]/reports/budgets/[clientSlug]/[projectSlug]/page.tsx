@@ -260,6 +260,7 @@ export default function ProjectBudgetDetailPage() {
         id: person.id,
         name: person.name,
         avatar_url: person.avatar_url,
+        avatar_attachment_id: person.avatar_attachment_id,
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
@@ -279,6 +280,7 @@ export default function ProjectBudgetDetailPage() {
           id: person.id,
           name: person.name,
           avatar_url: person.avatar_url,
+          avatar_attachment_id: person.avatar_attachment_id,
           usedHours: committed.hours,
           plannedHours: committed.hours,
           totalHours: committed.hours,
@@ -296,6 +298,7 @@ export default function ProjectBudgetDetailPage() {
         id: person.id,
         name: person.name,
         avatar_url: person.avatar_url,
+        avatar_attachment_id: person.avatar_attachment_id,
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
@@ -897,6 +900,7 @@ function TeamRow({
     id: string;
     name: string;
     avatar_url: string | null;
+    avatar_attachment_id?: string | null;
     usedHours: number;
     plannedHours: number;
     totalHours: number;
@@ -909,6 +913,7 @@ function TeamRow({
         <div className="flex items-center gap-2">
           <PersonAvatar
             avatarUrl={row.avatar_url}
+            avatarAttachmentId={row.avatar_attachment_id}
             name={row.name}
             size="xs"
             fallback="initials"

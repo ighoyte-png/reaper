@@ -215,6 +215,7 @@ export function UtilizationHeatmap({
               <div className="sticky left-0 z-[1] flex items-center gap-2.5 border-t border-[var(--border)] bg-[var(--bg)] px-3 py-2.5">
                 <PersonAvatar
                   avatarUrl={person.avatar_url}
+                  avatarAttachmentId={person.avatar_attachment_id}
                   name={person.name}
                   size="row"
                   fallback="initials"

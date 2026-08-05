@@ -233,6 +233,7 @@ function GanttBarVisual({
       {showAssignee && assignee ? (
         <PersonAvatar
           avatarUrl={assignee.avatar_url}
+          avatarAttachmentId={assignee.avatar_attachment_id}
           name={assignee.name}
           size="xs"
           fallback="initials"

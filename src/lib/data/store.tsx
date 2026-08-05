@@ -196,6 +196,7 @@ function loadDemoState(): DemoState {
         ...p,
         holiday_calendar_id: p.holiday_calendar_id ?? null,
         avatar_url: p.avatar_url ?? null,
+        avatar_attachment_id: p.avatar_attachment_id ?? null,
         hide_from_schedule: Boolean(p.hide_from_schedule),
         hide_from_utilization: Boolean(
           (p as Person).hide_from_utilization ?? p.hide_from_schedule,

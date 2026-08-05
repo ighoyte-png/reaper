@@ -1471,6 +1471,9 @@ function DashboardIdentityCard({
       <div className="flex items-start gap-3">
         <PersonAvatar
           avatarUrl={isPublicIdentity ? null : identityPerson?.avatar_url}
+          avatarAttachmentId={
+            isPublicIdentity ? null : identityPerson?.avatar_attachment_id
+          }
           name={displayName}
           size="xl"
           color={
@@ -1671,6 +1674,7 @@ function TaskRow({
             <span className="inline-flex max-w-full items-center gap-1 truncate">
               <PersonAvatar
                 avatarUrl={assignee?.avatar_url}
+                avatarAttachmentId={assignee?.avatar_attachment_id}
                 name={assignee?.name}
                 size="xs"
                 fallback="initials"

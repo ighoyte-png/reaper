@@ -532,6 +532,7 @@ export default function SettingsPage() {
                   <div className="mt-3 flex items-center gap-3">
                     <PersonAvatar
                       avatarUrl={myPerson.avatar_url}
+                      avatarAttachmentId={myPerson.avatar_attachment_id}
                       name={myPerson.name}
                       size="lg"
                     />
@@ -556,11 +557,11 @@ export default function SettingsPage() {
                       >
                         {avatarBusy
                           ? "Saving…"
-                          : myPerson.avatar_url
+                          : myPerson.avatar_url || myPerson.avatar_attachment_id
                             ? "Change Photo"
                             : "Upload Photo"}
                       </Button>
-                      {myPerson.avatar_url ? (
+                      {myPerson.avatar_url || myPerson.avatar_attachment_id ? (
                         <button
                           type="button"
                           disabled={avatarBusy}

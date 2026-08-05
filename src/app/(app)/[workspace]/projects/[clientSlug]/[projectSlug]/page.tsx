@@ -482,6 +482,7 @@ export default function ProjectDetailPage() {
                     >
                       <PersonAvatar
                         avatarUrl={p.avatar_url}
+                        avatarAttachmentId={p.avatar_attachment_id}
                         name={p.name}
                         size="team"
                         fallback="initials"

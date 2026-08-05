@@ -71,6 +71,7 @@ export function ProjectManagerPerson({
       <div className="flex min-w-0 items-center gap-2">
         <PersonAvatar
           avatarUrl={person.avatar_url}
+          avatarAttachmentId={person.avatar_attachment_id}
           name={person.name}
           size={size}
           fallback="initials"
