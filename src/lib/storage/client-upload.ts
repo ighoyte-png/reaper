@@ -3,6 +3,10 @@ import type {
   AttachmentPlacement,
   EntityFileAttachment,
 } from "@/lib/storage/types";
+import {
+  extractAttachmentIdsFromNotesHtml,
+  notesToEditorHtml,
+} from "@/lib/notes-html";
 
 async function readMagicBase64(file: File): Promise<string | undefined> {
   const slice = file.slice(0, 32);
@@ -181,6 +185,54 @@ export function extractAttachmentIdsFromHtml(html: string): string[] {
     ids.add(m[1]!.toLowerCase());
   }
   return [...ids];
+}
+
+/**
+ * Resolve fresh signed URLs into attachment <img>/<a> tags for TipTap editing.
+ * Stored HTML may have no src or an expired signed URL.
+ */
+export async function hydrateNotesHtmlForEditor(html: string): Promise<string> {
+  const base = notesToEditorHtml(html ?? "");
+  if (!base) return "";
+  const ids = extractAttachmentIdsFromNotesHtml(base);
+  if (ids.length === 0) return base;
+
+  const resolved = await Promise.all(
+    ids.map(async (id) => [id, await resolveAttachmentDisplayUrl(id)] as const),
+  );
+
+  let next = base;
+  for (const [id, url] of resolved) {
+    if (!url) continue;
+    const safeUrl = url.replace(/"/g, "&quot;");
+    const imgRe = new RegExp(
+      `<img\\b([^>]*\\bdata-attachment-id=["']${id}["'][^>]*)>`,
+      "gi",
+    );
+    next = next.replace(imgRe, (_match, attrs: string) => {
+      const cleaned = String(attrs).replace(/\s*src=["'][^"']*["']/i, "");
+      return `<img${cleaned} src="${safeUrl}">`;
+    });
+    const linkRe = new RegExp(
+      `(<a[^>]*data-attachment-id=["']${id}["'][^>]*href=["'])[^"']*(["'])`,
+      "gi",
+    );
+    next = next.replace(linkRe, `$1${safeUrl}$2`);
+  }
+  return next;
+}
+
+/** Compare note HTML ignoring ephemeral attachment src/href values. */
+export function notesHtmlAttachmentKey(html: string): string {
+  return (html ?? "")
+    .replace(
+      /(<img\b[^>]*data-attachment-id=["'][0-9a-f-]{36}["'][^>]*?)\s*src=["'][^"']*["']/gi,
+      "$1",
+    )
+    .replace(
+      /(<a\b[^>]*data-attachment-id=["'][0-9a-f-]{36}["'][^>]*href=["'])[^"']*(["'])/gi,
+      "$1$2",
+    );
 }
 
 /** After save: drop inline R2 objects no longer referenced in HTML. */

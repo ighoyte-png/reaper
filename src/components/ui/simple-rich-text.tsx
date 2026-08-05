@@ -30,7 +30,9 @@ import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   deleteAttachment,
+  hydrateNotesHtmlForEditor,
   listEntityFileAttachments,
+  notesHtmlAttachmentKey,
   resolveAttachmentDisplayUrl,
   uploadFileToR2,
 } from "@/lib/storage/client-upload";
@@ -600,11 +602,55 @@ export const SimpleRichTextEditor = forwardRef<
     });
     // Keep paste previews intact until save; controlled value must not wipe them.
     if (hasPending) return;
-    const next = notesToEditorHtml(value);
-    const current = editor.isEmpty ? "" : editor.getHTML();
-    if (next === current) return;
-    if (notesToEditorHtml(current) === next) return;
-    editor.commands.setContent(next || "", { emitUpdate: false });
+
+    let cancelled = false;
+    void (async () => {
+      const hydrated = await hydrateNotesHtmlForEditor(value);
+      if (cancelled || !edRef.current) return;
+      const ed = edRef.current;
+      const current = ed.isEmpty ? "" : ed.getHTML();
+      const valueKey = notesHtmlAttachmentKey(notesToEditorHtml(value));
+      const currentKey = notesHtmlAttachmentKey(current);
+      const hydratedKey = notesHtmlAttachmentKey(hydrated);
+
+      // Parent replaced the document (e.g. opened edit) — load hydrated HTML.
+      if (valueKey !== currentKey) {
+        if (hydratedKey === currentKey) return;
+        ed.commands.setContent(hydrated || "", { emitUpdate: false });
+        return;
+      }
+
+      // Same document: refresh attachment image srcs in place (no caret jump).
+      const urls = new Map<string, string>();
+      const ids = extractAttachmentIdsFromNotesHtml(hydrated);
+      await Promise.all(
+        ids.map(async (id) => {
+          const url = await resolveAttachmentDisplayUrl(id);
+          if (url) urls.set(id.toLowerCase(), url);
+        }),
+      );
+      if (cancelled || !edRef.current) return;
+
+      const { tr } = ed.state;
+      let changed = false;
+      ed.state.doc.descendants((node, pos) => {
+        if (node.type.name !== "image") return;
+        const id = String(node.attrs["data-attachment-id"] ?? "").toLowerCase();
+        if (!id || node.attrs["data-pending-id"]) return;
+        const url = urls.get(id);
+        if (!url || node.attrs.src === url) return;
+        tr.setNodeMarkup(pos, undefined, {
+          ...node.attrs,
+          src: url,
+        });
+        changed = true;
+      });
+      if (changed) ed.view.dispatch(tr);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [editor, value]);
 
   const toolbar = useEditorState({
