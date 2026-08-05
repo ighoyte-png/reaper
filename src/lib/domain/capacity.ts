@@ -221,11 +221,10 @@ export function capacityLevel(
 ): CapacityLevel {
   if (onLeave || available <= 0) return "unavailable";
   const pct = utilizationPct(booked, available);
-  // Align with People Utilization legend:
-  // 100%+ over · 85–99% near · 40–84% optimal · <40% available
+  // 100%+ over · 85–99% near · 60–84% optimal · <60% underutilized
   if (pct >= 100) return "over";
   if (pct >= 85) return "near";
-  if (pct >= 40) return "healthy";
+  if (pct >= 60) return "healthy";
   return "low";
 }
 

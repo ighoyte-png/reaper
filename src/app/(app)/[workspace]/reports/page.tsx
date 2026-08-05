@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { addWeeks, format } from "date-fns";
 import {
@@ -13,12 +13,15 @@ import {
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
+import { BudgetStatusLine } from "@/components/reports/budget-status-line";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { buttonClass } from "@/components/ui/button";
 import { Panel } from "@/components/ui/panel";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
+import { StatCountBadge } from "@/components/ui/stat-count-badge";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
+import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { useViewAs } from "@/lib/view-as";
 import {
@@ -28,6 +31,11 @@ import {
   formatHours,
 } from "@/lib/domain/budget";
 import { scheduleVisiblePeople } from "@/lib/domain/people";
+import {
+  personIdsInPod,
+  podsForPerson,
+  podsManagedBy,
+} from "@/lib/domain/pods";
 import type { BudgetBurn, Project } from "@/lib/types";
 import {
   availableHoursInRange,
@@ -48,30 +56,39 @@ const reports: {
 }[] = [
   {
     path: "/reports/budgets",
-    title: "Project Budgets",
-    description: "Planned hours vs project total budget for every project.",
-    cta: "Hours and spend against project budgets",
+    title: "All Active Project Budgets",
+    description:
+      "Scheduled Hours and Contractor Expenses Tracked Against Project Budgets",
+    cta: "Scheduled Hours and Contractor Expenses Tracked Against Project Budgets",
     icon: LineChart,
     column: "right",
   },
   {
     path: "/reports/utilization",
-    title: "People Utilization",
-    description: "People × weeks heatmap of planned load vs capacity.",
-    cta: "Team load vs capacity by week",
+    title: "All People Utilization",
+    description:
+      "Utilization Percentage for All People Combined (Unless Disabled from Utilization Reporting)",
+    cta: "Team Utilization vs Capacity by Week",
     icon: Gauge,
     column: "left",
   },
   {
     path: "/reports/tasks",
-    title: "Project Tasks",
+    title: "All Project Tasks",
     description:
-      "Overdue tasks, tasks missing a due date, and recent completions.",
-    cta: "Overdue, undated, and recently completed work",
+      "Overdue Tasks, Tasks Missing a Due Date, and Recently Completed Tasks.",
+    cta: "Overdue, No Due Date, and Recently Completed Work",
     icon: ClipboardList,
     column: "left",
   },
 ];
+
+function utilBarTone(pct: number): "over" | "near" | "healthy" | "low" {
+  if (pct >= 100) return "over";
+  if (pct >= 85) return "near";
+  if (pct >= 60) return "healthy";
+  return "low";
+}
 
 type WeekUtilPoint = {
   key: string;
@@ -82,15 +99,24 @@ type WeekUtilPoint = {
 };
 
 export default function ReportsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ReportsPageContent />
+    </Suspense>
+  );
+}
+
+function ReportsPageContent() {
   const {
     state,
     isPublicShare,
     ensureScheduleRange,
     fetchOrgTaskStatsRpc,
     mode,
+    myPerson,
   } = useData();
   const { burns } = useProjectBurnsMap();
-  const { effectiveCanManage } = useViewAs();
+  const { effectiveCanManage, effectivePersonId } = useViewAs();
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
   const budgetHref = useBudgetHref();
@@ -99,10 +125,42 @@ export default function ReportsPage() {
   const todayKey = toDateKey(now);
   const utilStart = toDateKey(weekStart(now));
   const utilEnd = toDateKey(weekEnd(addWeeks(now, 7)));
+  const { filters, setFilter } = useUrlFilters({ scope: "all" });
+  const scopeMine = filters.scope === "mine";
+
+  const viewerPersonId = effectivePersonId ?? myPerson?.id ?? null;
+
+  const managedPodIds = useMemo(() => {
+    if (!viewerPersonId) return [] as string[];
+    return podsManagedBy(viewerPersonId, state.pods).map((p) => p.id);
+  }, [viewerPersonId, state.pods]);
+
+  const memberPodIds = useMemo(() => {
+    if (!viewerPersonId) return [] as string[];
+    return podsForPerson(viewerPersonId, state.pods, state.pod_members).map(
+      (p) => p.id,
+    );
+  }, [viewerPersonId, state.pods, state.pod_members]);
+
+  const utilPodIds =
+    managedPodIds.length > 0 ? managedPodIds : memberPodIds;
+
+  const managedProjectIds = useMemo(() => {
+    if (!viewerPersonId) return [] as string[];
+    return state.projects
+      .filter(
+        (p) => !p.sandbox_mode && p.manager_person_id === viewerPersonId,
+      )
+      .map((p) => p.id);
+  }, [viewerPersonId, state.projects]);
+
+  const showScopeFilter =
+    canManage &&
+    (managedPodIds.length > 0 || managedProjectIds.length > 0);
 
   useEffect(() => {
     if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
-  }, [canManage, isPublicShare, router]);
+  }, [canManage, isPublicShare, router, appHref]);
 
   useEffect(() => {
     if (mode === "supabase") void ensureScheduleRange(utilStart, utilEnd);
@@ -117,7 +175,14 @@ export default function ReportsPage() {
     open: number;
   } | null>(null);
 
+  const useScopedTaskStats =
+    scopeMine && managedProjectIds.length > 0;
+
   useEffect(() => {
+    if (useScopedTaskStats) {
+      setTaskStats(null);
+      return;
+    }
     let cancelled = false;
     async function load() {
       if (mode !== "supabase") {
@@ -142,21 +207,40 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, [mode, fetchOrgTaskStatsRpc, todayKey]);
+  }, [mode, fetchOrgTaskStatsRpc, todayKey, useScopedTaskStats]);
+
+  const scopedProjects = useMemo(() => {
+    const base = state.projects.filter((p) => !p.sandbox_mode);
+    if (!scopeMine || managedProjectIds.length === 0) return base;
+    const ids = new Set(managedProjectIds);
+    return base.filter((p) => ids.has(p.id));
+  }, [state.projects, scopeMine, managedProjectIds]);
 
   /**
-   * Utilization overview on the reports hub: all schedule-visible people
-   * (pod filtering lives on the Utilization report itself).
+   * Utilization overview: all schedule-visible people, optionally scoped
+   * to managed/member pods when “Projects and Pods I Manage” is on.
    */
-  const orgScopedPeople = useMemo(
-    () => scheduleVisiblePeople(state.people),
-    [state.people],
-  );
+  const orgScopedPeople = useMemo(() => {
+    const visible = scheduleVisiblePeople(state.people);
+    if (!scopeMine || utilPodIds.length === 0) return visible;
+    const ids = new Set<string>();
+    for (const podId of utilPodIds) {
+      const pod = state.pods.find((p) => p.id === podId);
+      if (!pod) continue;
+      for (const id of personIdsInPod(pod, state.pod_members)) ids.add(id);
+    }
+    return visible.filter((p) => ids.has(p.id));
+  }, [
+    state.people,
+    state.pods,
+    state.pod_members,
+    scopeMine,
+    utilPodIds,
+  ]);
 
   const plannedHoursAcrossSchedule = useMemo(() => {
     let sum = 0;
-    for (const p of state.projects) {
-      if (p.sandbox_mode) continue;
+    for (const p of scopedProjects) {
       const burn = burns.get(p.id);
       if (burn) sum += burn.plannedHours;
       else {
@@ -166,7 +250,7 @@ export default function ReportsPage() {
       }
     }
     return sum;
-  }, [state.projects, state.assignments, burns]);
+  }, [scopedProjects, state.assignments, burns]);
 
   const utilization = useMemo(() => {
     const weekAnchors = Array.from({ length: 8 }, (_, i) =>
@@ -228,7 +312,7 @@ export default function ReportsPage() {
       if (level === "healthy") healthy += 1;
       else if (level === "near") near += 1;
       else if (level === "over") over += 1;
-      else unavailable += 1; // low + unavailable
+      else unavailable += 1; // low + unavailable → Underutilized
     }
 
     return {
@@ -246,8 +330,7 @@ export default function ReportsPage() {
     let healthy = 0;
     let near = 0;
     let over = 0;
-    const rows = state.projects
-      .filter((p) => !p.sandbox_mode)
+    const rows = scopedProjects
       .map((p) => {
         const burn =
           burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people);
@@ -275,16 +358,12 @@ export default function ReportsPage() {
       over,
       rows,
     };
-  }, [state.projects, state.assignments, state.people, state.clients, burns]);
+  }, [scopedProjects, state.assignments, state.people, state.clients, burns]);
 
   const tasks = useMemo(() => {
-    if (taskStats) return taskStats;
-    const sandboxIds = new Set(
-      state.projects.filter((p) => p.sandbox_mode).map((p) => p.id),
-    );
-    const tasksScoped = state.tasks.filter(
-      (t) => !sandboxIds.has(t.project_id),
-    );
+    if (taskStats && !useScopedTaskStats) return taskStats;
+    const scopedIds = new Set(scopedProjects.map((p) => p.id));
+    const tasksScoped = state.tasks.filter((t) => scopedIds.has(t.project_id));
     const openTasks = tasksScoped.filter((t) => t.status !== "complete");
     const overdue = openTasks.filter((t) => t.due_date && t.due_date < todayKey);
     const inProgress = openTasks.filter(
@@ -310,7 +389,13 @@ export default function ReportsPage() {
       complete: complete.length,
       open: openTasks.length,
     };
-  }, [taskStats, state.tasks, state.projects, todayKey]);
+  }, [
+    taskStats,
+    useScopedTaskStats,
+    scopedProjects,
+    state.tasks,
+    todayKey,
+  ]);
 
   if (!canManage && !isPublicShare) {
     return (
@@ -323,6 +408,30 @@ export default function ReportsPage() {
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title="Reports" />
+      {showScopeFilter ? (
+        <section
+          className="mt-3 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 sm:mt-5"
+          aria-label="Report Scope"
+        >
+          <h2 className="mb-3 text-sm font-semibold">Scope</h2>
+          <ul className="flex flex-wrap gap-x-4 gap-y-2">
+            <li>
+              <ScopeChip
+                label="All Data"
+                selected={!scopeMine}
+                onSelect={() => setFilter("scope", "all")}
+              />
+            </li>
+            <li>
+              <ScopeChip
+                label="Projects and Pods I Manage"
+                selected={scopeMine}
+                onSelect={() => setFilter("scope", "mine")}
+              />
+            </li>
+          </ul>
+        </section>
+      ) : null}
       <div className="grid gap-3 py-3 sm:py-5 md:grid-cols-2 md:items-stretch">
         <div className="flex h-full min-h-0 flex-col gap-3">
           {reports
@@ -363,6 +472,37 @@ export default function ReportsPage() {
         </div>
       </div>
     </PageContainer>
+  );
+}
+
+function ScopeChip({
+  label,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1 rounded-md border px-1.5 py-1 transition-colors",
+        selected
+          ? "border-[var(--text)] bg-[var(--bg-elevated)]"
+          : "border-transparent hover:bg-[var(--row-hover)]",
+      )}
+    >
+      <button
+        type="button"
+        role="tab"
+        aria-selected={selected}
+        onClick={onSelect}
+        className="min-w-0 cursor-pointer px-1 text-left text-sm font-medium"
+      >
+        {label}
+      </button>
+    </div>
   );
 }
 
@@ -419,33 +559,6 @@ function ReportCard({
   );
 }
 
-function MetricRow({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "muted" | "over" | "near" | "healthy";
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-2 text-xs">
-      <span className="text-[var(--text-muted)]">{label}</span>
-      <span
-        className={cn(
-          "tabular-nums font-medium",
-          tone === "over" && "text-[var(--status-over)]",
-          tone === "near" && "text-[var(--status-near)]",
-          tone === "healthy" && "text-[var(--status-healthy)]",
-          (!tone || tone === "muted") && "text-[var(--text)]",
-        )}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
 function UtilizationOverview({
   data,
 }: {
@@ -462,13 +575,9 @@ function UtilizationOverview({
   const chartMax = Math.max(120, ...data.weeks.map((w) => w.pct), 1);
   const yTicks = [0, 50].filter((t) => t <= chartMax);
   if (chartMax > 100) yTicks.push(Math.round(chartMax / 50) * 50);
+  const capacityLine = Math.min(100, chartMax);
 
-  const thisTone =
-    data.thisWeek.pct > 100
-      ? "over"
-      : data.thisWeek.pct >= 95
-        ? "near"
-        : "healthy";
+  const thisTone = utilBarTone(data.thisWeek.pct);
 
   const headcount = Math.max(
     1,
@@ -479,13 +588,14 @@ function UtilizationOverview({
     <div className="space-y-3">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] text-[var(--text-muted)]">This week</p>
+          <p className="text-[11px] text-[var(--text-muted)]">This Week</p>
           <p
             className={cn(
               "text-2xl font-semibold tabular-nums tracking-tight",
               thisTone === "over" && "text-[var(--status-over)]",
               thisTone === "near" && "text-[var(--status-near)]",
               thisTone === "healthy" && "text-[var(--status-healthy)]",
+              thisTone === "low" && "text-[var(--text-muted)]",
             )}
           >
             {data.peopleCount === 0
@@ -494,15 +604,15 @@ function UtilizationOverview({
           </p>
         </div>
         <p className="pb-1 text-right text-[11px] text-[var(--text-muted)]">
-          {formatHours(data.thisWeek.booked)} booked
+          {formatHours(data.thisWeek.booked)} Booked
           <br />
-          {formatHours(data.thisWeek.available)} available
+          {formatHours(data.thisWeek.available)} Available
         </p>
       </div>
 
       <div>
         <p className="mb-1.5 text-[11px] font-medium text-[var(--text-muted)]">
-          Team utilization · next 8 weeks
+          Team Utilization · Next 8 Weeks
         </p>
         <div className="relative h-28">
           {yTicks.map((tick) => {
@@ -523,10 +633,11 @@ function UtilizationOverview({
 
           <div className="absolute inset-y-0 left-7 right-0 flex items-end gap-1">
             {data.weeks.map((week, i) => {
-              const heightPct = Math.max(
-                week.pct > 0 ? 4 : 0,
-                (week.pct / chartMax) * 100,
-              );
+              const tone = utilBarTone(week.pct);
+              const fillPct = Math.min(week.pct, chartMax);
+              const trackPct = Math.min(Math.max(capacityLine, fillPct), chartMax);
+              const fillHeight = (fillPct / chartMax) * 100;
+              const trackHeight = (trackPct / chartMax) * 100;
               return (
                 <div
                   key={week.key}
@@ -535,16 +646,28 @@ function UtilizationOverview({
                 >
                   <div
                     className={cn(
-                      "w-full max-w-[22px] rounded-t",
-                      week.pct > 100
-                        ? "bg-[var(--status-over)]"
-                        : week.pct >= 95
-                          ? "bg-[var(--status-near)]"
-                          : "bg-[var(--status-healthy)]",
-                      i === 0 && "ring-1 ring-[var(--accent)] ring-offset-1 ring-offset-[var(--bg)]",
+                      "relative w-full max-w-[22px] overflow-hidden rounded-t bg-[var(--border)]",
+                      i === 0 &&
+                        "ring-1 ring-[var(--accent)] ring-offset-1 ring-offset-[var(--bg)]",
                     )}
-                    style={{ height: `${heightPct}%` }}
-                  />
+                    style={{ height: `${Math.max(trackHeight, fillHeight, week.pct > 0 ? 4 : 0)}%` }}
+                  >
+                    <div
+                      className={cn(
+                        "absolute inset-x-0 bottom-0 rounded-t",
+                        tone === "over" && "bg-[var(--status-over)]",
+                        tone === "near" && "bg-[var(--status-near)]",
+                        tone === "healthy" && "bg-[var(--status-healthy)]",
+                        tone === "low" && "bg-[var(--status-healthy)]",
+                      )}
+                      style={{
+                        height:
+                          trackHeight > 0
+                            ? `${(fillHeight / Math.max(trackHeight, 0.001)) * 100}%`
+                            : "0%",
+                      }}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -564,30 +687,30 @@ function UtilizationOverview({
 
       <div>
         <p className="mb-1 text-[11px] text-[var(--text-muted)]">
-          This week · people by load
+          This Week · All Peoples Utilization
         </p>
-        <div className="flex h-2.5 overflow-hidden rounded-full bg-[var(--border)]">
+        <div className="flex h-3.5 overflow-hidden rounded-full bg-[var(--border)]">
           {(
             [
               {
                 value: data.healthy,
                 className: "bg-[var(--status-healthy)]",
-                title: `Healthy: ${data.healthy}`,
+                title: `Optimal: ${data.healthy}`,
               },
               {
                 value: data.near,
                 className: "bg-[var(--status-near)]",
-                title: `Near: ${data.near}`,
+                title: `Near Capacity: ${data.near}`,
               },
               {
                 value: data.over,
                 className: "bg-[var(--status-over)]",
-                title: `Over: ${data.over}`,
+                title: `Overbooked: ${data.over}`,
               },
               {
                 value: data.unavailable,
                 className: "bg-[var(--status-unavailable)]",
-                title: `Unavailable: ${data.unavailable}`,
+                title: `Underutilized: ${data.unavailable}`,
               },
             ] as const
           )
@@ -609,20 +732,35 @@ function UtilizationOverview({
               />
             ))}
         </div>
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--text-muted)]">
-          <span>
-            <span className="text-[var(--status-healthy)]">{data.healthy}</span>{" "}
-            healthy
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--text-muted)]">
+          <span className="inline-flex items-center gap-1.5">
+            <StatCountBadge
+              count={data.healthy}
+              className="bg-[var(--status-healthy)]"
+            />
+            Optimal
           </span>
-          <span>
-            <span className="text-[var(--status-near)]">{data.near}</span> near
+          <span className="inline-flex items-center gap-1.5">
+            <StatCountBadge
+              count={data.near}
+              className="bg-[var(--status-near)]"
+            />
+            Near Capacity
           </span>
-          <span>
-            <span className="text-[var(--status-over)]">{data.over}</span> over
+          <span className="inline-flex items-center gap-1.5">
+            <StatCountBadge
+              count={data.over}
+              className="bg-[var(--status-over)]"
+            />
+            Overbooked
           </span>
-          {data.unavailable > 0 ? (
-            <span>{data.unavailable} unavailable</span>
-          ) : null}
+          <span className="inline-flex items-center gap-1.5">
+            <StatCountBadge
+              count={data.unavailable}
+              className="bg-[var(--status-unavailable)]"
+            />
+            Underutilized
+          </span>
         </div>
       </div>
     </div>
@@ -653,12 +791,12 @@ function BudgetsOverview({
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="shrink-0 space-y-1.5">
-        <MetricRow label="Tracked projects" value={String(data.tracked)} />
-        <MetricRow
-          label="Over budget"
-          value={String(data.over)}
-          tone={data.over > 0 ? "over" : "muted"}
+      <div className="shrink-0">
+        <BudgetStatusLine
+          tracked={data.tracked}
+          healthy={data.healthy}
+          near={data.near}
+          over={data.over}
         />
       </div>
       {data.rows.length > 0 ? (
@@ -667,7 +805,7 @@ function BudgetsOverview({
             <Link
               key={row.id}
               href={budgetHref(row.project)}
-              className="block space-y-1 rounded-md px-1 py-0.5 -mx-1 hover:bg-[var(--row-hover)]"
+              className="-mx-1 block space-y-1 rounded-md px-1 py-0.5 hover:bg-[var(--row-hover)]"
             >
               <div className="flex justify-between gap-2 text-[11px]">
                 <span className="truncate text-[var(--text-muted)]">
@@ -682,13 +820,17 @@ function BudgetsOverview({
           ))}
         </div>
       ) : (
-        <p className="text-xs text-[var(--text-muted)]">No budgeted projects.</p>
+        <p className="text-xs text-[var(--text-muted)]">No Budgeted Projects.</p>
       )}
       <div className="shrink-0 border-t border-[var(--border)] pt-2">
-        <MetricRow
-          label="Planned across schedule"
-          value={formatHours(plannedHours)}
-        />
+        <div className="flex items-baseline justify-between gap-2 text-xs">
+          <span className="text-[var(--text-muted)]">
+            Hours Planned Across the Schedule
+          </span>
+          <span className="tabular-nums font-medium text-[var(--text)]">
+            {formatHours(plannedHours)}
+          </span>
+        </div>
       </div>
     </div>
   );

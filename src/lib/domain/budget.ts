@@ -292,12 +292,124 @@ export interface MonthBurnBar {
   plannedHours: number;
   /** Planned billable $ for the month (hours × bill rates). */
   plannedAmount: number;
+  /** Hours scheduled through today (or full month if past). */
+  usedHours: number;
+  /** Hours scheduled from tomorrow onward (or full month if future). */
+  futureHours: number;
+  /** Billable $ through today (or full month if past). */
+  usedAmount: number;
+  /** Billable $ from tomorrow onward (or full month if future). */
+  futureAmount: number;
   /** Primary bar value (hours or $ depending on chart context). */
   value: number;
   /** Soft monthly cap for over-coloring; 0 means scale against the year’s max. */
   cap: number;
   budgetHours: number;
   pct: number;
+}
+
+/** Used vs future hours/$ in [rangeStart, rangeEnd] using today/tomorrow split. */
+export function projectHoursSplitInRange(
+  projectId: string,
+  assignments: Assignment[],
+  people: Person[],
+  rangeStart: string,
+  rangeEnd: string,
+  asOf: Date = new Date(),
+): {
+  usedHours: number;
+  futureHours: number;
+  usedAmount: number;
+  futureAmount: number;
+} {
+  const todayKey = toDateKey(asOf);
+  const tomorrow = new Date(asOf);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = toDateKey(tomorrow);
+
+  const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
+  const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
+
+  const usedHours =
+    usedEnd >= rangeStart
+      ? projectHoursInDateRange(
+          projectId,
+          assignments,
+          rangeStart,
+          usedEnd,
+        )
+      : 0;
+  const futureHours =
+    futureStart <= rangeEnd
+      ? projectHoursInDateRange(
+          projectId,
+          assignments,
+          futureStart,
+          rangeEnd,
+        )
+      : 0;
+  const usedAmount =
+    usedEnd >= rangeStart
+      ? projectBillableAmountInDateRange(
+          projectId,
+          assignments,
+          people,
+          rangeStart,
+          usedEnd,
+        )
+      : 0;
+  const futureAmount =
+    futureStart <= rangeEnd
+      ? projectBillableAmountInDateRange(
+          projectId,
+          assignments,
+          people,
+          futureStart,
+          rangeEnd,
+        )
+      : 0;
+
+  return { usedHours, futureHours, usedAmount, futureAmount };
+}
+
+/** Per-person used vs future hours in [rangeStart, rangeEnd]. */
+export function personHoursSplitInRange(
+  personId: string,
+  projectId: string,
+  assignments: Assignment[],
+  rangeStart: string,
+  rangeEnd: string,
+  asOf: Date = new Date(),
+): { usedHours: number; futureHours: number } {
+  const filtered = assignments.filter(
+    (a) =>
+      a.project_id === projectId &&
+      a.person_id === personId &&
+      a.status === "confirmed",
+  );
+  const todayKey = toDateKey(asOf);
+  const tomorrow = new Date(asOf);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = toDateKey(tomorrow);
+
+  const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
+  const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
+
+  let usedHours = 0;
+  let futureHours = 0;
+  for (const a of filtered) {
+    if (usedEnd >= rangeStart) {
+      for (const occ of expandAssignmentInRange(a, rangeStart, usedEnd)) {
+        usedHours += occurrenceHoursInRange(occ, rangeStart, usedEnd);
+      }
+    }
+    if (futureStart <= rangeEnd) {
+      for (const occ of expandAssignmentInRange(a, futureStart, rangeEnd)) {
+        futureHours += occurrenceHoursInRange(occ, futureStart, rangeEnd);
+      }
+    }
+  }
+  return { usedHours, futureHours };
 }
 
 /** Last N months of hourly burn for monthly-reset (retainer) projects. */
@@ -317,6 +429,16 @@ export function monthlyHourBars(
       year,
       monthIndex,
     });
+    const monthStart = toDateKey(startOfMonth(d));
+    const monthEnd = toDateKey(endOfMonth(d));
+    const split = projectHoursSplitInRange(
+      project.id,
+      assignments,
+      [],
+      monthStart,
+      monthEnd,
+      asOf,
+    );
     out.push({
       key: format(d, "yyyy-MM"),
       label: format(d, "MMM yyyy"),
@@ -324,6 +446,10 @@ export function monthlyHourBars(
       monthIndex,
       plannedHours,
       plannedAmount: 0,
+      usedHours: split.usedHours,
+      futureHours: split.futureHours,
+      usedAmount: split.usedAmount,
+      futureAmount: split.futureAmount,
       value: plannedHours,
       cap: budgetHours,
       budgetHours,
@@ -367,6 +493,16 @@ export function calendarYearBars(
       false,
       { year, monthIndex },
     );
+    const monthStart = toDateKey(startOfMonth(d));
+    const monthEnd = toDateKey(endOfMonth(d));
+    const split = projectHoursSplitInRange(
+      project.id,
+      assignments,
+      people,
+      monthStart,
+      monthEnd,
+      asOf,
+    );
     const value = mode === "amount" ? plannedAmount : plannedHours;
     const cap = mode === "amount" ? 0 : monthlyHourCap;
     out.push({
@@ -376,6 +512,10 @@ export function calendarYearBars(
       monthIndex,
       plannedHours,
       plannedAmount,
+      usedHours: split.usedHours,
+      futureHours: split.futureHours,
+      usedAmount: split.usedAmount,
+      futureAmount: split.futureAmount,
       value,
       cap,
       budgetHours: monthlyHourCap,

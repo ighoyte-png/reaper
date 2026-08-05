@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, endOfMonth, startOfMonth } from "date-fns";
 import { ChartColumn, ChartLine, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   HoursPerWeekChart,
@@ -18,20 +18,21 @@ import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useAppHref, resolveProjectBySlugs, useProjectHref } from "@/lib/hooks/use-app-href";
 import {
-  assignmentHours,
-  assignmentHoursInMonth,
   budgetBurn,
   budgetHealth,
   calendarYearBars,
   formatHours,
   formatMoney,
   normalizeBudgetMode,
+  personHoursSplitInRange,
   projectHoursForecast,
+  projectHoursSplitInRange,
   projectPlannedAmount,
   projectPlannedHours,
   weeklyProgressSeries,
+  type MonthBurnBar,
 } from "@/lib/domain/budget";
-import { projectForecast } from "@/lib/domain/forecast";
+import { toDateKey } from "@/lib/domain/dates";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 
@@ -68,6 +69,11 @@ export default function ProjectBudgetDetailPage() {
     dataStatus.projects[project.id] !== "error";
 
   const [year, setYear] = useState(() => new Date().getFullYear());
+  const [periodMode, setPeriodMode] = useState<"month" | "year">("month");
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), monthIndex: now.getMonth() };
+  });
   const [retainerTab, setRetainerTab] = useState<"calendar" | "weekly">(
     "calendar",
   );
@@ -81,14 +87,6 @@ export default function ProjectBudgetDetailPage() {
     () =>
       project
         ? budgetBurn(project, state.assignments, state.people)
-        : null,
-    [project, state.assignments, state.people],
-  );
-
-  const forecast = useMemo(
-    () =>
-      project
-        ? projectForecast(project, state.assignments, state.people)
         : null,
     [project, state.assignments, state.people],
   );
@@ -156,60 +154,93 @@ export default function ProjectBudgetDetailPage() {
     return sortPeopleByName(state.people.filter((p) => ids.has(p.id)));
   }, [project, state.assignments, state.tasks, state.people]);
 
-  const teamYear = useMemo(() => {
+  const periodRange = useMemo(() => {
+    if (periodMode === "year") {
+      return {
+        start: toDateKey(new Date(year, 0, 1)),
+        end: toDateKey(endOfMonth(new Date(year, 11, 1))),
+        label: String(year),
+      };
+    }
+    const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
+    return {
+      start: toDateKey(startOfMonth(d)),
+      end: toDateKey(endOfMonth(d)),
+      label: format(d, "MMM yyyy"),
+    };
+  }, [periodMode, year, selectedMonth]);
+
+  const periodSplit = useMemo(
+    () =>
+      project
+        ? projectHoursSplitInRange(
+            project.id,
+            state.assignments,
+            state.people,
+            periodRange.start,
+            periodRange.end,
+          )
+        : null,
+    [project, state.assignments, state.people, periodRange],
+  );
+
+  const selectedMonthKey =
+    periodMode === "month"
+      ? format(
+          new Date(selectedMonth.year, selectedMonth.monthIndex, 1),
+          "yyyy-MM",
+        )
+      : undefined;
+
+  function handleMonthSelect(bar: MonthBurnBar) {
+    setPeriodMode("month");
+    setSelectedMonth({ year: bar.year, monthIndex: bar.monthIndex });
+    if (bar.year !== year) setYear(bar.year);
+  }
+
+  const teamPeriod = useMemo(() => {
     if (!project) return [];
-    const byPerson = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        avatar_url: string | null;
-        hours: number;
-        revenue: number;
-        cost: number;
-      }
-    >();
-    for (const a of state.assignments) {
-      if (a.project_id !== project.id || a.status !== "confirmed") continue;
-      const person = state.people.find((p) => p.id === a.person_id);
-      if (!person) continue;
-      let hours = 0;
-      if (isRetainer) {
-        for (let m = 0; m < 12; m++) {
-          hours += assignmentHoursInMonth(a, year, m);
-        }
-      } else {
-        hours = assignmentHours(a);
-      }
-      if (hours <= 0) continue;
-      const row = byPerson.get(person.id) ?? {
+    const rows = team.map((person) => {
+      const split = personHoursSplitInRange(
+        person.id,
+        project.id,
+        state.assignments,
+        periodRange.start,
+        periodRange.end,
+      );
+      return {
         id: person.id,
         name: person.name,
         avatar_url: person.avatar_url,
-        hours: 0,
-        revenue: 0,
-        cost: 0,
+        usedHours: split.usedHours,
+        plannedHours: split.futureHours,
+        totalHours: split.usedHours + split.futureHours,
       };
-      row.hours += hours;
-      row.revenue += hours * (person.bill_rate ?? 0);
-      row.cost += hours * (person.cost_rate ?? 0);
-      byPerson.set(person.id, row);
+    });
+    return rows.sort((a, b) => b.totalHours - a.totalHours);
+  }, [project, team, state.assignments, periodRange]);
+
+  const periodRevenueCost = useMemo(() => {
+    if (!project) return { revenue: 0, cost: 0 };
+    const byId = new Map(state.people.map((p) => [p.id, p]));
+    let revenue = 0;
+    let cost = 0;
+    for (const a of state.assignments) {
+      if (a.project_id !== project.id || a.status !== "confirmed") continue;
+      const person = byId.get(a.person_id);
+      const split = personHoursSplitInRange(
+        a.person_id,
+        project.id,
+        state.assignments,
+        periodRange.start,
+        periodRange.end,
+      );
+      const hours = split.usedHours + split.futureHours;
+      revenue += hours * (person?.bill_rate ?? 0);
+      cost += hours * (person?.cost_rate ?? 0);
     }
-    // Include team members with 0 hours so avatars still show
-    for (const p of team) {
-      if (!byPerson.has(p.id)) {
-        byPerson.set(p.id, {
-          id: p.id,
-          name: p.name,
-          avatar_url: p.avatar_url,
-          hours: 0,
-          revenue: 0,
-          cost: 0,
-        });
-      }
-    }
-    return [...byPerson.values()].sort((a, b) => b.hours - a.hours);
-  }, [project, state.assignments, state.people, year, isRetainer, team]);
+    return { revenue, cost };
+  }, [project, state.assignments, state.people, periodRange]);
 
   function goBack() {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -228,7 +259,7 @@ export default function ProjectBudgetDetailPage() {
     );
   }
 
-  if (!project || !burn || !forecast || !hoursFx) {
+  if (!project || !burn || !hoursFx) {
     return (
       <PageContainer className="overflow-y-auto">
         <PageHeader title="Budget" onBack={goBack} />
@@ -267,6 +298,73 @@ export default function ProjectBudgetDetailPage() {
         : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}${
             burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
           }`;
+
+  const periodPlannedHours =
+    (periodSplit?.usedHours ?? 0) + (periodSplit?.futureHours ?? 0);
+  const periodPlannedAmount =
+    (periodSplit?.usedAmount ?? 0) + (periodSplit?.futureAmount ?? 0);
+
+  let periodBudgetCap: number | null = null;
+  if (mode === "hours") {
+    const monthly = project.budget_hours ?? 0;
+    if (periodMode === "month" && isRetainer) {
+      periodBudgetCap = monthly;
+    } else if (periodMode === "year" && isRetainer) {
+      periodBudgetCap = monthly * 12;
+    } else if (mode === "hours") {
+      periodBudgetCap = project.budget_hours ?? 0;
+    }
+  } else if (mode === "amount") {
+    periodBudgetCap = project.budget_amount ?? 0;
+  }
+
+  const periodRemainingHours =
+    periodBudgetCap != null && mode === "hours"
+      ? periodBudgetCap - periodPlannedHours
+      : null;
+  const periodRemainingAmount =
+    periodBudgetCap != null && mode === "amount"
+      ? periodBudgetCap - periodPlannedAmount
+      : null;
+
+  const periodOverBudget =
+    mode === "amount"
+      ? periodRemainingAmount != null && periodRemainingAmount < 0
+      : periodRemainingHours != null && periodRemainingHours < 0;
+
+  const periodRemainingLabel =
+    mode === "none"
+      ? "—"
+      : showAmountMetrics
+        ? periodRemainingAmount == null
+          ? "—"
+          : formatMoney(periodRemainingAmount)
+        : periodRemainingHours == null
+          ? "—"
+          : formatHours(periodRemainingHours);
+
+  const periodRateMargin =
+    periodRevenueCost.revenue - periodRevenueCost.cost;
+  const periodRateMarginPct =
+    periodRevenueCost.revenue <= 0
+      ? 0
+      : (periodRateMargin / periodRevenueCost.revenue) * 100;
+
+  let periodMargin: number | null = null;
+  let periodMarginPct: number | null = null;
+  if (mode === "amount" && periodBudgetCap != null) {
+    periodMargin = periodBudgetCap - periodRevenueCost.cost;
+    periodMarginPct =
+      periodBudgetCap <= 0 ? null : (periodMargin / periodBudgetCap) * 100;
+  } else if (mode === "hours" && periodBudgetCap != null && periodPlannedHours > 0) {
+    const avgCost = periodRevenueCost.cost / periodPlannedHours;
+    const unusedHours = periodBudgetCap - periodPlannedHours;
+    periodMargin = unusedHours * avgCost;
+    periodMarginPct =
+      periodBudgetCap <= 0
+        ? null
+        : ((periodBudgetCap - periodPlannedHours) / periodBudgetCap) * 100;
+  }
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -509,6 +607,8 @@ export default function ProjectBudgetDetailPage() {
                   unit={chartUnit}
                   monthlyCap={monthlyCap}
                   year={year}
+                  selectedMonthKey={selectedMonthKey}
+                  onMonthSelect={handleMonthSelect}
                 />
               ) : weeklyPoints.length === 0 ? (
                 <p className="text-sm text-[var(--text-muted)]">
@@ -528,92 +628,109 @@ export default function ProjectBudgetDetailPage() {
           )}
         </section>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          <ul className="flex flex-wrap gap-2" role="tablist" aria-label="Period">
+            <li>
+              <PeriodChip
+                label="Month"
+                selected={periodMode === "month"}
+                onSelect={() => setPeriodMode("month")}
+              />
+            </li>
+            <li>
+              <PeriodChip
+                label="Year"
+                selected={periodMode === "year"}
+                onSelect={() => setPeriodMode("year")}
+              />
+            </li>
+            {periodMode === "month" ? (
+              <li className="flex items-center text-xs text-[var(--text-muted)]">
+                {periodRange.label}
+              </li>
+            ) : null}
+          </ul>
+
+          <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="mb-3 text-sm font-semibold">Forecast vs budget</h2>
+            <h2 className="mb-3 text-sm font-semibold">Forecast vs Budget</h2>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
+              {periodMode === "month"
+                ? `${periodRange.label} · `
+                : `${year} · `}
               {showHoursMetrics
-                ? "Schedule hours and margin against the project budget."
+                ? "Schedule Hours and Margin Against the Project Budget."
                 : showAmountMetrics
-                  ? "Schedule spend and margin against the project budget."
-                  : "Schedule and margin against the project."}
+                  ? "Schedule Spend and Margin Against the Project Budget."
+                  : "Schedule and Margin Against the Project."}
             </p>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
                 <dt className="text-[var(--text-muted)]">
-                  {showAmountMetrics ? "Spend to date" : "Hours used"}
+                  {showAmountMetrics ? "Spend to Date" : "Hours Used"}
                 </dt>
                 <dd className="tabular-nums font-medium">
                   {showHoursMetrics
-                    ? formatHours(forecast.hoursUsedToDate)
+                    ? formatHours(periodSplit?.usedHours ?? 0)
                     : showAmountMetrics
-                      ? formatMoney(burn.usedAmount)
-                      : formatHours(forecast.hoursUsedToDate)}
+                      ? formatMoney(periodSplit?.usedAmount ?? 0)
+                      : formatHours(periodSplit?.usedHours ?? 0)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
-                <dt className="text-[var(--text-muted)]">Future planned</dt>
+                <dt className="text-[var(--text-muted)]">Future Planned</dt>
                 <dd className="tabular-nums font-medium">
                   {showHoursMetrics
-                    ? formatHours(forecast.hoursFuturePlanned)
+                    ? formatHours(periodSplit?.futureHours ?? 0)
                     : showAmountMetrics
-                      ? formatMoney(burn.futureAmount)
-                      : formatHours(forecast.hoursFuturePlanned)}
+                      ? formatMoney(periodSplit?.futureAmount ?? 0)
+                      : formatHours(periodSplit?.futureHours ?? 0)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
                 <dt className="text-[var(--text-muted)]">
-                  {showAmountMetrics ? "Budget remaining" : "Remaining hours"}
+                  {showAmountMetrics ? "Budget Remaining" : "Remaining Hours"}
                 </dt>
                 <dd
                   className={cn(
                     "tabular-nums font-medium",
-                    forecast.overBudget && "text-[var(--status-over)]",
+                    periodOverBudget && "text-[var(--status-over)]",
                   )}
                 >
-                  {showHoursMetrics
-                    ? forecast.hoursRemaining == null
-                      ? "—"
-                      : formatHours(forecast.hoursRemaining)
-                    : showAmountMetrics
-                      ? burn.remainingAmount == null
-                        ? "—"
-                        : formatMoney(burn.remainingAmount)
-                      : "—"}
+                  {periodRemainingLabel}
                 </dd>
               </div>
-              {forecast.budgetMargin != null ? (
+              {periodMargin != null ? (
                 <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2">
                   <dt className="text-[var(--text-muted)]">
-                    Margin vs budget
+                    Margin vs Budget
                   </dt>
                   <dd
                     className={cn(
                       "tabular-nums font-medium",
-                      forecast.budgetMargin < 0 && "text-[var(--status-over)]",
+                      periodMargin < 0 && "text-[var(--status-over)]",
                     )}
                   >
-                    {mode === "amount"
-                      ? formatMoney(forecast.budgetMargin)
-                      : formatMoney(forecast.budgetMargin)}
-                    {forecast.budgetMarginPct != null
-                      ? ` (${forecast.budgetMarginPct.toFixed(0)}%)`
+                    {formatMoney(periodMargin)}
+                    {periodMarginPct != null
+                      ? ` (${periodMarginPct.toFixed(0)}%)`
                       : ""}
                   </dd>
                 </div>
               ) : null}
               <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2 text-xs">
                 <dt className="text-[var(--text-muted)]">
-                  Rate revenue / cost
+                  Rate Revenue / Cost
                 </dt>
                 <dd className="tabular-nums text-[var(--text-muted)]">
-                  {formatMoney(forecast.revenue)} / {formatMoney(forecast.cost)}
+                  {formatMoney(periodRevenueCost.revenue)} /{" "}
+                  {formatMoney(periodRevenueCost.cost)}
                 </dd>
               </div>
               <div className="flex justify-between gap-2 text-xs">
-                <dt className="text-[var(--text-muted)]">Rate margin</dt>
+                <dt className="text-[var(--text-muted)]">Rate Margin</dt>
                 <dd className="tabular-nums text-[var(--text-muted)]">
-                  {formatMoney(forecast.margin)} ({forecast.marginPct.toFixed(0)}
+                  {formatMoney(periodRateMargin)} ({periodRateMarginPct.toFixed(0)}
                   %)
                 </dd>
               </div>
@@ -622,9 +739,12 @@ export default function ProjectBudgetDetailPage() {
 
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">
-              Team{isRetainer ? ` · ${year}` : ""}
+              Team
+              {periodMode === "month"
+                ? ` · ${periodRange.label}`
+                : ` · ${year}`}
             </h2>
-            {teamYear.length === 0 ? (
+            {teamPeriod.length === 0 ? (
               <p className="text-sm text-[var(--text-muted)]">
                 No one assigned yet.
               </p>
@@ -634,13 +754,13 @@ export default function ProjectBudgetDetailPage() {
                   <thead>
                     <tr className="border-b border-[var(--border)] text-xs text-[var(--text-muted)]">
                       <th className="pb-2 font-medium">Person</th>
-                      <th className="pb-2 text-right font-medium">Hours</th>
-                      <th className="pb-2 text-right font-medium">Revenue</th>
-                      <th className="pb-2 text-right font-medium">Cost</th>
+                      <th className="pb-2 text-right font-medium">Used</th>
+                      <th className="pb-2 text-right font-medium">Planned</th>
+                      <th className="pb-2 text-right font-medium">Total</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {teamYear.map((row) => (
+                    {teamPeriod.map((row) => (
                       <tr
                         key={row.id}
                         className="border-b border-[var(--border)]/60"
@@ -657,13 +777,13 @@ export default function ProjectBudgetDetailPage() {
                           </div>
                         </td>
                         <td className="py-2 text-right tabular-nums">
-                          {formatHours(row.hours)}
+                          {formatHours(row.usedHours)}
                         </td>
                         <td className="py-2 text-right tabular-nums">
-                          {formatMoney(row.revenue)}
+                          {formatHours(row.plannedHours)}
                         </td>
                         <td className="py-2 text-right tabular-nums">
-                          {formatMoney(row.cost)}
+                          {formatHours(row.totalHours)}
                         </td>
                       </tr>
                     ))}
@@ -672,8 +792,36 @@ export default function ProjectBudgetDetailPage() {
               </div>
             )}
           </section>
+          </div>
         </div>
       </div>
     </PageContainer>
+  );
+}
+
+function PeriodChip({
+  label,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      onClick={onSelect}
+      className={cn(
+        "rounded-md border px-2.5 py-1 text-sm font-medium transition-colors",
+        selected
+          ? "border-[var(--text)] bg-[var(--bg-elevated)] text-[var(--text)]"
+          : "border-transparent text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+      )}
+    >
+      {label}
+    </button>
   );
 }

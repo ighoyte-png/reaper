@@ -64,7 +64,7 @@ export function ProjectManagerFilterBar({
   managerFilter,
   onSelect,
   className,
-  title = "Project Manager (assigner)",
+  title = "Project Manager",
 }: {
   managerTabs: Person[];
   managerFilter: ManagerFilter;

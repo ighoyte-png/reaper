@@ -269,8 +269,8 @@ function ProgressLineChart({
       ? xAt(handoffIdx)
       : null;
 
-  const lineColor = "#4b5563";
-  const mutedLine = "#9ca3af";
+  const lineColor = "var(--accent)";
+  const mutedLine = "var(--accent)";
   const hover = hoverIdx != null ? points[hoverIdx] : null;
   const hoverVal = hoverIdx != null ? valueAt(hoverIdx) : 0;
   const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;

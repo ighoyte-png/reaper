@@ -12,11 +12,13 @@ import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
-import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
+import { BudgetStatusLine } from "@/components/reports/budget-status-line";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
-import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
+import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { useBudgetHref } from "@/lib/hooks/use-app-href";
+import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import {
   sortClientsByName,
@@ -27,6 +29,49 @@ import { cn } from "@/lib/cn";
 import type { Client, Project } from "@/lib/types";
 
 type ClientFilter = "all" | "none" | string;
+
+const GRID_COLUMNS = 3;
+
+type ClientGroup = { client: Client | null; projects: Project[] };
+
+type PackedRowSegment = { client: Client | null; projects: Project[] };
+
+type PackedRow = { segments: PackedRowSegment[] };
+
+/** Pack ordered client groups into filled rows; repeat client headers when a group wraps. */
+function packProjectRows(groups: ClientGroup[], columns = GRID_COLUMNS): PackedRow[] {
+  const rows: PackedRow[] = [];
+  let currentRow: PackedRow = { segments: [] };
+  let slotsUsed = 0;
+
+  const flushRow = () => {
+    if (currentRow.segments.length > 0) {
+      rows.push(currentRow);
+      currentRow = { segments: [] };
+      slotsUsed = 0;
+    }
+  };
+
+  for (const { client, projects } of groups) {
+    let index = 0;
+    while (index < projects.length) {
+      if (slotsUsed >= columns) flushRow();
+
+      const take = Math.min(columns - slotsUsed, projects.length - index);
+      const chunk = projects.slice(index, index + take);
+      currentRow.segments.push({ client, projects: chunk });
+      slotsUsed += take;
+      index += take;
+    }
+  }
+
+  flushRow();
+  return rows;
+}
+
+function clientGroupKey(client: Client | null): string {
+  return client?.id ?? "none";
+}
 
 const BUDGET_FILTER_DEFAULTS: {
   q: string;
@@ -47,9 +92,9 @@ export default function BudgetsReportPage() {
 }
 
 function BudgetsReportContent() {
-  const { state, canManage } = useData();
-  const appHref = useAppHref();
+  const { state } = useData();
   const budgetHref = useBudgetHref();
+  const { burns } = useProjectBurnsMap();
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectParam = searchParams.get("project");
@@ -130,7 +175,7 @@ function BudgetsReportContent() {
       list.push(project);
       byClient.set(key, list);
     }
-    const ordered: { client: Client | null; projects: Project[] }[] = [];
+    const ordered: ClientGroup[] = [];
     for (const client of clients) {
       const list = byClient.get(client.id);
       if (list?.length) ordered.push({ client, projects: list });
@@ -139,6 +184,27 @@ function BudgetsReportContent() {
     if (noClient?.length) ordered.push({ client: null, projects: noClient });
     return ordered;
   }, [filtered, clients]);
+
+  const packedRows = useMemo(() => packProjectRows(groups), [groups]);
+
+  const budgetStatus = useMemo(() => {
+    let tracked = 0;
+    let healthy = 0;
+    let near = 0;
+    let over = 0;
+    for (const project of filtered) {
+      const burn =
+        burns.get(project.id) ??
+        budgetBurn(project, state.assignments, state.people);
+      if (burn.mode === "none") continue;
+      tracked += 1;
+      const health = budgetHealth(burn);
+      if (health === "healthy") healthy += 1;
+      else if (health === "near") near += 1;
+      else if (health === "over") over += 1;
+    }
+    return { tracked, healthy, near, over };
+  }, [filtered, burns, state.assignments, state.people]);
 
   const clientCounts = useMemo(() => {
     const counts = new Map<string | "none", number>();
@@ -208,9 +274,18 @@ function BudgetsReportContent() {
           <div className="min-w-0 flex-1 py-3 sm:py-5">
             <ProjectManagerFilterBar
               className="mb-4"
+              title="Project Manager"
               managerTabs={managerTabs}
               managerFilter={managerFilter}
               onSelect={setManagerFilter}
+            />
+
+            <BudgetStatusLine
+              tracked={budgetStatus.tracked}
+              healthy={budgetStatus.healthy}
+              near={budgetStatus.near}
+              over={budgetStatus.over}
+              className="mb-4"
             />
 
             <label className="relative mb-4 block md:hidden">
@@ -260,36 +335,40 @@ function BudgetsReportContent() {
               </p>
             ) : (
               <div className="space-y-6">
-                {groups.map(({ client, projects: groupProjects }) => (
-                  <section key={client?.id ?? "none"}>
-                    <div className="mb-4 flex items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2">
-                      {client ? (
-                        <ProjectColorBar color={client.color} />
-                      ) : null}
-                      <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
-                        {client?.name ?? "No Client"}
-                      </h2>
-                      <span className="text-xs text-[var(--text-muted)]">
-                        {groupProjects.length} project
-                        {groupProjects.length === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {groupProjects.map((project) => (
-                        <BudgetCard
-                          key={project.id}
-                          project={project}
-                          href={budgetHref(project)}
-                        />
+                {packedRows.map((row, rowIndex) => (
+                  <section key={rowIndex}>
+                    <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                      {row.segments.map((segment, segmentIndex) => (
+                        <div
+                          key={`${clientGroupKey(segment.client)}-${segmentIndex}`}
+                          className="flex min-w-0 items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2"
+                          style={{
+                            gridColumn: `span ${Math.min(segment.projects.length, GRID_COLUMNS)}`,
+                          }}
+                        >
+                          {segment.client ? (
+                            <ProjectColorBar color={segment.client.color} />
+                          ) : null}
+                          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
+                            {segment.client?.name ?? "No Client"}
+                          </h2>
+                          <span className="shrink-0 text-xs text-[var(--text-muted)]">
+                            {segment.projects.length} project
+                            {segment.projects.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
                       ))}
-                      <CardGridPlaceholders
-                        count={groupProjects.length}
-                        onAdd={
-                          canManage
-                            ? () => router.push(appHref("/projects"))
-                            : undefined
-                        }
-                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                      {row.segments.flatMap((segment) =>
+                        segment.projects.map((project) => (
+                          <BudgetCard
+                            key={project.id}
+                            project={project}
+                            href={budgetHref(project)}
+                          />
+                        )),
+                      )}
                     </div>
                   </section>
                 ))}

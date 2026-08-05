@@ -30,7 +30,7 @@ import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { toDateKey } from "@/lib/domain/dates";
-import { dueDateToneClass } from "@/lib/domain/tasks";
+import { dueDateToneClass, taskAssignerPersonId } from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import { useViewAs } from "@/lib/view-as";
@@ -61,6 +61,7 @@ function taskMatchesDateRange(
 }
 
 type ProjectFilter = "all" | string;
+type MyRole = "assignee" | "assigner";
 type SortKey =
   | "title"
   | "project"
@@ -466,6 +467,40 @@ function ProjectNavButton({
   );
 }
 
+function MyRoleSubTabs({
+  value,
+  onChange,
+}: {
+  value: MyRole;
+  onChange: (next: MyRole) => void;
+}) {
+  return (
+    <ul className="flex gap-1.5" role="tablist" aria-label="My Tasks role">
+      {(["assignee", "assigner"] as const).map((role) => {
+        const selected = value === role;
+        return (
+          <li key={role}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              onClick={() => onChange(role)}
+              className={cn(
+                "cursor-pointer rounded-md border px-2 py-0.5 text-xs transition-colors",
+                selected
+                  ? "border-[var(--text)] bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                  : "border-transparent text-[var(--text-muted)] hover:bg-[var(--row-hover)]",
+              )}
+            >
+              {role === "assignee" ? "Assignee" : "Assigner"}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function MobileProjectChip({
   active,
   onClick,
@@ -515,6 +550,7 @@ function TasksReportContent() {
     project: "",
     pm: "all",
     mine: "0",
+    myRole: "assignee",
     from: "",
     to: "",
     cp: "1",
@@ -523,6 +559,8 @@ function TasksReportContent() {
   // Members (and View As member) force My Tasks. Org-wide public share stays All/PM.
   const forceMyTasks = !effectiveCanManage && !showingAsManager;
   const myTasksMode = forceMyTasks || filters.mine === "1";
+  const myRole: MyRole =
+    filters.myRole === "assigner" ? "assigner" : "assignee";
   const assigneePersonId = effectivePersonId ?? myPerson?.id ?? null;
   const myTasksPerson =
     (assigneePersonId
@@ -557,10 +595,10 @@ function TasksReportContent() {
 
   function selectMyTasks(on: boolean) {
     if (on) {
-      setFilters({ mine: "1", pm: "all", cp: "1" });
+      setFilters({ mine: "1", pm: "all", cp: "1", myRole: "assignee" });
       return;
     }
-    setFilters({ mine: "0", from: "", to: "", cp: "1" });
+    setFilters({ mine: "0", from: "", to: "", cp: "1", myRole: "assignee" });
   }
 
   const projectById = useMemo(
@@ -580,11 +618,29 @@ function TasksReportContent() {
     [state.clients],
   );
 
-  // Tasks for count/sidebar: assignee-scoped when My Tasks is on.
+  // Tasks for count/sidebar: person-scoped when My Tasks is on.
   const scopeBaseTasks = useMemo(() => {
     if (!myTasksMode || !assigneePersonId) return state.tasks;
-    return state.tasks.filter((t) => t.assignee_person_id === assigneePersonId);
-  }, [state.tasks, myTasksMode, assigneePersonId]);
+    if (myRole === "assignee") {
+      return state.tasks.filter(
+        (t) => t.assignee_person_id === assigneePersonId,
+      );
+    }
+    return state.tasks.filter((t) => {
+      const project = projectById.get(t.project_id);
+      return (
+        taskAssignerPersonId(t, state.people, project ?? null) ===
+        assigneePersonId
+      );
+    });
+  }, [
+    state.tasks,
+    myTasksMode,
+    assigneePersonId,
+    myRole,
+    projectById,
+    state.people,
+  ]);
 
   const projectTaskCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -903,7 +959,17 @@ function TasksReportContent() {
                   className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
                   aria-label="My Tasks"
                 >
-                  <h2 className="mb-3 text-sm font-semibold">My Tasks</h2>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-sm font-semibold">My Tasks</h2>
+                    {myTasksMode ? (
+                      <MyRoleSubTabs
+                        value={myRole}
+                        onChange={(role) =>
+                          setFilters({ myRole: role, cp: "1" })
+                        }
+                      />
+                    ) : null}
+                  </div>
                   <ul className="flex flex-wrap gap-x-4 gap-y-2">
                     <li>
                       <div
@@ -947,12 +1013,28 @@ function TasksReportContent() {
               {showPmBar ? (
                 <ProjectManagerFilterBar
                   className="min-w-0 flex-1"
+                  title="Project Manager"
                   managerTabs={managerTabs}
                   managerFilter={myTasksMode ? "all" : managerFilter}
                   onSelect={setManagerFilter}
                 />
               ) : null}
             </div>
+          ) : null}
+
+          {myTasksMode && !showMyTasksChip ? (
+            <section
+              className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
+              aria-label="My Tasks"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">My Tasks</h2>
+                <MyRoleSubTabs
+                  value={myRole}
+                  onChange={(role) => setFilters({ myRole: role, cp: "1" })}
+                />
+              </div>
+            </section>
           ) : null}
 
           {myTasksMode ? (

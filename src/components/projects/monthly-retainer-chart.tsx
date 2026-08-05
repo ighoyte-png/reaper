@@ -7,6 +7,10 @@ import {
   type MonthBurnBar,
 } from "@/lib/domain/budget";
 
+function isCurrentMonth(year: number, monthIndex: number, asOf = new Date()) {
+  return year === asOf.getFullYear() && monthIndex === asOf.getMonth();
+}
+
 function isFutureMonth(year: number, monthIndex: number, asOf = new Date()) {
   const y = asOf.getFullYear();
   const m = asOf.getMonth();
@@ -18,6 +22,161 @@ const hatchStyle = {
     "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
 } as const;
 
+function barSplit(
+  bar: MonthBurnBar,
+  unit: "hours" | "amount",
+): { used: number; future: number; total: number } {
+  if (unit === "amount") {
+    const used = bar.usedAmount;
+    const future = bar.futureAmount;
+    return { used, future, total: used + future };
+  }
+  const used = bar.usedHours;
+  const future = bar.futureHours;
+  return { used, future, total: used + future };
+}
+
+function MonthBarColumn({
+  bar,
+  unit,
+  total,
+  used,
+  future,
+  maxValue,
+  cap,
+  showCapLine,
+  compact,
+  selected,
+  onMonthSelect,
+}: {
+  bar: MonthBurnBar;
+  unit: "hours" | "amount";
+  total: number;
+  used: number;
+  future: number;
+  maxValue: number;
+  cap: number;
+  showCapLine: boolean;
+  compact: boolean;
+  selected: boolean;
+  onMonthSelect?: (bar: MonthBurnBar) => void;
+}) {
+  const asOf = new Date();
+  const current = isCurrentMonth(bar.year, bar.monthIndex, asOf);
+  const futureMonth = isFutureMonth(bar.year, bar.monthIndex, asOf);
+
+  const valuePct =
+    maxValue <= 0 ? 0 : Math.min(100, Math.max(0, (total / maxValue) * 100));
+  const withinCap = Math.min(total, cap > 0 ? cap : total);
+  const overCap = cap > 0 ? Math.max(0, total - cap) : 0;
+  const withinPct =
+    maxValue <= 0 ? 0 : Math.min(100, (withinCap / maxValue) * 100);
+  const overPct =
+    maxValue <= 0 ? 0 : Math.min(100, (overCap / maxValue) * 100);
+
+  function formatValue(n: number): string {
+    if (unit === "amount") return formatMoney(n);
+    return formatHours(n);
+  }
+
+  const showSplit = current && used > 0 && future > 0;
+
+  function renderWithinBar(heightPct: number) {
+    if (showSplit) {
+      const usedPct = total > 0 ? (used / total) * 100 : 0;
+      const futurePct = total > 0 ? (future / total) * 100 : 0;
+      return (
+        <div
+          className="relative flex w-full flex-col justify-end overflow-hidden"
+          style={{ height: `${heightPct}%` }}
+        >
+          <div
+            className="relative w-full overflow-hidden bg-[var(--accent)]"
+            style={{ height: `${futurePct}%` }}
+          >
+            <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+          </div>
+          <div
+            className="w-full bg-[var(--accent)]"
+            style={{ height: `${usedPct}%` }}
+          />
+        </div>
+      );
+    }
+
+    const hatched = futureMonth || (current && future > 0 && used <= 0);
+    return (
+      <div
+        className="relative w-full overflow-hidden bg-[var(--accent)]"
+        style={{ height: `${heightPct}%` }}
+      >
+        {hatched ? (
+          <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      role={onMonthSelect ? "button" : undefined}
+      tabIndex={onMonthSelect ? 0 : undefined}
+      onClick={onMonthSelect ? () => onMonthSelect(bar) : undefined}
+      onKeyDown={
+        onMonthSelect
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onMonthSelect(bar);
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        "relative flex h-full min-w-0 flex-1 items-end justify-center",
+        onMonthSelect && "cursor-pointer",
+        selected && "rounded-t ring-2 ring-[var(--accent)] ring-offset-1",
+      )}
+      title={`${bar.label}: ${formatValue(total)}${
+        cap > 0 ? ` / ${formatValue(cap)}` : ""
+      }${futureMonth ? " (planned)" : ""}`}
+    >
+      {total <= 0 ? (
+        <div
+          className={cn(
+            "w-full rounded-t bg-[var(--border)]",
+            compact ? "max-w-[28px] h-0.5" : "max-w-[37px] h-1",
+          )}
+        />
+      ) : showCapLine && overCap > 0 ? (
+        <div
+          className={cn(
+            "relative flex w-full flex-col justify-end overflow-hidden rounded-t",
+            compact ? "max-w-[28px]" : "max-w-[37px]",
+          )}
+          style={{ height: `${valuePct}%` }}
+        >
+          <div
+            className="w-full bg-[var(--status-over)]"
+            style={{ height: `${(overPct / valuePct) * 100}%` }}
+          />
+          {renderWithinBar((withinPct / valuePct) * 100)}
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "relative flex w-full flex-col justify-end overflow-hidden rounded-t",
+            compact ? "max-w-[28px]" : "max-w-[37px]",
+          )}
+          style={{ height: `${Math.max(valuePct, 4)}%` }}
+        >
+          {renderWithinBar(100)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Calendar-year (or trailing-month) bar chart of planned burn. */
 export function ProjectYearBurnChart({
   bars,
@@ -26,6 +185,8 @@ export function ProjectYearBurnChart({
   year,
   className,
   compact = false,
+  selectedMonthKey,
+  onMonthSelect,
 }: {
   bars: MonthBurnBar[];
   unit?: "hours" | "amount";
@@ -35,12 +196,15 @@ export function ProjectYearBurnChart({
   className?: string;
   /** Tighter layout for client portal. */
   compact?: boolean;
+  /** Highlight a month bar (yyyy-MM). */
+  selectedMonthKey?: string;
+  onMonthSelect?: (bar: MonthBurnBar) => void;
 }) {
   const labelYear = year ?? bars[0]?.year;
   const cap = monthlyCap ?? 0;
   const maxValue = Math.max(
     cap,
-    ...bars.map((b) => b.value),
+    ...bars.map((b) => barSplit(b, unit).total),
     unit === "hours" ? 1 : 1,
   );
   const capPct = maxValue <= 0 ? 0 : (cap / maxValue) * 100;
@@ -66,24 +230,27 @@ export function ProjectYearBurnChart({
           compact ? "mb-0.5 h-4" : "mb-1",
         )}
       >
-        {bars.map((bar) => (
-          <div
-            key={`v-${bar.key}`}
-            className="min-w-0 flex-1 text-center"
-            title={`${bar.label}: ${formatValue(bar.value)}${
-              cap > 0 ? ` / ${formatValue(cap)}` : ""
-            }`}
-          >
-            <span
-              className={cn(
-                "block max-w-full truncate tabular-nums text-[var(--text-muted)]",
-                compact ? "text-[8px]" : "text-[9px] sm:text-[10px]",
-              )}
+        {bars.map((bar) => {
+          const { total } = barSplit(bar, unit);
+          return (
+            <div
+              key={`v-${bar.key}`}
+              className="min-w-0 flex-1 text-center"
+              title={`${bar.label}: ${formatValue(total)}${
+                cap > 0 ? ` / ${formatValue(cap)}` : ""
+              }`}
             >
-              {bar.value > 0 ? formatValue(bar.value) : "·"}
-            </span>
-          </div>
-        ))}
+              <span
+                className={cn(
+                  "block max-w-full truncate tabular-nums text-[var(--text-muted)]",
+                  compact ? "text-[8px]" : "text-[9px] sm:text-[10px]",
+                )}
+              >
+                {total > 0 ? formatValue(total) : "·"}
+              </span>
+            </div>
+          );
+        })}
       </div>
       <div
         className={cn(
@@ -99,75 +266,22 @@ export function ProjectYearBurnChart({
           />
         ) : null}
         {bars.map((bar) => {
-          const future = unit === "hours" && isFutureMonth(bar.year, bar.monthIndex);
-          const valuePct =
-            maxValue <= 0
-              ? 0
-              : Math.min(100, Math.max(0, (bar.value / maxValue) * 100));
-          const withinCap = Math.min(bar.value, cap > 0 ? cap : bar.value);
-          const overCap = cap > 0 ? Math.max(0, bar.value - cap) : 0;
-          const withinPct =
-            maxValue <= 0 ? 0 : Math.min(100, (withinCap / maxValue) * 100);
-          const overPct =
-            maxValue <= 0 ? 0 : Math.min(100, (overCap / maxValue) * 100);
-
+          const { used, future, total } = barSplit(bar, unit);
           return (
-            <div
+            <MonthBarColumn
               key={bar.key}
-              className="relative flex h-full min-w-0 flex-1 items-end justify-center"
-              title={`${bar.label}: ${formatValue(bar.value)}${
-                cap > 0 ? ` / ${formatValue(cap)}` : ""
-              }${future ? " (planned)" : ""}`}
-            >
-              {bar.value <= 0 ? (
-                <div
-                  className={cn(
-                    "w-full rounded-t bg-[var(--border)]",
-                    compact ? "max-w-[28px] h-0.5" : "max-w-[37px] h-1",
-                  )}
-                />
-              ) : showCapLine && overCap > 0 ? (
-                <div
-                  className={cn(
-                    "relative flex w-full flex-col justify-end overflow-hidden rounded-t",
-                    compact ? "max-w-[28px]" : "max-w-[37px]",
-                  )}
-                  style={{ height: `${valuePct}%` }}
-                >
-                  <div
-                    className="w-full bg-[var(--status-over)]"
-                    style={{ height: `${(overPct / valuePct) * 100}%` }}
-                  />
-                  <div
-                    className="w-full bg-[var(--accent)]"
-                    style={{ height: `${(withinPct / valuePct) * 100}%` }}
-                  />
-                  {future ? (
-                    <div
-                      className="absolute inset-0"
-                      style={hatchStyle}
-                      aria-hidden
-                    />
-                  ) : null}
-                </div>
-              ) : (
-                <div
-                  className={cn(
-                    "relative w-full overflow-hidden rounded-t bg-[var(--accent)]",
-                    compact ? "max-w-[28px]" : "max-w-[37px]",
-                  )}
-                  style={{ height: `${Math.max(valuePct, 4)}%` }}
-                >
-                  {future ? (
-                    <div
-                      className="absolute inset-0"
-                      style={hatchStyle}
-                      aria-hidden
-                    />
-                  ) : null}
-                </div>
-              )}
-            </div>
+              bar={bar}
+              unit={unit}
+              total={total}
+              used={used}
+              future={future}
+              maxValue={maxValue}
+              cap={cap}
+              showCapLine={showCapLine}
+              compact={compact}
+              selected={selectedMonthKey === bar.key}
+              onMonthSelect={onMonthSelect}
+            />
           );
         })}
       </div>
@@ -181,6 +295,8 @@ export function ProjectYearBurnChart({
                 unit === "hours" &&
                   isFutureMonth(bar.year, bar.monthIndex) &&
                   "italic",
+                selectedMonthKey === bar.key &&
+                  "font-semibold text-[var(--text)]",
               )}
             >
               {bar.label.split(" ")[0]}
@@ -193,7 +309,7 @@ export function ProjectYearBurnChart({
           <p className="mt-1 text-[10px] text-[var(--text-muted)]">
             Monthly cap {formatValue(cap)}
             <span className="ml-1 text-[#ef4444]">— —</span>
-            <span className="ml-2">· hatched bars are future / planned</span>
+            <span className="ml-2">· hatched = future / planned</span>
           </p>
         ) : (
           <p className="mt-1 text-[10px] text-[var(--text-muted)]">

@@ -24,8 +24,8 @@ const LEGEND: {
 }[] = [
   { level: "over", range: "100%+", label: "Overbooked" },
   { level: "near", range: "85-99%", label: "Near Capacity" },
-  { level: "healthy", range: "40-84%", label: "Optimal" },
-  { level: "low", range: "<40%", label: "Available / Out" },
+  { level: "healthy", range: "60-84%", label: "Optimal" },
+  { level: "low", range: "<60%", label: "Underutilized" },
 ];
 
 function levelTone(level: CapacityLevel) {
