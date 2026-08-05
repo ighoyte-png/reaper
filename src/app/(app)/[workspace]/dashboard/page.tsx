@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { addWeeks, format, parseISO } from "date-fns";
 import {
   AlertTriangle,
@@ -119,6 +120,7 @@ export default function DashboardPage() {
     profile,
     upsertBulletin,
     deleteBulletin,
+    dismissBulletin,
     dismissBulletinFromBoard,
     dismissMention,
     newId,
@@ -131,6 +133,7 @@ export default function DashboardPage() {
   const { push } = useToast();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
+  const router = useRouter();
   const {
     viewAsPersonId,
     setViewAsPersonId,
@@ -452,7 +455,11 @@ export default function DashboardPage() {
         : state.bulletins.filter((b) =>
             bulletinVisibleToPerson(b, personalPersonId, audienceCtx),
           )
-    ).filter((b) => !dismissed.has(b.id));
+    ).filter((b) => {
+      // System notices: dismiss hides from board. Regular: dismiss only clears wash.
+      if (!dismissed.has(b.id)) return true;
+      return !isSystemBulletin(b);
+    });
     return [...filtered].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.created_at.localeCompare(a.created_at);
@@ -465,6 +472,11 @@ export default function DashboardPage() {
     showingAsManager,
     personalPersonId,
   ]);
+
+  const dismissedBulletinIds = useMemo(
+    () => new Set(state.dismissed_bulletin_ids ?? []),
+    [state.dismissed_bulletin_ids],
+  );
 
   const atRisk = useMemo(() => {
     if (!showOrgDashboard || !personalPersonId) return [];
@@ -733,6 +745,96 @@ export default function DashboardPage() {
     [state.unread_bulletin_ids],
   );
 
+  // One-time: seed dismissals for already-read regular posts so wash only
+  // applies to currently unread (or newly arrived) notices.
+  useEffect(() => {
+    if (isPublicShare || !profile?.id) return;
+    const key = `reaper-bulletin-wash-v1:${profile.id}`;
+    try {
+      if (localStorage.getItem(key)) return;
+    } catch {
+      return;
+    }
+    const audienceCtx = {
+      pods: state.pods,
+      podMembers: state.pod_members,
+    };
+    for (const b of state.bulletins) {
+      if (b.tone === "success" || isSystemBulletin(b)) continue;
+      if (b.created_by_profile_id === profile.id) continue;
+      if (!bulletinVisibleToPerson(b, mentionPersonId, audienceCtx)) {
+        if (!(manageWithoutPerson && b.audience === "all")) continue;
+      }
+      if (unreadBulletins.has(b.id)) continue;
+      if (dismissedBulletinIds.has(b.id)) continue;
+      dismissBulletinFromBoard(b.id);
+    }
+    try {
+      localStorage.setItem(key, "1");
+    } catch {
+      /* ignore */
+    }
+  }, [
+    isPublicShare,
+    profile?.id,
+    state.bulletins,
+    state.pods,
+    state.pod_members,
+    mentionPersonId,
+    manageWithoutPerson,
+    unreadBulletins,
+    dismissedBulletinIds,
+    dismissBulletinFromBoard,
+  ]);
+
+  // Each dashboard visit: clear orange unread dots for regular bulletins
+  // (wash stays until X). Runs once shortly after mount with latest state.
+  const bulletinDotClearRef = useRef({
+    bulletins,
+    unreadBulletins,
+    mentionPersonId,
+    manageWithoutPerson,
+    pods: state.pods,
+    podMembers: state.pod_members,
+    dismissBulletin,
+  });
+  bulletinDotClearRef.current = {
+    bulletins,
+    unreadBulletins,
+    mentionPersonId,
+    manageWithoutPerson,
+    pods: state.pods,
+    podMembers: state.pod_members,
+    dismissBulletin,
+  };
+  useEffect(() => {
+    if (isPublicShare || !profile?.id) return;
+    const profileId = profile.id;
+    const timer = window.setTimeout(() => {
+      const snap = bulletinDotClearRef.current;
+      const audienceCtx = {
+        pods: snap.pods,
+        podMembers: snap.podMembers,
+      };
+      for (const b of snap.bulletins) {
+        if (b.tone !== "default") continue;
+        if (
+          !isUnreadBulletin(
+            b,
+            snap.mentionPersonId,
+            profileId,
+            snap.unreadBulletins,
+            { manageWithoutPerson: snap.manageWithoutPerson, ...audienceCtx },
+          )
+        ) {
+          continue;
+        }
+        snap.dismissBulletin(b.id);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [isPublicShare, profile?.id]);
+
   const unreadBulletinCount = useMemo(() => {
     if (!mentionPersonId && !manageWithoutPerson) return 0;
     const audienceCtx = {
@@ -768,10 +870,14 @@ export default function DashboardPage() {
       .map((c) => {
         const task = taskById.get(c.task_id);
         const project = task ? projectById.get(task.project_id) : undefined;
+        const client =
+          project?.client_id != null
+            ? clientById.get(project.client_id)
+            : undefined;
         const author = state.profiles.find(
           (p) => p.id === c.author_profile_id,
         );
-        return { comment: c, task, project, author };
+        return { comment: c, task, project, client, author };
       })
       .filter((row) => row.task && row.project)
       .sort((a, b) =>
@@ -784,6 +890,7 @@ export default function DashboardPage() {
     state.tasks,
     state.profiles,
     projectById,
+    clientById,
     unreadMentions,
   ]);
 
@@ -857,8 +964,9 @@ export default function DashboardPage() {
               pods={state.pods}
               projects={state.projects}
               projectHref={projectHref}
-              canEdit={effectiveCanManage && !isPublicShare}
+              canCreate={effectiveCanManage && !isPublicShare}
               profileId={profile?.id ?? null}
+              dismissedIds={dismissedBulletinIds}
               isUnread={(b) =>
                 isUnreadBulletin(
                   b,
@@ -873,7 +981,9 @@ export default function DashboardPage() {
                 )
               }
               unreadCount={unreadBulletinCount}
+              onDismissUnread={dismissBulletin}
               onDismissFromBoard={dismissBulletinFromBoard}
+              onNavigate={(href) => router.push(href)}
               onSave={(row) => {
                 upsertBulletin(row);
                 push("Bulletin saved");
@@ -1240,6 +1350,7 @@ function TaggedCommentsPanel({
     comment: TaskComment;
     task: Task | undefined;
     project: Project | undefined;
+    client: Client | undefined;
     author: Profile | undefined;
   }[];
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
@@ -1282,40 +1393,50 @@ function TaggedCommentsPanel({
               : cn("max-h-72 overflow-y-auto", !compact && "max-h-96"),
           )}
         >
-          {taggedComments.map(({ comment, task, project, author }) => (
-            <li key={comment.id} className="relative">
-              <Link
-                href={projectHref(project!, `task=${task!.id}`)}
-                className="block rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
-              >
-                <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
-                  <span className="truncate">
-                    {author?.full_name ?? "Someone"} · {project!.name}
-                  </span>
-                  <span className="shrink-0">
-                    {comment.created_at.slice(0, 10)}
-                  </span>
-                </div>
-                <div className="truncate text-xs font-medium">{task!.title}</div>
-                <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
-                  <RichNotesHtml html={comment.body} />
-                </div>
-              </Link>
-              <button
-                type="button"
-                className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                aria-label="Dismiss tagged comment"
-                title="Dismiss"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onDismiss(comment.id);
-                }}
-              >
-                <X size={14} strokeWidth={2} />
-              </button>
-            </li>
-          ))}
+          {taggedComments.map(({ comment, task, project, client, author }) => {
+            const location = [
+              author?.full_name ?? "Someone",
+              client?.name,
+              project!.name,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <li key={comment.id} className="relative">
+                <Link
+                  href={projectHref(project!, `task=${task!.id}`)}
+                  className="block rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
+                  onClick={() => onDismiss(comment.id)}
+                >
+                  <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
+                    <span className="truncate">{location}</span>
+                    <span className="shrink-0">
+                      {comment.created_at.slice(0, 10)}
+                    </span>
+                  </div>
+                  <div className="truncate text-xs font-medium">
+                    {task!.title}
+                  </div>
+                  <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
+                    <RichNotesHtml html={comment.body} />
+                  </div>
+                </Link>
+                <button
+                  type="button"
+                  className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                  aria-label="Dismiss tagged comment"
+                  title="Dismiss"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDismiss(comment.id);
+                  }}
+                >
+                  <X size={14} strokeWidth={2} />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -2012,6 +2133,8 @@ function emptyBulletin(id: string, profileId: string | null): BulletinDraft {
   return {
     id,
     project_id: null,
+    task_id: null,
+    milestone_id: null,
     title: "",
     body: "",
     pinned: false,
@@ -2031,11 +2154,14 @@ function BulletinBoard({
   pods,
   projects,
   projectHref,
-  canEdit,
+  canCreate,
   profileId,
+  dismissedIds,
   isUnread,
   unreadCount = 0,
+  onDismissUnread,
   onDismissFromBoard,
+  onNavigate,
   onSave,
   onDelete,
   newId,
@@ -2047,11 +2173,14 @@ function BulletinBoard({
   pods: Pod[];
   projects: Project[];
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
-  canEdit: boolean;
+  canCreate: boolean;
   profileId: string | null;
+  dismissedIds: Set<string>;
   isUnread?: (b: Bulletin) => boolean;
   unreadCount?: number;
+  onDismissUnread?: (id: string) => void;
   onDismissFromBoard?: (id: string) => void;
+  onNavigate?: (href: string) => void;
   onSave: (row: BulletinDraft) => void;
   onDelete: (id: string) => void;
   newId: (prefix: string) => string;
@@ -2076,6 +2205,14 @@ function BulletinBoard({
     return parts.length > 0 ? parts.join(" · ") : "No recipients";
   }
 
+  function linkHref(b: Bulletin, project: Project): string {
+    if (b.task_id) return projectHref(project, `task=${b.task_id}`);
+    if (b.milestone_id) {
+      return projectHref(project, `milestone=${b.milestone_id}`);
+    }
+    return projectHref(project);
+  }
+
   return (
     <section className={panelClass()}>
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -2093,7 +2230,7 @@ function BulletinBoard({
             </span>
           ) : null}
         </div>
-        {canEdit ? (
+        {canCreate ? (
           <button
             type="button"
             className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-[var(--accent)] px-2 text-xs text-[var(--accent-fg)] hover:opacity-90"
@@ -2117,13 +2254,23 @@ function BulletinBoard({
             const unread = isUnread?.(b) ?? false;
             const systemNotice = isSystemBulletin(b);
             const success = b.tone === "success";
+            const isAuthor =
+              Boolean(profileId) && b.created_by_profile_id === profileId;
+            const washed =
+              !success && !systemNotice && !isAuthor && !dismissedIds.has(b.id);
             const linkedProject = b.project_id
               ? projects.find((p) => p.id === b.project_id)
               : null;
-            const goToProject = () => {
-              if (!linkedProject) return;
-              window.location.href = projectHref(linkedProject);
+            const href = linkedProject ? linkHref(b, linkedProject) : null;
+            const goToLinked = () => {
+              if (!href) return;
+              if (success || systemNotice) onDismissUnread?.(b.id);
+              onNavigate?.(href);
             };
+            const showDismissX =
+              Boolean(onDismissFromBoard) &&
+              (systemNotice || (washed && !isAuthor));
+            const canAuthorEdit = isAuthor && !systemNotice;
             return (
               <li
                 key={b.id}
@@ -2131,26 +2278,26 @@ function BulletinBoard({
                   "rounded-md border px-3 py-2 text-sm",
                   success
                     ? "border-transparent bg-[var(--status-healthy)]/15"
-                    : unread
+                    : washed
                       ? "border-transparent bg-[var(--status-attention-wash)]"
                       : b.pinned
                         ? "border-transparent bg-[var(--accent)]/5"
                         : "border-[var(--border)]",
-                  linkedProject && "cursor-pointer hover:opacity-95",
+                  href && "cursor-pointer hover:opacity-95",
                 )}
-                onClick={linkedProject ? goToProject : undefined}
+                onClick={href ? goToLinked : undefined}
                 onKeyDown={
-                  linkedProject
+                  href
                     ? (e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          goToProject();
+                          goToLinked();
                         }
                       }
                     : undefined
                 }
-                role={linkedProject ? "link" : undefined}
-                tabIndex={linkedProject ? 0 : undefined}
+                role={href ? "link" : undefined}
+                tabIndex={href ? 0 : undefined}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
@@ -2187,18 +2334,18 @@ function BulletinBoard({
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                   >
-                    {systemNotice && onDismissFromBoard ? (
+                    {showDismissX ? (
                       <button
                         type="button"
                         className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
                         aria-label="Dismiss notice"
                         title="Dismiss"
-                        onClick={() => onDismissFromBoard(b.id)}
+                        onClick={() => onDismissFromBoard?.(b.id)}
                       >
                         <X size={13} strokeWidth={2} />
                       </button>
                     ) : null}
-                    {canEdit && !systemNotice ? (
+                    {canAuthorEdit ? (
                       <>
                         <button
                           type="button"
@@ -2208,6 +2355,8 @@ function BulletinBoard({
                             setEditing({
                               id: b.id,
                               project_id: b.project_id,
+                              task_id: b.task_id ?? null,
+                              milestone_id: b.milestone_id ?? null,
                               title: b.title,
                               body: b.body,
                               pinned: b.pinned,
@@ -2391,6 +2540,8 @@ function BulletinBoard({
                   }
                   onSave({
                     ...editing,
+                    task_id: editing.task_id ?? null,
+                    milestone_id: editing.milestone_id ?? null,
                     title: editing.title.trim(),
                     audience_pod_ids: editing.audience_pod_ids ?? [],
                     created_by_profile_id:

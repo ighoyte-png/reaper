@@ -267,7 +267,14 @@ export function MentionDesktopListener() {
           ? (snap.projects.find((p) => p.id === bulletin.project_id) ?? null)
           : null;
         const href = linkedProject
-          ? projectHref(linkedProject)
+          ? bulletin.task_id
+            ? projectHref(linkedProject, `task=${bulletin.task_id}`)
+            : bulletin.milestone_id
+              ? projectHref(
+                  linkedProject,
+                  `milestone=${bulletin.milestone_id}`,
+                )
+              : projectHref(linkedProject)
           : appHref("/dashboard");
         const isSuccess = bulletin.tone === "success";
         const notifTitle = isSuccess

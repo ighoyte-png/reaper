@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -51,6 +52,7 @@ export function SortableMilestoneList({
   onReorder,
   onToggleApproved,
   onEdit,
+  focusMilestoneId = null,
 }: {
   milestones: Milestone[];
   project: Project;
@@ -60,11 +62,22 @@ export function SortableMilestoneList({
   onReorder: (reordered: Milestone[]) => void;
   onToggleApproved: (milestone: Milestone, approved: boolean) => void;
   onEdit: (milestone: Milestone) => void;
+  focusMilestoneId?: string | null;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+
+  useEffect(() => {
+    if (!focusMilestoneId) return;
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(`milestone-row-${focusMilestoneId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [focusMilestoneId]);
 
   function handleDragEnd(event: DragEndEvent) {
     if (!canManage) return;
@@ -98,6 +111,7 @@ export function SortableMilestoneList({
               formatDisplayDate={formatDisplayDate}
               onToggleApproved={onToggleApproved}
               onEdit={onEdit}
+              focused={focusMilestoneId === m.id}
             />
           ))}
         </div>
@@ -114,6 +128,7 @@ function SortableMilestoneRow({
   formatDisplayDate,
   onToggleApproved,
   onEdit,
+  focused = false,
 }: {
   milestone: Milestone;
   project: Project;
@@ -122,6 +137,7 @@ function SortableMilestoneRow({
   formatDisplayDate: (dateKey: string | null) => string;
   onToggleApproved: (milestone: Milestone, approved: boolean) => void;
   onEdit: (milestone: Milestone) => void;
+  focused?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: milestone.id, disabled: !canManage });
@@ -135,13 +151,18 @@ function SortableMilestoneRow({
 
   return (
     <div
+      id={`milestone-row-${milestone.id}`}
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.6 : 1,
       }}
-      className="space-y-1.5"
+      className={cn(
+        "space-y-1.5 rounded-md",
+        focused &&
+          "bg-[var(--accent)]/15 p-2 ring-1 ring-[var(--accent)]/25",
+      )}
     >
       <div className="flex items-start gap-1.5">
         {canManage ? (

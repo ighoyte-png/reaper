@@ -95,6 +95,7 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusTaskId = searchParams.get("task");
+  const focusMilestoneId = searchParams.get("milestone");
   const appHref = useAppHref();
   const budgetHref = useBudgetHref();
   const projectHref = useProjectHref();
@@ -710,6 +711,7 @@ export default function ProjectDetailPage() {
                       today={today}
                       canManage={canEdit && progressEditMode}
                       formatDisplayDate={formatDisplayDate}
+                      focusMilestoneId={focusMilestoneId}
                       onReorder={(reordered) => {
                         reordered.forEach((m, i) => {
                           if (m.sort_order !== i) {
@@ -1001,6 +1003,7 @@ export default function ProjectDetailPage() {
                       today={today}
                       canManage={canEdit && progressEditMode}
                       formatDisplayDate={formatDisplayDate}
+                      focusMilestoneId={focusMilestoneId}
                       onReorder={(reordered) => {
                         reordered.forEach((m, i) => {
                           if (m.sort_order !== i) {

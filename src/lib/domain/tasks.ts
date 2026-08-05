@@ -474,6 +474,7 @@ export function buildTaskInReviewBulletin(opts: {
   id: string;
   organizationId: string;
   projectId: string;
+  taskId: string;
   assignerPersonId: string;
   taskTitle: string;
   assigneeName: string | null;
@@ -485,6 +486,8 @@ export function buildTaskInReviewBulletin(opts: {
     id: opts.id,
     organization_id: opts.organizationId,
     project_id: opts.projectId,
+    task_id: opts.taskId,
+    milestone_id: null,
     title: taskInReviewBulletinTitle({
       taskTitle: opts.taskTitle,
       assigneeName: opts.assigneeName,

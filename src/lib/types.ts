@@ -220,6 +220,10 @@ export interface Bulletin {
   id: string;
   organization_id: string;
   project_id: string | null;
+  /** Deep-link for task in-review system notices. */
+  task_id: string | null;
+  /** Deep-link for milestone approval system notices. */
+  milestone_id: string | null;
   title: string;
   body: string;
   pinned: boolean;

@@ -207,6 +207,8 @@ export async function POST(request: Request, { params }: Params) {
       id: bulletinId,
       organization_id: String(project.organization_id),
       project_id: String(project.id),
+      task_id: null,
+      milestone_id: String(milestone.id),
       title,
       body: "",
       pinned: false,

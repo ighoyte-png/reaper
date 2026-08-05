@@ -241,6 +241,8 @@ export function mapBulletin(row: Record<string, unknown>): Bulletin {
     id: String(row.id),
     organization_id: String(row.organization_id),
     project_id: row.project_id ? String(row.project_id) : null,
+    task_id: row.task_id ? String(row.task_id) : null,
+    milestone_id: row.milestone_id ? String(row.milestone_id) : null,
     title: String(row.title ?? ""),
     body: String(row.body ?? ""),
     pinned: Boolean(row.pinned),
@@ -2924,6 +2926,8 @@ export async function upsertBulletinRow(
     id: bulletin.id,
     organization_id: bulletin.organization_id,
     project_id: bulletin.project_id,
+    task_id: bulletin.task_id,
+    milestone_id: bulletin.milestone_id,
     title: bulletin.title,
     body: bulletin.body,
     pinned: bulletin.pinned,
@@ -2937,11 +2941,27 @@ export async function upsertBulletinRow(
   const { error } = await supabase.from("bulletins").upsert(payload);
   if (!error) return;
 
+  const missingLinkCols =
+    /Could not find the '(task_id|milestone_id)' column/i.test(error.message) ||
+    (error.code === "PGRST204" &&
+      /(task_id|milestone_id)/i.test(error.message));
+  if (missingLinkCols) {
+    const { task_id: _t, milestone_id: _m, ...withoutLinks } = payload;
+    const retryLinks = await supabase.from("bulletins").upsert(withoutLinks);
+    if (!retryLinks.error) {
+      console.warn(
+        "bulletins.task_id/milestone_id missing — apply supabase/migrations/078_bulletin_link_targets.sql",
+      );
+      return;
+    }
+  }
+
   const missingTone =
     /Could not find the 'tone' column/i.test(error.message) ||
     (error.code === "PGRST204" && /tone/i.test(error.message));
   if (missingTone) {
-    const { tone: _tone, ...withoutTone } = payload;
+    const { tone: _tone, task_id: _t, milestone_id: _m, ...withoutTone } =
+      payload;
     const retryTone = await supabase.from("bulletins").upsert(withoutTone);
     if (!retryTone.error) {
       console.warn(
@@ -2955,7 +2975,8 @@ export async function upsertBulletinRow(
     /Could not find the 'audience_pod_ids'/i.test(error.message) ||
     (error.code === "PGRST204" && /audience_pod_ids/i.test(error.message));
   if (missingPods) {
-    const { audience_pod_ids: _pods, tone: _tone, ...withoutPods } = payload;
+    const { audience_pod_ids: _pods, tone: _tone, task_id: _t, milestone_id: _m, ...withoutPods } =
+      payload;
     const retryPods = await supabase.from("bulletins").upsert(withoutPods);
     if (!retryPods.error) {
       console.warn(
@@ -3520,6 +3541,8 @@ export async function seedDemoWorkspace(
     id: remapId(ids, b.id),
     organization_id: organizationId,
     project_id: b.project_id ? remapId(ids, b.project_id) : null,
+    task_id: b.task_id ? remapId(ids, b.task_id) : null,
+    milestone_id: b.milestone_id ? remapId(ids, b.milestone_id) : null,
     title: b.title,
     body: b.body,
     pinned: b.pinned,

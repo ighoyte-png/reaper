@@ -316,6 +316,8 @@ function loadDemoState(): DemoState {
       })),
       bulletins: (parsed.bulletins ?? seed.bulletins).map((b) => ({
         ...b,
+        task_id: b.task_id ?? null,
+        milestone_id: b.milestone_id ?? null,
         audience: b.audience === "people" ? "people" : "all",
         audience_person_ids: Array.isArray(b.audience_person_ids)
           ? b.audience_person_ids
@@ -3530,6 +3532,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               id: uid("bulletin"),
               organizationId: row.organization_id,
               projectId: row.project_id,
+              taskId: row.id,
               assignerPersonId,
               taskTitle: row.title,
               assigneeName: assignee?.name ?? null,
@@ -3806,6 +3809,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!manage) return;
         const row = {
           ...withOrg(bulletin),
+          task_id: bulletin.task_id ?? null,
+          milestone_id: bulletin.milestone_id ?? null,
           tone: bulletin.tone === "success" ? "success" : "default",
         } as Bulletin;
         let isNew = false;

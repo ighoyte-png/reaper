@@ -154,6 +154,8 @@ export function approveDemoPortalMilestone(
     id: bulletinId,
     organization_id: state.organization.id,
     project_id: project.id,
+    task_id: null,
+    milestone_id: milestone.id,
     title,
     body: "",
     pinned: false,
