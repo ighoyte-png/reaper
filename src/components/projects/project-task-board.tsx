@@ -1995,9 +1995,7 @@ function ListSection({
           >
             <GripVertical size={14} />
           </button>
-        ) : (
-          <span className="w-3.5" />
-        )}
+        ) : null}
         <button
           type="button"
           className="cursor-pointer text-[var(--text-muted)]"
@@ -2546,7 +2544,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
             !isExiting &&
             "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25",
         )}
-        style={{ paddingLeft: 8 }}
+        style={{ paddingLeft: ctx.manageLists ? 8 : 0 }}
         onAnimationEnd={(e) => {
           if (!isExiting) return;
           if (e.target !== e.currentTarget) return;
@@ -2565,9 +2563,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
           >
             <GripVertical size={14} />
           </button>
-        ) : (
-          <span className="w-4" />
-        )}
+        ) : null}
         <span
           aria-hidden
           className={cn(
@@ -2768,7 +2764,10 @@ function TaskRow({
   const nestIndent = depth * 16;
   const nestLineLeft =
     depth > 0
-      ? 8 + (depth - 1) * 16 + 16 + 6 + 5 - 2 + 3 - 2 - nestIndent
+      ? (ctx.manageLists ? 8 : 0) +
+        (depth - 1) * 16 +
+        (ctx.manageLists ? 16 + 6 + 5 - 2 + 3 - 2 : 5 - 2 + 3 - 2) -
+        nestIndent
       : 0;
 
   if (isEditing) {
@@ -2871,7 +2870,7 @@ function TaskRow({
             ? "cursor-grab touch-none active:cursor-grabbing"
             : !ctx.readOnly && "cursor-pointer",
         )}
-        style={{ paddingLeft: 8 }}
+        style={{ paddingLeft: ctx.manageLists ? 8 : 0 }}
         title={
           multiSelectDrag ? "Drag to move all selected tasks" : undefined
         }
@@ -2905,9 +2904,7 @@ function TaskRow({
           >
             <GripVertical size={14} />
           </button>
-        ) : (
-          <span className="w-4" />
-        )}
+        ) : null}
         <button
           type="button"
           className={cn(

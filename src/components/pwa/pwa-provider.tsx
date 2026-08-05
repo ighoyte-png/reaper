@@ -55,6 +55,22 @@ function isStandaloneDisplay(): boolean {
   return Boolean(nav.standalone);
 }
 
+function navigateLaunchTarget(
+  target: string,
+  router: ReturnType<typeof useRouter>,
+) {
+  try {
+    const url = new URL(target, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      window.location.assign(url.href);
+      return;
+    }
+    router.push(`${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    window.location.assign(target);
+  }
+}
+
 function readDismissed(): boolean {
   try {
     if (window.localStorage.getItem(LEGACY_DISMISS_KEY) === "1") {
@@ -113,20 +129,30 @@ export function PwaProvider({ children }: { children?: ReactNode }) {
     const onMessage = (event: MessageEvent) => {
       const href = event.data?.href;
       if (event.data?.type !== "REAPER_NOTIFICATION_CLICK" || !href) return;
-      try {
-        const url = new URL(String(href), window.location.origin);
-        if (url.origin === window.location.origin) {
-          router.push(`${url.pathname}${url.search}${url.hash}`);
-          return;
-        }
-      } catch {
-        /* fall through */
-      }
-      window.location.assign(String(href));
+      navigateLaunchTarget(String(href), router);
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () =>
       navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [router]);
+
+  useEffect(() => {
+    const launchQueue = (
+      window as Window & {
+        launchQueue?: {
+          setConsumer: (
+            callback: (params: { targetURL?: string }) => void,
+          ) => void;
+        };
+      }
+    ).launchQueue;
+    if (!launchQueue?.setConsumer) return;
+
+    launchQueue.setConsumer((params) => {
+      const target = params.targetURL;
+      if (!target) return;
+      navigateLaunchTarget(target, router);
+    });
   }, [router]);
 
   useEffect(() => {
