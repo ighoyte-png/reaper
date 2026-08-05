@@ -112,6 +112,7 @@ export default function ProjectDetailPage() {
     toggleProjectFavorite,
     upsertAssignment,
     deleteAssignment,
+    upsertTaskList,
     ensureScheduleRange,
     clearProjectSandboxTrackedData,
     newId,
@@ -154,6 +155,8 @@ export default function ProjectDetailPage() {
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(
     null,
   );
+  /** Task list linked while editing a milestone ("" = none). */
+  const [editingMilestoneListId, setEditingMilestoneListId] = useState("");
   const [confirmDeleteMilestoneId, setConfirmDeleteMilestoneId] = useState<
     string | null
   >(null);
@@ -746,6 +749,14 @@ export default function ProjectDetailPage() {
                           approval_email:
                             m.approval_email || client?.contact_email || "",
                         });
+                        setEditingMilestoneListId(
+                          state.task_lists.find(
+                            (l) =>
+                              l.project_id === project.id &&
+                              l.milestone_id === m.id &&
+                              !l.archived,
+                          )?.id ?? "",
+                        );
                       }}
                     />
                   )}
@@ -1038,6 +1049,14 @@ export default function ProjectDetailPage() {
                           approval_email:
                             m.approval_email || client?.contact_email || "",
                         });
+                        setEditingMilestoneListId(
+                          state.task_lists.find(
+                            (l) =>
+                              l.project_id === project.id &&
+                              l.milestone_id === m.id &&
+                              !l.archived,
+                          )?.id ?? "",
+                        );
                       }}
                     />
                   )}
@@ -1443,6 +1462,7 @@ export default function ProjectDetailPage() {
           onClose={() => {
             setConfirmDeleteMilestoneId(null);
             setEditingMilestone(null);
+            setEditingMilestoneListId("");
           }}
         >
           <div className="grid gap-3">
@@ -1502,6 +1522,30 @@ export default function ProjectDetailPage() {
                     />
                   </Field>
                 </div>
+                <Field label="Task list">
+                  <Select
+                    value={editingMilestoneListId}
+                    onChange={setEditingMilestoneListId}
+                    placeholder="None"
+                    options={[
+                      { value: "", label: "None" },
+                      ...state.task_lists
+                        .filter(
+                          (l) =>
+                            l.project_id === project.id && !l.archived,
+                        )
+                        .sort(
+                          (a, b) =>
+                            a.sort_order - b.sort_order ||
+                            a.name.localeCompare(b.name),
+                        )
+                        .map((l) => ({
+                          value: l.id,
+                          label: l.name,
+                        })),
+                    ]}
+                  />
+                </Field>
                 <div className="space-y-2 rounded-md border border-[var(--border)] p-3">
                   <h3 className="text-sm font-semibold">
                     Client Approval is Ready
@@ -1632,6 +1676,7 @@ export default function ProjectDetailPage() {
                   onClick={() => {
                     setConfirmDeleteMilestoneId(null);
                     setEditingMilestone(null);
+                    setEditingMilestoneListId("");
                   }}
                 >
                   Cancel
@@ -1665,8 +1710,35 @@ export default function ProjectDetailPage() {
                             ? editingMilestone.essential_kind
                             : editingMilestone.essential_kind,
                       });
+                      if (project) {
+                        for (const list of state.task_lists) {
+                          if (
+                            list.project_id !== project.id ||
+                            list.milestone_id !== editingMilestone.id
+                          ) {
+                            continue;
+                          }
+                          if (list.id === editingMilestoneListId) continue;
+                          upsertTaskList({ ...list, milestone_id: null });
+                        }
+                        if (editingMilestoneListId) {
+                          const target = state.task_lists.find(
+                            (l) => l.id === editingMilestoneListId,
+                          );
+                          if (
+                            target &&
+                            target.milestone_id !== editingMilestone.id
+                          ) {
+                            upsertTaskList({
+                              ...target,
+                              milestone_id: editingMilestone.id,
+                            });
+                          }
+                        }
+                      }
                       setConfirmDeleteMilestoneId(null);
                       setEditingMilestone(null);
+                      setEditingMilestoneListId("");
                       push("Milestone saved");
                     }}
                   >
@@ -1693,6 +1765,7 @@ export default function ProjectDetailPage() {
             deleteMilestone(confirmDeleteMilestoneId);
             setConfirmDeleteMilestoneId(null);
             setEditingMilestone(null);
+            setEditingMilestoneListId("");
             push("Milestone deleted");
           }}
         />

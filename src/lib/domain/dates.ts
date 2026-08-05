@@ -91,6 +91,52 @@ export function workingDaysBetween(
   });
 }
 
+/** Advance by N weekdays (skips Sat/Sun). */
+export function addWorkingDays(
+  dateKey: string,
+  workingDaysAhead: number,
+): string {
+  if (workingDaysAhead <= 0) return dateKey;
+  let d = parseDateKey(dateKey);
+  let left = workingDaysAhead;
+  while (left > 0) {
+    d = addDays(d, 1);
+    if (!isWeekend(d)) left -= 1;
+  }
+  return toDateKey(d);
+}
+
+/** Go back by N weekdays (skips Sat/Sun). */
+export function subtractWorkingDays(
+  dateKey: string,
+  workingDaysBack: number,
+): string {
+  if (workingDaysBack <= 0) return dateKey;
+  let d = parseDateKey(dateKey);
+  let left = workingDaysBack;
+  while (left > 0) {
+    d = addDays(d, -1);
+    if (!isWeekend(d)) left -= 1;
+  }
+  return toDateKey(d);
+}
+
+/** Shift a date by N working days (negative = backward). */
+export function shiftWorkingDays(dateKey: string, delta: number): string {
+  if (delta === 0) return dateKey;
+  if (delta > 0) return addWorkingDays(dateKey, delta);
+  return subtractWorkingDays(dateKey, -delta);
+}
+
+/** Signed weekday distance from → to (0 if same day). */
+export function workingDayDelta(fromKey: string, toKey: string): number {
+  if (fromKey === toKey) return 0;
+  if (toKey > fromKey) {
+    return workingDaysBetween(fromKey, toKey).length - 1;
+  }
+  return -(workingDaysBetween(toKey, fromKey).length - 1);
+}
+
 export function formatShortDay(date: Date): string {
   return format(date, "EEE");
 }

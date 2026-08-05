@@ -26,10 +26,15 @@ import { RichNotesHtml } from "@/components/ui/simple-rich-text";
 import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
 import { useData } from "@/lib/data/store";
 import { cn } from "@/lib/cn";
-import { shiftWeek, toDateKey, weekStart } from "@/lib/domain/dates";
+import {
+  shiftWeek,
+  shiftWorkingDays,
+  toDateKey,
+  weekStart,
+  workingDayDelta,
+} from "@/lib/domain/dates";
 import {
   barPastFutureSplit,
-  calendarDayDelta,
   clampDateRange,
   ganttListsForProject,
   ganttTasksForList,
@@ -42,12 +47,11 @@ import {
   listBarColor,
   resolveListBarDates,
   resolveTaskBarDates,
-  shiftDateKey,
   taskBarColor,
   taskShowsClientReviewStar,
   type GanttBarDates,
 } from "@/lib/domain/gantt";
-import { projectAssigneePeople } from "@/lib/domain/project-access";
+import { projectAssigneePeople, projectTeamPersonIds } from "@/lib/domain/project-access";
 import { personAvatarColor } from "@/lib/domain/people";
 import {
   canCompleteTask,
@@ -109,6 +113,22 @@ type DragSnapshot = {
 const EDGE_SCROLL_PX = 40;
 const EDGE_SCROLL_SPEED = 14;
 const CLICK_MOVE_THRESHOLD = 4;
+const AVATAR_XS_PX = 20;
+const BAR_PAD_X = 6;
+const BAR_GAP = 4;
+const MILESTONE_ORANGE = "#f59e0b";
+
+let measureCanvas: HTMLCanvasElement | null = null;
+
+function measureBarLabelWidth(text: string): number {
+  if (typeof document === "undefined") return text.length * 7;
+  if (!measureCanvas) measureCanvas = document.createElement("canvas");
+  const ctx = measureCanvas.getContext("2d");
+  if (!ctx) return text.length * 7;
+  ctx.font =
+    '500 12px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
+  return ctx.measureText(text).width;
+}
 
 function todayKey() {
   return toDateKey(startOfDay(new Date()));
@@ -179,7 +199,13 @@ function GanttBarVisual({
     dates.endKey,
     today,
   );
-  const showLabel = geo.width >= 36 && label;
+  const showAvatar = Boolean(showAssignee && assignee);
+  const avatarSlot = showAvatar ? AVATAR_XS_PX + BAR_GAP : 0;
+  const availableForLabel = geo.width - BAR_PAD_X * 2 - avatarSlot;
+  const labelWidth = label ? measureBarLabelWidth(label) : 0;
+  const showLabel = Boolean(
+    label && availableForLabel >= labelWidth && labelWidth > 0,
+  );
 
   return (
     <div
@@ -194,53 +220,53 @@ function GanttBarVisual({
         height,
         top: "50%",
         transform: "translateY(-50%)",
+        backgroundColor: color,
       }}
       title={title}
       onClick={onClick}
       onPointerDown={readOnly ? undefined : onPointerDownBar}
     >
-      <div
-        className="relative h-full min-w-0 flex-1 overflow-hidden rounded-sm"
-        style={{ backgroundColor: color }}
-      >
-        {emphasizeTop ? (
-          <div
-            className="pointer-events-none absolute inset-x-0 top-0 z-[1] bg-black/20"
-            style={{ height: "12.5%" }}
-            aria-hidden
-          />
-        ) : null}
-        {hasFuture ? (
-          <div
-            className="pointer-events-none absolute inset-y-0 right-0 overflow-hidden rounded-r-sm"
-            style={{
-              left: `${pastFraction * 100}%`,
-            }}
-          >
-            <div
-              className="absolute inset-0 rounded-r-sm"
-              style={GANTT_HATCH_STYLE}
-              aria-hidden
-            />
-          </div>
-        ) : null}
-        {showLabel ? (
-          <span className="pointer-events-none absolute inset-0 flex items-center truncate px-1.5 text-xs font-medium text-white">
-            {label}
-          </span>
-        ) : null}
-      </div>
-      {showAssignee && assignee ? (
-        <PersonAvatar
-          avatarUrl={assignee.avatar_url}
-          avatarAttachmentId={assignee.avatar_attachment_id}
-          name={assignee.name}
-          size="xs"
-          fallback="initials"
-          color={personAvatarColor(assignee)}
-          className="ml-1 shrink-0 ring-1 ring-[var(--border)]"
+      {emphasizeTop ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 z-[1] bg-black/20"
+          style={{ height: "12.5%" }}
+          aria-hidden
         />
       ) : null}
+      {hasFuture ? (
+        <div
+          className="pointer-events-none absolute inset-y-0 right-0 z-[1] overflow-hidden rounded-r-sm"
+          style={{
+            left: `${pastFraction * 100}%`,
+          }}
+        >
+          <div
+            className="absolute inset-0 rounded-r-sm"
+            style={GANTT_HATCH_STYLE}
+            aria-hidden
+          />
+        </div>
+      ) : null}
+      <div className="relative z-[2] flex h-full min-w-0 flex-1 items-center gap-1 px-1.5">
+        {showAvatar && assignee ? (
+          <PersonAvatar
+            avatarUrl={assignee.avatar_url}
+            avatarAttachmentId={assignee.avatar_attachment_id}
+            name={assignee.name}
+            size="xs"
+            fallback="initials"
+            color={personAvatarColor(assignee)}
+            className="shrink-0 ring-1 ring-white/30"
+          />
+        ) : null}
+        {showLabel ? (
+          <span className="pointer-events-none min-w-0 flex-1 text-right text-xs font-medium text-white">
+            {label}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1" aria-hidden />
+        )}
+      </div>
       {!readOnly ? (
         <>
           <span
@@ -253,6 +279,44 @@ function GanttBarVisual({
           />
         </>
       ) : null}
+    </div>
+  );
+}
+
+function GanttMilestoneMarker({
+  dates,
+  columns,
+  done,
+  title,
+}: {
+  dates: GanttBarDates;
+  columns: ScheduleColumn[];
+  done: boolean;
+  title: string;
+}) {
+  const geo = spanColumnsPx(columns, dates.startKey, dates.endKey);
+  if (!geo) return null;
+  const color = done ? "var(--status-healthy)" : MILESTONE_ORANGE;
+  const size = Math.min(geo.width - 4, GANTT_TASK_ROW_H - 6, 22);
+  return (
+    <div
+      className="pointer-events-auto absolute z-10 flex items-center justify-center rounded-sm"
+      style={{
+        left: geo.left,
+        width: geo.width,
+        height: GANTT_TASK_ROW_H - 4,
+        top: "50%",
+        transform: "translateY(-50%)",
+        backgroundColor: color,
+      }}
+      title={title}
+    >
+      <Star
+        size={Math.max(10, size - 6)}
+        className="shrink-0 text-white"
+        fill="currentColor"
+        aria-hidden
+      />
     </div>
   );
 }
@@ -662,6 +726,44 @@ export function ProjectGanttBoard({
     return groups;
   }, [columns]);
 
+  /** Date key → holiday name for project team calendars / leave. */
+  const holidayByDate = useMemo(() => {
+    const map = new Map<string, string>();
+    const teamIds = projectTeamPersonIds(
+      projectId,
+      state.project_members,
+      state.assignments,
+      projectTasks,
+    );
+    const calendarIds = new Set<string>();
+    for (const person of state.people) {
+      if (!teamIds.has(person.id)) continue;
+      if (person.holiday_calendar_id) {
+        calendarIds.add(person.holiday_calendar_id);
+      }
+    }
+    for (const day of state.holiday_calendar_days) {
+      if (!calendarIds.has(day.calendar_id)) continue;
+      if (!map.has(day.date)) map.set(day.date, day.name);
+    }
+    for (const leave of state.leave_days) {
+      if (!teamIds.has(leave.person_id)) continue;
+      if (leave.kind !== "holiday") continue;
+      if (map.has(leave.date)) continue;
+      const name = leave.notes.trim() || "Statutory holiday";
+      map.set(leave.date, name);
+    }
+    return map;
+  }, [
+    projectId,
+    state.project_members,
+    state.assignments,
+    projectTasks,
+    state.people,
+    state.holiday_calendar_days,
+    state.leave_days,
+  ]);
+
   const listSections = useMemo(() => {
     return ganttLists.map((list) => {
       const tasks = ganttTasksForList(projectTasks, list.id);
@@ -781,20 +883,20 @@ export function ProjectGanttBoard({
         const list = ganttLists.find((l) => l.id === listId);
         if (!list) return;
         if (snap.mode === "move") {
-          const delta = calendarDayDelta(snap.originStart, col.startKey);
+          const delta = workingDayDelta(snap.originStart, col.startKey);
           if (delta === 0) return;
           snap.dirty = true;
           snap.didMove = true;
           const newList = {
-            startKey: shiftDateKey(snap.originStart, delta),
-            endKey: shiftDateKey(snap.originEnd, delta),
+            startKey: shiftWorkingDays(snap.originStart, delta),
+            endKey: shiftWorkingDays(snap.originEnd, delta),
           };
           const preview = new Map<string, GanttBarDates>();
           preview.set(`list:${list.id}`, newList);
           for (const [taskId, orig] of snap.listTaskOrigins) {
             preview.set(taskId, {
-              startKey: shiftDateKey(orig.startKey, delta),
-              endKey: shiftDateKey(orig.endKey, delta),
+              startKey: shiftWorkingDays(orig.startKey, delta),
+              endKey: shiftWorkingDays(orig.endKey, delta),
             });
           }
           snap.previewStart = newList.startKey;
@@ -853,26 +955,32 @@ export function ProjectGanttBoard({
       };
 
       if (snap.mode === "move") {
-        const delta = calendarDayDelta(snap.originStart, col.startKey);
+        const delta = workingDayDelta(snap.originStart, col.startKey);
         if (delta === 0) return;
         applyToTasks((orig) => ({
-          startKey: shiftDateKey(orig.startKey, delta),
-          endKey: shiftDateKey(orig.endKey, delta),
+          startKey: shiftWorkingDays(orig.startKey, delta),
+          endKey: shiftWorkingDays(orig.endKey, delta),
         }));
       } else if (snap.mode === "resize-end") {
-        const endDelta = calendarDayDelta(snap.originEnd, col.endKey);
+        const endDelta = workingDayDelta(snap.originEnd, col.endKey);
         if (endDelta === 0) return;
-        applyToTasks((orig) => ({
-          startKey: orig.startKey,
-          endKey: shiftDateKey(orig.endKey, endDelta),
-        }));
+        applyToTasks((orig) => {
+          const endKey = shiftWorkingDays(orig.endKey, endDelta);
+          return {
+            startKey: orig.startKey,
+            endKey: endKey >= orig.startKey ? endKey : orig.startKey,
+          };
+        });
       } else if (snap.mode === "resize-start") {
-        const startDelta = calendarDayDelta(snap.originStart, col.startKey);
+        const startDelta = workingDayDelta(snap.originStart, col.startKey);
         if (startDelta === 0) return;
-        applyToTasks((orig) => ({
-          startKey: shiftDateKey(orig.startKey, startDelta),
-          endKey: orig.endKey,
-        }));
+        applyToTasks((orig) => {
+          const startKey = shiftWorkingDays(orig.startKey, startDelta);
+          return {
+            startKey: startKey <= orig.endKey ? startKey : orig.endKey,
+            endKey: orig.endKey,
+          };
+        });
       }
     },
     [ganttLists, projectTasks, fallbackKey, bumpDragPreview],
@@ -1129,7 +1237,9 @@ export function ProjectGanttBoard({
                   style={{ width: GANTT_LABEL_PX, height: 28 }}
                 />
                 <div className="flex min-w-0">
-                  {columns.map((col) => (
+                  {columns.map((col) => {
+                    const holidayName = holidayByDate.get(col.startKey);
+                    return (
                     <div
                       key={col.id}
                       className={cn(
@@ -1139,24 +1249,63 @@ export function ProjectGanttBoard({
                           : "border-r border-[var(--schedule-day-border)]",
                         col.isToday &&
                           "bg-[var(--today-col)] font-semibold text-[var(--accent)]",
+                        holidayName && !col.isToday && "bg-[var(--leave-block-wash)]",
                       )}
                       style={{ width: col.width, height: 28 }}
+                      title={holidayName ?? undefined}
                     >
-                      {col.isToday ? (
-                        <span
-                          className="absolute inset-x-1 bottom-0.5 h-0.5 rounded-full bg-[var(--accent)]"
+                      {holidayName ? (
+                        <div
+                          className="pointer-events-none absolute inset-0 opacity-80"
+                          style={{
+                            background:
+                              "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
+                          }}
                           aria-hidden
                         />
                       ) : null}
-                      {col.label}
+                      {col.isToday ? (
+                        <span
+                          className="absolute inset-x-1 bottom-0.5 z-[1] h-0.5 rounded-full bg-[var(--accent)]"
+                          aria-hidden
+                        />
+                      ) : null}
+                      <span className="relative z-[1]">{col.label}</span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
 
             {/* Body rows */}
             <div className="relative" style={{ height: totalBodyHeight }}>
+              {holidayByDate.size > 0 ? (
+                <div
+                  className="pointer-events-none absolute bottom-0 top-0 z-[1]"
+                  style={{ left: GANTT_LABEL_PX, width: totalWidth }}
+                  aria-hidden
+                >
+                  {columns.map((col, index) => {
+                    const holidayName = holidayByDate.get(col.startKey);
+                    if (!holidayName) return null;
+                    return (
+                      <div
+                        key={`hol-${col.id}`}
+                        className="absolute inset-y-0"
+                        style={{
+                          left: columnOffsetPx(columns, index),
+                          width: col.width,
+                          backgroundColor: "var(--leave-block-wash)",
+                          backgroundImage:
+                            "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
+                        }}
+                        title={holidayName}
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
               {(() => {
                 let y = 0;
                 const rowNodes: ReactNode[] = [];
@@ -1171,7 +1320,7 @@ export function ProjectGanttBoard({
                   rowNodes.push(
                     <div
                       key={`list-row-${list.id}`}
-                      className="absolute left-0 right-0 flex"
+                      className="absolute left-0 right-0 z-[2] flex"
                       style={{ top: rowY, height: GANTT_LIST_ROW_H }}
                     >
                       <div
@@ -1298,7 +1447,7 @@ export function ProjectGanttBoard({
                     rowNodes.push(
                       <div
                         key={`task-row-${task.id}`}
-                        className="absolute left-0 right-0 flex"
+                        className="absolute left-0 right-0 z-[2] flex"
                         style={{ top: taskRowY, height: GANTT_TASK_ROW_H }}
                       >
                         <div
@@ -1407,13 +1556,17 @@ export function ProjectGanttBoard({
                       startKey: mKey,
                       endKey: mKey,
                     };
+                    const msDone = milestone.status === "done";
+                    const msColor = msDone
+                      ? "var(--status-healthy)"
+                      : MILESTONE_ORANGE;
                     const msRowY = y;
                     y += GANTT_TASK_ROW_H;
 
                     rowNodes.push(
                       <div
                         key={`ms-row-${milestone.id}`}
-                        className="absolute left-0 right-0 flex"
+                        className="absolute left-0 right-0 z-[2] flex"
                         style={{ top: msRowY, height: GANTT_TASK_ROW_H }}
                       >
                         <div
@@ -1425,10 +1578,18 @@ export function ProjectGanttBoard({
                         >
                           <Star
                             size={12}
-                            className="shrink-0 text-[var(--status-near)]"
+                            className="shrink-0"
+                            style={{ color: msColor }}
                             fill="currentColor"
                           />
-                          <span className="min-w-0 truncate text-[11px] font-medium text-[var(--text-muted)]">
+                          <span
+                            className={cn(
+                              "min-w-0 truncate text-[11px] font-medium",
+                              msDone
+                                ? "text-[var(--status-healthy)] line-through"
+                                : "text-[var(--text-muted)]",
+                            )}
+                          >
                             {milestone.name}
                           </span>
                         </div>
@@ -1445,15 +1606,11 @@ export function ProjectGanttBoard({
                             height={GANTT_TASK_ROW_H}
                             interactive={false}
                           />
-                          <GanttBarVisual
+                          <GanttMilestoneMarker
                             dates={mDates}
                             columns={columns}
-                            today={today}
-                            color="var(--status-near)"
-                            height={GANTT_TASK_ROW_H - 4}
-                            label={milestone.name}
+                            done={msDone}
                             title={milestone.name}
-                            readOnly
                           />
                         </div>
                       </div>,

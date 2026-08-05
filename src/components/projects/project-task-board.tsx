@@ -404,6 +404,8 @@ export function ProjectTaskBoard({
     status?: TaskStatus;
     /** undefined = unchanged; null = unassigned */
     assigneeId?: string | null;
+    /** undefined = unchanged; Gantt-enabled lists only in the bar */
+    startDate?: string;
     /** undefined = unchanged */
     dueDate?: string;
   }>({});
@@ -755,7 +757,19 @@ export function ProjectTaskBoard({
   const bulkHasChanges =
     bulkDraft.status !== undefined ||
     bulkDraft.assigneeId !== undefined ||
+    bulkDraft.startDate !== undefined ||
     bulkDraft.dueDate !== undefined;
+
+  const showBulkStartDate = useMemo(() => {
+    if (!viewerCanManage || selected.size === 0) return false;
+    for (const id of selected) {
+      const task = state.tasks.find((t) => t.id === id);
+      if (!task) return false;
+      const list = listById.get(task.list_id);
+      if (!list?.gantt_enabled) return false;
+    }
+    return true;
+  }, [viewerCanManage, selected, state.tasks, listById]);
 
   function moveSelectedToList(destListId: string) {
     if (!manageLists || selected.size === 0 || !destListId) return;
@@ -897,6 +911,13 @@ export function ProjectTaskBoard({
       if (viewerCanManage && bulkDraft.assigneeId !== undefined) {
         next = { ...next, assignee_person_id: bulkDraft.assigneeId };
         changed = true;
+      }
+      if (viewerCanManage && bulkDraft.startDate !== undefined) {
+        const list = listById.get(task.list_id);
+        if (list?.gantt_enabled) {
+          next = { ...next, start_date: bulkDraft.startDate || null };
+          changed = true;
+        }
       }
       if (viewerCanManage && bulkDraft.dueDate !== undefined) {
         next = { ...next, due_date: bulkDraft.dueDate || null };
@@ -1927,6 +1948,24 @@ export function ProjectTaskBoard({
                   ]}
                 />
               </label>
+              {showBulkStartDate ? (
+                <label className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-medium text-[var(--text-muted)]">
+                    Start
+                  </span>
+                  <DateInput
+                    className={cn(inputClass, "mt-0 h-7 py-0 text-xs")}
+                    value={bulkDraft.startDate ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setBulkDraft((prev) => ({
+                        ...prev,
+                        startDate: value || undefined,
+                      }));
+                    }}
+                  />
+                </label>
+              ) : null}
               <label className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-[var(--text-muted)]">
                   Due

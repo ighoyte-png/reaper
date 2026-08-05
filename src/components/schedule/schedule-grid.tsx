@@ -58,8 +58,10 @@ import {
 import {
   shiftMonth,
   shiftWeek,
+  shiftWorkingDays,
   toDateKey,
   weekStart,
+  workingDayDelta,
   workingDaysBetween,
 } from "@/lib/domain/dates";
 import {
@@ -5295,49 +5297,6 @@ function AssignmentAssignerDetails({
       </div>
     </div>
   );
-}
-
-/** Advance by N weekdays (skips Sat/Sun). */
-function addWorkingDays(dateKey: string, workingDaysAhead: number): string {
-  if (workingDaysAhead <= 0) return dateKey;
-  let d = parseISO(dateKey);
-  let left = workingDaysAhead;
-  while (left > 0) {
-    d = new Date(d);
-    d.setDate(d.getDate() + 1);
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) left -= 1;
-  }
-  return toDateKey(d);
-}
-
-/** Go back by N weekdays (skips Sat/Sun). */
-function subtractWorkingDays(dateKey: string, workingDaysBack: number): string {
-  if (workingDaysBack <= 0) return dateKey;
-  let d = parseISO(dateKey);
-  let left = workingDaysBack;
-  while (left > 0) {
-    d = new Date(d);
-    d.setDate(d.getDate() - 1);
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) left -= 1;
-  }
-  return toDateKey(d);
-}
-
-function shiftWorkingDays(dateKey: string, delta: number): string {
-  if (delta === 0) return dateKey;
-  if (delta > 0) return addWorkingDays(dateKey, delta);
-  return subtractWorkingDays(dateKey, -delta);
-}
-
-/** Signed weekday distance from → to (0 if same day). */
-function workingDayDelta(fromKey: string, toKey: string): number {
-  if (fromKey === toKey) return 0;
-  if (toKey > fromKey) {
-    return workingDaysBetween(fromKey, toKey).length - 1;
-  }
-  return -(workingDaysBetween(toKey, fromKey).length - 1);
 }
 
 /**

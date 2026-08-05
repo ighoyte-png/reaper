@@ -181,6 +181,7 @@ export interface ProjectPortalPayload {
     gantt_enabled: boolean;
     start_date: string | null;
     end_date: string | null;
+    sort_order: number;
   }[];
   /** Titles/status only — no assignee, notes, or internal cost data. */
   tasks: {
@@ -330,6 +331,7 @@ export function sanitizeProjectPortal(
         gantt_enabled: Boolean(l.gantt_enabled),
         start_date: l.start_date ?? null,
         end_date: l.end_date ?? null,
+        sort_order: l.sort_order,
       })),
     tasks: state.tasks
       .filter(

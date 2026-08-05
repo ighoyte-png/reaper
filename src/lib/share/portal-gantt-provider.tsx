@@ -35,7 +35,7 @@ export function portalPayloadToDemoState(
     milestone_id: l.milestone_id,
     name: l.name,
     color: null,
-    sort_order: 0,
+    sort_order: l.sort_order,
     archived: false,
     hide_from_client: false,
     gantt_enabled: Boolean(l.gantt_enabled),
