@@ -6,6 +6,8 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { Minus, Plus } from "lucide-react";
@@ -25,6 +27,10 @@ export const TASK_DESCRIPTION_LINE_HEIGHT_PX = 22.75;
 export const TASK_DESCRIPTION_COLLAPSED_LINES = 6;
 export const TASK_DESCRIPTION_COLLAPSED_MAX_PX =
   TASK_DESCRIPTION_LINE_HEIGHT_PX * TASK_DESCRIPTION_COLLAPSED_LINES;
+
+/** Match task-row-exit (280ms) for expand/collapse height. */
+const DESC_HEIGHT_TRANSITION =
+  "transition-[max-height] duration-[280ms] ease-out motion-reduce:transition-none";
 
 function ExpandToggle({
   expanded,
@@ -46,7 +52,10 @@ function ExpandToggle({
       aria-label={
         expanded ? "Collapse task description" : "Expand task description"
       }
-      onClick={onToggle}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
     >
       {expanded ? <Minus size={14} /> : <Plus size={14} />}
     </button>
@@ -169,6 +178,12 @@ export function TaskDescriptionView({
     onCommentsBlockedChange?.(commentsBlocked);
   }, [commentsBlocked, onCommentsBlockedChange]);
 
+  function expandFromBody(e: MouseEvent | KeyboardEvent) {
+    if (!showCollapsed) return;
+    e.preventDefault();
+    setExpandedState(true);
+  }
+
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-[var(--text-muted)]">
@@ -187,12 +202,28 @@ export function TaskDescriptionView({
         </div>
         <div
           className={cn(
-            "overflow-hidden transition-[max-height] duration-200 ease-out motion-reduce:transition-none",
-            showCollapsed && "task-description-collapsed-fade",
+            "overflow-hidden",
+            DESC_HEIGHT_TRANSITION,
+            showCollapsed && "task-description-collapsed-fade cursor-pointer",
           )}
           style={{
             maxHeight: animMaxHeight > 0 ? animMaxHeight : undefined,
           }}
+          role={showCollapsed ? "button" : undefined}
+          tabIndex={showCollapsed ? 0 : undefined}
+          aria-label={
+            showCollapsed ? "Expand task description" : undefined
+          }
+          onClick={showCollapsed ? expandFromBody : undefined}
+          onKeyDown={
+            showCollapsed
+              ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    expandFromBody(e);
+                  }
+                }
+              : undefined
+          }
         >
           <RichNotesHtml
             html={html}
@@ -202,7 +233,10 @@ export function TaskDescriptionView({
         {exceeds ? (
           <ExpandToggle
             expanded={expanded}
-            onToggle={() => setExpandedState(!expanded)}
+            onToggle={() => {
+              if (expanded) setExpandedState(false);
+              else setExpandedState(true);
+            }}
             className="absolute bottom-0 right-0"
           />
         ) : null}
@@ -224,33 +258,20 @@ export function TaskDescriptionEditor({
   initialExpanded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(initialExpanded);
-  const [contentHeight, setContentHeight] = useState(
-    TASK_DESCRIPTION_COLLAPSED_MAX_PX,
-  );
-  const editorMountRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setExpanded(initialExpanded);
   }, [initialExpanded]);
 
-  useLayoutEffect(() => {
-    const root = editorMountRef.current;
-    if (!root) return;
-    const prose = root.querySelector(".ProseMirror");
-    if (!(prose instanceof HTMLElement)) return;
+  // Full unclipped height — not the collapsed editor viewport (which would
+  // hide the +/− toggle until the user types).
+  const fullHeight = useContentHeight([value], () => {
+    const el = measureRef.current;
+    return el ? el.scrollHeight : null;
+  });
 
-    const measure = () => {
-      setContentHeight(Math.max(prose.scrollHeight, TASK_DESCRIPTION_COLLAPSED_MAX_PX));
-    };
-    measure();
-
-    const ro = new ResizeObserver(measure);
-    ro.observe(prose);
-    return () => ro.disconnect();
-  }, [value]);
-
-  const exceeds =
-    contentHeight > TASK_DESCRIPTION_COLLAPSED_MAX_PX + 1;
+  const exceeds = fullHeight > TASK_DESCRIPTION_COLLAPSED_MAX_PX + 1;
   // Collapsed: fixed max height (scroll inside editor). Expanded: uncapped so
   // content grows naturally without max-height animations fighting caret scroll.
   const editorMaxHeight = expanded
@@ -262,7 +283,17 @@ export function TaskDescriptionEditor({
       <p className="text-sm font-medium text-[var(--text-muted)]">
         Task Description
       </p>
-      <div className="relative w-full" ref={editorMountRef}>
+      <div className="relative w-full">
+        <div
+          ref={measureRef}
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 opacity-0"
+          aria-hidden
+        >
+          <RichNotesHtml
+            html={value}
+            className="px-2 py-2 text-sm leading-relaxed text-[var(--text)]"
+          />
+        </div>
         <SimpleRichTextEditor
           value={value}
           onChange={onChange}
