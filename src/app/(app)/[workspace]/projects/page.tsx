@@ -319,6 +319,8 @@ function ProjectsPageContent() {
     });
     if (!result.created && result.reason) {
       push(result.reason, "warning");
+    } else if (result.leaveTrimmed) {
+      push("Trimmed around time off to avoid overlap", "warning");
     }
   }
 

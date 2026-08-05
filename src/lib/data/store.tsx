@@ -1605,10 +1605,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
       endKey: string,
       projectId?: string | null,
     ): Promise<{ leaveDays: LeaveDay[]; assignments: Assignment[] } | void> => {
+      const snapshotInRange = () => {
+        const leaveDays = state.leave_days.filter(
+          (l) => l.date >= startKey && l.date <= endKey,
+        );
+        const assignments = state.assignments.filter((a) => {
+          const aEnd = a.recurrence_end_date ?? a.end_date;
+          return a.start_date <= endKey && aEnd >= startKey;
+        });
+        return { leaveDays, assignments };
+      };
+
       if (mode !== "supabase") {
         scheduleRangeLoadedRef.current = { start: startKey, end: endKey };
         setScheduleRangeLoaded({ start: startKey, end: endKey });
-        return;
+        return snapshotInRange();
       }
 
       const covers = (loaded: { start: string; end: string } | null) =>
@@ -1619,15 +1630,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
             !projectId,
         );
 
-      if (covers(scheduleRangeLoadedRef.current)) return;
+      if (covers(scheduleRangeLoadedRef.current)) {
+        return snapshotInRange();
+      }
       if (scheduleRangeInflight.current) {
         await scheduleRangeInflight.current;
-        if (covers(scheduleRangeLoadedRef.current)) return;
+        if (covers(scheduleRangeLoadedRef.current)) {
+          return snapshotInRange();
+        }
       }
 
       const client = supabaseRef.current ?? createClient();
       const organizationId = state.organization.id;
-      if (!organizationId) return;
+      if (!organizationId) return snapshotInRange();
 
       const loadedBefore = scheduleRangeLoadedRef.current;
       const run = (async () => {
@@ -1683,7 +1698,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
             scheduleRangeLoadedRef.current = nextRange;
             setScheduleRangeLoaded(nextRange);
           }
-          return { leaveDays: leave_days, assignments };
+          // Merge freshly loaded rows with prior in-memory state for callers.
+          const leaveById = new Map(
+            state.leave_days.map((l) => [l.id, l] as const),
+          );
+          for (const l of leave_days) leaveById.set(l.id, l);
+          const asgById = new Map(
+            state.assignments.map((a) => [a.id, a] as const),
+          );
+          for (const a of assignments) asgById.set(a.id, a);
+          return {
+            leaveDays: [...leaveById.values()].filter(
+              (l) => l.date >= startKey && l.date <= endKey,
+            ),
+            assignments: [...asgById.values()].filter((a) => {
+              const aEnd = a.recurrence_end_date ?? a.end_date;
+              return a.start_date <= endKey && aEnd >= startKey;
+            }),
+          };
         } finally {
           scheduleRangeInflight.current = null;
         }
@@ -1691,7 +1723,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       scheduleRangeInflight.current = run;
       return run;
     },
-    [mode, state.organization.id],
+    [mode, state.organization.id, state.leave_days, state.assignments],
   );
 
   const setActiveRealtimeProjectIds = useCallback((projectIds: string[]) => {

@@ -251,8 +251,10 @@ export function TaskDescriptionEditor({
 
   const exceeds =
     contentHeight > TASK_DESCRIPTION_COLLAPSED_MAX_PX + 1;
+  // Collapsed: fixed max height (scroll inside editor). Expanded: uncapped so
+  // content grows naturally without max-height animations fighting caret scroll.
   const editorMaxHeight = expanded
-    ? contentHeight
+    ? undefined
     : TASK_DESCRIPTION_COLLAPSED_MAX_PX;
 
   return (
@@ -268,7 +270,8 @@ export function TaskDescriptionEditor({
           mentionPeople={mentionPeople}
           className="mt-0 w-full"
           editorMaxHeight={editorMaxHeight}
-          editorOverflowY="auto"
+          editorOverflowY={expanded ? undefined : "auto"}
+          autoGrow={expanded}
         />
         {exceeds ? (
           <ExpandToggle

@@ -29,8 +29,9 @@ import {
 } from "@/lib/domain/assets";
 import { calendarYearBars } from "@/lib/domain/budget";
 import { parseAssetKind } from "@/lib/domain/milestones";
-import { compareTaskOrder, taskStatusLabel } from "@/lib/domain/tasks";
+import { compareTaskOrder } from "@/lib/domain/tasks";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
+import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import type {
   Assignment,
   Project,
@@ -153,24 +154,18 @@ function PortalTaskRow({
   task: { title: string; status: string };
 }) {
   const status = task.status as TaskStatus;
-  const label = taskStatusLabel(status);
-  const colorClass =
-    status === "complete"
-      ? "text-[var(--task-complete-fg)]"
-      : status === "active"
-        ? "text-[var(--task-active-fg)]"
-        : "text-[var(--task-upcoming-fg)]";
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--border)] px-3 py-1.5 text-sm">
+    <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm">
       <span
         className={cn(
+          "min-w-0 truncate",
           status === "complete" &&
             "text-[var(--task-complete-fg)] line-through",
         )}
       >
         {task.title}
       </span>
-      <span className={cn("shrink-0 text-xs", colorClass)}>{label}</span>
+      <TaskStatusTag status={status} className="shrink-0" />
     </div>
   );
 }
@@ -738,7 +733,7 @@ export default function ProjectSharePage() {
             No tasks published yet.
           </p>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {portal.taskLists.map((list) => {
               const listTasks = portal.tasks
                 .filter((t) => t.list_id === list.id)
@@ -753,19 +748,24 @@ export default function ProjectSharePage() {
                   .sort(compareTaskOrder);
 
               return (
-                <div key={list.id}>
-                  <h3 className="mb-1.5 text-xs font-medium text-[var(--text-muted)]">
-                    {list.name}
-                  </h3>
+                <div
+                  key={list.id}
+                  className="overflow-hidden rounded-md border border-[var(--divider)]"
+                >
+                  <div className="border-b border-[var(--divider)] bg-[var(--bg-elevated)]/50 px-2 py-2.5">
+                    <h3 className="text-lg font-medium">{list.name}</h3>
+                  </div>
                   {parents.length === 0 ? (
-                    <p className="text-xs text-[var(--text-muted)]">No tasks</p>
+                    <p className="px-3 py-3 text-sm text-[var(--text-muted)]">
+                      No tasks in this list yet.
+                    </p>
                   ) : (
-                    <ul className="space-y-1">
+                    <ul className="py-1">
                       {parents.map((t) => (
                         <li key={t.id}>
                           <PortalTaskRow task={t} />
                           {childrenOf(t.id).map((child) => (
-                            <div key={child.id} className="ml-4 mt-1">
+                            <div key={child.id} className="ml-4">
                               <PortalTaskRow task={child} />
                             </div>
                           ))}

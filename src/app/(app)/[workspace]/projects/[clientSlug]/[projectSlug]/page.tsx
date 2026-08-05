@@ -920,6 +920,11 @@ export default function ProjectDetailPage() {
                   });
                   if (!result.created && result.reason) {
                     push(result.reason, "warning");
+                  } else if (result.leaveTrimmed) {
+                    push(
+                      "Trimmed around time off to avoid overlap",
+                      "warning",
+                    );
                   }
                 };
 
@@ -1001,6 +1006,12 @@ export default function ProjectDetailPage() {
               push(result.reason, "warning");
             } else {
               push("Project manager schedule updated");
+              if (result.leaveTrimmed) {
+                push(
+                  "Trimmed around time off to avoid overlap",
+                  "warning",
+                );
+              }
             }
           }}
         />

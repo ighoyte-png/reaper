@@ -1210,6 +1210,7 @@ export function ScheduleGrid() {
       leaveDates,
       newId,
     );
+    if (deletes.length === 0 && upserts.length === 0) return false;
     for (const id of deletes) {
       deleteAssignment(id);
       assignmentsRef.current = assignmentsRef.current.filter((a) => a.id !== id);
@@ -1657,6 +1658,8 @@ export function ScheduleGrid() {
     const startDate = start <= end ? start : end;
     const endDate = start <= end ? end : start;
     const origin = startDate;
+    // Clip against other assignments only — leave is punched after save so
+    // series/ranges can continue past time-off days.
     const clipped = clipRangeToFreeDays(
       personId,
       projectId,
@@ -1664,8 +1667,6 @@ export function ScheduleGrid() {
       startDate,
       endDate,
       state.assignments,
-      undefined,
-      state.leave_days,
     );
     if (!clipped) {
       push("That day is already booked", "warning");
@@ -1695,13 +1696,11 @@ export function ScheduleGrid() {
         ? "Weekly recurring assignment created"
         : "Assignment created",
     );
-    if (clipped.leaveTrimmed) {
-      punchAssignmentLeaveHoles(
-        [row],
-        personId,
-        clipped.start,
-        clipped.end,
-      );
+    const bounds = assignmentRangeBounds([row]);
+    if (
+      bounds &&
+      punchAssignmentLeaveHoles([row], personId, bounds.start, bounds.end)
+    ) {
       push("Trimmed around time off to avoid overlap", "warning");
     }
     focusHoursAfterCreateRef.current = row.id;
@@ -1732,7 +1731,6 @@ export function ScheduleGrid() {
         row.end_date,
         state.assignments,
         row.id,
-        state.leave_days,
       );
       if (!clipped) {
         push("That range overlaps another block on this project", "warning");
@@ -1747,26 +1745,35 @@ export function ScheduleGrid() {
           start_date: clipped.start,
           end_date: clipped.end,
         };
-        if (clipped.leaveTrimmed) {
-          push("Trimmed around time off to avoid overlap", "warning");
+        if (
+          assignmentPlacementConflicts(
+            row,
+            state.assignments,
+            padStart,
+            padEnd,
+          )
+        ) {
+          push("That range overlaps another block on this project", "warning");
+          return;
         }
-      }
-      if (
-        assignmentPlacementConflicts(
-          row,
-          state.assignments,
-          padStart,
-          padEnd,
-        )
-      ) {
+      } else {
         push("That range overlaps another block on this project", "warning");
         return;
       }
-    } else {
-      push("That range overlaps another block on this project", "warning");
-      return;
     }
     trackedUpsert(row, toast);
+    const bounds = assignmentRangeBounds([row]);
+    if (
+      bounds &&
+      punchAssignmentLeaveHoles(
+        [row],
+        row.person_id,
+        bounds.start,
+        bounds.end,
+      )
+    ) {
+      push("Trimmed around time off to avoid overlap", "warning");
+    }
     if (editForm?.id === row.id) {
       setEditForm({
         ...row,
@@ -3117,8 +3124,6 @@ export function ScheduleGrid() {
                                   rawStart,
                                   rawEnd,
                                   state.assignments,
-                                  undefined,
-                                  state.leave_days,
                                 );
                                 if (clipped) {
                                   setDraft({

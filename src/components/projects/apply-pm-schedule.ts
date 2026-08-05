@@ -29,7 +29,7 @@ export async function applyProjectManagerScheduleTime(args: {
   ) => Promise<
     { leaveDays: LeaveDay[]; assignments: Assignment[] } | void
   >;
-}): Promise<{ created: boolean; reason?: string }> {
+}): Promise<{ created: boolean; reason?: string; leaveTrimmed?: boolean }> {
   const lo =
     args.startDate <= args.endDate ? args.startDate : args.endDate;
   const hi =
@@ -88,7 +88,7 @@ export async function applyProjectManagerScheduleTime(args: {
         hours_per_day: leave.hours_per_day,
       }),
   );
-  if (leaveDates.length === 0) return { created: true };
+  if (leaveDates.length === 0) return { created: true, leaveTrimmed: false };
 
   const { upserts, deletes } = applyFullDayLeaveOverrideForDates(
     rows,
@@ -102,5 +102,5 @@ export async function applyProjectManagerScheduleTime(args: {
   for (const row of upserts) {
     args.upsertAssignment(row);
   }
-  return { created: true };
+  return { created: true, leaveTrimmed: true };
 }

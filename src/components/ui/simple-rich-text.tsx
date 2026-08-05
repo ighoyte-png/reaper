@@ -25,19 +25,52 @@ import { Button } from "@/components/ui/button";
 const editorContentClass = cn(
   "min-h-[4.5rem] px-2 py-2 text-sm leading-relaxed text-[var(--text)] outline-none",
   "[&_p]:m-0 [&_p+p]:mt-2",
-  "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
-  "[&_h2]:m-0 [&_h2]:mt-2.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
-  "[&_h3]:m-0 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:leading-snug",
+  "[&_h1]:m-0 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
+  "[&_h2]:m-0 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
+  "[&_h3]:m-0 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:leading-snug",
+  "[&_h1:not(:first-child)]:mt-3 [&_h2:not(:first-child)]:mt-2.5 [&_h3:not(:first-child)]:mt-2",
   "[&_h1+p]:mt-2 [&_h2+p]:mt-2 [&_h3+p]:mt-2",
   "[&_p+h1]:mt-3 [&_p+h2]:mt-2.5 [&_p+h3]:mt-2",
-  "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5",
-  "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5",
-  "[&_li]:my-1 [&_li>p]:m-0",
-  "[&_p+ul]:mt-3 [&_p+ol]:mt-3",
-  "[&_ul+p]:mt-3 [&_ol+p]:mt-3",
+  "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5",
+  "[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5",
+  "[&_ul:first-child]:mt-0 [&_ol:first-child]:mt-0",
+  "[&_li]:my-0.5 [&_li>p]:m-0",
+  "[&_p+ul]:mt-2 [&_p+ol]:mt-2",
+  "[&_ul+p]:mt-2 [&_ol+p]:mt-2",
   "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
   "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
 );
+
+/** Keep caret scroll inside the editor scroller — avoid yanking the page. */
+function scrollSelectionIntoEditor(view: {
+  dom: HTMLElement;
+  coordsAtPos: (pos: number) => { top: number; bottom: number };
+  state: { selection: { from: number } };
+}): boolean {
+  const scroller = view.dom.closest(
+    "[data-reaper-editor-scroll]",
+  ) as HTMLElement | null;
+  if (!scroller) return true;
+  const style = window.getComputedStyle(scroller);
+  const canScroll =
+    style.overflowY === "auto" ||
+    style.overflowY === "scroll" ||
+    scroller.scrollHeight > scroller.clientHeight + 1;
+  if (!canScroll) return true;
+  try {
+    const coords = view.coordsAtPos(view.state.selection.from);
+    const rect = scroller.getBoundingClientRect();
+    const pad = 8;
+    if (coords.top < rect.top + pad) {
+      scroller.scrollTop -= rect.top + pad - coords.top;
+    } else if (coords.bottom > rect.bottom - pad) {
+      scroller.scrollTop += coords.bottom - (rect.bottom - pad);
+    }
+  } catch {
+    /* ignore invalid positions */
+  }
+  return true;
+}
 
 function normalizeLinkUrl(raw: string): string | null {
   const t = raw.trim();
@@ -74,7 +107,12 @@ function selectionLinkDraft(editor: Editor): LinkDraft {
 function applyLink(editor: Editor, draft: LinkDraft) {
   const href = normalizeLinkUrl(draft.href);
   if (!href) {
-    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    editor
+      .chain()
+      .focus(undefined, { scrollIntoView: false })
+      .extendMarkRange("link")
+      .unsetLink()
+      .run();
     return;
   }
 
@@ -91,7 +129,7 @@ function applyLink(editor: Editor, draft: LinkDraft) {
   if (empty || title !== selected) {
     editor
       .chain()
-      .focus()
+      .focus(undefined, { scrollIntoView: false })
       .command(({ tr, state, dispatch }) => {
         const mark = state.schema.marks.link?.create(attrs);
         if (!mark) return false;
@@ -108,7 +146,7 @@ function applyLink(editor: Editor, draft: LinkDraft) {
 
   editor
     .chain()
-    .focus()
+    .focus(undefined, { scrollIntoView: false })
     .extendMarkRange("link")
     .setLink(attrs)
     .run();
@@ -210,6 +248,7 @@ export function SimpleRichTextEditor({
           class: editorContentClass,
           "data-placeholder": placeholder,
         },
+        handleScrollToSelection: (view) => scrollSelectionIntoEditor(view),
       },
       onUpdate: ({ editor: ed }) => {
         const html = ed.isEmpty ? "" : ed.getHTML();
@@ -260,7 +299,7 @@ export function SimpleRichTextEditor({
   }
 
   function removeLink() {
-    ed.chain().focus().extendMarkRange("link").unsetLink().run();
+    ed.chain().focus(undefined, { scrollIntoView: false }).extendMarkRange("link").unsetLink().run();
     setLinkOpen(false);
   }
 
@@ -276,14 +315,18 @@ export function SimpleRichTextEditor({
         <ToolbarButton
           label="Bold"
           active={Boolean(toolbar?.bold)}
-          onClick={() => ed.chain().focus().toggleBold().run()}
+          onClick={() =>
+            ed.chain().focus(undefined, { scrollIntoView: false }).toggleBold().run()
+          }
         >
           <Bold size={14} strokeWidth={2.5} />
         </ToolbarButton>
         <ToolbarButton
           label="Underline"
           active={Boolean(toolbar?.underline)}
-          onClick={() => ed.chain().focus().toggleUnderline().run()}
+          onClick={() =>
+            ed.chain().focus(undefined, { scrollIntoView: false }).toggleUnderline().run()
+          }
         >
           <UnderlineIcon size={14} strokeWidth={2.5} />
         </ToolbarButton>
@@ -291,7 +334,13 @@ export function SimpleRichTextEditor({
           label="Heading 1"
           active={Boolean(toolbar?.h1)}
           className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
-          onClick={() => ed.chain().focus().toggleHeading({ level: 1 }).run()}
+          onClick={() =>
+            ed
+              .chain()
+              .focus(undefined, { scrollIntoView: false })
+              .toggleHeading({ level: 1 })
+              .run()
+          }
         >
           H1
         </ToolbarButton>
@@ -299,7 +348,13 @@ export function SimpleRichTextEditor({
           label="Heading 2"
           active={Boolean(toolbar?.h2)}
           className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
-          onClick={() => ed.chain().focus().toggleHeading({ level: 2 }).run()}
+          onClick={() =>
+            ed
+              .chain()
+              .focus(undefined, { scrollIntoView: false })
+              .toggleHeading({ level: 2 })
+              .run()
+          }
         >
           H2
         </ToolbarButton>
@@ -307,21 +362,31 @@ export function SimpleRichTextEditor({
           label="Heading 3"
           active={Boolean(toolbar?.h3)}
           className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
-          onClick={() => ed.chain().focus().toggleHeading({ level: 3 }).run()}
+          onClick={() =>
+            ed
+              .chain()
+              .focus(undefined, { scrollIntoView: false })
+              .toggleHeading({ level: 3 })
+              .run()
+          }
         >
           H3
         </ToolbarButton>
         <ToolbarButton
           label="Bullet list"
           active={Boolean(toolbar?.bulletList)}
-          onClick={() => ed.chain().focus().toggleBulletList().run()}
+          onClick={() =>
+            ed.chain().focus(undefined, { scrollIntoView: false }).toggleBulletList().run()
+          }
         >
           <List size={14} strokeWidth={2.5} />
         </ToolbarButton>
         <ToolbarButton
           label="Numbered list"
           active={Boolean(toolbar?.orderedList)}
-          onClick={() => ed.chain().focus().toggleOrderedList().run()}
+          onClick={() =>
+            ed.chain().focus(undefined, { scrollIntoView: false }).toggleOrderedList().run()
+          }
         >
           <ListOrdered size={14} strokeWidth={2.5} />
         </ToolbarButton>
@@ -334,13 +399,13 @@ export function SimpleRichTextEditor({
         </ToolbarButton>
       </div>
       <div
+        data-reaper-editor-scroll=""
         className={cn(autoGrow && "overflow-visible")}
         style={
           editorMaxHeight != null
             ? {
                 maxHeight: editorMaxHeight,
                 overflowY: editorOverflowY ?? "auto",
-                transition: "max-height 200ms ease-out",
               }
             : undefined
         }

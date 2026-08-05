@@ -46,6 +46,7 @@ import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip } from "@/components/ui/tooltip";
 import { PersonAvatar } from "@/components/people/person-avatar";
+import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import {
   TaskDescriptionCommentsGate,
   TaskDescriptionCreateField,
@@ -2419,19 +2420,14 @@ function TaskCommentIndicator({
   unread,
   count,
   expanded,
-  visible,
 }: {
   unread: boolean;
   count: number;
   expanded: boolean;
-  visible: boolean;
 }) {
   return (
     <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 text-[10px] text-[var(--text-muted)]",
-        !visible && !unread && "opacity-0 group-hover:opacity-100",
-      )}
+      className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-[var(--text-muted)]"
       aria-label={unread ? "Unread comments" : undefined}
     >
       <span className="relative inline-flex shrink-0">
@@ -2564,14 +2560,6 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
             <GripVertical size={14} />
           </button>
         ) : null}
-        <span
-          aria-hidden
-          className={cn(
-            "h-2.5 w-2.5 shrink-0 rounded-sm",
-            !displayColor && "bg-[var(--text)]",
-          )}
-          style={displayColor ? { backgroundColor: displayColor } : undefined}
-        />
         {editing ? (
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <input
@@ -2953,14 +2941,13 @@ function TaskRow({
             </span>
           )}
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
-          {!ctx.readOnly ? (
+          {!ctx.readOnly &&
+          (taskComments.length > 0 ||
+            ctx.unreadTaskThreadIds.has(task.id)) ? (
             <TaskCommentIndicator
               unread={ctx.unreadTaskThreadIds.has(task.id)}
               count={taskComments.length}
               expanded={isExpanded}
-              visible={
-                taskComments.length > 0 || ctx.unreadTaskThreadIds.has(task.id)
-              }
             />
           ) : null}
           {task.due_date ? (
@@ -3022,6 +3009,7 @@ function TaskRow({
             <Plus size={14} />
           </button>
         ) : null}
+        <TaskStatusTag status={task.status} className="shrink-0" />
         {ctx.allowSelect ? (
           <Checkbox
             checked={isSelected}

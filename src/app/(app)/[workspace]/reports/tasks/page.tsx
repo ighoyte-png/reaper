@@ -30,8 +30,9 @@ import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { toDateKey } from "@/lib/domain/dates";
-import { dueDateToneClass, taskStatusLabel } from "@/lib/domain/tasks";
+import { dueDateToneClass } from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
+import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import { useViewAs } from "@/lib/view-as";
 import { cn } from "@/lib/cn";
 import type { Client, Person, Project, Task } from "@/lib/types";
@@ -348,18 +349,7 @@ function TaskTable({
                   {task.due_date ?? "—"}
                 </td>
                 <td className="px-3 py-2.5">
-                  <span
-                    className={cn(
-                      "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
-                      task.status === "complete"
-                        ? "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)] line-through"
-                        : task.status === "active"
-                          ? "bg-[var(--task-active-bg)] text-[var(--task-active-fg)]"
-                          : "bg-[var(--task-upcoming-bg)] text-[var(--task-upcoming-fg)]",
-                    )}
-                  >
-                    {taskStatusLabel(task.status)}
-                  </span>
+                  <TaskStatusTag status={task.status} />
                 </td>
               </tr>
             );
@@ -797,31 +787,15 @@ function TasksReportContent() {
   const safeCompletedPage = Math.min(completedPage, completedTotalPages);
 
   useEffect(() => {
-    if (!myTasksMode) return;
     if (completedPage !== safeCompletedPage) {
       setFilter("cp", String(safeCompletedPage));
     }
-  }, [
-    myTasksMode,
-    completedPage,
-    safeCompletedPage,
-    setFilter,
-  ]);
+  }, [completedPage, safeCompletedPage, setFilter]);
 
   const recentlyCompleted = useMemo(() => {
-    if (!myTasksMode) {
-      return sortCompletedTasks(
-        scopedTasks.filter((t) => t.status === "complete"),
-      ).slice(0, 40);
-    }
     const start = (safeCompletedPage - 1) * COMPLETED_PAGE_SIZE;
     return allCompletedTasks.slice(start, start + COMPLETED_PAGE_SIZE);
-  }, [
-    myTasksMode,
-    scopedTasks,
-    allCompletedTasks,
-    safeCompletedPage,
-  ]);
+  }, [allCompletedTasks, safeCompletedPage]);
 
   const completedRangeStart =
     allCompletedTasks.length === 0
@@ -1129,7 +1103,7 @@ function TasksReportContent() {
               />
               <h2 className="text-sm font-semibold">
                 Recently Completed
-                {myTasksMode && allCompletedTasks.length > 0
+                {allCompletedTasks.length > 0
                   ? ` (${allCompletedTasks.length})`
                   : ""}
               </h2>
@@ -1140,7 +1114,7 @@ function TasksReportContent() {
               emptyLabel={EMPTY_SECTION}
               defaultSortKey="end"
             />
-            {myTasksMode && allCompletedTasks.length > COMPLETED_PAGE_SIZE ? (
+            {allCompletedTasks.length > COMPLETED_PAGE_SIZE ? (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-[var(--text-muted)]">
                   Showing {completedRangeStart}–{completedRangeEnd} of{" "}
