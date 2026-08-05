@@ -43,8 +43,13 @@ export async function GET(request: Request, ctx: Ctx) {
     );
   }
 
+  const download = new URL(request.url).searchParams.get("download") === "1";
   const storage = getStorageProvider();
-  const url = await storage.createSignedDownloadUrl(row.storage_key);
+  const url = await storage.createSignedDownloadUrl(row.storage_key, {
+    downloadFilename: download
+      ? String(row.original_filename || "download")
+      : undefined,
+  });
   return NextResponse.json({
     url,
     mimeType: row.mime_type,

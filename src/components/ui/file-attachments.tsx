@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ImageIcon, Paperclip, X } from "lucide-react";
+import { Download, ImageIcon, Paperclip, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   formatAttachmentSize,
   listEntityFileAttachments,
   resolveAttachmentDisplayUrl,
+  resolveAttachmentDownloadUrl,
 } from "@/lib/storage/client-upload";
 import type {
   AttachmentEntityType,
@@ -74,6 +75,7 @@ function FileAttachmentChip({
   onRemove?: () => void;
 }) {
   const [href, setHref] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const isImage = item.mime_type.startsWith("image/");
   const sizeLabel = formatAttachmentSize(item.size_bytes);
 
@@ -87,6 +89,24 @@ function FileAttachmentChip({
       cancelled = true;
     };
   }, [item.id]);
+
+  async function download() {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const result = await resolveAttachmentDownloadUrl(item.id);
+      if (!result) return;
+      const a = document.createElement("a");
+      a.href = result.url;
+      a.download = result.filename || item.original_filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <li className="flex min-w-0 items-center gap-2 rounded-md border border-[var(--border)] bg-[color-mix(in_srgb,var(--bg)_70%,var(--comment-bg))] px-2 py-1.5">
@@ -122,6 +142,16 @@ function FileAttachmentChip({
           {isImage ? "Image" : "File"}
         </span>
       </div>
+      <button
+        type="button"
+        className="inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+        aria-label={`Download ${item.original_filename}`}
+        title="Download"
+        disabled={downloading}
+        onClick={() => void download()}
+      >
+        <Download size={13} strokeWidth={1.75} />
+      </button>
       {onRemove ? (
         <button
           type="button"

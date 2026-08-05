@@ -56,10 +56,22 @@ export function createR2StorageProvider(): StorageProvider {
       };
     },
 
-    async createSignedDownloadUrl(key, expiresIn = ttl): Promise<string> {
+    async createSignedDownloadUrl(key, options = {}): Promise<string> {
+      const expiresIn = options.expiresIn ?? ttl;
+      const filename = options.downloadFilename?.trim();
+      let contentDisposition: string | undefined;
+      if (filename) {
+        const ascii = filename
+          .replace(/[^\x20-\x7E]/g, "_")
+          .replace(/["\\]/g, "_");
+        contentDisposition = `attachment; filename="${ascii || "download"}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+      }
       const command = new GetObjectCommand({
         Bucket: bucket,
         Key: key,
+        ...(contentDisposition
+          ? { ResponseContentDisposition: contentDisposition }
+          : {}),
       });
       return getSignedUrl(client, command, { expiresIn });
     },

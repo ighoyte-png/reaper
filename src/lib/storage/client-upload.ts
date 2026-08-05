@@ -148,6 +148,20 @@ export async function resolveAttachmentDisplayUrl(
   return data.url;
 }
 
+/** Signed URL with Content-Disposition: attachment (forces download). */
+export async function resolveAttachmentDownloadUrl(
+  attachmentId: string,
+): Promise<{ url: string; filename: string } | null> {
+  const res = await fetch(`/api/storage/${attachmentId}/url?download=1`);
+  if (!res.ok) return null;
+  const data = (await res.json()) as { url?: string; filename?: string };
+  if (!data.url) return null;
+  return {
+    url: data.url,
+    filename: data.filename || "download",
+  };
+}
+
 export function extractAttachmentIdsFromHtml(html: string): string[] {
   const ids = new Set<string>();
   const re = /data-attachment-id=["']([0-9a-f-]{36})["']/gi;

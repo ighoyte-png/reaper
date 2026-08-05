@@ -11,7 +11,11 @@ export interface StorageProvider {
   }): Promise<PresignedUpload>;
   createSignedDownloadUrl(
     key: string,
-    expiresIn?: number,
+    options?: {
+      expiresIn?: number;
+      /** When set, ResponseContentDisposition forces a browser download. */
+      downloadFilename?: string;
+    },
   ): Promise<string>;
   head(key: string): Promise<StorageHeadResult>;
   exists(key: string): Promise<boolean>;
