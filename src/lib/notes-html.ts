@@ -43,11 +43,16 @@ export function notesPreviewText(
 }
 
 function escapeText(text: string): string {
+  // Text body: only markup-significant chars. TipTap leaves `"` as a literal,
+  // so encoding quotes here would make controlled-editor sync think content changed.
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/>/g, "&gt;");
+}
+
+function escapeAttr(text: string): string {
+  return escapeText(text).replace(/"/g, "&quot;");
 }
 
 /**
@@ -239,7 +244,7 @@ function renderNodes(nodes: WalkNode[]): string {
         const id = node.attrs?.["data-id"];
         const label = node.attrs?.["data-label"] ?? inner;
         if (!id) return escapeText(label);
-        return `<span data-type="mention" data-id="${escapeText(id)}" data-label="${escapeText(label)}" class="mention">@${escapeText(label.replace(/^@/, ""))}</span>`;
+        return `<span data-type="mention" data-id="${escapeAttr(id)}" data-label="${escapeAttr(label)}" class="mention">@${escapeText(label.replace(/^@/, ""))}</span>`;
       }
       if (tag === "A") {
         const attachmentId = node.attrs?.["data-attachment-id"];
@@ -249,21 +254,21 @@ function renderNodes(nodes: WalkNode[]): string {
             `/api/storage/${attachmentId}/url`;
           const target = node.attrs?.target === "_self" ? "_self" : "_blank";
           const rel = target === "_blank" ? ' rel="noopener noreferrer"' : "";
-          return `<a href="${escapeText(href)}" data-attachment-id="${escapeText(attachmentId)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
+          return `<a href="${escapeAttr(href)}" data-attachment-id="${escapeAttr(attachmentId)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
         }
         const href = sanitizeHref(node.attrs?.href ?? null);
         if (!href) return inner;
         const target = node.attrs?.target === "_self" ? "_self" : "_blank";
         const rel = target === "_blank" ? ' rel="noopener noreferrer"' : "";
-        return `<a href="${escapeText(href)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
+        return `<a href="${escapeAttr(href)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
       }
       if (tag === "IMG") {
         const attachmentId = node.attrs?.["data-attachment-id"];
         if (!isAttachmentUuid(attachmentId)) return "";
         const safeSrc = sanitizeAttachmentSrc(node.attrs?.src ?? null);
-        const alt = escapeText(node.attrs?.alt ?? "");
-        const srcAttr = safeSrc ? ` src="${escapeText(safeSrc)}"` : "";
-        return `<img data-attachment-id="${escapeText(attachmentId!)}"${srcAttr} alt="${alt}" />`;
+        const alt = escapeAttr(node.attrs?.alt ?? "");
+        const srcAttr = safeSrc ? ` src="${escapeAttr(safeSrc)}"` : "";
+        return `<img data-attachment-id="${escapeAttr(attachmentId!)}"${srcAttr} alt="${alt}" />`;
       }
       if (tag === "UL") return `<ul>${inner}</ul>`;
       if (tag === "OL") return `<ol>${inner}</ol>`;

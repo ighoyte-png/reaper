@@ -609,9 +609,11 @@ export const SimpleRichTextEditor = forwardRef<
       if (cancelled || !edRef.current) return;
       const ed = edRef.current;
       const current = ed.isEmpty ? "" : ed.getHTML();
+      // Sanitize both sides so TipTap's literal `"` won't diverge from `&quot;`
+      // and trigger setContent (which jumps the caret to the document end).
       const valueKey = notesHtmlAttachmentKey(notesToEditorHtml(value));
-      const currentKey = notesHtmlAttachmentKey(current);
-      const hydratedKey = notesHtmlAttachmentKey(hydrated);
+      const currentKey = notesHtmlAttachmentKey(notesToEditorHtml(current));
+      const hydratedKey = notesHtmlAttachmentKey(notesToEditorHtml(hydrated));
 
       // Parent replaced the document (e.g. opened edit) — load hydrated HTML.
       if (valueKey !== currentKey) {
