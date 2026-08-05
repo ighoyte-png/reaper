@@ -335,24 +335,40 @@ export function taskVisualToneColor(tone: TaskVisualTone): string | null {
   return null;
 }
 
-/** Assigner ↔ assignee counterpart who should see a new task-thread comment. */
+/**
+ * Assigner and/or assignee who should see a new task-thread comment when
+ * someone else writes it (deduped when they are the same person).
+ */
+export function taskThreadRoleNotifyPersonIds(
+  task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,
+  authorPersonId: string | null,
+  people: Pick<Person, "id" | "profile_id">[],
+  project: Pick<Project, "manager_person_id"> | null,
+): string[] {
+  if (!authorPersonId) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const add = (personId: string | null | undefined) => {
+    if (!personId || personId === authorPersonId || seen.has(personId)) return;
+    seen.add(personId);
+    out.push(personId);
+  };
+  add(task.assignee_person_id);
+  add(taskAssignerPersonId(task, people, project));
+  return out;
+}
+
+/** @deprecated Prefer taskThreadRoleNotifyPersonIds — first role notify target. */
 export function taskThreadNotifyPersonId(
   task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,
   authorPersonId: string | null,
   people: Pick<Person, "id" | "profile_id">[],
   project: Pick<Project, "manager_person_id"> | null,
 ): string | null {
-  if (!authorPersonId) return null;
-  const assigneeId = task.assignee_person_id;
-  const assignerId = taskAssignerPersonId(task, people, project);
-  if (!assigneeId || !assignerId) return null;
-  if (authorPersonId === assignerId && authorPersonId !== assigneeId) {
-    return assigneeId;
-  }
-  if (authorPersonId === assigneeId && authorPersonId !== assignerId) {
-    return assignerId;
-  }
-  return null;
+  return (
+    taskThreadRoleNotifyPersonIds(task, authorPersonId, people, project)[0] ??
+    null
+  );
 }
 
 /** @mentioned people (except the author) who should see the task-thread badge. */
@@ -403,8 +419,8 @@ export function taskThreadSubscriberPersonIds(
 }
 
 /**
- * Full notify set for a new comment: assigner↔assignee counterpart plus other
- * thread subscribers (authors / @mentions), excluding the author.
+ * Full notify set for a new comment: assigner and/or assignee (when not the
+ * author) plus thread subscribers (authors / @mentions), excluding the author.
  */
 export function taskThreadNotifyPersonIds(
   task: Pick<Task, "id" | "assignee_person_id" | "created_by_profile_id">,
@@ -423,7 +439,14 @@ export function taskThreadNotifyPersonIds(
     seen.add(personId);
     out.push(personId);
   };
-  add(taskThreadNotifyPersonId(task, authorPersonId, people, project));
+  for (const id of taskThreadRoleNotifyPersonIds(
+    task,
+    authorPersonId,
+    people,
+    project,
+  )) {
+    add(id);
+  }
   for (const id of taskThreadSubscriberPersonIds(task.id, comments, people)) {
     add(id);
   }

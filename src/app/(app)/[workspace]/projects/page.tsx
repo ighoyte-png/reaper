@@ -40,8 +40,8 @@ import {
   projectTimelineDatesChanged,
   resolvePmScheduleIntent,
 } from "@/lib/domain/project-manager-schedule";
+import { ProjectStatusTag } from "@/components/projects/project-status-tag";
 import {
-  projectStatusPillClass,
   sortClientsByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
@@ -855,9 +855,7 @@ function ProjectCard({
           {project.name}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
-          <span className={projectStatusPillClass(project.status)}>
-            {project.status.replace("_", " ")}
-          </span>
+          <ProjectStatusTag status={project.status} />
           {project.budget_monthly_reset ? (
             <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               Monthly

@@ -51,7 +51,8 @@ import {
   projectTimelineDatesChanged,
   resolvePmScheduleIntent,
 } from "@/lib/domain/project-manager-schedule";
-import { projectDisplayColor, projectStatusPillClass } from "@/lib/domain/sorting";
+import { ProjectStatusTag } from "@/components/projects/project-status-tag";
+import { projectDisplayColor } from "@/lib/domain/sorting";
 import {
   buildProjectMembersPayload,
   contractorTermsFromProjectMembers,
@@ -450,11 +451,7 @@ export default function ProjectDetailPage() {
                 />
               </button>
             ) : null}
-            <span
-              className={cn(projectStatusPillClass(project.status), "shrink-0")}
-            >
-              {project.status.replace("_", " ")}
-            </span>
+            <ProjectStatusTag status={project.status} className="shrink-0" />
           </div>
         </div>
         {project.notes ? (

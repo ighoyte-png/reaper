@@ -29,7 +29,18 @@ export function projectDisplayColor(
 }
 
 export function projectStatusLabel(status: ProjectStatus | string): string {
-  return String(status).replace("_", " ");
+  switch (status) {
+    case "active":
+      return "Active";
+    case "on_hold":
+      return "On Hold";
+    case "completed":
+      return "Completed";
+    case "archived":
+      return "Archived";
+    default:
+      return String(status).replace(/_/g, " ");
+  }
 }
 
 /** Color-coded lifecycle pill classes for project status tags. */
@@ -48,9 +59,10 @@ export function projectStatusClass(status: ProjectStatus | string): string {
   }
 }
 
+/** @deprecated Prefer ProjectStatusTag / projectStatusTagClassName. */
 export function projectStatusPillClass(status: ProjectStatus | string): string {
   return cn(
-    "rounded px-1.5 py-0.5 text-[11px] capitalize tracking-wide",
+    "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
     projectStatusClass(status),
   );
 }
