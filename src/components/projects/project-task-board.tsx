@@ -2799,6 +2799,16 @@ function InlineTaskForm({
     }
   }
 
+  function cancel() {
+    if (storageMode === "supabase") {
+      void cleanupEntityAttachmentsClient({
+        entityType: "task_note",
+        entityId: draftTaskId,
+      });
+    }
+    onCancel();
+  }
+
   const statusSquareClass =
     status === "complete"
       ? "bg-[var(--task-complete-fg)]"
@@ -2831,7 +2841,7 @@ function InlineTaskForm({
               e.preventDefault();
               void submit();
             }
-            if (e.key === "Escape") onCancel();
+            if (e.key === "Escape") cancel();
           }}
         />
       </div>
@@ -2937,7 +2947,7 @@ function InlineTaskForm({
             <button
               type="button"
               className="h-8 cursor-pointer rounded-md px-3 text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
-              onClick={onCancel}
+              onClick={cancel}
             >
               Cancel
             </button>

@@ -87,14 +87,19 @@ export async function assertCanAttachToEntity(
   }
 
   if (entityType === "task_note") {
+    // Task may not exist yet (client-generated id while creating/editing draft).
     const { data: task } = await admin
       .from("tasks")
       .select("id, organization_id, project_id")
       .eq("id", entityId)
       .maybeSingle();
-    if (!task || task.organization_id !== organizationId) {
-      return { ok: false, status: 404, error: "Task not found" };
+    if (task) {
+      if (task.organization_id !== organizationId) {
+        return { ok: false, status: 404, error: "Task not found" };
+      }
+      return { ok: true };
     }
+    // Draft task id: allow if caller is in org (bind on save).
     return { ok: true };
   }
 
