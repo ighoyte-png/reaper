@@ -170,6 +170,11 @@ export interface Task {
   title: string;
   /** Visual list separator — no assignee, status, or subtasks. */
   is_divider: boolean;
+  /**
+   * Subtask-only client approval gate. Open = not complete (yellow);
+   * Approved = complete (green). Locks downstream status until approved.
+   */
+  is_client_review: boolean;
   status: TaskStatus;
   start_date: string | null;
   due_date: string | null;

@@ -52,6 +52,7 @@ export function portalPayloadToDemoState(
     assignee_person_id: null,
     title: t.title,
     is_divider: false,
+    is_client_review: Boolean(t.is_client_review),
     status: t.status as Task["status"],
     start_date: t.start_date ?? null,
     due_date: t.due_date ?? null,

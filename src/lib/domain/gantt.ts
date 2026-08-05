@@ -1,11 +1,20 @@
 import { addDays, differenceInCalendarDays, parseISO } from "date-fns";
 import type { CSSProperties } from "react";
 import { toDateKey } from "@/lib/domain/dates";
+import {
+  isClientReviewApproved,
+  isClientReviewOpen,
+  listDisplayOrder,
+  taskVisualTone,
+} from "@/lib/domain/tasks";
 import type { Milestone, Task, TaskList } from "@/lib/types";
 
+/** Match Schedule label / day widths (schedule-grid LABEL_DESKTOP / DAY_W_*). */
 export const GANTT_LABEL_PX = 248;
-export const GANTT_LIST_ROW_H = 36;
-export const GANTT_TASK_ROW_H = 22;
+/** Match Schedule ROW_H (DAY_H 32 + DAY_PAD_Y*2). */
+export const GANTT_LIST_ROW_H = 38;
+/** Task rows are 2/3 the height of Task List rows. */
+export const GANTT_TASK_ROW_H = Math.round((GANTT_LIST_ROW_H * 2) / 3);
 export const GANTT_DAY_W_DESKTOP = 48;
 export const GANTT_DAY_W_NARROW = 40;
 
@@ -55,11 +64,10 @@ export function ganttListsForProject(
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 }
 
-/** Tasks in a list for Gantt (no dividers), sorted by sort_order. */
+/** Tasks in a list for Gantt (no dividers), parent then children order. */
 export function ganttTasksForList(tasks: Task[], listId: string): Task[] {
-  return tasks
-    .filter((t) => t.list_id === listId && !t.is_divider)
-    .sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+  const listTasks = tasks.filter((t) => t.list_id === listId && !t.is_divider);
+  return listDisplayOrder(listTasks);
 }
 
 export function shiftDateKey(key: string, deltaDays: number): string {
@@ -154,13 +162,27 @@ export function listBarColor(
   return "var(--accent)";
 }
 
-export function taskBarColor(task: Task, todayKey: string): string {
+export function taskBarColor(
+  task: Task,
+  todayKey: string,
+  orderedListTasks?: Task[],
+): string {
+  const ordered = orderedListTasks ?? [task];
+  const tone = taskVisualTone(task, ordered);
+  if (tone === "client_review_approved") return "var(--status-healthy)";
+  if (tone === "client_review_open" || tone === "downstream_locked") {
+    return "#f59e0b";
+  }
   if (task.status === "complete") return "var(--text-muted)";
   if (task.due_date && task.due_date < todayKey) {
     return "var(--status-over)";
   }
   if (task.status === "active") return "var(--status-healthy)";
   return "var(--accent)";
+}
+
+export function taskShowsClientReviewStar(task: Task): boolean {
+  return isClientReviewOpen(task) || isClientReviewApproved(task);
 }
 
 /** Fraction of bar width that is on or before today (for solid vs hatch split). */

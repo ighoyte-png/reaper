@@ -513,11 +513,11 @@ export default function ProjectDetailPage() {
         ) : null}
 
         <div className="grid gap-4 lg:grid-cols-3">
-          {/* Main: tasks + templates (full width when Gantt active) */}
+          {/* Main: tasks (+ sidebar) or full-width Gantt */}
           <div
             className={cn(
               "min-w-0 space-y-4",
-              !ganttViewActive && "lg:col-span-2",
+              ganttViewActive ? "lg:col-span-3" : "lg:col-span-2",
             )}
           >
             <ProjectTaskBoard
@@ -1045,36 +1045,33 @@ export default function ProjectDetailPage() {
             </section>
             )}
 
-            {!isSandbox ? (
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-              <h2 className="mb-2 text-sm font-semibold">Budget</h2>
-              <BudgetCard
-                project={project}
-                href={projectBudgetHref}
-                showName={false}
-              />
-              <Link
-                href={projectBudgetHref}
-                className={buttonClass({
-                  variant: "secondary",
-                  size: "sm",
-                  className: "mt-2",
-                })}
-              >
-                Open this project&apos;s budget
-              </Link>
-            </section>
-            ) : (
-              <div aria-hidden />
-            )}
-
-            <div className="space-y-4">
+            {isSandbox ? (
               <ProjectNotebook
                 projectId={project.id}
-                canEditOverride={isSandbox ? canEdit : undefined}
+                canEditOverride={canEdit}
               />
+            ) : (
+            <div className="space-y-4">
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                  <h2 className="mb-2 text-sm font-semibold">Budget</h2>
+                  <BudgetCard
+                    project={project}
+                    href={projectBudgetHref}
+                    showName={false}
+                  />
+                  <Link
+                    href={projectBudgetHref}
+                    className={buttonClass({
+                      variant: "secondary",
+                      size: "sm",
+                      className: "mt-2",
+                    })}
+                  >
+                    Open this project&apos;s budget
+                  </Link>
+                </section>
 
-              {!isSandbox && (canEdit || (isPublicShare && shareResult)) ? (
+              {canEdit || (isPublicShare && shareResult) ? (
                 <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                   <div className="mb-2 flex items-center gap-2">
                     <Link2 size={14} className="text-[var(--text-muted)]" />
@@ -1186,6 +1183,15 @@ export default function ProjectDetailPage() {
                 </section>
               ) : null}
             </div>
+            )}
+
+            {isSandbox ? (
+              <div aria-hidden />
+            ) : (
+              <div className="space-y-4">
+                <ProjectNotebook projectId={project.id} />
+              </div>
+            )}
           </div>
         ) : null}
       </div>

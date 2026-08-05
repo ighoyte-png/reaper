@@ -217,6 +217,124 @@ export function canCompleteTask(
   return taskAssignerPersonId(task, people, project) === viewerPersonId;
 }
 
+export const CLIENT_REVIEW_TITLE_PREFIX = "Client Review - ";
+
+export function withClientReviewTitle(title: string): string {
+  const t = title.trim();
+  if (t.startsWith(CLIENT_REVIEW_TITLE_PREFIX)) return t;
+  return `${CLIENT_REVIEW_TITLE_PREFIX}${t}`;
+}
+
+export function withoutClientReviewTitle(title: string): string {
+  if (title.startsWith(CLIENT_REVIEW_TITLE_PREFIX)) {
+    return title.slice(CLIENT_REVIEW_TITLE_PREFIX.length);
+  }
+  return title;
+}
+
+export function isClientReviewOpen(
+  task: Pick<Task, "is_client_review" | "status" | "is_divider">,
+): boolean {
+  return (
+    !task.is_divider &&
+    task.is_client_review &&
+    task.status !== "complete"
+  );
+}
+
+export function isClientReviewApproved(
+  task: Pick<Task, "is_client_review" | "status" | "is_divider">,
+): boolean {
+  return (
+    !task.is_divider &&
+    task.is_client_review &&
+    task.status === "complete"
+  );
+}
+
+/** Parent then children (by sort_order) for a single list. */
+export function listDisplayOrder<
+  T extends Pick<Task, "id" | "parent_id" | "sort_order" | "is_divider">,
+>(tasks: T[]): T[] {
+  const roots = tasks
+    .filter((t) => !t.parent_id)
+    .sort((a, b) => a.sort_order - b.sort_order);
+  const byParent = new Map<string, T[]>();
+  for (const t of tasks) {
+    if (!t.parent_id) continue;
+    const list = byParent.get(t.parent_id) ?? [];
+    list.push(t);
+    byParent.set(t.parent_id, list);
+  }
+  for (const kids of byParent.values()) {
+    kids.sort((a, b) => a.sort_order - b.sort_order);
+  }
+  const out: T[] = [];
+  for (const root of roots) {
+    out.push(root);
+    out.push(...(byParent.get(root.id) ?? []));
+  }
+  return out;
+}
+
+/**
+ * True when an open Client Review appears before this task in list display
+ * order (locks status / yellow chrome until that CR is approved).
+ */
+export function isDownstreamOfOpenClientReview(
+  taskId: string,
+  orderedTasks: Pick<
+    Task,
+    "id" | "is_client_review" | "status" | "is_divider"
+  >[],
+): boolean {
+  for (const t of orderedTasks) {
+    if (t.id === taskId) return false;
+    if (isClientReviewOpen(t)) return true;
+  }
+  return false;
+}
+
+/** Client Review cycles Open (upcoming) ↔ Approved (complete) only. */
+export function nextClientReviewStatus(
+  status: TaskStatus,
+): TaskStatus {
+  return status === "complete" ? "upcoming" : "complete";
+}
+
+/** Shared visual tone for CR + downstream yellow lock across views. */
+export type TaskVisualTone =
+  | "normal"
+  | "client_review_open"
+  | "client_review_approved"
+  | "downstream_locked";
+
+export function taskVisualTone(
+  task: Pick<Task, "id" | "is_client_review" | "status" | "is_divider">,
+  orderedListTasks: Pick<
+    Task,
+    "id" | "is_client_review" | "status" | "is_divider"
+  >[],
+): TaskVisualTone {
+  if (task.is_divider) return "normal";
+  if (isClientReviewApproved(task)) return "client_review_approved";
+  if (isClientReviewOpen(task)) return "client_review_open";
+  if (isDownstreamOfOpenClientReview(task.id, orderedListTasks)) {
+    return "downstream_locked";
+  }
+  return "normal";
+}
+
+export function taskVisualToneColor(tone: TaskVisualTone): string | null {
+  if (tone === "client_review_open" || tone === "downstream_locked") {
+    return "#f59e0b";
+  }
+  if (tone === "client_review_approved") {
+    return "var(--status-healthy)";
+  }
+  return null;
+}
+
 /** Assigner ↔ assignee counterpart who should see a new task-thread comment. */
 export function taskThreadNotifyPersonId(
   task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,

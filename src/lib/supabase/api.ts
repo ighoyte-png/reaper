@@ -189,6 +189,7 @@ export function mapTask(row: Record<string, unknown>): Task {
       : null,
     title: String(row.title ?? ""),
     is_divider: Boolean(row.is_divider),
+    is_client_review: Boolean(row.is_client_review),
     status: (row.status as Task["status"]) ?? "upcoming",
     start_date: row.start_date ? String(row.start_date) : null,
     due_date: row.due_date ? String(row.due_date) : null,
@@ -2583,6 +2584,7 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     assignee_person_id: task.assignee_person_id,
     title: task.title,
     is_divider: Boolean(task.is_divider),
+    is_client_review: Boolean(task.is_client_review),
     status: task.status,
     start_date: task.start_date,
     due_date: task.due_date,
@@ -2600,16 +2602,51 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     .update(payload)
     .eq("id", task.id)
     .select("id");
-  if (updateError) throw updateError;
-  if (data && data.length > 0) return;
+  if (
+    updateError &&
+    (/is_client_review/i.test(updateError.message) ||
+      (updateError.code === "PGRST204" &&
+        /is_client_review/i.test(updateError.message)))
+  ) {
+    const { is_client_review: _cr, ...withoutCr } = payload;
+    const retry = await supabase
+      .from("tasks")
+      .update(withoutCr)
+      .eq("id", task.id)
+      .select("id");
+    if (!retry.error && retry.data && retry.data.length > 0) {
+      console.warn(
+        "tasks.is_client_review missing — apply supabase/migrations/074_task_client_review.sql",
+      );
+      return;
+    }
+    if (retry.error) throw retry.error;
+  } else if (updateError) {
+    throw updateError;
+  } else if (data && data.length > 0) {
+    return;
+  }
 
   let { error } = await supabase.from("tasks").insert(payload);
+  if (
+    error &&
+    (/is_client_review/i.test(error.message) ||
+      (error.code === "PGRST204" && /is_client_review/i.test(error.message)))
+  ) {
+    const { is_client_review: _cr, ...withoutCr } = payload;
+    ({ error } = await supabase.from("tasks").insert(withoutCr));
+    if (!error) {
+      console.warn(
+        "tasks.is_client_review missing — apply supabase/migrations/074_task_client_review.sql",
+      );
+    }
+  }
   if (
     error &&
     (/is_divider/i.test(error.message) ||
       (error.code === "PGRST204" && /is_divider/i.test(error.message)))
   ) {
-    const { is_divider: _d, ...legacy } = payload;
+    const { is_divider: _d, is_client_review: _cr, ...legacy } = payload;
     ({ error } = await supabase.from("tasks").insert(legacy));
     if (!error) {
       console.warn(

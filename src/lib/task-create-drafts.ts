@@ -8,6 +8,7 @@ export type TaskCreateDraft = {
   start_date: string | null;
   due_date: string | null;
   notes: string;
+  is_client_review?: boolean;
 };
 
 type StoredTaskCreateDraft = TaskCreateDraft & { updatedAt: number };

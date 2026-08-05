@@ -300,6 +300,9 @@ function loadDemoState(): DemoState {
       tasks: (parsed.tasks ?? seed.tasks).map((t) => ({
         ...t,
         is_divider: Boolean(t.is_divider),
+        is_client_review: Boolean(
+          (t as Task).is_client_review,
+        ),
       })),
       task_comments: (parsed.task_comments ?? seed.task_comments).map((c) => ({
         ...c,
@@ -4118,6 +4121,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             assignee_person_id: null,
             title: t.title,
             is_divider: false,
+            is_client_review: false,
             status: "upcoming" as const,
             start_date: null,
             due_date: null,

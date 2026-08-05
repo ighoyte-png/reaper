@@ -33,6 +33,8 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  LayoutList,
+  LayoutGrid,
   MessageSquare,
   Pencil,
   Plus,
@@ -86,13 +88,22 @@ import {
   canCompleteTask,
   dueDateToneClass,
   emptyTaskAuditFields,
+  isClientReviewApproved,
+  isClientReviewOpen,
+  isDownstreamOfOpenClientReview,
+  listDisplayOrder,
+  nextClientReviewStatus,
   parentTasks,
   sortTaskLists,
   taskDividerLabel,
   taskDividerColor,
   normalizeDividerColor,
   taskStatusLabel,
+  taskVisualTone,
   tasksForList,
+  withClientReviewTitle,
+  withoutClientReviewTitle,
+  type TaskVisualTone,
 } from "@/lib/domain/tasks";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { format, parseISO, startOfDay } from "date-fns";
@@ -215,6 +226,8 @@ type BoardCtx = {
   isListGanttLocked: (listId: string) => boolean;
   /** PM must use Gantt view for structural edits on Gantt lists. */
   guardGanttStructuralEdit: (listId: string) => boolean;
+  /** Parent-then-children display order per list (CR tone / lock). */
+  orderedListTasksByListId: Map<string, Task[]>;
 };
 
 type TaskDragData = { type: "task"; listId: string; parentId: string | null };
@@ -240,12 +253,24 @@ function movableDragGroup(
 ): Task[] {
   const active = projectTasks.find((t) => t.id === activeId);
   if (!active) return [];
-  if (!selected.has(activeId) || selected.size <= 1) return [active];
+  if (!selected.has(activeId) || selected.size <= 1) {
+    if (active.is_client_review) return [];
+    return [active];
+  }
 
   const roots = [...selected]
     .map((id) => projectTasks.find((t) => t.id === id))
     .filter((t): t is Task => Boolean(t))
     .filter((t) => !t.parent_id || !selected.has(t.parent_id));
+
+  if (
+    roots.length > 0 &&
+    roots.every(
+      (t) => t.is_client_review && t.parent_id && !selected.has(t.parent_id),
+    )
+  ) {
+    return [];
+  }
 
   return roots.sort((a, b) => {
     if (a.list_id !== b.list_id) {
@@ -517,6 +542,18 @@ export function ProjectTaskBoard({
     return map;
   }, [visibleTasks]);
 
+  const orderedListTasksByListId = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    const listIds = new Set(visibleTasks.map((t) => t.list_id));
+    for (const listId of listIds) {
+      map.set(
+        listId,
+        listDisplayOrder(tasksForList(visibleTasks, listId)),
+      );
+    }
+    return map;
+  }, [visibleTasks]);
+
   /** Visual checkbox order across lists (parents then subtasks), for Shift+click ranges. */
   const selectableOrder = useMemo(() => {
     const ids: string[] = [];
@@ -722,6 +759,10 @@ export function ProjectTaskBoard({
     // Move selected parents (with their children) and orphan selected subtasks.
     const movers = selectedTasks
       .filter((t) => !t.parent_id || !selected.has(t.parent_id))
+      .filter(
+        (t) =>
+          !t.is_client_review || !t.parent_id || selected.has(t.parent_id),
+      )
       .sort(
         (a, b) =>
           a.sort_order - b.sort_order || a.title.localeCompare(b.title),
@@ -794,23 +835,50 @@ export function ProjectTaskBoard({
     for (const id of selected) {
       const task = state.tasks.find((t) => t.id === id);
       if (!task || isListGanttLocked(task.list_id)) continue;
+      const ordered = listDisplayOrder(
+        visibleTasks.filter((t) => t.list_id === task.list_id),
+      );
+      if (isDownstreamOfOpenClientReview(task.id, ordered)) continue;
+
       let next = { ...task };
       let changed = false;
       if (bulkDraft.status !== undefined) {
         if (viewerCanManage || task.assignee_person_id === viewerPersonId) {
-          if (
-            bulkDraft.status === "complete" &&
-            !canCompleteTask(
-              viewerPersonId,
-              task,
-              state.people,
-              project ?? null,
-            )
-          ) {
-            continue;
+          if (task.is_client_review) {
+            const crNext = nextClientReviewStatus(task.status);
+            if (bulkDraft.status !== crNext && bulkDraft.status !== task.status) {
+              continue;
+            }
+            if (
+              bulkDraft.status === "complete" &&
+              !canCompleteTask(
+                viewerPersonId,
+                task,
+                state.people,
+                project ?? null,
+              )
+            ) {
+              continue;
+            }
+            if (bulkDraft.status !== task.status) {
+              next = { ...next, status: bulkDraft.status };
+              changed = true;
+            }
+          } else {
+            if (
+              bulkDraft.status === "complete" &&
+              !canCompleteTask(
+                viewerPersonId,
+                task,
+                state.people,
+                project ?? null,
+              )
+            ) {
+              continue;
+            }
+            next = { ...next, status: bulkDraft.status };
+            changed = true;
           }
-          next = { ...next, status: bulkDraft.status };
-          changed = true;
         }
       }
       if (viewerCanManage && bulkDraft.assigneeId !== undefined) {
@@ -868,6 +936,7 @@ export function ProjectTaskBoard({
         : (viewerPersonId ?? state.people[0]?.id ?? null),
       title: "New subtask",
       is_divider: false,
+      is_client_review: false,
       status: "upcoming",
       start_date: null,
       due_date: null,
@@ -894,6 +963,7 @@ export function ProjectTaskBoard({
       assignee_person_id: draft.assignee_person_id,
       title,
       is_divider: false,
+      is_client_review: false,
       status: "upcoming",
       start_date: draft.start_date,
       due_date: draft.due_date,
@@ -920,6 +990,7 @@ export function ProjectTaskBoard({
       assignee_person_id: null,
       title: "",
       is_divider: true,
+      is_client_review: false,
       status: "upcoming",
       start_date: null,
       due_date: null,
@@ -965,6 +1036,7 @@ export function ProjectTaskBoard({
     if (!task || isListGanttLocked(task.list_id)) return;
     const title = draft.title.trim();
     if (!title) return;
+    const isClientReview = Boolean(task.parent_id && draft.is_client_review);
     upsertTask({
       ...task,
       title,
@@ -972,6 +1044,7 @@ export function ProjectTaskBoard({
       start_date: draft.start_date,
       due_date: draft.due_date,
       notes: draft.notes,
+      is_client_review: isClientReview,
     });
     setEditingTaskId(null);
   }
@@ -987,6 +1060,28 @@ export function ProjectTaskBoard({
     if (isListGanttLocked(task.list_id)) return;
     // Schedule compact sidebar stays otherwise read-only; status cycling is allowed.
     if (readOnly && !compact) return;
+
+    const ordered = listDisplayOrder(
+      visibleTasks.filter((t) => t.list_id === task.list_id),
+    );
+    if (isDownstreamOfOpenClientReview(task.id, ordered)) return;
+
+    if (task.is_client_review) {
+      const next = nextClientReviewStatus(task.status);
+      if (
+        next === "complete" &&
+        !canCompleteTask(viewerPersonId, task, state.people, project ?? null)
+      ) {
+        toast(
+          "Only the project manager or task assigner can mark tasks complete",
+          "warning",
+        );
+        return;
+      }
+      upsertTask({ ...task, status: next });
+      return;
+    }
+
     const next =
       task.status === "upcoming"
         ? "active"
@@ -1155,13 +1250,33 @@ export function ProjectTaskBoard({
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task || isListGanttLocked(task.list_id)) return;
     if (guardGanttStructuralEdit(task.list_id)) return;
+
+    const ordered = listDisplayOrder(
+      visibleTasks.filter((t) => t.list_id === task.list_id),
+    );
+    if (isDownstreamOfOpenClientReview(task.id, ordered)) return;
+
+    if (task.is_client_review) {
+      if (destStatus !== "upcoming" && destStatus !== "complete") return;
+      if (
+        destStatus === "complete" &&
+        !canCompleteTask(viewerPersonId, task, state.people, project ?? null)
+      ) {
+        toast(
+          "Only the project manager or task assigner can mark tasks complete",
+          "warning",
+        );
+        return;
+      }
+    }
+
     const sourceStatus = task.status;
     const destSiblings = parentTasks(visibleTasks)
       .filter((t) => t.status === destStatus && t.id !== taskId)
       .sort((a, b) => a.sort_order - b.sort_order);
-    const ordered = [...destSiblings];
-    ordered.splice(Math.min(destIndex, ordered.length), 0, task);
-    ordered.forEach((t, i) => {
+    const nextOrder = [...destSiblings];
+    nextOrder.splice(Math.min(destIndex, nextOrder.length), 0, task);
+    nextOrder.forEach((t, i) => {
       if (t.id === taskId) {
         if (t.status !== destStatus || t.sort_order !== i) {
           upsertTask({ ...t, status: destStatus, sort_order: i });
@@ -1254,9 +1369,9 @@ export function ProjectTaskBoard({
       Math.abs(delta.x) >= INDENT_DRAG_PX &&
       Math.abs(delta.x) >= Math.abs(delta.y) * 0.75;
 
-    // Indent / outdent only for a single dragged task (not dividers).
+    // Indent / outdent only for a single dragged task (not dividers or CR).
     if (primarilyHorizontal && !multi) {
-      if (task.is_divider) return;
+      if (task.is_divider || task.is_client_review) return;
       const childTasks = childTasksOf(task.id);
       if (delta.x > 0) {
         if (task.parent_id || childTasks.length > 0) return;
@@ -1301,6 +1416,12 @@ export function ProjectTaskBoard({
             list_id: task.list_id,
             parent_id: null,
             sort_order: i,
+            ...(p.id === task.id && task.is_client_review
+              ? {
+                  is_client_review: false,
+                  title: withoutClientReviewTitle(task.title),
+                }
+              : {}),
           });
         });
         sortByOrder(
@@ -1316,6 +1437,7 @@ export function ProjectTaskBoard({
 
     if (primarilyHorizontal && multi) return;
     if (active.id === over.id || !overData) return;
+    if (movers.some((m) => m.is_client_review)) return;
 
     let destListId: string;
     let destParentId: string | null;
@@ -1493,6 +1615,7 @@ export function ProjectTaskBoard({
     boardView: view,
     isListGanttLocked,
     guardGanttStructuralEdit,
+    orderedListTasksByListId,
   };
 
   if (projectDataLoading) {
@@ -1554,6 +1677,9 @@ export function ProjectTaskBoard({
                     ) : (
                       <KanbanBoard
                         tasks={listParents}
+                        orderedListTasks={
+                          orderedListTasksByListId.get(list.id) ?? []
+                        }
                         manageLists={listManage}
                         onMove={moveTaskToColumn}
                       />
@@ -2081,21 +2207,23 @@ function ViewToggle({
       <button
         type="button"
         className={cn(
-          "cursor-pointer px-2 py-1",
+          "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
           view === "list" && "bg-[var(--row-hover)]",
         )}
         onClick={() => setView("list")}
       >
+        <LayoutList size={12} />
         List
       </button>
       <button
         type="button"
         className={cn(
-          "cursor-pointer px-2 py-1",
+          "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
           view === "card" && "bg-[var(--row-hover)]",
         )}
         onClick={() => setView("card")}
       >
+        <LayoutGrid size={12} />
         Cards
       </button>
       <button
@@ -2518,6 +2646,7 @@ function InlineTaskForm({
   onDraftChange,
   depth = 0,
   descriptionViewExpanded = false,
+  allowClientReview = false,
 }: {
   people: Person[];
   allPeople?: Person[];
@@ -2533,6 +2662,7 @@ function InlineTaskForm({
   depth?: number;
   /** View-mode description expand state when opening edit. */
   descriptionViewExpanded?: boolean;
+  allowClientReview?: boolean;
 }) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [assigneeId, setAssigneeId] = useState(
@@ -2541,6 +2671,9 @@ function InlineTaskForm({
   const [startDate, setStartDate] = useState(initial?.start_date ?? "");
   const [dueDate, setDueDate] = useState(initial?.due_date ?? "");
   const [notes, setNotes] = useState(initial?.notes ?? "");
+  const [isClientReview, setIsClientReview] = useState(
+    Boolean(initial?.is_client_review),
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const onDraftChangeRef = useRef(onDraftChange);
   onDraftChangeRef.current = onDraftChange;
@@ -2562,8 +2695,9 @@ function InlineTaskForm({
       start_date: startDate || null,
       due_date: dueDate || null,
       notes,
+      is_client_review: isClientReview,
     });
-  }, [title, assigneeId, startDate, dueDate, notes]);
+  }, [title, assigneeId, startDate, dueDate, notes, isClientReview]);
 
   function submit() {
     const trimmed = title.trim();
@@ -2574,6 +2708,7 @@ function InlineTaskForm({
       start_date: startDate || null,
       due_date: dueDate || null,
       notes,
+      is_client_review: isClientReview,
     });
   }
 
@@ -2618,18 +2753,39 @@ function InlineTaskForm({
         <div className="space-y-3">
           <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
             <span className="text-sm text-[var(--text-muted)]">Assigned to</span>
-            <Select
-              searchable
-              value={assigneeId}
-              onChange={setAssigneeId}
-              options={[
-                { value: "", label: "Unassigned" },
-                ...assigneeOptions.map((p) => ({
-                  value: p.id,
-                  label: p.name,
-                })),
-              ]}
-            />
+            <div className="flex min-w-0 items-center gap-3">
+              <Select
+                searchable
+                className="min-w-0 flex-1"
+                value={assigneeId}
+                onChange={setAssigneeId}
+                options={[
+                  { value: "", label: "Unassigned" },
+                  ...assigneeOptions.map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  })),
+                ]}
+              />
+              {allowClientReview ? (
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
+                  <Checkbox
+                    checked={isClientReview}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      setIsClientReview(on);
+                      setTitle((prev) =>
+                        on
+                          ? withClientReviewTitle(prev)
+                          : withoutClientReviewTitle(prev),
+                      );
+                    }}
+                    aria-label="Client Review"
+                  />
+                  Client Review
+                </label>
+              ) : null}
+            </div>
           </div>
           <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
             <span className="text-sm text-[var(--text-muted)]">Dates</span>
@@ -3021,7 +3177,10 @@ function TaskRow({
         parentId: task.parent_id,
       } satisfies TaskDragData,
       disabled:
-        !listManage || ctx.editingTaskId === task.id || isExiting,
+        !listManage ||
+        ctx.editingTaskId === task.id ||
+        isExiting ||
+        task.is_client_review,
     });
 
   useEffect(() => {
@@ -3051,6 +3210,9 @@ function TaskRow({
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
   const [descExpanded, setDescExpanded] = useState(false);
   const [commentsBlocked, setCommentsBlocked] = useState(false);
+  const ordered =
+    ctx.orderedListTasksByListId.get(task.list_id) ?? [];
+  const tone = taskVisualTone(task, ordered);
   const nestIndent = depth * 16;
   const nestLineLeft =
     depth > 0
@@ -3080,7 +3242,9 @@ function TaskRow({
             start_date: task.start_date,
             due_date: task.due_date,
             notes: task.notes,
+            is_client_review: task.is_client_review,
           }}
+          allowClientReview={Boolean(task.parent_id)}
           descriptionViewExpanded={descExpanded}
           onCancel={() => ctx.setEditingTask(null)}
           onSubmit={(draft) => ctx.saveEditingTask(task.id, draft)}
@@ -3173,7 +3337,7 @@ function TaskRow({
               }
         }
       >
-        {listManage ? (
+        {listManage && !task.is_client_review ? (
           <button
             type="button"
             className={cn(
@@ -3194,28 +3358,74 @@ function TaskRow({
           >
             <GripVertical size={14} />
           </button>
+        ) : listManage ? (
+          <span className="w-[18px] shrink-0" aria-hidden />
         ) : null}
-        <button
-          type="button"
-          className={cn(
-            "h-2.5 w-2.5 shrink-0 cursor-pointer rounded-sm",
-            task.status === "complete"
-              ? "bg-[var(--task-complete-fg)]"
-              : task.status === "active"
-                ? "bg-[var(--task-active-fg)]"
-                : "bg-[var(--task-upcoming-fg)]",
-            !canEditStatus && "cursor-not-allowed opacity-60",
-          )}
-          title={taskStatusLabel(task.status)}
-          aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
-          disabled={!canEditStatus}
-          onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!canEditStatus) return;
-            ctx.cycleStatus(task);
-          }}
-        />
+        {isClientReviewOpen(task) || isClientReviewApproved(task) ? (
+          <button
+            type="button"
+            className={cn(
+              "inline-flex shrink-0 cursor-pointer items-center justify-center",
+              !canEditStatus && "cursor-not-allowed opacity-60",
+            )}
+            title={
+              isClientReviewApproved(task)
+                ? "Client Review approved"
+                : "Client Review open"
+            }
+            aria-label={
+              isClientReviewApproved(task)
+                ? "Client Review approved. Click to reopen."
+                : "Client Review open. Click to approve."
+            }
+            disabled={!canEditStatus}
+            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!canEditStatus) return;
+              ctx.cycleStatus(task);
+            }}
+          >
+            <Star
+              size={10}
+              className={cn(
+                "h-2.5 w-2.5",
+                isClientReviewApproved(task)
+                  ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
+                  : "fill-[#f59e0b] text-[#f59e0b]",
+              )}
+              aria-hidden
+            />
+          </button>
+        ) : tone === "downstream_locked" ? (
+          <span
+            className="h-2.5 w-2.5 shrink-0 cursor-not-allowed rounded-sm bg-[#f59e0b] opacity-60"
+            title="Blocked by open Client Review above"
+            aria-label="Blocked by open Client Review above"
+          />
+        ) : (
+          <button
+            type="button"
+            className={cn(
+              "h-2.5 w-2.5 shrink-0 cursor-pointer rounded-sm",
+              task.status === "complete"
+                ? "bg-[var(--task-complete-fg)]"
+                : task.status === "active"
+                  ? "bg-[var(--task-active-fg)]"
+                  : "bg-[var(--task-upcoming-fg)]",
+              !canEditStatus && "cursor-not-allowed opacity-60",
+            )}
+            title={taskStatusLabel(task.status)}
+            aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
+            disabled={!canEditStatus}
+            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!canEditStatus) return;
+              ctx.cycleStatus(task);
+            }}
+          />
+        )}
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {ctx.hubTaskHref ? (
             <Link
@@ -3227,6 +3437,8 @@ function TaskRow({
               <span
                 className={cn(
                   task.status === "complete" && "line-through",
+                  isClientReviewApproved(task) &&
+                    "text-[var(--status-healthy)] line-through",
                 )}
               >
                 {task.title}
@@ -3237,6 +3449,8 @@ function TaskRow({
               className={cn(
                 "min-w-0 truncate",
                 task.status === "complete" && "line-through",
+                isClientReviewApproved(task) &&
+                  "text-[var(--status-healthy)] line-through",
               )}
             >
               {task.title}
@@ -3820,7 +4034,25 @@ function CommentReactions({
 type CardDragData = { type: "card"; status: TaskStatus };
 type ColumnDragData = { type: "column"; status: TaskStatus };
 
-function statusCardTone(status: TaskStatus) {
+function statusCardTone(
+  status: TaskStatus,
+  visualTone: TaskVisualTone = "normal",
+) {
+  if (
+    visualTone === "client_review_open" ||
+    visualTone === "downstream_locked"
+  ) {
+    return {
+      bar: "bg-[#f59e0b]",
+      shell: "border-[#f59e0b]/35 bg-[#f59e0b]/10",
+    };
+  }
+  if (visualTone === "client_review_approved") {
+    return {
+      bar: "bg-[var(--status-healthy)]",
+      shell: "border-[var(--status-healthy)]/35 bg-[var(--status-healthy)]/10",
+    };
+  }
   switch (status) {
     case "complete":
       return {
@@ -3844,10 +4076,12 @@ function statusCardTone(status: TaskStatus) {
 
 function KanbanBoard({
   tasks,
+  orderedListTasks,
   manageLists,
   onMove,
 }: {
   tasks: Task[];
+  orderedListTasks: Task[];
   manageLists: boolean;
   onMove: (taskId: string, destStatus: TaskStatus, destIndex: number) => void;
 }) {
@@ -3876,6 +4110,14 @@ function KanbanBoard({
       | ColumnDragData
       | undefined;
     const destStatus = overData?.status ?? activeData.status;
+    const activeTask = tasks.find((t) => t.id === active.id);
+    if (activeTask) {
+      const tone = taskVisualTone(activeTask, orderedListTasks);
+      if (tone === "downstream_locked") return;
+      if (activeTask.is_client_review) {
+        if (destStatus !== "upcoming" && destStatus !== "complete") return;
+      }
+    }
     const destSiblings = tasks
       .filter((t) => t.status === destStatus && t.id !== active.id)
       .sort((a, b) => a.sort_order - b.sort_order);
@@ -3907,6 +4149,7 @@ function KanbanBoard({
             tasks={tasks
               .filter((t) => t.status === status)
               .sort((a, b) => a.sort_order - b.sort_order)}
+            orderedListTasks={orderedListTasks}
             manageLists={manageLists}
             activeId={activeId}
           />
@@ -3914,7 +4157,11 @@ function KanbanBoard({
       </div>
       <DragOverlay dropAnimation={null}>
         {activeTask ? (
-          <KanbanCardFace task={activeTask} dragging />
+          <KanbanCardFace
+            task={activeTask}
+            orderedListTasks={orderedListTasks}
+            dragging
+          />
         ) : null}
       </DragOverlay>
     </DndContext>
@@ -3924,11 +4171,13 @@ function KanbanBoard({
 function KanbanColumn({
   status,
   tasks,
+  orderedListTasks,
   manageLists,
   activeId,
 }: {
   status: TaskStatus;
   tasks: Task[];
+  orderedListTasks: Task[];
   manageLists: boolean;
   activeId: string | null;
 }) {
@@ -3968,6 +4217,7 @@ function KanbanColumn({
             <KanbanCard
               key={t.id}
               task={t}
+              orderedListTasks={orderedListTasks}
               manageLists={manageLists}
               isOverlaySource={activeId === t.id}
             />
@@ -3980,12 +4230,15 @@ function KanbanColumn({
 
 function KanbanCardFace({
   task,
+  orderedListTasks = [],
   dragging = false,
 }: {
   task: Task;
+  orderedListTasks?: Task[];
   dragging?: boolean;
 }) {
-  const tone = statusCardTone(task.status);
+  const visualTone = taskVisualTone(task, orderedListTasks);
+  const tone = statusCardTone(task.status, visualTone);
 
   return (
     <div
@@ -4004,6 +4257,8 @@ function KanbanCardFace({
           "block w-full text-left",
           task.status === "complete" &&
             "text-[var(--task-complete-fg)] line-through",
+          isClientReviewApproved(task) &&
+            "text-[var(--status-healthy)] line-through",
         )}
       >
         {task.title}
@@ -4026,18 +4281,24 @@ function KanbanCardFace({
 
 function KanbanCard({
   task,
+  orderedListTasks,
   manageLists,
   isOverlaySource,
 }: {
   task: Task;
+  orderedListTasks: Task[];
   manageLists: boolean;
   isOverlaySource: boolean;
 }) {
+  const tone = taskVisualTone(task, orderedListTasks);
+  const dragDisabled =
+    !manageLists || tone === "downstream_locked";
+
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: task.id,
       data: { type: "card", status: task.status } satisfies CardDragData,
-      disabled: !manageLists,
+      disabled: dragDisabled,
     });
 
   return (
@@ -4048,11 +4309,10 @@ function KanbanCard({
         transition,
         opacity: isDragging || isOverlaySource ? 0.35 : 1,
       }}
-      className={cn(manageLists && "cursor-grab touch-none")}
-      {...attributes}
-      {...listeners}
+      className={cn(manageLists && !dragDisabled && "cursor-grab touch-none")}
+      {...(dragDisabled ? {} : { ...attributes, ...listeners })}
     >
-      <KanbanCardFace task={task} />
+      <KanbanCardFace task={task} orderedListTasks={orderedListTasks} />
     </div>
   );
 }

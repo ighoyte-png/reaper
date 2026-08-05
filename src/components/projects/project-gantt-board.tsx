@@ -44,12 +44,15 @@ import {
   resolveTaskBarDates,
   shiftDateKey,
   taskBarColor,
+  taskShowsClientReviewStar,
   type GanttBarDates,
 } from "@/lib/domain/gantt";
 import { projectAssigneePeople } from "@/lib/domain/project-access";
 import { personAvatarColor } from "@/lib/domain/people";
 import {
   canCompleteTask,
+  isDownstreamOfOpenClientReview,
+  listDisplayOrder,
   taskStatusLabel,
 } from "@/lib/domain/tasks";
 import { notesHasContent } from "@/lib/notes-html";
@@ -144,6 +147,7 @@ function GanttBarVisual({
   readOnly,
   showAssignee,
   assignee,
+  emphasizeTop,
   onPointerDownBar,
   onPointerDownResizeStart,
   onPointerDownResizeEnd,
@@ -160,6 +164,8 @@ function GanttBarVisual({
   readOnly?: boolean;
   showAssignee?: boolean;
   assignee?: Person | null;
+  /** Task List parent bars: darker strip on the top 1/8. */
+  emphasizeTop?: boolean;
   onPointerDownBar?: (e: ReactPointerEvent) => void;
   onPointerDownResizeStart?: (e: ReactPointerEvent) => void;
   onPointerDownResizeEnd?: (e: ReactPointerEvent) => void;
@@ -197,6 +203,13 @@ function GanttBarVisual({
         className="relative h-full min-w-0 flex-1 overflow-hidden rounded-sm"
         style={{ backgroundColor: color }}
       >
+        {emphasizeTop ? (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 z-[1] bg-black/20"
+            style={{ height: "12.5%" }}
+            aria-hidden
+          />
+        ) : null}
         {hasFuture ? (
           <div
             className="pointer-events-none absolute inset-y-0 right-0 overflow-hidden rounded-r-sm"
@@ -212,7 +225,7 @@ function GanttBarVisual({
           </div>
         ) : null}
         {showLabel ? (
-          <span className="pointer-events-none absolute inset-0 flex items-center truncate px-1.5 text-xs font-medium text-white mix-blend-plus-lighter">
+          <span className="pointer-events-none absolute inset-0 flex items-center truncate px-1.5 text-xs font-medium text-white">
             {label}
           </span>
         ) : null}
@@ -351,8 +364,35 @@ function GanttDrawer({
     ? canCompleteTask(myPersonId, task, people, project)
     : false;
 
+  const orderedListTasks = useMemo(() => {
+    if (!task) return [];
+    return listDisplayOrder(
+      tasks.filter((t) => t.list_id === task.list_id && !t.is_divider),
+    );
+  }, [task, tasks]);
+
+  const downstreamLocked = Boolean(
+    task && isDownstreamOfOpenClientReview(task.id, orderedListTasks),
+  );
+
   function applySingle() {
     if (!task) return;
+    if (downstreamLocked) return;
+    if (task.is_client_review) {
+      const nextStatus = status;
+      if (nextStatus === "complete" && !canComplete) return;
+      if (nextStatus !== "upcoming" && nextStatus !== "complete") return;
+      onSaveTasks([
+        {
+          ...task,
+          status: nextStatus,
+          assignee_person_id: assigneeId || null,
+          start_date: startDate || null,
+          due_date: endDate || null,
+        },
+      ]);
+      return;
+    }
     const next: Task = {
       ...task,
       status: status === "complete" && !canComplete ? task.status : status,
@@ -444,13 +484,22 @@ function GanttDrawer({
               <Select
                 value={status}
                 onChange={(v) => setStatus(v as TaskStatus)}
-                options={(["upcoming", "active", "complete"] as const).map(
-                  (s) => ({
-                    value: s,
-                    label: taskStatusLabel(s),
-                    disabled: s === "complete" && !canComplete,
-                  }),
-                )}
+                disabled={downstreamLocked}
+                options={
+                  task.is_client_review
+                    ? (["upcoming", "complete"] as const).map((s) => ({
+                        value: s,
+                        label: s === "upcoming" ? "Open" : "Approved",
+                        disabled: s === "complete" && !canComplete,
+                      }))
+                    : (["upcoming", "active", "complete"] as const).map(
+                        (s) => ({
+                          value: s,
+                          label: taskStatusLabel(s),
+                          disabled: s === "complete" && !canComplete,
+                        }),
+                      )
+                }
               />
             </Field>
             <Field label="Assignee">
@@ -1175,9 +1224,10 @@ export function ProjectGanttBoard({
                           columns={columns}
                           today={today}
                           color={listColor}
-                          height={GANTT_LIST_ROW_H - 8}
+                          height={GANTT_LIST_ROW_H - 6}
                           label={list.name}
                           title={list.name}
+                          emphasizeTop
                           readOnly={readOnly}
                           onPointerDownBar={(e) => {
                             const origins = new Map<string, GanttBarDates>();
@@ -1232,10 +1282,17 @@ export function ProjectGanttBoard({
                     const taskRowY = y;
                     y += GANTT_TASK_ROW_H;
 
+                    const childIds = projectTasks
+                      .filter((t) => t.parent_id === task.id)
+                      .map((t) => t.id);
+                    // Parent date-drag always includes children (CR stays bound).
+                    // CR itself can move/resize dates solo; vertical order stays parent-bound.
                     const dragTaskIds =
                       selected && selectedTaskIds.length > 1
                         ? selectedTaskIds
-                        : [task.id];
+                        : !task.parent_id
+                          ? [task.id, ...childIds]
+                          : [task.id];
 
                     rowNodes.push(
                       <div
@@ -1244,13 +1301,32 @@ export function ProjectGanttBoard({
                         style={{ top: taskRowY, height: GANTT_TASK_ROW_H }}
                       >
                         <div
-                          className="sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] bg-[var(--bg)] pl-8 pr-2"
+                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] bg-[var(--bg)] pl-8 pr-2"
                           style={{
                             width: GANTT_LABEL_PX,
                             height: GANTT_TASK_ROW_H,
                           }}
                         >
-                          <span className="min-w-0 truncate text-[11px] text-[var(--text-muted)]">
+                          {taskShowsClientReviewStar(task) ? (
+                            <Star
+                              size={10}
+                              className={cn(
+                                "shrink-0",
+                                task.status === "complete"
+                                  ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
+                                  : "fill-[#f59e0b] text-[#f59e0b]",
+                              )}
+                              aria-hidden
+                            />
+                          ) : null}
+                          <span
+                            className={cn(
+                              "min-w-0 truncate text-[11px] text-[var(--text-muted)]",
+                              task.status === "complete" &&
+                                task.is_client_review &&
+                                "text-[var(--status-healthy)] line-through",
+                            )}
+                          >
                             {task.title}
                           </span>
                         </div>
@@ -1271,8 +1347,8 @@ export function ProjectGanttBoard({
                             dates={taskDates}
                             columns={columns}
                             today={today}
-                            color={taskBarColor(task, today)}
-                            height={GANTT_TASK_ROW_H - 6}
+                            color={taskBarColor(task, today, tasks)}
+                            height={GANTT_TASK_ROW_H - 4}
                             label={task.title}
                             title={task.title}
                             selected={selected}
@@ -1287,44 +1363,32 @@ export function ProjectGanttBoard({
                                 );
                                 return;
                               }
-                              const ids =
-                                selected && selectedTaskIds.length > 1
-                                  ? selectedTaskIds
-                                  : [task.id];
                               startDrag(
                                 e,
                                 { kind: "task", taskId: task.id },
                                 "move",
                                 taskDates,
-                                ids,
+                                dragTaskIds,
                               );
                             }}
                             onPointerDownResizeStart={(e) => {
                               e.stopPropagation();
-                              const ids =
-                                selected && selectedTaskIds.length > 1
-                                  ? selectedTaskIds
-                                  : [task.id];
                               startDrag(
                                 e,
                                 { kind: "task", taskId: task.id },
                                 "resize-start",
                                 taskDates,
-                                ids,
+                                dragTaskIds,
                               );
                             }}
                             onPointerDownResizeEnd={(e) => {
                               e.stopPropagation();
-                              const ids =
-                                selected && selectedTaskIds.length > 1
-                                  ? selectedTaskIds
-                                  : [task.id];
                               startDrag(
                                 e,
                                 { kind: "task", taskId: task.id },
                                 "resize-end",
                                 taskDates,
-                                ids,
+                                dragTaskIds,
                               );
                             }}
                           />
@@ -1385,7 +1449,7 @@ export function ProjectGanttBoard({
                             columns={columns}
                             today={today}
                             color="var(--status-near)"
-                            height={GANTT_TASK_ROW_H - 6}
+                            height={GANTT_TASK_ROW_H - 4}
                             label={milestone.name}
                             title={milestone.name}
                             readOnly

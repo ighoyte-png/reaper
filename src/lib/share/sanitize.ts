@@ -192,6 +192,7 @@ export interface ProjectPortalPayload {
     sort_order: number;
     start_date: string | null;
     due_date: string | null;
+    is_client_review: boolean;
   }[];
   assets: {
     id: string;
@@ -346,6 +347,7 @@ export function sanitizeProjectPortal(
         sort_order: t.sort_order,
         start_date: t.start_date ?? null,
         due_date: t.due_date ?? null,
+        is_client_review: Boolean(t.is_client_review),
       })),
     assets: state.project_assets
       .filter((a) => a.project_id === projectId && !a.hide_from_client)
