@@ -59,7 +59,14 @@ export function ProjectManagerPerson({
   className,
   nameClassName,
 }: {
-  person: Pick<Person, "name" | "role_title" | "avatar_url" | "avatar_color">;
+  person: Pick<
+    Person,
+    | "name"
+    | "role_title"
+    | "avatar_url"
+    | "avatar_attachment_id"
+    | "avatar_color"
+  >;
   size?: "team" | "row" | "sm" | "lg";
   /** Show the shared “Project Manager” pill below the person. */
   showTag?: boolean;
