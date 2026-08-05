@@ -229,6 +229,64 @@ export function capacityLevel(
   return "low";
 }
 
+/** CSS custom property for a capacity level — single source for charts/UI fills. */
+export function capacityLevelCssVar(level: CapacityLevel): string {
+  switch (level) {
+    case "over":
+      return "var(--status-over)";
+    case "near":
+      return "var(--status-near)";
+    case "healthy":
+      return "var(--status-healthy)";
+    case "low":
+    case "unavailable":
+      return "var(--status-unavailable)";
+  }
+}
+
+/** Tailwind text/fill class helpers keyed off capacityLevelCssVar tokens. */
+export function capacityLevelTextClass(level: CapacityLevel): string {
+  switch (level) {
+    case "over":
+      return "text-[var(--status-over)]";
+    case "near":
+      return "text-[var(--status-near)]";
+    case "healthy":
+      return "text-[var(--status-healthy)]";
+    case "low":
+    case "unavailable":
+      return "text-[var(--text-muted)]";
+  }
+}
+
+export function capacityLevelFillClass(level: CapacityLevel): string {
+  switch (level) {
+    case "over":
+      return "bg-[var(--status-over)]";
+    case "near":
+      return "bg-[var(--status-near)]";
+    case "healthy":
+      return "bg-[var(--status-healthy)]";
+    case "low":
+    case "unavailable":
+      return "bg-[var(--status-unavailable)]";
+  }
+}
+
+export function capacityLevelWashClass(level: CapacityLevel): string {
+  switch (level) {
+    case "over":
+      return "bg-[var(--status-over)]/25";
+    case "near":
+      return "bg-[var(--status-near)]/25";
+    case "healthy":
+      return "bg-[var(--status-healthy)]/25";
+    case "low":
+    case "unavailable":
+      return "bg-[var(--status-unavailable)]/20";
+  }
+}
+
 export function rangeKeysFromDates(dates: Date[]): {
   start: string;
   end: string;

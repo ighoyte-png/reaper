@@ -83,6 +83,7 @@ import {
   upsertAssignmentRow,
   upsertBulletinRow,
   deleteBulletinUnreadRow,
+  upsertBulletinDismissalRow,
   deleteMentionUnreadRow,
   deleteMentionUnreadRows,
   deleteTaskThreadUnreadRow,
@@ -301,6 +302,11 @@ function loadDemoState(): DemoState {
             (id): id is string => typeof id === "string",
           )
         : (seed.unread_bulletin_ids ?? []),
+      dismissed_bulletin_ids: Array.isArray(parsed.dismissed_bulletin_ids)
+        ? parsed.dismissed_bulletin_ids.filter(
+            (id): id is string => typeof id === "string",
+          )
+        : (seed.dismissed_bulletin_ids ?? []),
       unread_mentions: Array.isArray(parsed.unread_mentions)
         ? parsed.unread_mentions.filter(
             (r): r is { comment_id: string; person_id: string } =>
@@ -367,6 +373,7 @@ function emptySupabaseState(): DemoState {
     task_comments: [],
     bulletins: [],
     unread_bulletin_ids: [],
+    dismissed_bulletin_ids: [],
     unread_mentions: [],
     unread_task_threads: [],
     project_favorites: [],
@@ -560,6 +567,8 @@ interface DataContextValue {
   deleteBulletin: (id: string) => void;
   /** Mark a bulletin as seen for the current profile (removes from unread inbox). */
   dismissBulletin: (id: string) => void;
+  /** Hide system bulletin from this user's board (also clears unread). */
+  dismissBulletinFromBoard: (id: string) => void;
   /** Mark a tagged comment as seen for a person (removes from unread inbox). */
   dismissMention: (commentId: string, personId: string) => void;
   /** Mark assigner ↔ assignee task thread as read (opening the task). */
@@ -3653,6 +3662,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ...prev,
           bulletins: prev.bulletins.filter((b) => b.id !== id),
           unread_bulletin_ids: prev.unread_bulletin_ids.filter((x) => x !== id),
+          dismissed_bulletin_ids: prev.dismissed_bulletin_ids.filter(
+            (x) => x !== id,
+          ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("bulletins", id);
@@ -3674,6 +3686,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("bulletin_unreads", id);
           runRemoteSoft(async () => {
+            await deleteBulletinUnreadRow(supabaseRef.current!, {
+              bulletin_id: id,
+              profile_id: profileId,
+            });
+          });
+        }
+      },
+      dismissBulletinFromBoard: (id) => {
+        const profileId = profile?.id;
+        const orgId = state.organization.id;
+        if (!profileId || !id || !orgId) return;
+        patch((prev) => {
+          const nextDismissed = prev.dismissed_bulletin_ids.includes(id)
+            ? prev.dismissed_bulletin_ids
+            : [...prev.dismissed_bulletin_ids, id];
+          return {
+            ...prev,
+            dismissed_bulletin_ids: nextDismissed,
+            unread_bulletin_ids: prev.unread_bulletin_ids.filter(
+              (x) => x !== id,
+            ),
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("bulletin_dismissals", id);
+          noteLocalWrite("bulletin_unreads", id);
+          runRemoteSoft(async () => {
+            await upsertBulletinDismissalRow(supabaseRef.current!, {
+              bulletin_id: id,
+              profile_id: profileId,
+              organization_id: orgId,
+            });
             await deleteBulletinUnreadRow(supabaseRef.current!, {
               bulletin_id: id,
               profile_id: profileId,

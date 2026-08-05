@@ -46,6 +46,7 @@ import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import {
   bulletinVisibleToPerson,
+  isSystemBulletin,
   isUnreadBulletin,
 } from "@/lib/domain/bulletins";
 import { useViewAs } from "@/lib/view-as";
@@ -56,6 +57,8 @@ import {
 } from "@/lib/domain/budget";
 import {
   capacityLevel,
+  capacityLevelCssVar,
+  capacityLevelTextClass,
   dailyCapacityHours,
   personBookedHoursInRange,
   availableHoursInRange,
@@ -113,7 +116,7 @@ export default function DashboardPage() {
     profile,
     upsertBulletin,
     deleteBulletin,
-    dismissBulletin,
+    dismissBulletinFromBoard,
     dismissMention,
     newId,
     mode,
@@ -430,17 +433,21 @@ export default function DashboardPage() {
       pods: state.pods,
       podMembers: state.pod_members,
     };
-    const filtered = showingAsManager
-      ? state.bulletins
-      : state.bulletins.filter((b) =>
-          bulletinVisibleToPerson(b, personalPersonId, audienceCtx),
-        );
+    const dismissed = new Set(state.dismissed_bulletin_ids ?? []);
+    const filtered = (
+      showingAsManager
+        ? state.bulletins
+        : state.bulletins.filter((b) =>
+            bulletinVisibleToPerson(b, personalPersonId, audienceCtx),
+          )
+    ).filter((b) => !dismissed.has(b.id));
     return [...filtered].sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.created_at.localeCompare(a.created_at);
     });
   }, [
     state.bulletins,
+    state.dismissed_bulletin_ids,
     state.pods,
     state.pod_members,
     showingAsManager,
@@ -647,12 +654,14 @@ export default function DashboardPage() {
     const booked = teamUtilization.thisWeekBooked;
     const available = teamUtilization.thisWeekAvailable;
     const free = Math.max(0, available - booked);
+    const level = capacityLevel(booked, available, available <= 0);
+    const bookedColor = capacityLevelCssVar(level);
     const slices: SchedulePieSlice[] = [];
     if (booked > 0.01) {
       slices.push({
         projectId: "__booked__",
         hours: booked,
-        color: "var(--accent)",
+        color: bookedColor,
         label: "Booked",
       });
     }
@@ -660,12 +669,22 @@ export default function DashboardPage() {
       slices.push({
         projectId: "__free__",
         hours: free,
-        color: "#94a3b8",
+        color: "var(--status-unavailable)",
         label: "Available",
       });
     }
     return slices;
   }, [teamUtilization.thisWeekBooked, teamUtilization.thisWeekAvailable]);
+
+  const teamUtilizationLevel = useMemo(
+    () =>
+      capacityLevel(
+        teamUtilization.thisWeekBooked,
+        teamUtilization.thisWeekAvailable,
+        teamUtilization.thisWeekAvailable <= 0,
+      ),
+    [teamUtilization.thisWeekBooked, teamUtilization.thisWeekAvailable],
+  );
 
   const upcomingDueTasks = useMemo(() => {
     const groups = ["today", "tomorrow", "three_days"] as const;
@@ -837,7 +856,7 @@ export default function DashboardPage() {
                 )
               }
               unreadCount={unreadBulletinCount}
-              onDismissUnread={dismissBulletin}
+              onDismissFromBoard={dismissBulletinFromBoard}
               onSave={(row) => {
                 upsertBulletin(row);
                 push("Bulletin saved");
@@ -925,7 +944,12 @@ export default function DashboardPage() {
                   icon={Gauge}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm font-semibold tabular-nums">
+                    <div
+                      className={cn(
+                        "text-sm font-semibold tabular-nums",
+                        capacityLevelTextClass(teamUtilizationLevel),
+                      )}
+                    >
                       {Math.round(teamUtilization.avg)}% Avg
                     </div>
                     <SchedulePie
@@ -1944,7 +1968,7 @@ function BulletinBoard({
   profileId,
   isUnread,
   unreadCount = 0,
-  onDismissUnread,
+  onDismissFromBoard,
   onSave,
   onDelete,
   newId,
@@ -1960,7 +1984,7 @@ function BulletinBoard({
   profileId: string | null;
   isUnread?: (b: Bulletin) => boolean;
   unreadCount?: number;
-  onDismissUnread?: (id: string) => void;
+  onDismissFromBoard?: (id: string) => void;
   onSave: (row: BulletinDraft) => void;
   onDelete: (id: string) => void;
   newId: (prefix: string) => string;
@@ -1968,7 +1992,7 @@ function BulletinBoard({
 }) {
   const [editing, setEditing] = useState<BulletinDraft | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const visible = compact ? bulletins.slice(0, 4) : bulletins.slice(0, 8);
+  const visible = bulletins.slice(0, 20);
   const sortedPodList = useMemo(() => sortPods(pods), [pods]);
 
   function audienceSummary(b: Bulletin): string {
@@ -2024,13 +2048,13 @@ function BulletinBoard({
               (p) => p.id === b.created_by_profile_id,
             );
             const unread = isUnread?.(b) ?? false;
+            const systemNotice = isSystemBulletin(b);
             const success = b.tone === "success";
             const linkedProject = b.project_id
               ? projects.find((p) => p.id === b.project_id)
               : null;
             const goToProject = () => {
               if (!linkedProject) return;
-              if (unread && onDismissUnread) onDismissUnread(b.id);
               window.location.href = projectHref(linkedProject);
             };
             return (
@@ -2096,18 +2120,18 @@ function BulletinBoard({
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                   >
-                    {unread && onDismissUnread ? (
+                    {systemNotice && onDismissFromBoard ? (
                       <button
                         type="button"
                         className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                        aria-label="Dismiss bulletin"
+                        aria-label="Dismiss notice"
                         title="Dismiss"
-                        onClick={() => onDismissUnread(b.id)}
+                        onClick={() => onDismissFromBoard(b.id)}
                       >
                         <X size={13} strokeWidth={2} />
                       </button>
                     ) : null}
-                    {canEdit ? (
+                    {canEdit && !systemNotice ? (
                       <>
                         <button
                           type="button"

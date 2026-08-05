@@ -389,6 +389,8 @@ export interface DemoState {
   bulletins: Bulletin[];
   /** Bulletin ids still unread for the current session profile. */
   unread_bulletin_ids: string[];
+  /** System bulletin ids hidden from this profile's board. */
+  dismissed_bulletin_ids: string[];
   /** Unread @mention inbox rows (comment_id + mentioned person_id). */
   unread_mentions: { comment_id: string; person_id: string }[];
   /** Tasks with unread assigner ↔ assignee comment thread for a person. */

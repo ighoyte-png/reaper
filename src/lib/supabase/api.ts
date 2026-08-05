@@ -414,6 +414,7 @@ function emptyWorkspace(): DemoState {
     task_comments: [],
     bulletins: [],
     unread_bulletin_ids: [],
+    dismissed_bulletin_ids: [],
     unread_mentions: [],
     unread_task_threads: [],
     project_favorites: [],
@@ -579,6 +580,7 @@ export async function loadOrgBootstrap(
     calendarDaysRes,
     bulletinsRes,
     bulletinUnreadsRes,
+    bulletinDismissalsRes,
     mentionUnreadsRes,
     projectFavoritesRes,
     podsRes,
@@ -603,6 +605,13 @@ export async function loadOrgBootstrap(
     sessionProfileId
       ? supabase
           .from("bulletin_unreads")
+          .select("bulletin_id")
+          .eq("organization_id", orgId)
+          .eq("profile_id", sessionProfileId)
+      : Promise.resolve({ data: [] as { bulletin_id: unknown }[], error: null }),
+    sessionProfileId
+      ? supabase
+          .from("bulletin_dismissals")
           .select("bulletin_id")
           .eq("organization_id", orgId)
           .eq("profile_id", sessionProfileId)
@@ -690,6 +699,23 @@ export async function loadOrgBootstrap(
     }
   } else {
     unread_bulletin_ids = (bulletinUnreadsRes.data ?? [])
+      .map((row) => String((row as { bulletin_id: unknown }).bulletin_id))
+      .filter(Boolean);
+  }
+  let dismissed_bulletin_ids: string[] = [];
+  if (bulletinDismissalsRes.error) {
+    if (
+      /relation .*bulletin_dismissals.* does not exist/i.test(
+        bulletinDismissalsRes.error.message,
+      ) ||
+      bulletinDismissalsRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "bulletin_dismissals missing — apply supabase/migrations/067_bulletin_dismissals.sql",
+      );
+    }
+  } else {
+    dismissed_bulletin_ids = (bulletinDismissalsRes.data ?? [])
       .map((row) => String((row as { bulletin_id: unknown }).bulletin_id))
       .filter(Boolean);
   }
@@ -868,6 +894,7 @@ export async function loadOrgBootstrap(
     task_comments: [],
     bulletins,
     unread_bulletin_ids,
+    dismissed_bulletin_ids,
     unread_mentions,
     unread_task_threads,
     project_favorites,
@@ -2706,6 +2733,31 @@ export async function seedBulletinUnreadRows(
   ) {
     console.warn(
       "bulletin_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
+/** Hide a bulletin from this profile's board (and clear unread). */
+export async function upsertBulletinDismissalRow(
+  supabase: SupabaseClient,
+  row: {
+    bulletin_id: string;
+    profile_id: string;
+    organization_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase.from("bulletin_dismissals").upsert(row, {
+    onConflict: "bulletin_id,profile_id",
+  });
+  if (!error) return true;
+  if (
+    /relation .*bulletin_dismissals.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
+    console.warn(
+      "bulletin_dismissals missing — apply supabase/migrations/067_bulletin_dismissals.sql",
     );
     return false;
   }

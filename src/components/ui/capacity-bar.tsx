@@ -1,5 +1,9 @@
 import { cn } from "@/lib/cn";
 import { formatHours } from "@/lib/domain/budget";
+import {
+  capacityLevelFillClass,
+  capacityLevelTextClass,
+} from "@/lib/domain/capacity";
 import type { CapacityLevel } from "@/lib/types";
 
 export function CapacityBar({
@@ -28,12 +32,9 @@ export function CapacityBar({
         <span
           className={cn(
             "shrink-0 text-xs tabular-nums",
-            level === "over" && "text-[var(--status-over)]",
-            level === "near" && "text-[var(--status-near)]",
-            (level === "healthy" ||
-              level === "low" ||
-              level === "unavailable") &&
-              "text-[var(--text-muted)]",
+            level === "over" || level === "near"
+              ? capacityLevelTextClass(level)
+              : "text-[var(--text-muted)]",
           )}
         >
           {formatHours(booked)} / {formatHours(available)}
@@ -44,11 +45,7 @@ export function CapacityBar({
         <div
           className={cn(
             "h-full rounded-full transition-all",
-            level === "healthy" && "bg-[var(--status-healthy)]",
-            level === "near" && "bg-[var(--status-near)]",
-            level === "over" && "bg-[var(--status-over)]",
-            (level === "unavailable" || level === "low") &&
-              "bg-[var(--status-unavailable)]",
+            capacityLevelFillClass(level),
           )}
           style={{ width: `${pct}%` }}
         />

@@ -1026,6 +1026,7 @@ export function createDemoSeed(): DemoState {
       },
     ],
     unread_bulletin_ids: [],
+    dismissed_bulletin_ids: [],
     unread_mentions: [],
     unread_task_threads: [],
     project_favorites: [],

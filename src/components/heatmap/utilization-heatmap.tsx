@@ -7,6 +7,8 @@ import { useData } from "@/lib/data/store";
 import {
   availableHoursInRange,
   capacityLevel,
+  capacityLevelTextClass,
+  capacityLevelWashClass,
   personBookedHoursInRange,
   utilizationPct,
 } from "@/lib/domain/capacity";
@@ -27,38 +29,12 @@ const LEGEND: {
 ];
 
 function levelTone(level: CapacityLevel) {
-  switch (level) {
-    case "over":
-      return {
-        border: "border-transparent",
-        fill: "bg-[var(--status-over)]/25",
-        text: "text-[var(--status-over)]",
-        chip: "border-transparent text-[var(--status-over)]",
-      };
-    case "near":
-      return {
-        border: "border-transparent",
-        fill: "bg-[var(--status-near)]/25",
-        text: "text-[var(--status-near)]",
-        chip: "border-transparent text-[var(--status-near)]",
-      };
-    case "healthy":
-      return {
-        border: "border-transparent",
-        fill: "bg-[var(--status-healthy)]/25",
-        text: "text-[var(--status-healthy)]",
-        chip: "border-transparent text-[var(--status-healthy)]",
-      };
-    case "low":
-    case "unavailable":
-    default:
-      return {
-        border: "border-transparent",
-        fill: "bg-[var(--status-unavailable)]/20",
-        text: "text-[var(--text-muted)]",
-        chip: "border-transparent text-[var(--text-muted)]",
-      };
-  }
+  return {
+    border: "border-transparent",
+    fill: capacityLevelWashClass(level),
+    text: capacityLevelTextClass(level),
+    chip: cn("border-transparent", capacityLevelTextClass(level)),
+  };
 }
 
 function UtilizationPill({

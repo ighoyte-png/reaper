@@ -78,6 +78,11 @@ export function bulletinUnreadRecipientProfileIds(
   return profiles.map((p) => p.id).filter((id) => id !== author);
 }
 
+/** System notices (task in-review, milestone approval) have no human author. */
+export function isSystemBulletin(b: Pick<Bulletin, "created_by_profile_id">): boolean {
+  return b.created_by_profile_id == null;
+}
+
 /** Legacy localStorage keys for bulletin dismissals (pre-unread inbox). */
 export function legacyBulletinDismissStorageKeys(
   personId: string | null,

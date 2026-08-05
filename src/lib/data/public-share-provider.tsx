@@ -209,6 +209,7 @@ export function PublicShareProvider({
       upsertBulletin: () => {},
       deleteBulletin: () => {},
       dismissBulletin: () => {},
+      dismissBulletinFromBoard: () => {},
       dismissMention: () => {},
       dismissTaskThreadUnread: () => {},
       toggleProjectFavorite: () => {},
