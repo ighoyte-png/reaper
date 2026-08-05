@@ -2465,6 +2465,7 @@ function TaskCommentIndicator({
 function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
   const label = taskDividerLabel(task.title);
   const lineColor = taskDividerColor(task.notes);
+  const isExiting = ctx.exitingTaskIds.has(task.id);
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftColor, setDraftColor] = useState(task.notes);
@@ -2478,8 +2479,21 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
         listId: task.list_id,
         parentId: null,
       } satisfies TaskDragData,
-      disabled: !ctx.manageLists || editing,
+      disabled: !ctx.manageLists || editing || isExiting,
     });
+
+  useEffect(() => {
+    if (!isExiting) return;
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const ms = reduced ? 180 : 320;
+    const timer = window.setTimeout(() => {
+      ctx.onTaskExitComplete(task.id);
+    }, ms);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- exit once per isExiting
+  }, [isExiting, task.id]);
 
   useEffect(() => {
     if (!editing) {
@@ -2491,6 +2505,10 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
   useEffect(() => {
     if (editing) inputRef.current?.focus();
   }, [editing]);
+
+  useEffect(() => {
+    if (isExiting) setEditing(false);
+  }, [isExiting]);
 
   function commitEdit() {
     ctx.saveDivider(task.id, { title: draftTitle, color: draftColor });
@@ -2511,20 +2529,29 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
     <div
       id={`task-row-${task.id}`}
       style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
+        transform: isExiting
+          ? undefined
+          : CSS.Transform.toString(transform),
+        transition: isExiting ? undefined : transition,
         opacity: isDragging ? 0.35 : undefined,
       }}
-      className="relative my-0.5 py-0.5"
+      className={cn("relative my-0.5 py-0.5", isExiting && "pointer-events-none")}
     >
       <div
         ref={setNodeRef}
         className={cn(
           "group flex items-center gap-1.5 rounded-md px-2 py-1 text-sm hover:bg-[var(--row-hover)]",
+          isExiting && "task-row-exiting",
           ctx.focusTaskId === task.id &&
+            !isExiting &&
             "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25",
         )}
         style={{ paddingLeft: 8 }}
+        onAnimationEnd={(e) => {
+          if (!isExiting) return;
+          if (e.target !== e.currentTarget) return;
+          ctx.onTaskExitComplete(task.id);
+        }}
       >
         {ctx.manageLists ? (
           <button
@@ -2656,7 +2683,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
             ) : null}
           </div>
         )}
-        {ctx.manageLists && !editing ? (
+        {ctx.manageLists && !editing && !isExiting ? (
           <>
             <button
               type="button"

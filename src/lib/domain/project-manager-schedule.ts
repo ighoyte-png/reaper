@@ -5,8 +5,9 @@ import {
   weekStart,
   workingDaysBetween,
 } from "@/lib/domain/dates";
+import { isOnFullDayLeave } from "@/lib/domain/capacity";
 import { roundAssignmentHours } from "@/lib/domain/budget";
-import type { Assignment } from "@/lib/types";
+import type { Assignment, LeaveDay } from "@/lib/types";
 
 /** Assignments for this project manager on this project. */
 export function findPmProjectAssignments(
@@ -202,4 +203,31 @@ export function nextWorkingDay(dateKey: string): string {
   let d = addDays(parseISO(dateKey), 1);
   while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, 1);
   return toDateKey(d);
+}
+
+function isWeekendKey(dateKey: string): boolean {
+  const dow = parseISO(dateKey).getDay();
+  return dow === 0 || dow === 6;
+}
+
+/**
+ * Dashboard schedule: use today on weekdays when not on full-day leave;
+ * otherwise roll forward to the next working, non-leave day.
+ */
+export function scheduleDisplayDayKey(
+  todayKey: string,
+  personId: string,
+  leaveDays: LeaveDay[],
+): { dayKey: string; isToday: boolean } {
+  if (!isWeekendKey(todayKey) && !isOnFullDayLeave(personId, todayKey, leaveDays)) {
+    return { dayKey: todayKey, isToday: true };
+  }
+  let cursor = todayKey;
+  for (let i = 0; i < 366; i += 1) {
+    cursor = nextWorkingDay(cursor);
+    if (!isOnFullDayLeave(personId, cursor, leaveDays)) {
+      return { dayKey: cursor, isToday: false };
+    }
+  }
+  return { dayKey: todayKey, isToday: false };
 }

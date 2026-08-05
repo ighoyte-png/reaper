@@ -61,19 +61,21 @@ import {
   availableHoursInRange,
   utilizationPct,
 } from "@/lib/domain/capacity";
+import { leaveBlockLabel } from "@/lib/domain/leave";
+import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
 import {
   endOfMonth,
   toDateKey,
   weekEnd,
   weekStart,
 } from "@/lib/domain/dates";
-import { leaveBlockLabel } from "@/lib/domain/leave";
-import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
 import {
   defaultPeopleScopeForViewer,
+  personIdsInPod,
   podsForPerson,
   sortPods,
 } from "@/lib/domain/pods";
+import { scheduleDisplayDayKey } from "@/lib/domain/project-manager-schedule";
 import {
   expandAssignmentsInRange,
   occurrenceCoversDay,
@@ -222,10 +224,22 @@ export default function DashboardPage() {
     return orgScopedPeople.map((p) => p.id);
   }, [orgScopedPeople, state.people.length]);
 
-  const todaysAssignments = useMemo(() => {
+  const scheduleDay = useMemo(() => {
+    if (!personalPersonId) {
+      return { dayKey: todayKey, isToday: true };
+    }
+    return scheduleDisplayDayKey(
+      todayKey,
+      personalPersonId,
+      state.leave_days,
+    );
+  }, [personalPersonId, todayKey, state.leave_days]);
+
+  const scheduleDayAssignments = useMemo(() => {
     if (!personalPersonId) return [];
-    return expandAssignmentsInRange(state.assignments, todayKey, todayKey)
-      .filter((o) => occurrenceCoversDay(o, todayKey))
+    const dayKey = scheduleDay.dayKey;
+    return expandAssignmentsInRange(state.assignments, dayKey, dayKey)
+      .filter((o) => occurrenceCoversDay(o, dayKey))
       .filter((o) => o.person_id === personalPersonId)
       .map((o) => ({
         id:
@@ -236,7 +250,53 @@ export default function DashboardPage() {
         project_id: o.project_id,
         hours_per_day: o.hours_per_day,
       }));
-  }, [state.assignments, todayKey, personalPersonId]);
+  }, [state.assignments, scheduleDay.dayKey, personalPersonId]);
+
+  const viewerPods = useMemo(() => {
+    if (!personalPersonId) return [];
+    return podsForPerson(personalPersonId, state.pods, state.pod_members);
+  }, [personalPersonId, state.pods, state.pod_members]);
+
+  const isPodUtilization = viewerPods.length > 0;
+
+  const utilizationPeople = useMemo(() => {
+    if (!showOrgKpis) {
+      return focusPerson
+        ? [focusPerson]
+        : myPerson
+          ? [myPerson]
+          : [];
+    }
+    const schedulable = state.people.filter((p) => !p.hide_from_schedule);
+    if (isPodUtilization) {
+      const ids = new Set<string>();
+      for (const pod of viewerPods) {
+        for (const id of personIdsInPod(pod, state.pod_members)) {
+          ids.add(id);
+        }
+      }
+      return sortPeopleByName(schedulable.filter((p) => ids.has(p.id)));
+    }
+    return sortPeopleByName(schedulable);
+  }, [
+    showOrgKpis,
+    focusPerson,
+    myPerson,
+    state.people,
+    isPodUtilization,
+    viewerPods,
+    state.pod_members,
+  ]);
+
+  const utilizationHeatmapPersonIds = useMemo(() => {
+    if (!showingAsManager) {
+      return focusPerson ? [focusPerson.id] : [];
+    }
+    if (isPodUtilization) {
+      return utilizationPeople.map((p) => p.id);
+    }
+    return null;
+  }, [showingAsManager, focusPerson, isPodUtilization, utilizationPeople]);
 
   const projectById = useMemo(
     () => new Map(state.projects.map((p) => [p.id, p])),
@@ -387,23 +447,32 @@ export default function DashboardPage() {
     personalPersonId,
   ]);
 
-  const atRisk = showOrgDashboard
-    ? state.projects
-        .map((p) => ({
-          project: p,
-          burn:
-            burns.get(p.id) ??
-            budgetBurn(p, state.assignments, state.people),
-          client: p.client_id
-            ? state.clients.find((c) => c.id === p.client_id)
-            : undefined,
-        }))
-        .filter(({ burn }) => {
-          const health = budgetHealth(burn);
-          return health === "over" || health === "near";
-        })
-        .sort((a, b) => b.burn.pct - a.burn.pct)
-    : [];
+  const atRisk = useMemo(() => {
+    if (!showOrgDashboard || !personalPersonId) return [];
+    return state.projects
+      .filter((p) => p.manager_person_id === personalPersonId)
+      .map((p) => ({
+        project: p,
+        burn:
+          burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people),
+        client: p.client_id
+          ? state.clients.find((c) => c.id === p.client_id)
+          : undefined,
+      }))
+      .filter(({ burn }) => {
+        const health = budgetHealth(burn);
+        return health === "over" || health === "near";
+      })
+      .sort((a, b) => b.burn.pct - a.burn.pct);
+  }, [
+    showOrgDashboard,
+    personalPersonId,
+    state.projects,
+    state.clients,
+    state.assignments,
+    state.people,
+    burns,
+  ]);
 
   const peopleLoad = useMemo(() => {
     const source = scopePersonalCapacity
@@ -531,80 +600,47 @@ export default function DashboardPage() {
   const showPmHealthKpi = projectHealthStats.total > 0;
 
   const teamUtilization = useMemo(() => {
-    const people = showOrgDashboard
-      ? orgScopedPeople
-      : focusPerson
-        ? [focusPerson]
-        : myPerson
-          ? [myPerson]
-          : [];
+    const people = utilizationPeople;
     if (people.length === 0) {
-      return {
-        avg: 0,
-        series: [] as number[],
-        thisWeekBooked: 0,
-        thisWeekAvailable: 0,
-      };
+      return { avg: 0, thisWeekBooked: 0, thisWeekAvailable: 0 };
     }
 
-    const weekAvgs: number[] = [];
-    for (let i = 5; i >= 0; i -= 1) {
-      const anchor = weekStart(addWeeks(now, -i));
-      const wStart = toDateKey(anchor);
-      const wEnd = toDateKey(weekEnd(anchor));
-      let sum = 0;
-      let n = 0;
-      for (const person of people) {
-        const booked = personBookedHoursInRange(
-          person.id,
-          wStart,
-          wEnd,
-          state.assignments,
-          state.leave_days,
-        );
-        const available = availableHoursInRange(
-          person,
-          wStart,
-          wEnd,
-          state.leave_days,
-        );
-        if (available <= 0) continue;
-        sum += utilizationPct(booked, available);
-        n += 1;
-      }
-      weekAvgs.push(n > 0 ? sum / n : 0);
-    }
-    const avg = weekAvgs[weekAvgs.length - 1] ?? 0;
-
-    const thisStart = toDateKey(weekStart(now));
-    const thisEnd = toDateKey(weekEnd(now));
+    let sum = 0;
+    let n = 0;
     let thisWeekBooked = 0;
     let thisWeekAvailable = 0;
     for (const person of people) {
-      thisWeekBooked += personBookedHoursInRange(
+      const booked = personBookedHoursInRange(
         person.id,
-        thisStart,
-        thisEnd,
+        start,
+        end,
         state.assignments,
         state.leave_days,
       );
-      thisWeekAvailable += availableHoursInRange(
+      const available = availableHoursInRange(
         person,
-        thisStart,
-        thisEnd,
+        start,
+        end,
         state.leave_days,
       );
+      thisWeekBooked += booked;
+      thisWeekAvailable += available;
+      if (available <= 0) continue;
+      sum += utilizationPct(booked, available);
+      n += 1;
     }
 
-    return { avg, series: weekAvgs, thisWeekBooked, thisWeekAvailable };
+    return {
+      avg: n > 0 ? sum / n : 0,
+      thisWeekBooked,
+      thisWeekAvailable,
+    };
   }, [
-    showOrgDashboard,
-    focusPerson,
-    myPerson,
-    orgScopedPeople,
+    utilizationPeople,
     state.assignments,
     state.leave_days,
-    now,
+    start,
+    end,
   ]);
 
   const teamUtilizationPieSlices = useMemo((): SchedulePieSlice[] => {
@@ -880,7 +916,14 @@ export default function DashboardPage() {
               ) : null}
 
               {showOrgKpis ? (
-                <KpiCard title="Team Utilization Rate" icon={Gauge}>
+                <KpiCard
+                  title={
+                    isPodUtilization
+                      ? "Pod Utilization Rate"
+                      : "Team Utilization Rate"
+                  }
+                  icon={Gauge}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-semibold tabular-nums">
                       {Math.round(teamUtilization.avg)}% Avg
@@ -942,7 +985,9 @@ export default function DashboardPage() {
             ) : null}
 
             <TodaySchedule
-              assignments={todaysAssignments}
+              assignments={scheduleDayAssignments}
+              scheduleDayKey={scheduleDay.dayKey}
+              viewingToday={scheduleDay.isToday}
               projects={state.projects}
               clients={state.clients}
               person={
@@ -968,13 +1013,7 @@ export default function DashboardPage() {
               </div>
               <UtilizationHeatmap
                 weeks={4}
-                personIds={
-                  showingAsManager
-                    ? orgScopedPersonIds
-                    : focusPerson
-                      ? [focusPerson.id]
-                      : []
-                }
+                personIds={utilizationHeatmapPersonIds}
               />
             </section>
           </div>
@@ -1590,6 +1629,8 @@ function TaskRow({
 
 function TodaySchedule({
   assignments,
+  scheduleDayKey,
+  viewingToday,
   projects,
   clients,
   person,
@@ -1602,6 +1643,8 @@ function TodaySchedule({
     project_id: string;
     hours_per_day: number;
   }[];
+  scheduleDayKey: string;
+  viewingToday: boolean;
   projects: Project[];
   clients: Client[];
   person?: Person | null;
@@ -1609,6 +1652,9 @@ function TodaySchedule({
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
 }) {
   const dayAvailable = person ? dailyCapacityHours(person) : 0;
+  const scheduleBarLabel = viewingToday
+    ? "Today"
+    : format(parseISO(scheduleDayKey), "EEEE, MMMM d");
 
   const slices = useMemo(() => {
     const byProject = new Map<
@@ -1672,14 +1718,16 @@ function TodaySchedule({
       <div className="mb-3 min-w-0">
         <WidgetTitle icon={CalendarRange}>Schedules</WidgetTitle>
         <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-          Today&apos;s hours by project
+          {viewingToday
+            ? "Today's hours by project"
+            : "Next scheduled day's hours by project"}
         </p>
       </div>
 
       {person && dayAvailable > 0 ? (
         <div className="mb-3 border-b border-[var(--section-rule)] pb-3">
           <CapacityBar
-            label="Today"
+            label={scheduleBarLabel}
             booked={dayBooked}
             available={dayAvailable}
             level={dayLevel}
@@ -1689,7 +1737,9 @@ function TodaySchedule({
 
       {pieTotal <= 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
-          Nothing scheduled today.
+          {viewingToday
+            ? "Nothing scheduled today."
+            : "Nothing scheduled for this day."}
         </p>
       ) : (
         <div className="flex flex-col items-center gap-4 pt-5 sm:flex-row sm:items-start sm:pt-6">
