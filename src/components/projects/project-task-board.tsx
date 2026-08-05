@@ -2378,8 +2378,10 @@ function ListSection({
                 <button
                   type="button"
                   className={cn(
-                    "inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-                    list.gantt_enabled && "text-[var(--status-healthy)]",
+                    "inline-flex cursor-pointer items-center justify-center rounded border p-1 hover:bg-[var(--row-hover)]",
+                    list.gantt_enabled
+                      ? "border-[var(--accent)] bg-[var(--row-hover)] text-[var(--accent)]"
+                      : "border-transparent text-[var(--text-muted)] hover:text-[var(--accent)]",
                   )}
                   onClick={() => {
                     if (!list.gantt_enabled) {
@@ -2394,10 +2396,14 @@ function ListSection({
                     onUpdateList({ gantt_enabled: !list.gantt_enabled });
                   }}
                   aria-label={
-                    list.gantt_enabled ? "Disable Gantt view" : "Enable Gantt view"
+                    list.gantt_enabled
+                      ? "Disable Gantt view"
+                      : "Enable Gantt view"
                   }
                   title={
-                    list.gantt_enabled ? "Gantt view enabled" : "Enable Gantt view"
+                    list.gantt_enabled
+                      ? "Disable Gantt view"
+                      : "Enable Gantt view"
                   }
                   aria-pressed={list.gantt_enabled}
                 >
