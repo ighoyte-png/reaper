@@ -3583,24 +3583,44 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteTask: (id) => {
-        const commentIds = state.task_comments
-          .filter((c) => c.task_id === id)
-          .map((c) => c.id);
-        patch((prev) => ({
-          ...prev,
-          tasks: prev.tasks.filter((t) => t.id !== id && t.parent_id !== id),
-          task_comments: prev.task_comments.filter((c) => c.task_id !== id),
-          unread_task_threads: prev.unread_task_threads.filter(
-            (r) => r.task_id !== id,
-          ),
-        }));
+        patch((prev) => {
+          const nextTasks = prev.tasks.filter(
+            (t) => t.id !== id && t.parent_id !== id,
+          );
+          const remainingTaskIds = new Set(nextTasks.map((t) => t.id));
+          return {
+            ...prev,
+            tasks: nextTasks,
+            task_comments: prev.task_comments.filter((c) =>
+              remainingTaskIds.has(c.task_id),
+            ),
+            unread_task_threads: prev.unread_task_threads.filter((r) =>
+              remainingTaskIds.has(r.task_id),
+            ),
+          };
+        });
         if (mode === "supabase" && supabaseRef.current) {
-          cleanupEntityAttachments("task_note", id);
-          for (const commentId of commentIds) {
-            cleanupEntityAttachments("comment", commentId);
-          }
           noteLocalWrite("tasks", id);
-          runRemoteSoft(() => deleteTaskRow(supabaseRef.current!, id));
+          // Await attachment sweep before DB delete so child comments/tasks
+          // still exist for the tree query (attachments have no FK cascade).
+          runRemoteSoft(async () => {
+            try {
+              const res = await fetch("/api/storage/cleanup-task", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ taskId: id }),
+              });
+              if (!res.ok) {
+                console.warn(
+                  "Task attachment cleanup failed",
+                  await res.text().catch(() => res.statusText),
+                );
+              }
+            } catch (err) {
+              console.warn("Task attachment cleanup failed", err);
+            }
+            await deleteTaskRow(supabaseRef.current!, id);
+          });
         }
       },
       upsertTaskComment: (comment) => {
