@@ -5,6 +5,9 @@ export type AttachmentEntityType =
   | "comment"
   | "task_note";
 
+/** inline = embedded in WYSIWYG HTML; attached = email-style file chip. */
+export type AttachmentPlacement = "inline" | "attached";
+
 export type AttachmentRecord = {
   id: string;
   organization_id: string;
@@ -18,7 +21,15 @@ export type AttachmentRecord = {
   mime_type: string;
   size_bytes: number;
   ready: boolean;
+  placement: AttachmentPlacement;
   created_at: string;
+};
+
+export type EntityFileAttachment = {
+  id: string;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
 };
 
 export type PresignedUpload = {

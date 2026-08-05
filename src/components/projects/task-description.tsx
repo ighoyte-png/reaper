@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  forwardRef,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -15,7 +16,9 @@ import { cn } from "@/lib/cn";
 import {
   RichNotesHtml,
   SimpleRichTextEditor,
+  type SimpleRichTextEditorHandle,
 } from "@/components/ui/simple-rich-text";
+import { EntityFileAttachments } from "@/components/ui/file-attachments";
 import type { MentionPerson } from "@/lib/mentions";
 import {
   markTaskDescriptionSeen,
@@ -84,6 +87,7 @@ export function TaskDescriptionView({
   taskExpanded,
   onExpandedChange,
   onCommentsBlockedChange,
+  showAttachments = false,
 }: {
   html: string;
   taskId: string;
@@ -94,6 +98,7 @@ export function TaskDescriptionView({
   taskExpanded: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   onCommentsBlockedChange?: (blocked: boolean) => void;
+  showAttachments?: boolean;
 }) {
   const measureRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -241,30 +246,43 @@ export function TaskDescriptionView({
           />
         ) : null}
       </div>
+      {showAttachments ? (
+        <EntityFileAttachments
+          entityType="task_note"
+          entityId={taskId}
+          className="border-t border-[var(--border)] pt-2"
+        />
+      ) : null}
     </div>
   );
 }
 
-export function TaskDescriptionEditor({
-  value,
-  onChange,
-  mentionPeople,
-  initialExpanded = false,
-  taskId,
-  enableAttachments = false,
-  isDemo = false,
-  onAttachmentError,
-}: {
-  value: string;
-  onChange: (html: string) => void;
-  mentionPeople?: MentionPerson[];
-  /** Match view-mode collapse when opening edit. */
-  initialExpanded?: boolean;
-  taskId?: string | null;
-  enableAttachments?: boolean;
-  isDemo?: boolean;
-  onAttachmentError?: (msg: string) => void;
-}) {
+export const TaskDescriptionEditor = forwardRef<
+  SimpleRichTextEditorHandle,
+  {
+    value: string;
+    onChange: (html: string) => void;
+    mentionPeople?: MentionPerson[];
+    /** Match view-mode collapse when opening edit. */
+    initialExpanded?: boolean;
+    taskId?: string | null;
+    enableAttachments?: boolean;
+    isDemo?: boolean;
+    onAttachmentError?: (msg: string) => void;
+  }
+>(function TaskDescriptionEditor(
+  {
+    value,
+    onChange,
+    mentionPeople,
+    initialExpanded = false,
+    taskId,
+    enableAttachments = false,
+    isDemo = false,
+    onAttachmentError,
+  },
+  ref,
+) {
   const [expanded, setExpanded] = useState(initialExpanded);
   const measureRef = useRef<HTMLDivElement>(null);
 
@@ -303,6 +321,7 @@ export function TaskDescriptionEditor({
           />
         </div>
         <SimpleRichTextEditor
+          ref={ref}
           value={value}
           onChange={onChange}
           placeholder="Add a task description… Use @ to mention"
@@ -327,31 +346,38 @@ export function TaskDescriptionEditor({
       </div>
     </div>
   );
-}
+});
 
-export function TaskDescriptionCreateField({
-  value,
-  onChange,
-  mentionPeople,
-  taskId,
-  enableAttachments = false,
-  isDemo = false,
-  onAttachmentError,
-}: {
-  value: string;
-  onChange: (html: string) => void;
-  mentionPeople?: MentionPerson[];
-  taskId?: string | null;
-  enableAttachments?: boolean;
-  isDemo?: boolean;
-  onAttachmentError?: (msg: string) => void;
-}) {
+export const TaskDescriptionCreateField = forwardRef<
+  SimpleRichTextEditorHandle,
+  {
+    value: string;
+    onChange: (html: string) => void;
+    mentionPeople?: MentionPerson[];
+    taskId?: string | null;
+    enableAttachments?: boolean;
+    isDemo?: boolean;
+    onAttachmentError?: (msg: string) => void;
+  }
+>(function TaskDescriptionCreateField(
+  {
+    value,
+    onChange,
+    mentionPeople,
+    taskId,
+    enableAttachments = false,
+    isDemo = false,
+    onAttachmentError,
+  },
+  ref,
+) {
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-[var(--text-muted)]">
         Task Description
       </p>
       <SimpleRichTextEditor
+        ref={ref}
         value={value}
         onChange={onChange}
         placeholder="Add a task description… Use @ to mention"
@@ -366,7 +392,7 @@ export function TaskDescriptionCreateField({
       />
     </div>
   );
-}
+});
 
 export function TaskDescriptionCommentsGate({
   blocked,

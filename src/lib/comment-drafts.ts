@@ -1,4 +1,4 @@
-import { notesHasContent } from "@/lib/notes-html";
+import { notesHasContent, stripPendingInlineImages } from "@/lib/notes-html";
 
 const PREFIX = "reaper-comment-draft:";
 
@@ -27,11 +27,12 @@ export function writeCommentDraft(
   if (!profileId || typeof window === "undefined") return;
   try {
     const key = storageKey(profileId, taskId);
-    if (!notesHasContent(html)) {
+    const persistable = stripPendingInlineImages(html);
+    if (!notesHasContent(persistable)) {
       localStorage.removeItem(key);
       return;
     }
-    localStorage.setItem(key, html);
+    localStorage.setItem(key, persistable);
   } catch {
     // Quota / private mode — ignore.
   }

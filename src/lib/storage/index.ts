@@ -20,7 +20,7 @@ export type {
   StorageHeadResult,
   StorageProviderName,
 } from "@/lib/storage/types";
-export { deleteAttachmentsForEntity } from "@/lib/storage/entity-cleanup";
+export { deleteAttachmentsForEntity, pruneInlineAttachments } from "@/lib/storage/entity-cleanup";
 export type { StorageProvider } from "@/lib/storage/provider";
 
 import { createR2StorageProvider } from "@/lib/storage/r2";

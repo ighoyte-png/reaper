@@ -8,7 +8,10 @@ import {
 } from "@/lib/storage/authz";
 import { buildStorageKey, sanitizeOriginalFilename } from "@/lib/storage/keys";
 import { validateUploadFile } from "@/lib/storage/validate";
-import type { AttachmentEntityType } from "@/lib/storage/types";
+import type {
+  AttachmentEntityType,
+  AttachmentPlacement,
+} from "@/lib/storage/types";
 
 type Body = {
   entityType?: AttachmentEntityType;
@@ -19,6 +22,8 @@ type Body = {
   /** Base64 of first 32 bytes (optional magic sniff). */
   magicBase64?: string;
   imagesOnly?: boolean;
+  /** inline (WYSIWYG) or attached (email-style). Default inline. */
+  placement?: AttachmentPlacement;
 };
 
 export async function POST(request: Request) {
@@ -58,6 +63,15 @@ export async function POST(request: Request) {
   }
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
     return NextResponse.json({ error: "sizeBytes required" }, { status: 400 });
+  }
+
+  const placement: AttachmentPlacement =
+    body.placement === "attached" ? "attached" : "inline";
+  if (entityType === "profile_picture" && placement !== "inline") {
+    return NextResponse.json(
+      { error: "Profile pictures must be inline" },
+      { status: 400 },
+    );
   }
 
   const authz = await assertCanAttachToEntity(auth.admin, {
@@ -124,6 +138,7 @@ export async function POST(request: Request) {
     mime_type: validated.mimeType,
     size_bytes: sizeBytes,
     ready: false,
+    placement,
   });
 
   if (insertError) {

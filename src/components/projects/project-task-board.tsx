@@ -61,7 +61,9 @@ import {
   TaskDescriptionEditor,
   TaskDescriptionView,
 } from "@/components/projects/task-description";
-import { RichNotesHtml, SimpleRichTextEditor } from "@/components/ui/simple-rich-text";
+import { RichNotesHtml, SimpleRichTextEditor, type SimpleRichTextEditorHandle } from "@/components/ui/simple-rich-text";
+import { EntityFileAttachments } from "@/components/ui/file-attachments";
+import { listEntityFileAttachments, syncInlineAttachmentsFromHtml, cleanupEntityAttachmentsClient } from "@/lib/storage/client-upload";
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
@@ -985,6 +987,13 @@ export function ProjectTaskBoard({
       ...emptyTaskAuditFields(),
     };
     upsertTask(task);
+    if (mode === "supabase") {
+      void syncInlineAttachmentsFromHtml({
+        entityType: "task_note",
+        entityId: task.id,
+        html: draft.notes,
+      });
+    }
     clearTaskCreateDraft(profile?.id, listId);
     setDraftingListId(null);
   }
@@ -1059,6 +1068,13 @@ export function ProjectTaskBoard({
       notes: draft.notes,
       is_client_review: isClientReview,
     });
+    if (mode === "supabase") {
+      void syncInlineAttachmentsFromHtml({
+        entityType: "task_note",
+        entityId: taskId,
+        html: draft.notes,
+      });
+    }
     setEditingTaskId(null);
   }
 
@@ -1118,8 +1134,9 @@ export function ProjectTaskBoard({
     commentId?: string,
   ) {
     if (!profile) return;
+    const id = commentId ?? newId("tcom");
     upsertTaskComment({
-      id: commentId ?? newId("tcom"),
+      id,
       organization_id: state.organization.id,
       task_id: taskId,
       author_profile_id: profile.id,
@@ -1129,6 +1146,13 @@ export function ProjectTaskBoard({
       mentioned_person_ids: [...new Set(mentionedPersonIds)],
       reactions: [],
     });
+    if (mode === "supabase") {
+      void syncInlineAttachmentsFromHtml({
+        entityType: "comment",
+        entityId: id,
+        html,
+      });
+    }
   }
 
   function editComment(
@@ -1144,6 +1168,13 @@ export function ProjectTaskBoard({
       updated_at: new Date().toISOString(),
       mentioned_person_ids: [...new Set(mentionedPersonIds)],
     });
+    if (mode === "supabase") {
+      void syncInlineAttachmentsFromHtml({
+        entityType: "comment",
+        entityId: comment.id,
+        html,
+      });
+    }
   }
 
   const mentionPeople = useMemo(() => {
@@ -2716,6 +2747,8 @@ function InlineTaskForm({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const onDraftChangeRef = useRef(onDraftChange);
   onDraftChangeRef.current = onDraftChange;
+  const notesEditorRef = useRef<SimpleRichTextEditorHandle>(null);
+  const [savingNotes, setSavingNotes] = useState(false);
 
   const assigneeOptions = useMemo(() => {
     const byId = new Map(people.map((p) => [p.id, p]));
@@ -2738,17 +2771,32 @@ function InlineTaskForm({
     });
   }, [title, assigneeId, startDate, dueDate, notes, isClientReview]);
 
-  function submit() {
+  async function submit() {
     const trimmed = title.trim();
-    if (!trimmed) return;
-    onSubmit({
-      title: trimmed,
-      assignee_person_id: assigneeId || null,
-      start_date: startDate || null,
-      due_date: dueDate || null,
-      notes,
-      is_client_review: isClientReview,
-    }, draftTaskId);
+    if (!trimmed || savingNotes) return;
+    setSavingNotes(true);
+    try {
+      let finalNotes = notes;
+      if (storageMode === "supabase" && notesEditorRef.current) {
+        finalNotes = await notesEditorRef.current.flushPendingInlineUploads();
+        setNotes(finalNotes);
+      }
+      onSubmit(
+        {
+          title: trimmed,
+          assignee_person_id: assigneeId || null,
+          start_date: startDate || null,
+          due_date: dueDate || null,
+          notes: finalNotes,
+          is_client_review: isClientReview,
+        },
+        draftTaskId,
+      );
+    } catch {
+      // Error already reported via onAttachmentError.
+    } finally {
+      setSavingNotes(false);
+    }
   }
 
   const statusSquareClass =
@@ -2781,7 +2829,7 @@ function InlineTaskForm({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              submit();
+              void submit();
             }
             if (e.key === "Escape") onCancel();
           }}
@@ -2853,6 +2901,7 @@ function InlineTaskForm({
           </div>
           {onDelete ? (
             <TaskDescriptionEditor
+              ref={notesEditorRef}
               value={notes}
               onChange={setNotes}
               mentionPeople={mentionPeople}
@@ -2864,6 +2913,7 @@ function InlineTaskForm({
             />
           ) : (
             <TaskDescriptionCreateField
+              ref={notesEditorRef}
               value={notes}
               onChange={setNotes}
               mentionPeople={mentionPeople}
@@ -2879,10 +2929,10 @@ function InlineTaskForm({
             <button
               type="button"
               className="h-8 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-sm text-[var(--accent-fg)] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!title.trim()}
-              onClick={submit}
+              disabled={!title.trim() || savingNotes}
+              onClick={() => void submit()}
             >
-              {submitLabel}
+              {savingNotes ? "Saving…" : submitLabel}
             </button>
             <button
               type="button"
@@ -3611,6 +3661,12 @@ function TaskRow({
                     taskExpanded={isExpanded}
                     onExpandedChange={setDescExpanded}
                     onCommentsBlockedChange={setCommentsBlocked}
+                    showAttachments={ctx.mode === "supabase"}
+                  />
+                ) : ctx.mode === "supabase" ? (
+                  <EntityFileAttachments
+                    entityType="task_note"
+                    entityId={task.id}
                   />
                 ) : null}
                 <TaskDescriptionCommentsGate blocked={commentsBlocked}>
@@ -3747,7 +3803,12 @@ function CommentThread({
 }) {
   const [draft, setDraft] = useState("");
   const [replying, setReplying] = useState(false);
-  const [draftCommentId] = useState(() => ctx.newId("tcom"));
+  const [fileAttachmentCount, setFileAttachmentCount] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const editorRef = useRef<SimpleRichTextEditorHandle>(null);
+  const [draftCommentId, setDraftCommentId] = useState(() =>
+    ctx.newId("tcom"),
+  );
   const sorted = [...comments].sort((a, b) =>
     a.created_at.localeCompare(b.created_at),
   );
@@ -3766,22 +3827,46 @@ function CommentThread({
   }
 
   function cancelReply() {
+    if (ctx.mode === "supabase") {
+      void cleanupEntityAttachmentsClient({
+        entityType: "comment",
+        entityId: draftCommentId,
+      });
+    }
     setDraft("");
+    setFileAttachmentCount(0);
+    setDraftCommentId(ctx.newId("tcom"));
     setReplying(false);
     clearCommentDraft(ctx.profileId, task.id);
   }
 
-  function submitReply() {
-    if (!notesHasContent(draft)) return;
-    ctx.addComment(
-      task.id,
-      draft,
-      extractMentionPersonIds(draft),
-      draftCommentId,
-    );
-    setDraft("");
-    setReplying(false);
-    clearCommentDraft(ctx.profileId, task.id);
+  async function submitReply() {
+    if (saving) return;
+    if (!notesHasContent(draft) && fileAttachmentCount === 0) return;
+    setSaving(true);
+    try {
+      let html = draft;
+      if (ctx.mode === "supabase" && editorRef.current) {
+        html = await editorRef.current.flushPendingInlineUploads();
+        setDraft(html);
+      }
+      if (!notesHasContent(html) && fileAttachmentCount === 0) return;
+      ctx.addComment(
+        task.id,
+        html,
+        extractMentionPersonIds(html),
+        draftCommentId,
+      );
+      setDraft("");
+      setFileAttachmentCount(0);
+      setDraftCommentId(ctx.newId("tcom"));
+      setReplying(false);
+      clearCommentDraft(ctx.profileId, task.id);
+    } catch {
+      // Error already reported via onAttachmentError.
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -3797,6 +3882,7 @@ function CommentThread({
         replying ? (
           <div className="space-y-2.5">
             <SimpleRichTextEditor
+              ref={editorRef}
               value={draft}
               onChange={updateDraft}
               placeholder="Add a comment... Use @ to mention"
@@ -3806,14 +3892,18 @@ function CommentThread({
               attachmentEntityId={draftCommentId}
               isDemo={ctx.mode === "demo"}
               onAttachmentError={ctx.onAttachmentError}
+              onFileAttachmentsChange={(items) =>
+                setFileAttachmentCount(items.length)
+              }
             />
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
-                onClick={submitReply}
+                className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={saving}
+                onClick={() => void submitReply()}
               >
-                Add comment
+                {saving ? "Saving…" : "Add comment"}
               </button>
               <button
                 type="button"
@@ -3849,6 +3939,9 @@ function CommentItem({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
+  const [fileAttachmentCount, setFileAttachmentCount] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const editorRef = useRef<SimpleRichTextEditorHandle>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const author = ctx.profiles.find((p) => p.id === comment.author_profile_id);
   const authorPerson = ctx.people.find(
@@ -3867,7 +3960,14 @@ function CommentItem({
 
   function startEdit() {
     setDraft(comment.body);
+    setFileAttachmentCount(0);
     setEditing(true);
+    if (ctx.mode === "supabase") {
+      void listEntityFileAttachments({
+        entityType: "comment",
+        entityId: comment.id,
+      }).then((items) => setFileAttachmentCount(items.length));
+    }
   }
 
   function cancelEdit() {
@@ -3875,10 +3975,24 @@ function CommentItem({
     setEditing(false);
   }
 
-  function saveEdit() {
-    if (!notesHasContent(draft)) return;
-    ctx.editComment(comment, draft, extractMentionPersonIds(draft));
-    setEditing(false);
+  async function saveEdit() {
+    if (saving) return;
+    if (!notesHasContent(draft) && fileAttachmentCount === 0) return;
+    setSaving(true);
+    try {
+      let html = draft;
+      if (ctx.mode === "supabase" && editorRef.current) {
+        html = await editorRef.current.flushPendingInlineUploads();
+        setDraft(html);
+      }
+      if (!notesHasContent(html) && fileAttachmentCount === 0) return;
+      ctx.editComment(comment, html, extractMentionPersonIds(html));
+      setEditing(false);
+    } catch {
+      // Error already reported via onAttachmentError.
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -3908,6 +4022,7 @@ function CommentItem({
         {editing ? (
           <div className="space-y-2.5">
             <SimpleRichTextEditor
+              ref={editorRef}
               value={draft}
               onChange={setDraft}
               placeholder="Edit comment... Use @ to mention"
@@ -3917,14 +4032,18 @@ function CommentItem({
               attachmentEntityId={comment.id}
               isDemo={ctx.mode === "demo"}
               onAttachmentError={ctx.onAttachmentError}
+              onFileAttachmentsChange={(items) =>
+                setFileAttachmentCount(items.length)
+              }
             />
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
-                onClick={saveEdit}
+                className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={saving}
+                onClick={() => void saveEdit()}
               >
-                Save
+                {saving ? "Saving…" : "Save"}
               </button>
               <button
                 type="button"
@@ -3939,6 +4058,13 @@ function CommentItem({
           <>
             <div className="leading-relaxed pr-14">
               <RichNotesHtml html={comment.body} />
+              {ctx.mode === "supabase" ? (
+                <EntityFileAttachments
+                  entityType="comment"
+                  entityId={comment.id}
+                  className="mt-2 border-t border-[var(--border)] px-0 pt-2"
+                />
+              ) : null}
             </div>
             <CommentReactions comment={comment} ctx={ctx} />
             {showActions ? (

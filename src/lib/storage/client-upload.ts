@@ -1,4 +1,8 @@
-import type { AttachmentEntityType } from "@/lib/storage/types";
+import type {
+  AttachmentEntityType,
+  AttachmentPlacement,
+  EntityFileAttachment,
+} from "@/lib/storage/types";
 
 async function readMagicBase64(file: File): Promise<string | undefined> {
   const slice = file.slice(0, 32);
@@ -12,6 +16,8 @@ async function readMagicBase64(file: File): Promise<string | undefined> {
 export type ClientUploadResult = {
   attachmentId: string;
   mimeType: string;
+  originalFilename: string;
+  sizeBytes: number;
 };
 
 /** Presign → PUT to R2 → complete. Browser-only. */
@@ -20,20 +26,23 @@ export async function uploadFileToR2(input: {
   entityType: AttachmentEntityType;
   entityId: string;
   imagesOnly?: boolean;
+  placement?: AttachmentPlacement;
   onProgress?: (pct: number) => void;
 }): Promise<ClientUploadResult> {
   const magicBase64 = await readMagicBase64(input.file);
+  const filename = input.file.name || "upload";
   const presignRes = await fetch("/api/storage/presign-upload", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       entityType: input.entityType,
       entityId: input.entityId,
-      filename: input.file.name || "upload",
+      filename,
       mimeType: input.file.type || "application/octet-stream",
       sizeBytes: input.file.size,
       magicBase64,
       imagesOnly: input.imagesOnly,
+      placement: input.placement ?? "inline",
     }),
   });
   const presign = (await presignRes.json()) as {
@@ -85,7 +94,39 @@ export async function uploadFileToR2(input: {
   return {
     attachmentId: presign.attachmentId,
     mimeType: presign.mimeType || input.file.type,
+    originalFilename: filename,
+    sizeBytes: input.file.size,
   };
+}
+
+export async function listEntityFileAttachments(input: {
+  entityType: AttachmentEntityType;
+  entityId: string;
+}): Promise<EntityFileAttachment[]> {
+  const params = new URLSearchParams({
+    entityType: input.entityType,
+    entityId: input.entityId,
+    placement: "attached",
+  });
+  const res = await fetch(`/api/storage/list-entity?${params.toString()}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { attachments?: EntityFileAttachment[] };
+  return data.attachments ?? [];
+}
+
+export async function deleteAttachment(attachmentId: string): Promise<void> {
+  const res = await fetch(`/api/storage/${attachmentId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || "Failed to remove attachment");
+  }
+}
+
+export function formatAttachmentSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 const urlCache = new Map<string, { url: string; expiresAt: number }>();
@@ -115,4 +156,51 @@ export function extractAttachmentIdsFromHtml(html: string): string[] {
     ids.add(m[1]!.toLowerCase());
   }
   return [...ids];
+}
+
+/** After save: drop inline R2 objects no longer referenced in HTML. */
+export async function syncInlineAttachmentsFromHtml(input: {
+  entityType: AttachmentEntityType;
+  entityId: string;
+  html: string;
+}): Promise<{ deleted: number } | null> {
+  const keepAttachmentIds = extractAttachmentIdsFromHtml(input.html ?? "");
+  const res = await fetch("/api/storage/sync-inline", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      entityType: input.entityType,
+      entityId: input.entityId,
+      keepAttachmentIds,
+    }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    console.warn(
+      "Inline attachment sync failed",
+      data.error || res.statusText,
+    );
+    return null;
+  }
+  const data = (await res.json()) as { deleted?: number };
+  return { deleted: data.deleted ?? 0 };
+}
+
+/** Discard every file for a draft entity (cancel comment, etc.). */
+export async function cleanupEntityAttachmentsClient(input: {
+  entityType: AttachmentEntityType;
+  entityId: string;
+}): Promise<void> {
+  const res = await fetch("/api/storage/cleanup-entity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    console.warn(
+      "Entity attachment cleanup failed",
+      data.error || res.statusText,
+    );
+  }
 }

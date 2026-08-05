@@ -1,4 +1,4 @@
-import { notesHasContent } from "@/lib/notes-html";
+import { notesHasContent, stripPendingInlineImages } from "@/lib/notes-html";
 
 const PREFIX = "reaper-task-create-draft:";
 
@@ -82,8 +82,13 @@ export function writeTaskCreateDraft(
     }
     const stored: StoredTaskCreateDraft = {
       ...draft,
+      notes: stripPendingInlineImages(draft.notes),
       updatedAt: Date.now(),
     };
+    if (!taskCreateDraftHasContent(stored)) {
+      localStorage.removeItem(key);
+      return;
+    }
     localStorage.setItem(key, JSON.stringify(stored));
   } catch {
     // Quota / private mode — ignore.

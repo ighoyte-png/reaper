@@ -17,7 +17,17 @@ export function notesPlainText(html: string): string {
 export function notesHasContent(html: string | null | undefined): boolean {
   if (!html) return false;
   if (/data-attachment-id=["'][0-9a-f-]{36}["']/i.test(html)) return true;
+  if (/data-pending-id=["'][0-9a-f-]{36}["']/i.test(html)) return true;
   return Boolean(notesPlainText(html));
+}
+
+/** Drop unsaved paste/drop previews (blob URLs) before persisting drafts. */
+export function stripPendingInlineImages(html: string): string {
+  if (!html || !/data-pending-id=/i.test(html)) return html;
+  return html.replace(
+    /<img\b[^>]*\bdata-pending-id=(["'])[^"']*\1[^>]*\/?>/gi,
+    "",
+  );
 }
 
 /** Plain-text preview truncated to a word budget (for tooltips). */

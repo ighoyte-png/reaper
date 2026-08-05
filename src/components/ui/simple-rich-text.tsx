@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import type { Extensions } from "@tiptap/core";
@@ -25,14 +25,20 @@ import {
 import type { MentionPerson } from "@/lib/mentions";
 import { createMentionSuggestion } from "@/components/ui/mention-suggestion";
 import { ensureDesktopNotificationPermission } from "@/lib/desktop-notifications";
-import { Field, Modal, inputClass } from "@/components/ui/form";
+import { Field, Modal, inputClass, ConfirmDialog } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
+  deleteAttachment,
+  listEntityFileAttachments,
   resolveAttachmentDisplayUrl,
   uploadFileToR2,
 } from "@/lib/storage/client-upload";
-import type { AttachmentEntityType } from "@/lib/storage/types";
+import type {
+  AttachmentEntityType,
+  EntityFileAttachment,
+} from "@/lib/storage/types";
+import { FileAttachmentList } from "@/components/ui/file-attachments";
 
 const editorContentClass = cn(
   "min-h-[4.5rem] px-2 py-2 text-sm leading-relaxed text-[var(--text)] outline-none",
@@ -96,6 +102,16 @@ const AttachmentImage = Image.extend({
           const id = attributes["data-attachment-id"];
           if (!id) return {};
           return { "data-attachment-id": id };
+        },
+      },
+      "data-pending-id": {
+        default: null,
+        parseHTML: (element) =>
+          element.getAttribute("data-pending-id"),
+        renderHTML: (attributes) => {
+          const id = attributes["data-pending-id"];
+          if (!id) return {};
+          return { "data-pending-id": id };
         },
       },
     };
@@ -192,21 +208,12 @@ function applyLink(editor: Editor, draft: LinkDraft) {
     .run();
 }
 
-export function SimpleRichTextEditor({
-  value,
-  onChange,
-  className,
-  placeholder = "Add a note…",
-  mentionPeople,
-  editorMaxHeight,
-  editorOverflowY,
-  autoGrow = false,
-  enableAttachments = false,
-  attachmentEntityType,
-  attachmentEntityId = null,
-  onAttachmentError,
-  isDemo = false,
-}: {
+export type SimpleRichTextEditorHandle = {
+  /** Upload pending paste/drop images to R2 and return final HTML. */
+  flushPendingInlineUploads: () => Promise<string>;
+};
+
+type SimpleRichTextEditorProps = {
   value: string;
   onChange: (html: string) => void;
   className?: string;
@@ -222,13 +229,49 @@ export function SimpleRichTextEditor({
   attachmentEntityType?: AttachmentEntityType;
   attachmentEntityId?: string | null;
   onAttachmentError?: (msg: string) => void;
+  /** Fired when email-style (paperclip) attachments change. */
+  onFileAttachmentsChange?: (items: EntityFileAttachment[]) => void;
   isDemo?: boolean;
-}) {
+};
+
+export const SimpleRichTextEditor = forwardRef<
+  SimpleRichTextEditorHandle,
+  SimpleRichTextEditorProps
+>(function SimpleRichTextEditor(
+  {
+    value,
+    onChange,
+    className,
+    placeholder = "Add a note…",
+    mentionPeople,
+    editorMaxHeight,
+    editorOverflowY,
+    autoGrow = false,
+    enableAttachments = false,
+    attachmentEntityType,
+    attachmentEntityId = null,
+    onAttachmentError,
+    onFileAttachmentsChange,
+    isDemo = false,
+  },
+  ref,
+) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [fileAttachments, setFileAttachments] = useState<
+    EntityFileAttachment[]
+  >([]);
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
+  const onFileAttachmentsChangeRef = useRef(onFileAttachmentsChange);
+  onFileAttachmentsChangeRef.current = onFileAttachmentsChange;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const pendingFilesRef = useRef(
+    new Map<string, { file: File; blobUrl: string }>(),
+  );
 
   const attachmentsActive =
     enableAttachments &&
@@ -248,41 +291,86 @@ export function SimpleRichTextEditor({
 
   const edRef = useRef<Editor | null>(null);
 
-  const uploadAttachment = useMemo(() => {
-    return async (file: File, imagesOnly: boolean) => {
+  function syncFileAttachments(next: EntityFileAttachment[]) {
+    setFileAttachments(next);
+    onFileAttachmentsChangeRef.current?.(next);
+  }
+
+  function insertPendingInlineImage(file: File) {
+    if (!attachmentsActive) return;
+    const pendingId = crypto.randomUUID();
+    const blobUrl = URL.createObjectURL(file);
+    pendingFilesRef.current.set(pendingId, { file, blobUrl });
+    edRef.current
+      ?.chain()
+      .focus(undefined, { scrollIntoView: false })
+      .setImage({
+        src: blobUrl,
+        alt: file.name || "Image",
+        "data-pending-id": pendingId,
+      } as {
+        src: string;
+        alt?: string;
+        "data-pending-id": string;
+      })
+      .run();
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const entry of pendingFilesRef.current.values()) {
+        URL.revokeObjectURL(entry.blobUrl);
+      }
+      pendingFilesRef.current.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!attachmentsActive || !attachmentEntityType || !attachmentEntityId) {
+      syncFileAttachments([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next = await listEntityFileAttachments({
+        entityType: attachmentEntityType,
+        entityId: attachmentEntityId,
+      });
+      if (!cancelled) syncFileAttachments(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when entity changes
+  }, [attachmentsActive, attachmentEntityType, attachmentEntityId]);
+
+  const uploadAttachedFile = useMemo(() => {
+    return async (file: File) => {
       if (!attachmentsActive || !attachmentEntityType || !attachmentEntityId) {
         return;
       }
       setUploading(true);
       try {
-        const { attachmentId, mimeType } = await uploadFileToR2({
+        const uploaded = await uploadFileToR2({
           file,
           entityType: attachmentEntityType,
           entityId: attachmentEntityId,
-          imagesOnly,
+          imagesOnly: false,
+          placement: "attached",
         });
-        const displayUrl = await resolveAttachmentDisplayUrl(attachmentId);
-        if (mimeType.startsWith("image/")) {
-          edRef.current
-            ?.chain()
-            .focus(undefined, { scrollIntoView: false })
-            .setImage({
-              src: displayUrl || "",
-              alt: file.name,
-              "data-attachment-id": attachmentId,
-            } as { src: string; alt?: string; "data-attachment-id": string })
-            .run();
-        } else {
-          const label = file.name || "Attachment";
-          const href = displayUrl || "#";
-          edRef.current
-            ?.chain()
-            .focus(undefined, { scrollIntoView: false })
-            .insertContent(
-              `<p><a href="${href}" data-attachment-id="${attachmentId}" target="_blank" rel="noopener noreferrer">${label.replace(/</g, "&lt;")}</a></p>`,
-            )
-            .run();
-        }
+        setFileAttachments((prev) => {
+          const next = [
+            ...prev,
+            {
+              id: uploaded.attachmentId,
+              original_filename: uploaded.originalFilename,
+              mime_type: uploaded.mimeType,
+              size_bytes: uploaded.sizeBytes,
+            },
+          ];
+          onFileAttachmentsChangeRef.current?.(next);
+          return next;
+        });
       } catch (err) {
         onAttachmentErrorRef.current?.(
           err instanceof Error ? err.message : "Upload failed",
@@ -291,10 +379,104 @@ export function SimpleRichTextEditor({
         setUploading(false);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachmentsActive, attachmentEntityType, attachmentEntityId]);
 
-  const extensions = useMemo((): Extensions => {
+  useImperativeHandle(
+    ref,
+    () => ({
+      async flushPendingInlineUploads() {
+        const editor = edRef.current;
+        if (!editor) return "";
+        if (
+          !attachmentsActive ||
+          !attachmentEntityType ||
+          !attachmentEntityId
+        ) {
+          return editor.isEmpty ? "" : editor.getHTML();
+        }
+
+        const pendingIds: string[] = [];
+        editor.state.doc.descendants((node) => {
+          const id = node.attrs["data-pending-id"];
+          if (typeof id === "string" && id) pendingIds.push(id);
+        });
+        const unique = [...new Set(pendingIds)];
+        if (unique.length === 0) {
+          return editor.isEmpty ? "" : editor.getHTML();
+        }
+
+        setUploading(true);
+        try {
+          for (const pendingId of unique) {
+            const findPositions = () => {
+              const positions: number[] = [];
+              editor.state.doc.descendants((node, pos) => {
+                if (
+                  node.type.name === "image" &&
+                  node.attrs["data-pending-id"] === pendingId
+                ) {
+                  positions.push(pos);
+                }
+              });
+              return positions;
+            };
+
+            const entry = pendingFilesRef.current.get(pendingId);
+            if (!entry) {
+              for (const pos of [...findPositions()].reverse()) {
+                editor
+                  .chain()
+                  .setNodeSelection(pos)
+                  .deleteSelection()
+                  .run();
+              }
+              continue;
+            }
+
+            const uploaded = await uploadFileToR2({
+              file: entry.file,
+              entityType: attachmentEntityType,
+              entityId: attachmentEntityId,
+              imagesOnly: true,
+              placement: "inline",
+            });
+            const displayUrl =
+              (await resolveAttachmentDisplayUrl(uploaded.attachmentId)) ||
+              "";
+
+            for (const pos of findPositions()) {
+              editor
+                .chain()
+                .setNodeSelection(pos)
+                .updateAttributes("image", {
+                  src: displayUrl,
+                  "data-attachment-id": uploaded.attachmentId,
+                  "data-pending-id": null,
+                })
+                .run();
+            }
+
+            URL.revokeObjectURL(entry.blobUrl);
+            pendingFilesRef.current.delete(pendingId);
+          }
+
+          const html = editor.isEmpty ? "" : editor.getHTML();
+          onChangeRef.current(html);
+          return html;
+        } catch (err) {
+          onAttachmentErrorRef.current?.(
+            err instanceof Error ? err.message : "Upload failed",
+          );
+          throw err;
+        } finally {
+          setUploading(false);
+        }
+      },
+    }),
+    [attachmentsActive, attachmentEntityType, attachmentEntityId],
+  );
+
+    const extensions = useMemo((): Extensions => {
     const base: Extensions = [
       StarterKit.configure({
         blockquote: false,
@@ -369,29 +551,39 @@ export function SimpleRichTextEditor({
           "data-placeholder": placeholder,
         },
         handleScrollToSelection: (view) => scrollSelectionIntoEditor(view),
-        handlePaste: (view, event) => {
+        handlePaste: (_view, event) => {
           if (!attachmentsActive) return false;
           const files = imageFilesFromDataTransfer(event.clipboardData);
           if (files.length === 0) return false;
           event.preventDefault();
-          void uploadAttachment(files[0]!, true);
+          insertPendingInlineImage(files[0]!);
           return true;
         },
-        handleDrop: (view, event) => {
+        handleDrop: (_view, event) => {
           if (!attachmentsActive) return false;
           const files = imageFilesFromDataTransfer(event.dataTransfer);
           if (files.length === 0) return false;
           event.preventDefault();
-          void uploadAttachment(files[0]!, true);
+          insertPendingInlineImage(files[0]!);
           return true;
         },
       },
       onUpdate: ({ editor: ed }) => {
+        const alive = new Set<string>();
+        ed.state.doc.descendants((node) => {
+          const id = node.attrs["data-pending-id"];
+          if (typeof id === "string" && id) alive.add(id);
+        });
+        for (const [id, entry] of pendingFilesRef.current) {
+          if (alive.has(id)) continue;
+          URL.revokeObjectURL(entry.blobUrl);
+          pendingFilesRef.current.delete(id);
+        }
         const html = ed.isEmpty ? "" : ed.getHTML();
         onChange(html);
       },
     },
-    [extensions, attachmentsActive, uploadAttachment],
+    [extensions, attachmentsActive],
   );
 
   useEffect(() => {
@@ -400,6 +592,14 @@ export function SimpleRichTextEditor({
 
   useEffect(() => {
     if (!editor) return;
+    let hasPending = false;
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === "image" && node.attrs["data-pending-id"]) {
+        hasPending = true;
+      }
+    });
+    // Keep paste previews intact until save; controlled value must not wipe them.
+    if (hasPending) return;
     const next = notesToEditorHtml(value);
     const current = editor.isEmpty ? "" : editor.getHTML();
     if (next === current) return;
@@ -547,10 +747,7 @@ export function SimpleRichTextEditor({
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
-                  void uploadAttachment(
-                    file,
-                    file.type.startsWith("image/"),
-                  );
+                  void uploadAttachedFile(file);
                 }
                 e.target.value = "";
               }}
@@ -589,6 +786,33 @@ export function SimpleRichTextEditor({
       >
         <EditorContent editor={ed} />
       </div>
+      {attachmentsActive ? (
+        <FileAttachmentList
+          items={fileAttachments}
+          className="border-t border-[var(--border)] px-2 py-2"
+          onRemove={(id) => setPendingRemoveId(id)}
+        />
+      ) : null}
+      {pendingRemoveId ? (
+        <ConfirmDialog
+          title="Remove attachment?"
+          message="This permanently deletes the file from storage. This cannot be undone."
+          confirmLabel="Remove"
+          onCancel={() => setPendingRemoveId(null)}
+          onConfirm={() => {
+            const id = pendingRemoveId;
+            setPendingRemoveId(null);
+            const prev = fileAttachments;
+            syncFileAttachments(prev.filter((a) => a.id !== id));
+            void deleteAttachment(id).catch((err) => {
+              syncFileAttachments(prev);
+              onAttachmentErrorRef.current?.(
+                err instanceof Error ? err.message : "Failed to remove file",
+              );
+            });
+          }}
+        />
+      ) : null}
       {mentionPeople && mentionPeople.length > 0 ? (
         <p className="border-t border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
           Type @ to mention someone
@@ -665,7 +889,7 @@ export function SimpleRichTextEditor({
       ) : null}
     </div>
   );
-}
+});
 
 function ToolbarButton({
   label,
