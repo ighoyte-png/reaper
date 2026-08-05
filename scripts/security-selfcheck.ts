@@ -6,6 +6,10 @@ import { sanitizeNotesHtml, notesHasContent } from "../src/lib/notes-html";
 import { sanitizeExternalUrl } from "../src/lib/safe-url";
 import { sanitizePublicWorkspace } from "../src/lib/share/sanitize";
 import { generateShareToken } from "../src/lib/share/token";
+import {
+  assertAllowedSiteOrigin,
+  expandOriginVariants,
+} from "../src/lib/security/request";
 import { createDemoSeed } from "../src/lib/demo/seed";
 import type { DemoState } from "../src/lib/types";
 
@@ -140,8 +144,26 @@ function testToken() {
   assert(/^[0-9a-f]+$/.test(a), "hex token");
 }
 
+function testOriginCsrf() {
+  const variants = expandOriginVariants("https://app.reaperpm.com");
+  assert(
+    variants.includes("https://www.app.reaperpm.com"),
+    "www origin alias",
+  );
+  const req = new Request("https://app.reaperpm.com/api/invite", {
+    method: "POST",
+    headers: {
+      host: "app.reaperpm.com",
+      origin: "https://www.app.reaperpm.com",
+      "sec-fetch-site": "same-origin",
+    },
+  });
+  assert(assertAllowedSiteOrigin(req).ok, "allow www/non-www alias");
+}
+
 testNotesSanitize();
 testSafeUrl();
 testShareSanitize();
 testToken();
+testOriginCsrf();
 console.log("security-selfcheck: ok");

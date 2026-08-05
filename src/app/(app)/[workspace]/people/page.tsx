@@ -140,6 +140,7 @@ function PeoplePageContent() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
+  const [originalLoginEmail, setOriginalLoginEmail] = useState("");
 
   const editingLinkedProfile = editing?.profile_id
     ? state.profiles.find((p) => p.id === editing.profile_id)
@@ -199,6 +200,7 @@ function PeoplePageContent() {
 
       const res = await fetch("/api/invite", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           resend
@@ -272,6 +274,24 @@ function PeoplePageContent() {
       await setPersonPods(row.id, selectedPodIds);
 
       if (
+        mode === "supabase" &&
+        row.profile_id &&
+        email &&
+        email !== originalLoginEmail
+      ) {
+        const emailRes = await fetch("/api/account/email", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ personId: row.id, email }),
+        });
+        const emailData = (await emailRes.json()) as { error?: string };
+        if (!emailRes.ok) {
+          throw new Error(emailData.error || "Could not update login email");
+        }
+      }
+
+      if (
         (admin || canManage) &&
         row.profile_id &&
         editingLinkedProfile &&
@@ -308,6 +328,7 @@ function PeoplePageContent() {
     setEditing(person);
     setAvatarFile(null);
     setAvatarPreview(person.avatar_url);
+    setOriginalLoginEmail((person.email ?? "").trim().toLowerCase());
     const linked = person.profile_id
       ? state.profiles.find((p) => p.id === person.profile_id)
       : undefined;

@@ -59,25 +59,81 @@ function requestOriginHeader(request: Request): string | null {
   return null;
 }
 
+/** www / non-www and http / https aliases for the same deployment host. */
+export function expandOriginVariants(origin: string): string[] {
+  const variants = new Set<string>([origin]);
+  try {
+    const url = new URL(origin);
+    const portSuffix = url.port ? `:${url.port}` : "";
+    const bareHost = url.hostname.startsWith("www.")
+      ? url.hostname.slice(4)
+      : url.hostname;
+    const wwwHost = url.hostname.startsWith("www.")
+      ? url.hostname
+      : `www.${url.hostname}`;
+
+    for (const host of [url.hostname, bareHost, wwwHost]) {
+      variants.add(`${url.protocol}//${host}${portSuffix}`);
+      if (url.protocol === "http:") {
+        variants.add(`https://${host}${portSuffix}`);
+      }
+    }
+  } catch {
+    /* ignore invalid origin */
+  }
+  return [...variants];
+}
+
+function collectAllowedOrigins(request: Request): Set<string> {
+  const allowed = new Set<string>();
+  for (const candidate of [
+    requestSiteOrigin(request),
+    configuredSiteOrigin(),
+  ]) {
+    if (!candidate) continue;
+    for (const variant of expandOriginVariants(candidate)) {
+      allowed.add(variant);
+    }
+  }
+  return allowed;
+}
+
+function callerOriginAllowed(
+  callerOrigin: string,
+  allowed: Set<string>,
+): boolean {
+  for (const variant of expandOriginVariants(callerOrigin)) {
+    if (allowed.has(variant)) return true;
+  }
+  return false;
+}
+
 /**
  * CSRF guard for cookie-authenticated mutations.
- * Allows the live request host and optional configured SITE_URL alias.
+ * Allows the live request host, configured SITE_URL aliases, and same-origin fetches.
  */
 export function assertAllowedSiteOrigin(request: Request): {
   ok: boolean;
   origin: string;
 } {
   const origin = requestSiteOrigin(request);
-  const allowed = new Set<string>([origin]);
-  const configured = configuredSiteOrigin();
-  if (configured) allowed.add(configured);
+  const allowed = collectAllowedOrigins(request);
 
   const callerOrigin = requestOriginHeader(request);
-  if (callerOrigin && !allowed.has(callerOrigin)) {
-    return { ok: false, origin };
+  if (!callerOrigin) {
+    return { ok: true, origin };
+  }
+  if (callerOriginAllowed(callerOrigin, allowed)) {
+    return { ok: true, origin };
   }
 
-  return { ok: true, origin };
+  // Browsers label in-app fetch() as same-origin even when Origin/Referer differ
+  // from x-forwarded-host (common behind reverse proxies).
+  if (request.headers.get("sec-fetch-site") === "same-origin") {
+    return { ok: true, origin };
+  }
+
+  return { ok: false, origin };
 }
 
 /** @deprecated Use assertAllowedSiteOrigin or requestSiteOrigin. */
