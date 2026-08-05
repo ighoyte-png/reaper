@@ -171,6 +171,9 @@ export function mapTaskList(row: Record<string, unknown>): TaskList {
     sort_order: num(row.sort_order),
     archived: Boolean(row.archived),
     hide_from_client: Boolean(row.hide_from_client),
+    gantt_enabled: Boolean(row.gantt_enabled),
+    start_date: row.start_date ? String(row.start_date) : null,
+    end_date: row.end_date ? String(row.end_date) : null,
   };
 }
 
@@ -2506,8 +2509,30 @@ export async function upsertTaskListRow(
     sort_order: list.sort_order,
     archived: list.archived,
     hide_from_client: Boolean(list.hide_from_client),
+    gantt_enabled: Boolean(list.gantt_enabled),
+    start_date: list.start_date,
+    end_date: list.end_date,
   };
   let { error } = await supabase.from("task_lists").upsert(payload);
+  if (
+    error &&
+    (/gantt_enabled|start_date|end_date/i.test(error.message) ||
+      (error.code === "PGRST204" &&
+        /gantt_enabled|start_date|end_date/i.test(error.message)))
+  ) {
+    const {
+      gantt_enabled: _g,
+      start_date: _s,
+      end_date: _e,
+      ...withoutGantt
+    } = payload;
+    ({ error } = await supabase.from("task_lists").upsert(withoutGantt));
+    if (!error) {
+      console.warn(
+        "task_lists gantt columns missing — apply supabase/migrations/073_task_list_gantt.sql",
+      );
+    }
+  }
   if (
     error &&
     (/hide_from_client/i.test(error.message) ||
@@ -2522,7 +2547,14 @@ export async function upsertTaskListRow(
     }
   }
   if (error && /archived/i.test(error.message)) {
-    const { archived: _drop, hide_from_client: _dropHide, ...legacy } = payload;
+    const {
+      archived: _drop,
+      hide_from_client: _dropHide,
+      gantt_enabled: _g,
+      start_date: _s,
+      end_date: _e,
+      ...legacy
+    } = payload;
     ({ error } = await supabase.from("task_lists").upsert(legacy));
     if (!error) {
       console.warn(
@@ -3181,6 +3213,9 @@ export async function applyProjectTemplateRows(
     sort_order: l.sort_order,
     archived: false,
     hide_from_client: false,
+    gantt_enabled: false,
+    start_date: null,
+    end_date: null,
   }));
   const now = new Date().toISOString();
   const taskRows = orderTasksParentsFirst(
@@ -3354,6 +3389,9 @@ export async function seedDemoWorkspace(
     sort_order: l.sort_order,
     archived: Boolean(l.archived),
     hide_from_client: Boolean(l.hide_from_client),
+    gantt_enabled: Boolean(l.gantt_enabled),
+    start_date: l.start_date,
+    end_date: l.end_date,
   }));
 
   const tasks = seed.tasks.map((t) => ({

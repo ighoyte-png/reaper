@@ -174,7 +174,14 @@ export interface ProjectPortalPayload {
     essential_label: string;
     essential_url: string;
   }[];
-  taskLists: { id: string; name: string; milestone_id: string | null }[];
+  taskLists: {
+    id: string;
+    name: string;
+    milestone_id: string | null;
+    gantt_enabled: boolean;
+    start_date: string | null;
+    end_date: string | null;
+  }[];
   /** Titles/status only — no assignee, notes, or internal cost data. */
   tasks: {
     id: string;
@@ -183,6 +190,8 @@ export interface ProjectPortalPayload {
     title: string;
     status: string;
     sort_order: number;
+    start_date: string | null;
+    due_date: string | null;
   }[];
   assets: {
     id: string;
@@ -313,7 +322,14 @@ export function sanitizeProjectPortal(
         (a, b) =>
           a.sort_order - b.sort_order || a.name.localeCompare(b.name),
       )
-      .map((l) => ({ id: l.id, name: l.name, milestone_id: l.milestone_id })),
+      .map((l) => ({
+        id: l.id,
+        name: l.name,
+        milestone_id: l.milestone_id,
+        gantt_enabled: Boolean(l.gantt_enabled),
+        start_date: l.start_date ?? null,
+        end_date: l.end_date ?? null,
+      })),
     tasks: state.tasks
       .filter(
         (t) =>
@@ -328,6 +344,8 @@ export function sanitizeProjectPortal(
         title: t.title,
         status: t.status,
         sort_order: t.sort_order,
+        start_date: t.start_date ?? null,
+        due_date: t.due_date ?? null,
       })),
     assets: state.project_assets
       .filter((a) => a.project_id === projectId && !a.hide_from_client)

@@ -26,6 +26,8 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Archive,
   ArchiveRestore,
+  CalendarDays,
+  ChartGantt,
   ChevronDown,
   ChevronRight,
   Eye,
@@ -36,9 +38,13 @@ import {
   Plus,
   Reply,
   SmilePlus,
+  Star,
   StickyNote,
   Trash2,
 } from "lucide-react";
+import { ProjectTaskCalendar } from "@/components/projects/project-task-calendar";
+import { ProjectGanttBoard } from "@/components/projects/project-gantt-board";
+import { useToast } from "@/components/toast/toast-provider";
 import { ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
 import { ExpandPanel } from "@/components/ui/expand-panel";
@@ -77,6 +83,7 @@ import { PRESET_COLORS } from "@/lib/domain/colors";
 import { projectTeamPersonIds, projectAssigneePeople, canEditProject } from "@/lib/domain/project-access";
 import { personAvatarColor } from "@/lib/domain/people";
 import {
+  canCompleteTask,
   dueDateToneClass,
   emptyTaskAuditFields,
   parentTasks,
@@ -99,6 +106,10 @@ import type {
 } from "@/lib/types";
 
 type InlineTaskDraft = TaskCreateDraft;
+export type TaskBoardView = "list" | "card" | "calendar" | "gantt";
+
+const GANTT_STRUCTURAL_EDIT_MSG =
+  "Changing order or deleting Gantt items should be done in Gantt view.";
 
 type Props = {
   projectId: string;
@@ -119,6 +130,8 @@ type Props = {
    * Lets the project page keep Templates above Archive while both sit under Tasks.
    */
   templatesSlot?: ReactNode;
+  /** Notified when Gantt view is active so the page can relocate sidebar cards. */
+  onGanttActiveChange?: (active: boolean) => void;
 };
 
 function todayKey() {
@@ -197,6 +210,11 @@ type BoardCtx = {
   mentionPeople: Person[];
   /** Task ids with unread assigner ↔ assignee thread for the viewer. */
   unreadTaskThreadIds: Set<string>;
+  boardView: TaskBoardView;
+  /** Gantt-enabled list locked to the project manager. */
+  isListGanttLocked: (listId: string) => boolean;
+  /** PM must use Gantt view for structural edits on Gantt lists. */
+  guardGanttStructuralEdit: (listId: string) => boolean;
 };
 
 type TaskDragData = { type: "task"; listId: string; parentId: string | null };
@@ -303,6 +321,7 @@ export function ProjectTaskBoard({
   focusTaskId = null,
   assigneePersonId = null,
   templatesSlot,
+  onGanttActiveChange,
 }: Props) {
   const {
     state,
@@ -322,6 +341,7 @@ export function ProjectTaskBoard({
     dataStatus,
     dismissTaskThreadUnread,
   } = useData();
+  const { push: toast } = useToast();
   const projectHref = useProjectHref();
   const project = state.projects.find((p) => p.id === projectId);
   const viewAs = useViewAsOptional();
@@ -357,15 +377,16 @@ export function ProjectTaskBoard({
     id: string;
     name: string;
   } | null>(null);
-  const [view, setView] = useState<"list" | "card">("list");
+  const [view, setView] = useState<TaskBoardView>("list");
 
-  function setTaskView(next: "list" | "card") {
-    if (next === "card") {
+  function setTaskView(next: TaskBoardView) {
+    if (next === "card" || next === "calendar" || next === "gantt") {
       setEditingTaskId(null);
       setDraftingListId(null);
     }
     setView(next);
   }
+
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
@@ -419,6 +440,48 @@ export function ProjectTaskBoard({
     () => allLists.filter((l) => l.archived),
     [allLists],
   );
+
+  const isPm =
+    Boolean(project?.manager_person_id) &&
+    project?.manager_person_id === viewerPersonId;
+
+  const showGanttToggle =
+    activeLists.some((l) => l.gantt_enabled) &&
+    Boolean(project?.manager_person_id);
+
+  const listById = useMemo(() => {
+    const map = new Map<string, TaskList>();
+    for (const list of allLists) map.set(list.id, list);
+    return map;
+  }, [allLists]);
+
+  function isListGanttLocked(listId: string): boolean {
+    const list = listById.get(listId);
+    return Boolean(list?.gantt_enabled && !isPm);
+  }
+
+  function guardGanttStructuralEdit(listId: string): boolean {
+    const list = listById.get(listId);
+    if (!list?.gantt_enabled || !isPm || view === "gantt") return false;
+    window.alert(GANTT_STRUCTURAL_EDIT_MSG);
+    return true;
+  }
+
+  function guardGanttStructuralEditForTasks(taskIds: string[]): boolean {
+    for (const id of taskIds) {
+      const task = state.tasks.find((t) => t.id === id);
+      if (task && guardGanttStructuralEdit(task.list_id)) return true;
+    }
+    return false;
+  }
+
+  useEffect(() => {
+    if (view === "gantt" && !showGanttToggle) setView("list");
+  }, [view, showGanttToggle]);
+
+  useEffect(() => {
+    onGanttActiveChange?.(view === "gantt");
+  }, [view, onGanttActiveChange]);
 
   const visibleTasks = useMemo(() => {
     const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
@@ -549,6 +612,7 @@ export function ProjectTaskBoard({
   }
 
   function beginDeleteTasks(rootIds: string[]) {
+    if (guardGanttStructuralEditForTasks(rootIds)) return;
     const roots = [
       ...new Set(
         rootIds.filter(
@@ -645,8 +709,10 @@ export function ProjectTaskBoard({
 
   function moveSelectedToList(destListId: string) {
     if (!manageLists || selected.size === 0 || !destListId) return;
+    if (isListGanttLocked(destListId)) return;
     const destList = allLists.find((l) => l.id === destListId);
     if (!destList) return;
+    if (guardGanttStructuralEditForTasks([...selected])) return;
 
     const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
     const selectedTasks = [...selected]
@@ -727,11 +793,22 @@ export function ProjectTaskBoard({
     if (!bulkHasChanges || selected.size === 0) return;
     for (const id of selected) {
       const task = state.tasks.find((t) => t.id === id);
-      if (!task) continue;
+      if (!task || isListGanttLocked(task.list_id)) continue;
       let next = { ...task };
       let changed = false;
       if (bulkDraft.status !== undefined) {
         if (viewerCanManage || task.assignee_person_id === viewerPersonId) {
+          if (
+            bulkDraft.status === "complete" &&
+            !canCompleteTask(
+              viewerPersonId,
+              task,
+              state.people,
+              project ?? null,
+            )
+          ) {
+            continue;
+          }
           next = { ...next, status: bulkDraft.status };
           changed = true;
         }
@@ -767,12 +844,15 @@ export function ProjectTaskBoard({
       sort_order: 0,
       archived: false,
       hide_from_client: false,
+      gantt_enabled: false,
+      start_date: null,
+      end_date: null,
     };
     upsertTaskList(list);
   }
 
   function addSubtask(listId: string, parentId: string) {
-    if (!manageLists) return;
+    if (!manageLists || isListGanttLocked(listId)) return;
     const parent = visibleTasks.find((t) => t.id === parentId);
     const siblings = visibleTasks.filter(
       (t) => t.list_id === listId && t.parent_id === parentId,
@@ -799,7 +879,7 @@ export function ProjectTaskBoard({
   }
 
   function createTaskFromDraft(listId: string, draft: InlineTaskDraft) {
-    if (!manageLists) return;
+    if (!manageLists || isListGanttLocked(listId)) return;
     const title = draft.title.trim();
     if (!title) return;
     const siblings = visibleTasks.filter(
@@ -827,7 +907,7 @@ export function ProjectTaskBoard({
   }
 
   function addDivider(listId: string) {
-    if (!manageLists) return;
+    if (!manageLists || isListGanttLocked(listId)) return;
     const siblings = visibleTasks.filter(
       (t) => t.list_id === listId && !t.parent_id,
     );
@@ -872,6 +952,7 @@ export function ProjectTaskBoard({
 
   function setEditingTask(task: Task | null) {
     if (task) {
+      if (isListGanttLocked(task.list_id)) return;
       setDraftingListId(null);
       setEditingTaskId(task.id);
       return;
@@ -881,7 +962,7 @@ export function ProjectTaskBoard({
 
   function saveEditingTask(taskId: string, draft: InlineTaskDraft) {
     const task = state.tasks.find((t) => t.id === taskId);
-    if (!task) return;
+    if (!task || isListGanttLocked(task.list_id)) return;
     const title = draft.title.trim();
     if (!title) return;
     upsertTask({
@@ -903,6 +984,7 @@ export function ProjectTaskBoard({
   function cycleStatus(task: Task) {
     if (task.is_divider) return;
     if (isPublicShare) return;
+    if (isListGanttLocked(task.list_id)) return;
     // Schedule compact sidebar stays otherwise read-only; status cycling is allowed.
     if (readOnly && !compact) return;
     const next =
@@ -911,6 +993,13 @@ export function ProjectTaskBoard({
         : task.status === "active"
           ? "complete"
           : "upcoming";
+    if (
+      next === "complete" &&
+      !canCompleteTask(viewerPersonId, task, state.people, project ?? null)
+    ) {
+      toast("Only the project manager or task assigner can mark tasks complete", "warning");
+      return;
+    }
     upsertTask({ ...task, status: next });
   }
 
@@ -1064,7 +1153,8 @@ export function ProjectTaskBoard({
 
   function moveTaskToColumn(taskId: string, destStatus: TaskStatus, destIndex: number) {
     const task = state.tasks.find((t) => t.id === taskId);
-    if (!task) return;
+    if (!task || isListGanttLocked(task.list_id)) return;
+    if (guardGanttStructuralEdit(task.list_id)) return;
     const sourceStatus = task.status;
     const destSiblings = parentTasks(visibleTasks)
       .filter((t) => t.status === destStatus && t.id !== taskId)
@@ -1134,6 +1224,8 @@ export function ProjectTaskBoard({
 
     if (activeData.type === "list" && overData?.type === "list") {
       if (active.id === over.id) return;
+      const draggedList = activeLists.find((l) => l.id === active.id);
+      if (draggedList && guardGanttStructuralEdit(draggedList.id)) return;
       const oldIndex = activeLists.findIndex((l) => l.id === active.id);
       const newIndex = activeLists.findIndex((l) => l.id === over.id);
       if (oldIndex < 0 || newIndex < 0) return;
@@ -1149,6 +1241,8 @@ export function ProjectTaskBoard({
     const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
     const movers = movableDragGroup(String(active.id), selected, projectTasks);
     if (movers.length === 0) return;
+    if (movers.some((m) => isListGanttLocked(m.list_id))) return;
+    if (guardGanttStructuralEditForTasks(movers.map((m) => m.id))) return;
     const task = movers[0]!;
     const movingIds = new Set(movers.map((t) => t.id));
     const multi = movers.length > 1;
@@ -1396,6 +1490,9 @@ export function ProjectTaskBoard({
     toggleReaction: toggleTaskCommentReaction,
     mentionPeople,
     unreadTaskThreadIds,
+    boardView: view,
+    isListGanttLocked,
+    guardGanttStructuralEdit,
   };
 
   if (projectDataLoading) {
@@ -1419,6 +1516,7 @@ export function ProjectTaskBoard({
               view={view}
               setView={setTaskView}
               allowCardView={allowCardView}
+              showGanttToggle={showGanttToggle}
             />
           </div>
           {activeLists.length === 0 ? (
@@ -1430,6 +1528,8 @@ export function ProjectTaskBoard({
                   (t) => t.list_id === list.id && !t.is_divider,
                 ),
               );
+              const listManage =
+                manageLists && !isListGanttLocked(list.id);
               return (
                 <section
                   key={list.id}
@@ -1447,14 +1547,14 @@ export function ProjectTaskBoard({
                     <h4 className="truncate text-lg font-medium">{list.name}</h4>
                   </div>
                   <div className="p-2 sm:p-3">
-                    {listParents.length === 0 && !manageLists ? (
+                    {listParents.length === 0 && !listManage ? (
                       <p className="px-1 py-2 text-sm text-[var(--text-muted)]">
                         No tasks in this list yet.
                       </p>
                     ) : (
                       <KanbanBoard
                         tasks={listParents}
-                        manageLists={manageLists}
+                        manageLists={listManage}
                         onMove={moveTaskToColumn}
                       />
                     )}
@@ -1465,6 +1565,69 @@ export function ProjectTaskBoard({
           )}
         </div>
       </section>
+    );
+  }
+
+  if (view === "calendar") {
+    return (
+      <>
+        <section
+          className={cn(
+            !compact &&
+              "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+          )}
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
+                Tasks
+              </h3>
+              <ViewToggle
+                view={view}
+                setView={setTaskView}
+                allowCardView={allowCardView}
+                showGanttToggle={showGanttToggle}
+              />
+            </div>
+            <ProjectTaskCalendar tasks={visibleTasks} todayKey={todayKey()} />
+          </div>
+        </section>
+        {templatesSlot}
+      </>
+    );
+  }
+
+  if (view === "gantt") {
+    return (
+      <>
+        <section
+          className={cn(
+            !compact &&
+              "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
+          )}
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
+                Tasks
+              </h3>
+              <ViewToggle
+                view={view}
+                setView={setTaskView}
+                allowCardView={allowCardView}
+                showGanttToggle={showGanttToggle}
+              />
+            </div>
+            <div data-gantt-root data-project-id={projectId}>
+              <ProjectGanttBoard
+                projectId={projectId}
+                readOnly={readOnly || !isPm}
+              />
+            </div>
+          </div>
+        </section>
+        {templatesSlot}
+      </>
     );
   }
 
@@ -1481,7 +1644,12 @@ export function ProjectTaskBoard({
         <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
           Tasks
         </h3>
-        <ViewToggle view={view} setView={setTaskView} allowCardView={allowCardView} />
+        <ViewToggle
+          view={view}
+          setView={setTaskView}
+          allowCardView={allowCardView}
+          showGanttToggle={showGanttToggle}
+        />
         {manageLists ? (
           <div className="ml-auto flex items-center gap-1">
             <button
@@ -1701,7 +1869,11 @@ export function ProjectTaskBoard({
                       return next;
                     })
                   }
-                  milestoneName={milestone?.name ?? null}
+                  milestone={
+                    milestone
+                      ? { name: milestone.name, status: milestone.status }
+                      : null
+                  }
                   onNameChange={(name) => upsertTaskList({ ...list, name })}
                   drafting={draftingListId === list.id}
                   onStartDraft={() => {
@@ -1714,9 +1886,10 @@ export function ProjectTaskBoard({
                   }}
                   onCreateDraft={(draft) => createTaskFromDraft(list.id, draft)}
                   onAddDivider={() => addDivider(list.id)}
-                  onArchive={() =>
-                    upsertTaskList({ ...list, archived: true })
-                  }
+                  onArchive={() => {
+                    if (guardGanttStructuralEdit(list.id)) return;
+                    upsertTaskList({ ...list, archived: true });
+                  }}
                   onUnarchive={() =>
                     upsertTaskList({ ...list, archived: false })
                   }
@@ -1726,9 +1899,14 @@ export function ProjectTaskBoard({
                       hide_from_client: !list.hide_from_client,
                     })
                   }
-                  onDelete={() =>
-                    setConfirmDeleteList({ id: list.id, name: list.name })
+                  onDelete={() => {
+                    if (guardGanttStructuralEdit(list.id)) return;
+                    setConfirmDeleteList({ id: list.id, name: list.name });
+                  }}
+                  onUpdateList={(patch) =>
+                    upsertTaskList({ ...list, ...patch })
                   }
+                  showGanttControls={Boolean(project?.manager_person_id)}
                 />
               );
             })}
@@ -1808,7 +1986,11 @@ export function ProjectTaskBoard({
                           return next;
                         })
                       }
-                      milestoneName={milestone?.name ?? null}
+                      milestone={
+                    milestone
+                      ? { name: milestone.name, status: milestone.status }
+                      : null
+                  }
                       onNameChange={(name) => upsertTaskList({ ...list, name })}
                       drafting={draftingListId === list.id}
                       onStartDraft={() => {
@@ -1823,9 +2005,10 @@ export function ProjectTaskBoard({
                         createTaskFromDraft(list.id, draft)
                       }
                       onAddDivider={() => addDivider(list.id)}
-                      onArchive={() =>
-                        upsertTaskList({ ...list, archived: true })
-                      }
+                      onArchive={() => {
+                        if (guardGanttStructuralEdit(list.id)) return;
+                        upsertTaskList({ ...list, archived: true });
+                      }}
                       onUnarchive={() =>
                         upsertTaskList({ ...list, archived: false })
                       }
@@ -1835,9 +2018,14 @@ export function ProjectTaskBoard({
                           hide_from_client: !list.hide_from_client,
                         })
                       }
-                      onDelete={() =>
-                        setConfirmDeleteList({ id: list.id, name: list.name })
+                      onDelete={() => {
+                        if (guardGanttStructuralEdit(list.id)) return;
+                        setConfirmDeleteList({ id: list.id, name: list.name });
+                      }}
+                      onUpdateList={(patch) =>
+                        upsertTaskList({ ...list, ...patch })
                       }
+                      showGanttControls={Boolean(project?.manager_person_id)}
                     />
                   );
                 })
@@ -1880,10 +2068,12 @@ function ViewToggle({
   view,
   setView,
   allowCardView,
+  showGanttToggle,
 }: {
-  view: "list" | "card";
-  setView: (v: "list" | "card") => void;
+  view: TaskBoardView;
+  setView: (v: TaskBoardView) => void;
   allowCardView: boolean;
+  showGanttToggle: boolean;
 }) {
   if (!allowCardView) return null;
   return (
@@ -1908,6 +2098,30 @@ function ViewToggle({
       >
         Cards
       </button>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
+          view === "calendar" && "bg-[var(--row-hover)]",
+        )}
+        onClick={() => setView("calendar")}
+      >
+        <CalendarDays size={12} />
+        Calendar
+      </button>
+      {showGanttToggle ? (
+        <button
+          type="button"
+          className={cn(
+            "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
+            view === "gantt" && "bg-[var(--row-hover)]",
+          )}
+          onClick={() => setView("gantt")}
+        >
+          <ChartGantt size={12} />
+          Gantt
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1918,7 +2132,7 @@ function ListSection({
   ctx,
   collapsed,
   onToggleCollapse,
-  milestoneName,
+  milestone,
   onNameChange,
   drafting,
   onStartDraft,
@@ -1929,13 +2143,15 @@ function ListSection({
   onUnarchive,
   onToggleHideFromClient,
   onDelete,
+  onUpdateList,
+  showGanttControls,
 }: {
   list: TaskList;
   parents: Task[];
   ctx: BoardCtx;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  milestoneName: string | null;
+  milestone: { name: string; status: string } | null;
   onNameChange: (name: string) => void;
   drafting: boolean;
   onStartDraft: () => void;
@@ -1946,12 +2162,16 @@ function ListSection({
   onUnarchive: () => void;
   onToggleHideFromClient: () => void;
   onDelete: () => void;
+  onUpdateList: (patch: Partial<TaskList>) => void;
+  showGanttControls: boolean;
 }) {
+  const listLocked = ctx.isListGanttLocked(list.id);
+  const listManage = ctx.manageLists && !listLocked;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: list.id,
       data: { type: "list" } satisfies ListDragData,
-      disabled: !ctx.manageLists,
+      disabled: !listManage,
     });
 
   const selectableIds = parents.flatMap((p) =>
@@ -1990,8 +2210,9 @@ function ListSection({
         {ctx.manageLists ? (
           <button
             type="button"
-            className="cursor-grab touch-none text-[var(--text-muted)]"
+            className="cursor-grab touch-none text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="Drag list to reorder"
+            disabled={!listManage}
             {...attributes}
             {...listeners}
           >
@@ -2013,7 +2234,7 @@ function ListSection({
             )}
           />
         </button>
-        {ctx.manageLists ? (
+        {ctx.manageLists && !listLocked ? (
           <input
             className="min-w-0 flex-1 border-0 bg-transparent text-lg font-medium outline-none"
             value={list.name}
@@ -2022,21 +2243,69 @@ function ListSection({
         ) : (
           <span className="min-w-0 flex-1 text-lg font-medium">{list.name}</span>
         )}
-        {milestoneName ? (
-          <span className="text-[10px] text-[var(--text-muted)]">
-            {milestoneName}
-          </span>
-        ) : null}
         {ctx.manageLists && ctx.listsEditMode ? (
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
+            {showGanttControls ? (
+              <>
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                    list.gantt_enabled && "text-[var(--status-healthy)]",
+                  )}
+                  onClick={() => {
+                    if (!list.gantt_enabled) {
+                      if (
+                        !window.confirm(
+                          "Enabling Gantt View Will Lock all Editing to the Project Manager of This Project.",
+                        )
+                      ) {
+                        return;
+                      }
+                    }
+                    onUpdateList({ gantt_enabled: !list.gantt_enabled });
+                  }}
+                  aria-label={
+                    list.gantt_enabled ? "Disable Gantt view" : "Enable Gantt view"
+                  }
+                  title={
+                    list.gantt_enabled ? "Gantt view enabled" : "Enable Gantt view"
+                  }
+                  aria-pressed={list.gantt_enabled}
+                >
+                  <ChartGantt size={14} />
+                </button>
+                {list.gantt_enabled ? (
+                  <>
+                    <input
+                      type="date"
+                      className="h-7 rounded border border-[var(--border)] bg-transparent px-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--accent)]"
+                      value={list.start_date ?? ""}
+                      onChange={(e) =>
+                        onUpdateList({
+                          start_date: e.target.value || null,
+                        })
+                      }
+                      aria-label={`${list.name} start date`}
+                    />
+                    <input
+                      type="date"
+                      className="h-7 rounded border border-[var(--border)] bg-transparent px-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--accent)]"
+                      value={list.end_date ?? ""}
+                      onChange={(e) =>
+                        onUpdateList({
+                          end_date: e.target.value || null,
+                        })
+                      }
+                      aria-label={`${list.name} end date`}
+                    />
+                  </>
+                ) : null}
+              </>
+            ) : null}
             <button
               type="button"
-              className={cn(
-                "inline-flex cursor-pointer rounded p-1 hover:bg-[var(--row-hover)]",
-                list.hide_from_client
-                  ? "text-[var(--text-muted)]"
-                  : "text-[var(--text-muted)] hover:text-[var(--text)]",
-              )}
+              className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
               onClick={onToggleHideFromClient}
               aria-label={
                 list.hide_from_client
@@ -2055,7 +2324,7 @@ function ListSection({
             {list.archived ? (
               <button
                 type="button"
-                className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
                 onClick={onUnarchive}
                 aria-label={`Unarchive list ${list.name}`}
                 title="Unarchive list"
@@ -2065,7 +2334,7 @@ function ListSection({
             ) : (
               <button
                 type="button"
-                className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
                 onClick={onArchive}
                 aria-label={`Archive list ${list.name}`}
                 title="Archive list"
@@ -2075,7 +2344,7 @@ function ListSection({
             )}
             <button
               type="button"
-              className="inline-flex cursor-pointer rounded p-1 text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+              className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
               onClick={onDelete}
               aria-label={`Delete list ${list.name}`}
               title="Delete list"
@@ -2096,6 +2365,13 @@ function ListSection({
             Collapse all
           </Button>
         ) : null}
+        {!ctx.listsEditMode && list.gantt_enabled ? (
+          <ChartGantt
+            size={14}
+            className="shrink-0 text-[var(--status-healthy)]"
+            aria-label="Gantt view enabled"
+          />
+        ) : null}
         {ctx.allowSelect && selectableIds.length > 0 ? (
           <Checkbox
             checked={allSelected}
@@ -2113,8 +2389,8 @@ function ListSection({
       </div>
       <ExpandPanel open={!collapsed}>
           {parents.length === 0 ? (
-            <ListTaskDropZone listId={list.id} disabled={!ctx.manageLists}>
-              {!ctx.manageLists ? (
+            <ListTaskDropZone listId={list.id} disabled={!listManage}>
+              {!listManage ? (
                 <p className="px-3 py-3 text-sm text-[var(--text-muted)]">
                   No tasks in this list yet.
                 </p>
@@ -2126,7 +2402,7 @@ function ListSection({
             <SortableContext
               items={parents.map((t) => t.id)}
               strategy={verticalListSortingStrategy}
-              disabled={!ctx.manageLists}
+              disabled={!listManage}
             >
               {parents.map((t) =>
                 t.is_divider ? (
@@ -2137,7 +2413,30 @@ function ListSection({
               )}
             </SortableContext>
           )}
-          {ctx.manageLists ? (
+          {milestone ? (
+            <div className="flex items-center gap-1.5 px-2 py-1 text-sm">
+              <Star
+                size={10}
+                className={cn(
+                  "h-2.5 w-2.5 shrink-0",
+                  milestone.status === "done"
+                    ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
+                    : "fill-[#f59e0b] text-[#f59e0b]",
+                )}
+                aria-hidden
+              />
+              <span
+                className={cn(
+                  "min-w-0 truncate",
+                  milestone.status === "done" &&
+                    "text-[var(--status-healthy)] line-through",
+                )}
+              >
+                {milestone.name}
+              </span>
+            </div>
+          ) : null}
+          {listManage ? (
             <ListTaskDropZone listId={list.id} disabled={false}>
               {drafting ? (
                 <InlineTaskForm
@@ -2711,6 +3010,8 @@ function TaskRow({
   ctx: BoardCtx;
 }) {
   const isExiting = ctx.exitingTaskIds.has(task.id);
+  const listLocked = ctx.isListGanttLocked(task.list_id);
+  const listManage = ctx.manageLists && !listLocked;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: task.id,
@@ -2720,7 +3021,7 @@ function TaskRow({
         parentId: task.parent_id,
       } satisfies TaskDragData,
       disabled:
-        !ctx.manageLists || ctx.editingTaskId === task.id || isExiting,
+        !listManage || ctx.editingTaskId === task.id || isExiting,
     });
 
   useEffect(() => {
@@ -2744,8 +3045,8 @@ function TaskRow({
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
   const multiSelectDrag =
-    ctx.manageLists && ctx.selected.size > 1 && isSelected;
-  const canEditStatus = ctx.allowStatusEdit;
+    listManage && ctx.selected.size > 1 && isSelected;
+  const canEditStatus = ctx.allowStatusEdit && !listLocked;
   const isFocused = ctx.focusTaskId === task.id;
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
   const [descExpanded, setDescExpanded] = useState(false);
@@ -2789,7 +3090,7 @@ function TaskRow({
           <SortableContext
             items={kids.map((k) => k.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!ctx.manageLists}
+            disabled={!listManage}
           >
             {kids.map((k) => (
               <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />
@@ -2872,7 +3173,7 @@ function TaskRow({
               }
         }
       >
-        {ctx.manageLists ? (
+        {listManage ? (
           <button
             type="button"
             className={cn(
@@ -2979,10 +3280,10 @@ function TaskRow({
               />
             </Tooltip>
           ) : null}
-          {ctx.canManage && !ctx.readOnly ? (
+          {ctx.canManage && !ctx.readOnly && listManage ? (
             <button
               type="button"
-              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
+              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--accent)] group-hover:opacity-100"
               onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
@@ -2995,10 +3296,10 @@ function TaskRow({
             </button>
           ) : null}
         </div>
-        {ctx.manageLists && depth === 0 ? (
+        {listManage && depth === 0 ? (
           <button
             type="button"
-            className="inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
+            className="inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--accent)] group-hover:opacity-100"
             onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();

@@ -205,6 +205,18 @@ export function taskAssignerPersonId(
   return project?.manager_person_id ?? null;
 }
 
+/** Only the project PM or the task assigner may mark a task complete. */
+export function canCompleteTask(
+  viewerPersonId: string | null | undefined,
+  task: Pick<Task, "created_by_profile_id" | "assignee_person_id">,
+  people: Pick<Person, "id" | "profile_id">[],
+  project: Pick<Project, "manager_person_id"> | null,
+): boolean {
+  if (!viewerPersonId) return false;
+  if (project?.manager_person_id === viewerPersonId) return true;
+  return taskAssignerPersonId(task, people, project) === viewerPersonId;
+}
+
 /** Assigner ↔ assignee counterpart who should see a new task-thread comment. */
 export function taskThreadNotifyPersonId(
   task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,

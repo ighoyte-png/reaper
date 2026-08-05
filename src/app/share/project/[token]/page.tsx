@@ -21,6 +21,7 @@ import {
   type ProjectPortalPayload,
 } from "@/lib/share/sanitize";
 import { approveDemoPortalMilestone } from "@/lib/share/demo-milestone-approve";
+import { PortalGanttProvider } from "@/lib/share/portal-gantt-provider";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import {
   assetDisplayTitle,
@@ -31,6 +32,11 @@ import { calendarYearBars } from "@/lib/domain/budget";
 import { parseAssetKind } from "@/lib/domain/milestones";
 import { compareTaskOrder } from "@/lib/domain/tasks";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
+import { ProjectGanttBoard } from "@/components/projects/project-gantt-board";
+import {
+  PortalProjectTasksPie,
+  projectPortalTasksPieStats,
+} from "@/components/projects/project-tasks-pie";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import type {
   Assignment,
@@ -454,9 +460,211 @@ export default function ProjectSharePage() {
     ? teamSorted.filter((m) => m.name !== manager.name)
     : teamSorted;
   const showTeamSection = Boolean(manager) || teamSorted.length > 0;
+  const hasGantt = portal.taskLists.some((l) => l.gantt_enabled);
+  const portalPieStats = projectPortalTasksPieStats(
+    portal.tasks.map((t) => ({
+      status: t.status as TaskStatus,
+      is_divider: false as const,
+    })),
+  );
+
+  const milestonesSection =
+    milestonesSorted.length > 0 ? (
+      <section className="flex h-full flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <h2 className="mb-3 text-sm font-semibold">Milestones</h2>
+        <div className="space-y-6">
+          {milestonesSorted.map((m) => {
+            const listIds = portal.taskLists
+              .filter((l) => l.milestone_id === m.id)
+              .map((l) => l.id);
+            const milestoneTasks = portal.tasks.filter((t) =>
+              listIds.includes(t.list_id),
+            );
+            const pct =
+              listIds.length > 0
+                ? taskCompletionPct(milestoneTasks)
+                : dateProgress(
+                    portal.project.start_date,
+                    m.due_date,
+                    todayKey,
+                  ) ?? 0;
+            const readyForApproval = m.approval_enabled && !m.client_approved;
+            const byline =
+              m.approved_by_client && m.approved_by_name
+                ? `Approved by ${m.approved_by_name}${
+                    m.approved_at
+                      ? ` on ${formatDisplayDate(m.approved_at.slice(0, 10))}`
+                      : ""
+                  }`
+                : null;
+            return (
+              <div
+                key={m.id}
+                className={cn(
+                  "rounded-md p-2",
+                  readyForApproval &&
+                    cn("cursor-pointer", milestonePortalGlowClass),
+                )}
+                onClick={readyForApproval ? () => openApprove(m.id) : undefined}
+                onKeyDown={
+                  readyForApproval
+                    ? (e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          openApprove(m.id);
+                        }
+                      }
+                    : undefined
+                }
+                role={readyForApproval ? "button" : undefined}
+                tabIndex={readyForApproval ? 0 : undefined}
+                title={readyForApproval ? "Click for Approval" : undefined}
+                aria-label={
+                  readyForApproval
+                    ? `Approve milestone ${m.name}`
+                    : undefined
+                }
+              >
+                <ProgressBar
+                  pct={pct}
+                  label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
+                  approved={m.client_approved}
+                  readyForApproval={readyForApproval}
+                  footerStart={byline}
+                  celebrate={celebrateId === m.id}
+                  essential={{
+                    kind: parseAssetKind(m.essential_kind),
+                    label: m.essential_label,
+                    url: m.essential_url,
+                  }}
+                  essentialGlowHover={Boolean(
+                    parseAssetKind(m.essential_kind) && m.essential_url.trim(),
+                  )}
+                  essentialApprovalTooltip
+                />
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    ) : null;
+
+  const essentialsSection =
+    assetsSorted.length > 0 ? (
+      <section className="flex h-full flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+        <h2 className="mb-3 text-sm font-semibold">Links & Essentials</h2>
+        <ul className="space-y-1.5">
+          {assetsSorted.map((a) => {
+            const isNote = Boolean(a.body.trim());
+            return (
+              <li
+                key={a.id}
+                className="rounded-md border border-[var(--border)] px-3 py-2 text-sm"
+              >
+                {isNote ? (
+                  <div className="space-y-1">
+                    <span className="block truncate font-medium">
+                      {titleCaseWords(a.label.trim() || "Note")}
+                    </span>
+                    <p className="whitespace-pre-wrap text-[var(--text-muted)]">
+                      {a.body}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <AssetKindIcon
+                      kind={a.kind as ProjectAssetKind}
+                      label={a.label}
+                      title={assetViewForApprovalTooltip(
+                        a.label,
+                        a.kind as ProjectAssetKind,
+                      )}
+                    />
+                    {sanitizeExternalUrl(a.url) ? (
+                      <a
+                        href={sanitizeExternalUrl(a.url)!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
+                      >
+                        {assetDisplayTitle(a.label, a.kind as ProjectAssetKind)}
+                      </a>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate">
+                        {assetDisplayTitle(a.label, a.kind as ProjectAssetKind)}
+                      </span>
+                    )}
+                    <ExternalLink
+                      size={12}
+                      className="shrink-0 text-[var(--text-muted)]"
+                    />
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    ) : null;
+
+  const tasksSection = (
+    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <h2 className="mb-3 text-sm font-semibold">Tasks</h2>
+      {portal.taskLists.length === 0 ? (
+        <p className="text-sm text-[var(--text-muted)]">
+          No tasks published yet.
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {portal.taskLists.map((list) => {
+            const listTasks = portal.tasks
+              .filter((t) => t.list_id === list.id)
+              .sort(compareTaskOrder);
+            const idSet = new Set(listTasks.map((t) => t.id));
+            const parents = listTasks
+              .filter((t) => !t.parent_id || !idSet.has(t.parent_id))
+              .sort(compareTaskOrder);
+            const childrenOf = (parentId: string) =>
+              listTasks
+                .filter((t) => t.parent_id === parentId)
+                .sort(compareTaskOrder);
+
+            return (
+              <div
+                key={list.id}
+                className="overflow-hidden rounded-md border border-[var(--divider)]"
+              >
+                <div className="border-b border-[var(--divider)] bg-[var(--bg-elevated)]/50 px-2 py-2.5">
+                  <h3 className="text-lg font-medium">{list.name}</h3>
+                </div>
+                {parents.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-[var(--text-muted)]">
+                    No tasks in this list yet.
+                  </p>
+                ) : (
+                  <ul className="py-1">
+                    {parents.map((t) => (
+                      <li key={t.id}>
+                        <PortalTaskRow task={t} />
+                        {childrenOf(t.id).map((child) => (
+                          <div key={child.id} className="ml-4">
+                            <PortalTaskRow task={child} />
+                          </div>
+                        ))}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-4 sm:p-8">
+    <div className="mx-auto max-w-[1400px] space-y-6 p-4 sm:p-8">
       <div>
         <p className="text-xs text-[var(--text-muted)]">
           Client Dashboard - {portal.clientName ?? "Client"}
@@ -580,206 +788,42 @@ export default function ProjectSharePage() {
         </section>
       ) : null}
 
-      {milestonesSorted.length > 0 ? (
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-          <h2 className="mb-3 text-sm font-semibold">Milestones</h2>
-          <div className="space-y-6">
-            {milestonesSorted.map((m) => {
-              const listIds = portal.taskLists
-                .filter((l) => l.milestone_id === m.id)
-                .map((l) => l.id);
-              const milestoneTasks = portal.tasks.filter((t) =>
-                listIds.includes(t.list_id),
-              );
-              const pct =
-                listIds.length > 0
-                  ? taskCompletionPct(milestoneTasks)
-                  : dateProgress(
-                      portal.project.start_date,
-                      m.due_date,
-                      todayKey,
-                    ) ?? 0;
-              const readyForApproval =
-                m.approval_enabled && !m.client_approved;
-              const byline =
-                m.approved_by_client && m.approved_by_name
-                  ? `Approved by ${m.approved_by_name}${
-                      m.approved_at
-                        ? ` on ${formatDisplayDate(m.approved_at.slice(0, 10))}`
-                        : ""
-                    }`
-                  : null;
-              return (
-                <div
-                  key={m.id}
-                  className={cn(
-                    "rounded-md p-2",
-                    readyForApproval &&
-                      cn("cursor-pointer", milestonePortalGlowClass),
-                  )}
-                  onClick={
-                    readyForApproval ? () => openApprove(m.id) : undefined
-                  }
-                  onKeyDown={
-                    readyForApproval
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            openApprove(m.id);
-                          }
-                        }
-                      : undefined
-                  }
-                  role={readyForApproval ? "button" : undefined}
-                  tabIndex={readyForApproval ? 0 : undefined}
-                  title={readyForApproval ? "Click for Approval" : undefined}
-                  aria-label={
-                    readyForApproval
-                      ? `Approve milestone ${m.name}`
-                      : undefined
-                  }
-                >
-                  <ProgressBar
-                    pct={pct}
-                    label={`${m.name} · ${formatDisplayDate(m.due_date)}`}
-                    approved={m.client_approved}
-                    readyForApproval={readyForApproval}
-                    footerStart={byline}
-                    celebrate={celebrateId === m.id}
-                    essential={{
-                      kind: parseAssetKind(m.essential_kind),
-                      label: m.essential_label,
-                      url: m.essential_url,
-                    }}
-                    essentialGlowHover={Boolean(
-                      parseAssetKind(m.essential_kind) &&
-                        m.essential_url.trim(),
-                    )}
-                    essentialApprovalTooltip
-                  />
-                </div>
-              );
-            })}
+      {hasGantt ? (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+            {milestonesSection ?? <div aria-hidden />}
+            {essentialsSection ?? <div aria-hidden />}
           </div>
-        </section>
-      ) : null}
-
-      {assetsSorted.length > 0 ? (
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-          <h2 className="mb-3 text-sm font-semibold">Links & Essentials</h2>
-          <ul className="space-y-1.5">
-            {assetsSorted.map((a) => {
-              const isNote = Boolean(a.body.trim());
-              return (
-                <li
-                  key={a.id}
-                  className="rounded-md border border-[var(--border)] px-3 py-2 text-sm"
-                >
-                  {isNote ? (
-                    <div className="space-y-1">
-                      <span className="block truncate font-medium">
-                        {titleCaseWords(a.label.trim() || "Note")}
-                      </span>
-                      <p className="whitespace-pre-wrap text-[var(--text-muted)]">
-                        {a.body}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <AssetKindIcon
-                        kind={a.kind as ProjectAssetKind}
-                        label={a.label}
-                        title={assetViewForApprovalTooltip(
-                          a.label,
-                          a.kind as ProjectAssetKind,
-                        )}
-                      />
-                      {sanitizeExternalUrl(a.url) ? (
-                        <a
-                          href={sanitizeExternalUrl(a.url)!}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="min-w-0 flex-1 truncate text-[var(--accent)] hover:underline"
-                        >
-                          {assetDisplayTitle(
-                            a.label,
-                            a.kind as ProjectAssetKind,
-                          )}
-                        </a>
-                      ) : (
-                        <span className="min-w-0 flex-1 truncate">
-                          {assetDisplayTitle(
-                            a.label,
-                            a.kind as ProjectAssetKind,
-                          )}
-                        </span>
-                      )}
-                      <ExternalLink
-                        size={12}
-                        className="shrink-0 text-[var(--text-muted)]"
-                      />
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
-      <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-        <h2 className="mb-3 text-sm font-semibold">Tasks</h2>
-        {portal.taskLists.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">
-            No tasks published yet.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {portal.taskLists.map((list) => {
-              const listTasks = portal.tasks
-                .filter((t) => t.list_id === list.id)
-                .sort(compareTaskOrder);
-              const idSet = new Set(listTasks.map((t) => t.id));
-              const parents = listTasks
-                .filter((t) => !t.parent_id || !idSet.has(t.parent_id))
-                .sort(compareTaskOrder);
-              const childrenOf = (parentId: string) =>
-                listTasks
-                  .filter((t) => t.parent_id === parentId)
-                  .sort(compareTaskOrder);
-
-              return (
-                <div
-                  key={list.id}
-                  className="overflow-hidden rounded-md border border-[var(--divider)]"
-                >
-                  <div className="border-b border-[var(--divider)] bg-[var(--bg-elevated)]/50 px-2 py-2.5">
-                    <h3 className="text-lg font-medium">{list.name}</h3>
-                  </div>
-                  {parents.length === 0 ? (
-                    <p className="px-3 py-3 text-sm text-[var(--text-muted)]">
-                      No tasks in this list yet.
-                    </p>
-                  ) : (
-                    <ul className="py-1">
-                      {parents.map((t) => (
-                        <li key={t.id}>
-                          <PortalTaskRow task={t} />
-                          {childrenOf(t.id).map((child) => (
-                            <div key={child.id} className="ml-4">
-                              <PortalTaskRow task={child} />
-                            </div>
-                          ))}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              );
-            })}
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <PortalGanttProvider portal={portal}>
+              <ProjectGanttBoard
+                projectId={portal.project.id}
+                readOnly
+                showAssignees={false}
+                showDrawer={false}
+              />
+            </PortalGanttProvider>
+          </section>
+        </>
+      ) : (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {tasksSection}
+            <div className="space-y-4">
+              {milestonesSection}
+              {essentialsSection}
+            </div>
           </div>
-        )}
-      </section>
+          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <h2 className="mb-3 text-sm font-semibold">Project Tasks</h2>
+            <PortalProjectTasksPie
+              active={portalPieStats.active}
+              inReview={portalPieStats.inReview}
+              complete={portalPieStats.complete}
+            />
+          </section>
+        </>
+      )}
 
       {approvingId ? (
         <Modal title="Approve Milestone" onClose={closeApprove}>

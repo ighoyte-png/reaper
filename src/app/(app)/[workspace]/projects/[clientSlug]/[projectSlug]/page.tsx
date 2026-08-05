@@ -12,6 +12,10 @@ import { ProjectManagerPerson, ContractorTag } from "@/components/projects/proje
 import { BudgetCard } from "@/components/budgets/budget-card";
 import { ProjectNotebook } from "@/components/projects/project-notebook";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
+import {
+  ProjectTasksPie,
+  projectTasksPieStats,
+} from "@/components/projects/project-tasks-pie";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { SortableMilestoneList } from "@/components/projects/sortable-milestone-list";
 import { Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
@@ -153,6 +157,7 @@ export default function ProjectDetailPage() {
   >(null);
   const [progressEditMode, setProgressEditMode] = useState(false);
   const [templatesExpanded, setTemplatesExpanded] = useState(false);
+  const [ganttViewActive, setGanttViewActive] = useState(false);
 
   const project = resolveProjectBySlugs(
     state.clients,
@@ -247,6 +252,22 @@ export default function ProjectDetailPage() {
   }, [team, manager]);
   const showTeamBar =
     team.length > 0 || (showManagers && Boolean(manager));
+
+  const pieTasks = useMemo(() => {
+    if (!project) return [];
+    const activeListIds = new Set(
+      state.task_lists
+        .filter((l) => l.project_id === project.id && !l.archived)
+        .map((l) => l.id),
+    );
+    const allReal = state.tasks.filter(
+      (t) => t.project_id === project.id && !t.is_divider,
+    );
+    const fromActive = allReal.filter((t) => activeListIds.has(t.list_id));
+    return fromActive.length >= 20 ? fromActive : allReal;
+  }, [state.task_lists, state.tasks, project?.id]);
+
+  const showTasksPie = pieTasks.length >= 20;
 
   if (!project) {
     return (
@@ -492,14 +513,23 @@ export default function ProjectDetailPage() {
         ) : null}
 
         <div className="grid gap-4 lg:grid-cols-3">
-          {/* Main: tasks + templates */}
-          <div className="min-w-0 space-y-4 lg:col-span-2">
+          {/* Main: tasks + templates (full width when Gantt active) */}
+          <div
+            className={cn(
+              "min-w-0 space-y-4",
+              !ganttViewActive && "lg:col-span-2",
+            )}
+          >
             <ProjectTaskBoard
               projectId={project.id}
               allowCardView
               focusTaskId={focusTaskId}
+              onGanttActiveChange={setGanttViewActive}
               templatesSlot={
-                canEdit ? (
+                ganttViewActive
+                  ? undefined
+                  : canEdit
+                    ? (
                   <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                     <button
                       type="button"
@@ -574,12 +604,14 @@ export default function ProjectDetailPage() {
                       </div>
                     ) : null}
                   </section>
-                ) : null
+                    )
+                  : null
               }
             />
           </div>
 
-          {/* Sidebar: Progress/Sandbox → Essentials → Budget → Client portal */}
+          {/* Sidebar (hidden when Gantt active — cards move below) */}
+          {!ganttViewActive ? (
           <div className="space-y-4">
             {isSandbox ? (
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
@@ -727,6 +759,13 @@ export default function ProjectDetailPage() {
               canEditOverride={isSandbox ? canEdit : undefined}
             />
 
+            {showTasksPie ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <h2 className="mb-3 text-sm font-semibold">Project Tasks</h2>
+                <ProjectTasksPie stats={projectTasksPieStats(pieTasks, today)} />
+              </section>
+            ) : null}
+
             {!isSandbox ? (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <h2 className="mb-2 text-sm font-semibold">Budget</h2>
@@ -860,7 +899,295 @@ export default function ProjectDetailPage() {
               </section>
             ) : null}
           </div>
+          ) : null}
         </div>
+
+        {ganttViewActive ? (
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            {isSandbox ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <h2 className="mb-4 text-sm font-semibold">Sandbox</h2>
+                <div className="flex justify-center px-4 py-6">
+                  <SandboxIcon className="w-1/2 max-w-[11rem]" />
+                </div>
+                <p className="mt-1 text-center text-xs leading-snug text-[var(--text-muted)]">
+                  Off the record — equal team access, no schedule or budget
+                  tracking.
+                </p>
+              </section>
+            ) : (
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold">Progress</h2>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex cursor-pointer rounded p-1.5 hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                      progressEditMode
+                        ? "bg-[var(--row-hover)] text-[var(--accent)]"
+                        : "text-[var(--text-muted)]",
+                    )}
+                    onClick={() => setProgressEditMode((v) => !v)}
+                    aria-label={
+                      progressEditMode
+                        ? "Done editing progress"
+                        : "Edit progress"
+                    }
+                    aria-pressed={progressEditMode}
+                    title={
+                      progressEditMode
+                        ? "Done editing progress"
+                        : "Edit progress"
+                    }
+                  >
+                    <Pencil size={16} />
+                  </button>
+                ) : null}
+              </div>
+              <ProgressBar
+                pct={overallPct}
+                label={overallProgressLabel(
+                  project.start_date,
+                  project.end_date,
+                )}
+                size="lg"
+              />
+              {!isRetainer ? (
+                <div className="mt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-semibold text-[var(--text-muted)]">
+                      Milestones
+                    </h3>
+                    {canEdit && progressEditMode ? (
+                      <button
+                        type="button"
+                        className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                        onClick={() => {
+                          const m: Omit<Milestone, "organization_id"> = {
+                            id: newId("ms"),
+                            project_id: project.id,
+                            name: "New milestone",
+                            start_date: null,
+                            due_date: today,
+                            status: "upcoming",
+                            client_approved: false,
+                            sort_order: milestones.length,
+                            approval_enabled: false,
+                            approval_name: "",
+                            approval_email: "",
+                            essential_kind: null,
+                            essential_label: "",
+                            essential_url: "",
+                            approved_by_name: null,
+                            approved_at: null,
+                            approved_by_client: false,
+                          };
+                          upsertMilestone(m);
+                        }}
+                        aria-label="Add milestone"
+                        title="Add milestone"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    ) : null}
+                  </div>
+                  {milestones.length === 0 ? (
+                    <p className="text-sm text-[var(--text-muted)]">
+                      No milestones yet.
+                    </p>
+                  ) : (
+                    <SortableMilestoneList
+                      milestones={milestones}
+                      project={project}
+                      today={today}
+                      canManage={canEdit && progressEditMode}
+                      formatDisplayDate={formatDisplayDate}
+                      onReorder={(reordered) => {
+                        reordered.forEach((m, i) => {
+                          if (m.sort_order !== i) {
+                            upsertMilestone({ ...m, sort_order: i });
+                          }
+                        });
+                      }}
+                      onToggleApproved={(m, approved) =>
+                        upsertMilestone({
+                          ...m,
+                          client_approved: approved,
+                          ...(approved
+                            ? {}
+                            : {
+                                approved_by_client: false,
+                                approved_by_name: null,
+                                approved_at: null,
+                              }),
+                        })
+                      }
+                      onEdit={(m) => {
+                        const contactName = [
+                          client?.contact_first_name,
+                          client?.contact_last_name,
+                        ]
+                          .map((s) => s?.trim())
+                          .filter(Boolean)
+                          .join(" ");
+                        setEditingMilestone({
+                          ...m,
+                          approval_name: m.approval_name || contactName,
+                          approval_email:
+                            m.approval_email || client?.contact_email || "",
+                        });
+                      }}
+                    />
+                  )}
+                </div>
+              ) : null}
+            </section>
+            )}
+
+            {!isSandbox ? (
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+              <h2 className="mb-2 text-sm font-semibold">Budget</h2>
+              <BudgetCard
+                project={project}
+                href={projectBudgetHref}
+                showName={false}
+              />
+              <Link
+                href={projectBudgetHref}
+                className={buttonClass({
+                  variant: "secondary",
+                  size: "sm",
+                  className: "mt-2",
+                })}
+              >
+                Open this project&apos;s budget
+              </Link>
+            </section>
+            ) : (
+              <div aria-hidden />
+            )}
+
+            <div className="space-y-4">
+              <ProjectNotebook
+                projectId={project.id}
+                canEditOverride={isSandbox ? canEdit : undefined}
+              />
+
+              {!isSandbox && (canEdit || (isPublicShare && shareResult)) ? (
+                <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Link2 size={14} className="text-[var(--text-muted)]" />
+                    <h2 className="text-sm font-semibold">Client Portal</h2>
+                  </div>
+                  {canEdit ? (
+                    shareResult ? (
+                      <div className="space-y-2">
+                        <code className="block truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
+                          {shareResult}
+                        </code>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            className={portalActionClass}
+                            onClick={() => {
+                              window.open(
+                                shareResult,
+                                "_blank",
+                                "noopener,noreferrer",
+                              );
+                            }}
+                          >
+                            <ExternalLink size={11} />
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            className={portalActionClass}
+                            onClick={async () => {
+                              await navigator.clipboard.writeText(shareResult);
+                              push("Portal link copied");
+                            }}
+                          >
+                            <Copy size={11} />
+                            Copy
+                          </button>
+                          <button
+                            type="button"
+                            className={portalActionClass}
+                            onClick={() => {
+                              updateProjectShare(project.id, "rotate");
+                              push("Portal link rotated");
+                            }}
+                          >
+                            <RefreshCw size={11} />
+                            Rotate
+                          </button>
+                          <button
+                            type="button"
+                            className={portalActionClass}
+                            onClick={() => {
+                              updateProjectShare(project.id, "disable");
+                              push("Portal disabled");
+                            }}
+                          >
+                            <Unlink size={11} />
+                            Disable
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className={portalActionClass}
+                        onClick={() => {
+                          updateProjectShare(project.id, "enable");
+                          push("Client portal enabled");
+                        }}
+                      >
+                        <Link2 size={11} />
+                        Enable public link
+                      </button>
+                    )
+                  ) : shareResult ? (
+                    <div className="space-y-2">
+                      <code className="block truncate rounded bg-[var(--bg-elevated)] px-2 py-1 text-[10px]">
+                        {shareResult}
+                      </code>
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          className={portalActionClass}
+                          onClick={() => {
+                            window.open(
+                              shareResult,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                          }}
+                        >
+                          <ExternalLink size={11} />
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          className={portalActionClass}
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(shareResult);
+                            push("Portal link copied");
+                          }}
+                        >
+                          <Copy size={11} />
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {canEdit && editing && draft && (

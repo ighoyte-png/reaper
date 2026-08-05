@@ -637,7 +637,7 @@ export function createDemoSeed(): DemoState {
         url: "https://docs.example.com/harbor-sow",
         body: "",
         sort_order: 0,
-      hide_from_client: false,
+        hide_from_client: false,
       },
       {
         id: "asset-2",
@@ -648,7 +648,7 @@ export function createDemoSeed(): DemoState {
         url: "https://harbor-retail.example.com",
         body: "",
         sort_order: 1,
-      hide_from_client: false,
+        hide_from_client: false,
       },
       {
         id: "asset-3",
@@ -659,7 +659,7 @@ export function createDemoSeed(): DemoState {
         url: "https://figma.com/file/harbor-storefront",
         body: "",
         sort_order: 2,
-      hide_from_client: false,
+        hide_from_client: false,
       },
       {
         id: "asset-4",
@@ -670,7 +670,7 @@ export function createDemoSeed(): DemoState {
         url: "https://staging.harbor.example.com",
         body: "",
         sort_order: 3,
-      hide_from_client: false,
+        hide_from_client: false,
       },
       {
         id: "asset-5",
@@ -681,7 +681,7 @@ export function createDemoSeed(): DemoState {
         url: "https://vault.example.com/harbor",
         body: "",
         sort_order: 4,
-      hide_from_client: false,
+        hide_from_client: false,
       },
     ],
     task_lists: [
@@ -694,7 +694,10 @@ export function createDemoSeed(): DemoState {
         color: "#FEF3C7",
         sort_order: 0,
         archived: false,
-      hide_from_client: false,
+        hide_from_client: false,
+        gantt_enabled: false,
+        start_date: null,
+        end_date: null,
       },
       {
         id: "list-2",
@@ -705,7 +708,10 @@ export function createDemoSeed(): DemoState {
         color: "#DBEAFE",
         sort_order: 1,
         archived: false,
-      hide_from_client: false,
+        hide_from_client: false,
+        gantt_enabled: false,
+        start_date: null,
+        end_date: null,
       },
       {
         id: "list-3",
@@ -716,7 +722,10 @@ export function createDemoSeed(): DemoState {
         color: null,
         sort_order: 2,
         archived: false,
-      hide_from_client: false,
+        hide_from_client: false,
+        gantt_enabled: false,
+        start_date: null,
+        end_date: null,
       },
       {
         id: "list-4",
@@ -727,7 +736,10 @@ export function createDemoSeed(): DemoState {
         color: "#D1FAE5",
         sort_order: 0,
         archived: false,
-      hide_from_client: false,
+        hide_from_client: false,
+        gantt_enabled: false,
+        start_date: null,
+        end_date: null,
       },
     ],
     tasks: [

@@ -293,6 +293,9 @@ function loadDemoState(): DemoState {
         color: l.color ?? null,
         archived: Boolean(l.archived),
         hide_from_client: Boolean(l.hide_from_client),
+        gantt_enabled: Boolean(l.gantt_enabled),
+        start_date: l.start_date ?? null,
+        end_date: l.end_date ?? null,
       })),
       tasks: (parsed.tasks ?? seed.tasks).map((t) => ({
         ...t,
@@ -4097,6 +4100,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             sort_order: l.sort_order,
             archived: false,
             hide_from_client: false,
+            gantt_enabled: false,
+            start_date: null,
+            end_date: null,
           };
         });
 

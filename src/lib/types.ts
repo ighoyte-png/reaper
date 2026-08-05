@@ -152,6 +152,12 @@ export interface TaskList {
   archived: boolean;
   /** When true, list (and its tasks) are omitted from the client portal. */
   hide_from_client: boolean;
+  /** When true, list participates in the project Gantt view (PM-locked). */
+  gantt_enabled: boolean;
+  /** Inclusive list sprint start for Gantt bar (date key). */
+  start_date: string | null;
+  /** Inclusive list sprint end for Gantt bar (date key). */
+  end_date: string | null;
 }
 
 export interface Task {
