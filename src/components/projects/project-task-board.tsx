@@ -66,6 +66,7 @@ import { listEntityFileAttachments, syncInlineAttachmentsFromHtml, cleanupEntity
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
+import { MILESTONE_PURPLE } from "@/lib/domain/gantt";
 import {
   clearCommentDraft,
   readCommentDraft,
@@ -2772,13 +2773,33 @@ function ListSection({
               />
               <span
                 className={cn(
-                  "min-w-0 truncate",
+                  "min-w-0 flex-1 truncate",
                   (milestone.status === "done" || milestone.client_approved) &&
                     "text-[var(--status-healthy)] line-through",
                 )}
               >
                 {milestone.name}
               </span>
+              {!ctx.compact ? (
+                <span
+                  className={cn(
+                    "shrink-0 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
+                    milestone.status === "done" || milestone.client_approved
+                      ? "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)] line-through"
+                      : undefined,
+                  )}
+                  style={
+                    milestone.status === "done" || milestone.client_approved
+                      ? undefined
+                      : {
+                          color: MILESTONE_PURPLE,
+                          backgroundColor: `color-mix(in srgb, ${MILESTONE_PURPLE} 18%, transparent)`,
+                        }
+                  }
+                >
+                  Milestone
+                </span>
+              ) : null}
             </div>
           ) : null}
           {listManage ? (
@@ -3814,7 +3835,11 @@ function TaskRow({
           </button>
         ) : null}
         {!ctx.compact ? (
-          <TaskStatusTag status={task.status} className="shrink-0" />
+          <TaskStatusTag
+            status={task.status}
+            isClientReview={task.is_client_review}
+            className="shrink-0"
+          />
         ) : null}
         {ctx.allowSelect ? (
           <Checkbox

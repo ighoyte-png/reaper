@@ -19,6 +19,7 @@ import { ProjectForm } from "@/components/projects/project-form";
 import { applyProjectManagerScheduleTime } from "@/components/projects/apply-pm-schedule";
 import { PmSchedulePromptModal } from "@/components/projects/pm-schedule-prompt-modal";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
+import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,10 @@ import {
   type ContractorTerms,
 } from "@/lib/domain/contractor";
 import { cn } from "@/lib/cn";
+import {
+  useLiveUserViewPrefs,
+  writeUserViewPrefs,
+} from "@/lib/user-view-prefs";
 import type { Client, ClientStatus, Project } from "@/lib/types";
 
 type StatusFilter = "active" | "archived" | "all";
@@ -173,6 +178,7 @@ export default function ClientsPage() {
 function ClientsPageContent() {
   const {
     state,
+    profile,
     upsertClient,
     deleteClient,
     upsertProject,
@@ -187,6 +193,8 @@ function ClientsPageContent() {
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
   const { push } = useToast();
+  const viewPrefs = useLiveUserViewPrefs(profile?.id);
+  const directoryLayout = viewPrefs.directoryLayout;
   const router = useRouter();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
@@ -469,6 +477,17 @@ function ClientsPageContent() {
               </button>
             ))}
           </div>
+          <ListCardsViewToggle
+            className="ml-auto"
+            value={directoryLayout}
+            onChange={(next) => {
+              if (!profile?.id) return;
+              writeUserViewPrefs(profile.id, {
+                ...viewPrefs,
+                directoryLayout: next,
+              });
+            }}
+          />
         </div>
 
         {state.clients.length === 0 ? (
@@ -489,6 +508,78 @@ function ClientsPageContent() {
               ? "No clients match your search."
               : `No ${statusFilter} clients.`}
           </p>
+        ) : directoryLayout === "list" ? (
+          <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]">
+            {filteredClients.map((client) => {
+              const count = projectCountByClient.get(client.id) ?? 0;
+              const archived = client.status === "archived";
+              const pocName = contactDisplayName(client);
+              return (
+                <article
+                  key={client.id}
+                  className={cn(
+                    "group flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--row-hover)]",
+                    archived && "opacity-60",
+                  )}
+                >
+                  <ProjectColorBar color={client.color} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold leading-tight">
+                      {client.name}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--text-muted)]">
+                      <span
+                        className={cn(
+                          "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
+                          archived
+                            ? "bg-[var(--bg-elevated)] text-[var(--text-muted)]"
+                            : "bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]",
+                        )}
+                      >
+                        {client.status ?? "active"}
+                      </span>
+                      <span>
+                        {count} {count === 1 ? "project" : "projects"}
+                      </span>
+                      {pocName ? <span className="truncate">{pocName}</span> : null}
+                    </div>
+                  </div>
+                  {canManage ? (
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                      <button
+                        type="button"
+                        className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                        onClick={() => toggleArchive(client)}
+                        aria-label={
+                          archived
+                            ? `Unarchive ${client.name}`
+                            : `Archive ${client.name}`
+                        }
+                        title={archived ? "Unarchive" : "Archive"}
+                      >
+                        {archived ? (
+                          <ArchiveRestore size={14} strokeWidth={1.75} />
+                        ) : (
+                          <Archive size={14} strokeWidth={1.75} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                        onClick={() =>
+                          setEditing(normalizeClientContact(client))
+                        }
+                        aria-label={`Edit ${client.name}`}
+                        title="Edit"
+                      >
+                        <Pencil size={14} strokeWidth={1.75} />
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {filteredClients.map((client) => {

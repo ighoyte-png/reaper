@@ -17,16 +17,20 @@ export type ScheduleViewOffset = "none" | "one_week" | "two_weeks";
 
 export type ContentWidth = "constrained" | "full";
 
+export type DirectoryLayout = "cards" | "list";
+
 export type UserViewPrefs = {
   defaultStartPage: DefaultStartPage;
   scheduleViewOffset: ScheduleViewOffset;
   contentWidth: ContentWidth;
+  directoryLayout: DirectoryLayout;
 };
 
 export const DEFAULT_USER_VIEW_PREFS: UserViewPrefs = {
   defaultStartPage: "/dashboard",
   scheduleViewOffset: "none",
   contentWidth: "constrained",
+  directoryLayout: "cards",
 };
 
 export const SCHEDULE_VIEW_OFFSET_OPTIONS: {
@@ -71,6 +75,10 @@ function isContentWidth(value: unknown): value is ContentWidth {
   return value === "constrained" || value === "full";
 }
 
+function isDirectoryLayout(value: unknown): value is DirectoryLayout {
+  return value === "cards" || value === "list";
+}
+
 export function readUserViewPrefs(profileId: string | null | undefined): UserViewPrefs {
   if (!profileId || typeof window === "undefined") {
     return { ...DEFAULT_USER_VIEW_PREFS };
@@ -89,6 +97,9 @@ export function readUserViewPrefs(profileId: string | null | undefined): UserVie
       contentWidth: isContentWidth(parsed.contentWidth)
         ? parsed.contentWidth
         : DEFAULT_USER_VIEW_PREFS.contentWidth,
+      directoryLayout: isDirectoryLayout(parsed.directoryLayout)
+        ? parsed.directoryLayout
+        : DEFAULT_USER_VIEW_PREFS.directoryLayout,
     };
   } catch {
     return { ...DEFAULT_USER_VIEW_PREFS };

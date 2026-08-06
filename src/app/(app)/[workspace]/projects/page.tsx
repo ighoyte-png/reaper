@@ -18,6 +18,7 @@ import { ProjectManagerPerson, SandboxTag } from "@/components/projects/project-
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
+import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { Button, buttonClass } from "@/components/ui/button";
@@ -27,6 +28,10 @@ import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
+import {
+  useLiveUserViewPrefs,
+  writeUserViewPrefs,
+} from "@/lib/user-view-prefs";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { projectIdsForPerson, projectHasSandboxWipeRisk } from "@/lib/domain/project-access";
@@ -107,6 +112,7 @@ export default function ProjectsPage() {
 function ProjectsPageContent() {
   const {
     state,
+    profile,
     upsertProject,
     setProjectMembers,
     applyProjectTemplate,
@@ -125,6 +131,8 @@ function ProjectsPageContent() {
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const { push } = useToast();
+  const viewPrefs = useLiveUserViewPrefs(profile?.id);
+  const directoryLayout = viewPrefs.directoryLayout;
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
     null,
   );
@@ -539,7 +547,7 @@ function ProjectsPageContent() {
               onSelect={setManagerFilter}
             />
 
-            <div className="mb-4 flex flex-wrap gap-1">
+            <div className="mb-4 flex flex-wrap items-center gap-1">
               {STATUS_TABS.map((tab) => (
                 <button
                   key={tab.id}
@@ -558,6 +566,17 @@ function ProjectsPageContent() {
                     : ""}
                 </button>
               ))}
+              <ListCardsViewToggle
+                className="ml-auto"
+                value={directoryLayout}
+                onChange={(next) => {
+                  if (!profile?.id) return;
+                  writeUserViewPrefs(profile.id, {
+                    ...viewPrefs,
+                    directoryLayout: next,
+                  });
+                }}
+              />
             </div>
 
             <label className="relative mb-4 block md:hidden">
@@ -624,27 +643,45 @@ function ProjectsPageContent() {
                         {groupProjects.length === 1 ? "" : "s"}
                       </span>
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {groupProjects.map((project) => (
-                        <ProjectCard
-                          key={project.id}
-                          project={project}
-                          href={projectHref(project)}
-                          showManager={showManagers}
-                          burn={burns.get(project.id)}
+                    <div
+                      className={
+                        directoryLayout === "list"
+                          ? "overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]"
+                          : "grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                      }
+                    >
+                      {groupProjects.map((project) =>
+                        directoryLayout === "list" ? (
+                          <ProjectListRow
+                            key={project.id}
+                            project={project}
+                            href={projectHref(project)}
+                            showManager={showManagers}
+                            burn={burns.get(project.id)}
+                          />
+                        ) : (
+                          <ProjectCard
+                            key={project.id}
+                            project={project}
+                            href={projectHref(project)}
+                            showManager={showManagers}
+                            burn={burns.get(project.id)}
+                          />
+                        ),
+                      )}
+                      {directoryLayout === "cards" ? (
+                        <CardGridPlaceholders
+                          count={groupProjects.length}
+                          onAdd={
+                            canManage
+                              ? () =>
+                                  openNewProject({
+                                    client_id: client?.id ?? null,
+                                  })
+                              : undefined
+                          }
                         />
-                      ))}
-                      <CardGridPlaceholders
-                        count={groupProjects.length}
-                        onAdd={
-                          canManage
-                            ? () =>
-                                openNewProject({
-                                  client_id: client?.id ?? null,
-                                })
-                            : undefined
-                        }
-                      />
+                      ) : null}
                     </div>
                   </section>
                 ))}
@@ -817,6 +854,59 @@ function MobileClientChip({
       {color ? <ProjectColorBar color={color} size="sm" /> : null}
       {label}
     </button>
+  );
+}
+
+function ProjectListRow({
+  project,
+  href,
+  showManager,
+  burn: burnProp,
+}: {
+  project: Project;
+  href: string;
+  showManager?: boolean;
+  burn?: ReturnType<typeof budgetBurn>;
+}) {
+  const { state } = useData();
+  const isSandbox = Boolean(project.sandbox_mode);
+  const burn =
+    burnProp ?? budgetBurn(project, state.assignments, state.people);
+  const today = format(startOfDay(new Date()), "yyyy-MM-dd");
+  const overallPct = projectDateProgress(project, today);
+  const manager =
+    showManager && project.manager_person_id
+      ? state.people.find((p) => p.id === project.manager_person_id)
+      : null;
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--row-hover)]",
+        project.status === "archived" && "opacity-60",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="truncate text-sm font-semibold leading-tight">
+            {project.name}
+          </span>
+          {isSandbox ? <SandboxTag /> : null}
+          <ProjectStatusTag status={project.status} />
+          {!isSandbox && project.budget_monthly_reset ? (
+            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+              Monthly
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--text-muted)]">
+          {overallPct != null ? <span>{overallPct}% progress</span> : null}
+          {!isSandbox ? <span>{burn.totalHours}h</span> : null}
+          {manager ? <span className="truncate">{manager.name}</span> : null}
+        </div>
+      </div>
+    </Link>
   );
 }
 

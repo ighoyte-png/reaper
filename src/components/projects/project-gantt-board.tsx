@@ -368,14 +368,20 @@ function TaskStatusChipBesideBar({
   dates,
   columns,
   status,
+  isClientReview = false,
 }: {
   dates: GanttBarDates;
   columns: ScheduleColumn[];
   status: TaskStatus;
+  isClientReview?: boolean;
 }) {
   return (
     <GanttChipBesideBar dates={dates} columns={columns}>
-      <TaskStatusTag status={status} className="origin-left scale-90 shadow-sm" />
+      <TaskStatusTag
+        status={status}
+        isClientReview={isClientReview}
+        className="origin-left scale-90 shadow-sm"
+      />
     </GanttChipBesideBar>
   );
 }
@@ -2227,6 +2233,7 @@ export function ProjectGanttBoard({
                             dates={taskDates}
                             columns={columns}
                             status={task.status}
+                            isClientReview={task.is_client_review}
                           />
                         </div>
                       </div>,

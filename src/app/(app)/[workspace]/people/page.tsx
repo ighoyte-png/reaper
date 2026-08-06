@@ -13,11 +13,16 @@ import { ContractorTag, ManagerTag } from "@/components/projects/project-manager
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
+import {
+  useLiveUserViewPrefs,
+  writeUserViewPrefs,
+} from "@/lib/user-view-prefs";
 import { formatHours } from "@/lib/domain/budget";
 import {
   availableHoursInRange,
@@ -103,6 +108,8 @@ function PeoplePageContent() {
   const router = useRouter();
   const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
+  const viewPrefs = useLiveUserViewPrefs(profile?.id);
+  const directoryLayout = viewPrefs.directoryLayout;
 
   const start = toDateKey(weekStart(new Date()));
   const end = toDateKey(weekEnd(new Date()));
@@ -528,65 +535,155 @@ function PeoplePageContent() {
                 </span>
               ))}
             </div>
-            {canManage ? (
-              <div className="flex shrink-0 items-center justify-end gap-0.5">
-                {!person.profile_id ? (
-                  <button
-                    type="button"
-                    className={actionIconClass}
-                    title="Invite"
-                    aria-label="Invite"
-                    onClick={() => {
-                      if (person.email?.trim()) {
-                        void createInviteLink(person, {
-                          emailOverride: person.email,
-                        });
-                      } else {
-                        setInviteTarget(person);
-                        setInviteEmail("");
-                      }
-                    }}
-                  >
-                    <Mail size={14} />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className={actionIconClass}
-                    title="Resend invite"
-                    aria-label="Resend invite"
-                    disabled={inviteBusy}
-                    onClick={() => setResendTarget(person)}
-                  >
-                    <Mail size={14} />
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className={actionIconClass}
-                  title="Edit"
-                  aria-label="Edit"
-                  onClick={() => {
-                    openEdit(person, false);
-                  }}
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  type="button"
-                  className={mutedActionIconClass}
-                  title="Time off"
-                  aria-label="Time off"
-                  onClick={() => {
-                    setLeaveTarget(person);
-                    setLeaveDate(start);
-                    setLeaveKind("vacation");
-                  }}
-                >
-                  <Clock size={14} />
-                </button>
-              </div>
+            {canManage ? renderPersonActions(person) : null}
+          </div>
+        ) : null}
+      </article>
+    );
+  }
+
+  function renderPersonActions(person: Person) {
+    return (
+      <div className="flex shrink-0 items-center justify-end gap-0.5">
+        {!person.profile_id ? (
+          <button
+            type="button"
+            className={actionIconClass}
+            title="Invite"
+            aria-label="Invite"
+            onClick={() => {
+              if (person.email?.trim()) {
+                void createInviteLink(person, {
+                  emailOverride: person.email,
+                });
+              } else {
+                setInviteTarget(person);
+                setInviteEmail("");
+              }
+            }}
+          >
+            <Mail size={14} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={actionIconClass}
+            title="Resend invite"
+            aria-label="Resend invite"
+            disabled={inviteBusy}
+            onClick={() => setResendTarget(person)}
+          >
+            <Mail size={14} />
+          </button>
+        )}
+        <button
+          type="button"
+          className={actionIconClass}
+          title="Edit"
+          aria-label="Edit"
+          onClick={() => {
+            openEdit(person, false);
+          }}
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          type="button"
+          className={mutedActionIconClass}
+          title="Time off"
+          aria-label="Time off"
+          onClick={() => {
+            setLeaveTarget(person);
+            setLeaveDate(start);
+            setLeaveKind("vacation");
+          }}
+        >
+          <Clock size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  function renderPersonListRow(person: Person, isManager: boolean) {
+    const booked = personBookedHoursInRange(
+      person.id,
+      start,
+      end,
+      state.assignments,
+      state.leave_days,
+    );
+    const available = availableHoursInRange(
+      person,
+      start,
+      end,
+      state.leave_days,
+    );
+    const level = capacityLevel(booked, available, available <= 0);
+    const personPods = podsForPerson(
+      person.id,
+      state.pods,
+      state.pod_members,
+    );
+    const linkedProfile = person.profile_id
+      ? state.profiles.find((p) => p.id === person.profile_id)
+      : undefined;
+    return (
+      <article
+        key={person.id}
+        className="group flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--row-hover)]"
+      >
+        <PersonAvatar
+          avatarUrl={person.avatar_url}
+          avatarAttachmentId={person.avatar_attachment_id}
+          name={person.name}
+          color={personAvatarColor(person)}
+          size="sm"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="truncate text-sm font-semibold leading-tight">
+              {person.name}
+            </span>
+            {isManager ? <ManagerTag /> : null}
+            {person.is_contractor ? <ContractorTag /> : null}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--text-muted)]">
+            {person.role_title ? (
+              <span className="truncate">{person.role_title}</span>
             ) : null}
+            {person.office ? <span className="truncate">{person.office}</span> : null}
+            {linkedProfile ? (
+              <span className="truncate">
+                {accessLabel(linkedProfile.role)}
+              </span>
+            ) : null}
+            <span className="inline-flex items-center gap-1">
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 shrink-0 rounded-full",
+                  level === "healthy" && "bg-[var(--status-healthy)]",
+                  level === "near" && "bg-[var(--status-near)]",
+                  level === "over" && "bg-[var(--status-over)]",
+                  (level === "unavailable" || level === "low") &&
+                    "bg-[var(--status-unavailable)]",
+                )}
+              />
+              {formatHours(booked)} / {formatHours(available)}
+            </span>
+            {personPods.map((pod) => (
+              <span
+                key={pod.id}
+                className="max-w-[8rem] truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium"
+                title={pod.name}
+              >
+                {pod.name}
+              </span>
+            ))}
+          </div>
+        </div>
+        {canManage ? (
+          <div className="opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            {renderPersonActions(person)}
           </div>
         ) : null}
       </article>
@@ -630,6 +727,18 @@ function PeoplePageContent() {
             you a copyable link. Members only see My Schedule.
           </p>
         ) : null}
+        <div className="mb-4 flex justify-end">
+          <ListCardsViewToggle
+            value={directoryLayout}
+            onChange={(next) => {
+              if (!profile?.id) return;
+              writeUserViewPrefs(profile.id, {
+                ...viewPrefs,
+                directoryLayout: next,
+              });
+            }}
+          />
+        </div>
         {showPods ? (
           <PodFilterBar
             pods={pods}
@@ -663,6 +772,23 @@ function PeoplePageContent() {
           <p className="py-16 text-center text-sm text-[var(--text-muted)]">
             No people in this pod yet.
           </p>
+        ) : directoryLayout === "list" ? (
+          <div className="space-y-4">
+            {peopleSections.map((section, sectionIndex) => (
+              <div key={section.heading ?? sectionIndex}>
+                {section.heading ? (
+                  <h2 className="mb-2 text-sm font-semibold">
+                    {section.heading}
+                  </h2>
+                ) : null}
+                <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]">
+                  {section.cards.map(({ person, isManager }) =>
+                    renderPersonListRow(person, isManager),
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {peopleSections.map((section, sectionIndex) => (
