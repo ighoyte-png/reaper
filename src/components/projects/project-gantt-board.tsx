@@ -343,6 +343,27 @@ function GanttMilestoneMarker({
   );
 }
 
+function GanttChipBesideBar({
+  dates,
+  columns,
+  children,
+}: {
+  dates: GanttBarDates;
+  columns: ScheduleColumn[];
+  children: ReactNode;
+}) {
+  const geo = spanColumnsPx(columns, dates.startKey, dates.endKey);
+  if (!geo) return null;
+  return (
+    <div
+      className="pointer-events-none absolute top-1/2 z-[11] -translate-y-1/2"
+      style={{ left: geo.left + geo.width + STATUS_CHIP_GAP }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function TaskStatusChipBesideBar({
   dates,
   columns,
@@ -352,15 +373,42 @@ function TaskStatusChipBesideBar({
   columns: ScheduleColumn[];
   status: TaskStatus;
 }) {
-  const geo = spanColumnsPx(columns, dates.startKey, dates.endKey);
-  if (!geo) return null;
   return (
-    <div
-      className="pointer-events-none absolute z-[11] top-1/2 -translate-y-1/2"
-      style={{ left: geo.left + geo.width + STATUS_CHIP_GAP }}
-    >
-      <TaskStatusTag status={status} className="scale-90 origin-left shadow-sm" />
-    </div>
+    <GanttChipBesideBar dates={dates} columns={columns}>
+      <TaskStatusTag status={status} className="origin-left scale-90 shadow-sm" />
+    </GanttChipBesideBar>
+  );
+}
+
+function MilestoneChipBesideBar({
+  dates,
+  columns,
+  done,
+}: {
+  dates: GanttBarDates;
+  columns: ScheduleColumn[];
+  done: boolean;
+}) {
+  return (
+    <GanttChipBesideBar dates={dates} columns={columns}>
+      <span
+        className={cn(
+          "origin-left scale-90 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide shadow-sm",
+          done &&
+            "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)] line-through",
+        )}
+        style={
+          done
+            ? undefined
+            : {
+                color: MILESTONE_PURPLE,
+                backgroundColor: `color-mix(in srgb, ${MILESTONE_PURPLE} 18%, transparent)`,
+              }
+        }
+      >
+        Milestone
+      </span>
+    </GanttChipBesideBar>
   );
 }
 
@@ -2273,6 +2321,11 @@ export function ProjectGanttBoard({
                                 [],
                               );
                             }}
+                          />
+                          <MilestoneChipBesideBar
+                            dates={mDates}
+                            columns={columns}
+                            done={msDone}
                           />
                         </div>
                       </div>,
