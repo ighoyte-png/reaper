@@ -1704,10 +1704,10 @@ export function ProjectGanttBoard({
                 </div>
               ) : null}
 
-              {/* Project start/end vertical guides */}
+              {/* Project start/end vertical guides (under row/sticky label z) */}
               {(projectGuideKeys.start || projectGuideKeys.end) && (
                 <div
-                  className="pointer-events-none absolute bottom-0 top-0 z-[3]"
+                  className="pointer-events-none absolute bottom-0 top-0 z-[1]"
                   style={{ left: GANTT_LABEL_PX, width: totalWidth }}
                   aria-hidden
                 >
