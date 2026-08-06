@@ -554,6 +554,10 @@ function TasksReportContent() {
     from: "",
     to: "",
     cp: "1",
+    arch: "0",
+    afrom: "",
+    ato: "",
+    ap: "1",
   });
   const projectFilter: ProjectFilter = filters.project || "all";
   // Members (and View As member) force My Tasks. Org-wide public share stays All/PM.
@@ -570,6 +574,10 @@ function TasksReportContent() {
   const dateFrom = filters.from || null;
   const dateTo = filters.to || null;
   const completedPage = Math.max(1, parseInt(filters.cp || "1", 10) || 1);
+  const showArchived = myTasksMode && filters.arch === "1";
+  const archivedDateFrom = filters.afrom || null;
+  const archivedDateTo = filters.ato || null;
+  const archivedPage = Math.max(1, parseInt(filters.ap || "1", 10) || 1);
   const [expandedClientIds, setExpandedClientIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -595,10 +603,29 @@ function TasksReportContent() {
 
   function selectMyTasks(on: boolean) {
     if (on) {
-      setFilters({ mine: "1", pm: "all", cp: "1", myRole: "assignee" });
+      setFilters({
+        mine: "1",
+        pm: "all",
+        cp: "1",
+        myRole: "assignee",
+        arch: "0",
+        afrom: "",
+        ato: "",
+        ap: "1",
+      });
       return;
     }
-    setFilters({ mine: "0", from: "", to: "", cp: "1", myRole: "assignee" });
+    setFilters({
+      mine: "0",
+      from: "",
+      to: "",
+      cp: "1",
+      myRole: "assignee",
+      arch: "0",
+      afrom: "",
+      ato: "",
+      ap: "1",
+    });
   }
 
   const projectById = useMemo(
@@ -612,6 +639,13 @@ function TasksReportContent() {
   const peopleById = useMemo(
     () => new Map(state.people.map((p) => [p.id, p])),
     [state.people],
+  );
+  const archivedListIds = useMemo(
+    () =>
+      new Set(
+        state.task_lists.filter((l) => l.archived).map((l) => l.id),
+      ),
+    [state.task_lists],
   );
   const clients = useMemo(
     () => sortClientsByName(state.clients),
@@ -782,9 +816,73 @@ function TasksReportContent() {
   ]);
 
   const bucketTasks = useMemo(() => {
-    if (!myTasksMode) return scopedTasks;
-    return scopedTasks.filter((t) => taskMatchesDateRange(t, dateFrom, dateTo));
-  }, [scopedTasks, myTasksMode, dateFrom, dateTo]);
+    const activeOnly = scopedTasks.filter(
+      (t) => !archivedListIds.has(t.list_id),
+    );
+    if (!myTasksMode) return activeOnly;
+    return activeOnly.filter((t) => taskMatchesDateRange(t, dateFrom, dateTo));
+  }, [scopedTasks, myTasksMode, dateFrom, dateTo, archivedListIds]);
+
+  const allArchivedTasks = useMemo(() => {
+    if (!myTasksMode) return [];
+    return scopedTasks
+      .filter((t) => archivedListIds.has(t.list_id))
+      .filter((t) =>
+        taskMatchesDateRange(t, archivedDateFrom, archivedDateTo),
+      )
+      .sort((a, b) => {
+        if (!a.due_date && !b.due_date) {
+          return a.title.localeCompare(b.title, undefined, {
+            sensitivity: "base",
+          });
+        }
+        if (!a.due_date) return 1;
+        if (!b.due_date) return -1;
+        const byDue = b.due_date.localeCompare(a.due_date);
+        if (byDue !== 0) return byDue;
+        return a.title.localeCompare(b.title, undefined, {
+          sensitivity: "base",
+        });
+      });
+  }, [
+    scopedTasks,
+    myTasksMode,
+    archivedListIds,
+    archivedDateFrom,
+    archivedDateTo,
+  ]);
+
+  const archivedInScopeCount = useMemo(() => {
+    if (!myTasksMode) return 0;
+    return scopedTasks.filter((t) => archivedListIds.has(t.list_id)).length;
+  }, [scopedTasks, myTasksMode, archivedListIds]);
+
+  const archivedTotalPages = Math.max(
+    1,
+    Math.ceil(allArchivedTasks.length / COMPLETED_PAGE_SIZE),
+  );
+  const safeArchivedPage = Math.min(archivedPage, archivedTotalPages);
+
+  useEffect(() => {
+    if (!showArchived) return;
+    if (archivedPage !== safeArchivedPage) {
+      setFilter("ap", String(safeArchivedPage));
+    }
+  }, [showArchived, archivedPage, safeArchivedPage, setFilter]);
+
+  const pagedArchivedTasks = useMemo(() => {
+    const start = (safeArchivedPage - 1) * COMPLETED_PAGE_SIZE;
+    return allArchivedTasks.slice(start, start + COMPLETED_PAGE_SIZE);
+  }, [allArchivedTasks, safeArchivedPage]);
+
+  const archivedRangeStart =
+    allArchivedTasks.length === 0
+      ? 0
+      : (safeArchivedPage - 1) * COMPLETED_PAGE_SIZE + 1;
+  const archivedRangeEnd = Math.min(
+    safeArchivedPage * COMPLETED_PAGE_SIZE,
+    allArchivedTasks.length,
+  );
 
   const overdueTasks = useMemo(
     () =>
@@ -1187,7 +1285,7 @@ function TasksReportContent() {
                 className="text-[var(--status-healthy)]"
               />
               <h2 className="text-sm font-semibold">
-                Recently Completed
+                Completed
                 {allCompletedTasks.length > 0
                   ? ` (${allCompletedTasks.length})`
                   : ""}
@@ -1233,6 +1331,120 @@ function TasksReportContent() {
               </div>
             ) : null}
           </section>
+
+          {myTasksMode ? (
+            <section>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                  onClick={() =>
+                    setFilters({
+                      arch: showArchived ? "0" : "1",
+                      ...(showArchived ? {} : { ap: "1" }),
+                    })
+                  }
+                >
+                  {showArchived ? "Hide Archived" : "View Archived"}
+                  {!showArchived && archivedInScopeCount > 0
+                    ? ` (${archivedInScopeCount})`
+                    : ""}
+                </button>
+              </div>
+
+              {showArchived ? (
+                <div className="mt-4 space-y-4">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-[var(--text-muted)]">
+                        Due from
+                      </span>
+                      <DateInput
+                        className={cn(inputClass, "mt-0 h-8")}
+                        value={filters.afrom}
+                        onChange={(e) =>
+                          setFilters({ afrom: e.target.value, ap: "1" })
+                        }
+                      />
+                    </label>
+                    <label className="grid gap-1 text-sm">
+                      <span className="text-[var(--text-muted)]">Due to</span>
+                      <DateInput
+                        className={cn(inputClass, "mt-0 h-8")}
+                        value={filters.ato}
+                        onChange={(e) =>
+                          setFilters({ ato: e.target.value, ap: "1" })
+                        }
+                      />
+                    </label>
+                    {archivedDateFrom || archivedDateTo ? (
+                      <button
+                        type="button"
+                        className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                        onClick={() =>
+                          setFilters({ afrom: "", ato: "", ap: "1" })
+                        }
+                      >
+                        Clear dates
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <div className="mb-3 flex items-center gap-2">
+                      <h2 className="text-sm font-semibold">
+                        Archived
+                        {allArchivedTasks.length > 0
+                          ? ` (${allArchivedTasks.length})`
+                          : ""}
+                      </h2>
+                    </div>
+                    <TaskTable
+                      {...tableProps}
+                      tasks={pagedArchivedTasks}
+                      emptyLabel="No archived tasks."
+                      defaultSortKey="end"
+                    />
+                    {allArchivedTasks.length > COMPLETED_PAGE_SIZE ? (
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs text-[var(--text-muted)]">
+                          Showing {archivedRangeStart}–{archivedRangeEnd} of{" "}
+                          {allArchivedTasks.length}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={safeArchivedPage <= 1}
+                            onClick={() =>
+                              setFilter("ap", String(safeArchivedPage - 1))
+                            }
+                          >
+                            Previous
+                          </button>
+                          <span className="text-xs tabular-nums text-[var(--text-muted)]">
+                            Page {safeArchivedPage} of {archivedTotalPages}
+                          </span>
+                          <button
+                            type="button"
+                            className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={
+                              safeArchivedPage >= archivedTotalPages
+                            }
+                            onClick={() =>
+                              setFilter("ap", String(safeArchivedPage + 1))
+                            }
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
         </div>
       </div>
     </PageContainer>
