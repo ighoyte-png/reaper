@@ -20,6 +20,7 @@ import {
   Minimize2,
   PanelRightClose,
   Star,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -81,6 +82,7 @@ import { readUserViewPrefs } from "@/lib/user-view-prefs";
 import type {
   Milestone,
   Person,
+  Project,
   ProjectMember,
   Task,
   TaskComment,
@@ -97,6 +99,31 @@ type Props = {
 };
 
 type DrawerTab = "edit" | "description" | "comments";
+
+type GanttUndoEntry = {
+  tasks?: Task[];
+  taskLists?: TaskList[];
+  milestones?: Milestone[];
+  project?: Project;
+};
+
+const UNDO_STACK_CAP = 50;
+
+function cloneTask(task: Task): Task {
+  return { ...task };
+}
+
+function cloneTaskList(list: TaskList): TaskList {
+  return { ...list };
+}
+
+function cloneMilestone(milestone: Milestone): Milestone {
+  return { ...milestone };
+}
+
+function cloneProject(project: Project): Project {
+  return { ...project };
+}
 
 type DragMode = "move" | "resize-start" | "resize-end";
 
@@ -476,6 +503,7 @@ function GanttDrawer({
   profiles,
   comments,
   myPersonId,
+  sticky = false,
   onClose,
   onSaveTasks,
   onDeleteTask,
@@ -489,6 +517,8 @@ function GanttDrawer({
   profiles: { id: string; full_name: string }[];
   comments: TaskComment[];
   myPersonId: string | null;
+  /** Pin beside the chart while the page scrolls (non-fullscreen). */
+  sticky?: boolean;
   onClose: () => void;
   onSaveTasks: (updates: Task[]) => void;
   onDeleteTask?: (taskId: string) => void;
@@ -586,7 +616,14 @@ function GanttDrawer({
 
   return (
     <>
-    <aside className="flex w-80 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+    <aside
+      className={cn(
+        "flex w-80 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]",
+        sticky
+          ? "sticky top-0 z-30 max-h-dvh self-start"
+          : "h-full min-h-0",
+      )}
+    >
       <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
         <p className="truncate text-sm font-semibold">
           {multi
@@ -787,8 +824,19 @@ export function ProjectGanttBoard({
     listId: string;
     startY: number;
     order: string[];
+    initialOrder: string[];
+    initialTasks: Task[];
     pointerId: number;
   } | null>(null);
+  const undoStackRef = useRef<GanttUndoEntry[]>([]);
+  const applyingUndoRef = useRef(false);
+  const performUndoRef = useRef(() => {});
+  const [undoDepth, setUndoDepth] = useState(0);
+
+  useEffect(() => {
+    undoStackRef.current = [];
+    setUndoDepth(0);
+  }, [projectId]);
 
   const [anchor, setAnchor] = useState(() => weekStart(new Date()));
   const [expandedLists, setExpandedLists] = useState<Set<string>>(() => new Set());
@@ -1267,6 +1315,62 @@ export function ProjectGanttBoard({
     [ganttLists, projectTasks, fallbackKey, bumpDragPreview],
   );
 
+  const pushUndo = useCallback(
+    (entry: GanttUndoEntry) => {
+      if (readOnly || applyingUndoRef.current) return;
+      const hasWork =
+        Boolean(entry.project) ||
+        (entry.tasks?.length ?? 0) > 0 ||
+        (entry.taskLists?.length ?? 0) > 0 ||
+        (entry.milestones?.length ?? 0) > 0;
+      if (!hasWork) return;
+      undoStackRef.current.push(entry);
+      if (undoStackRef.current.length > UNDO_STACK_CAP) {
+        undoStackRef.current.shift();
+      }
+      setUndoDepth(undoStackRef.current.length);
+    },
+    [readOnly],
+  );
+
+  const performUndo = useCallback(() => {
+    if (readOnly) return;
+    const entry = undoStackRef.current.pop();
+    setUndoDepth(undoStackRef.current.length);
+    if (!entry) return;
+    applyingUndoRef.current = true;
+    if (entry.project) upsertProject(entry.project);
+    for (const list of entry.taskLists ?? []) upsertTaskList(list);
+    for (const milestone of entry.milestones ?? []) {
+      upsertMilestone(milestone);
+    }
+    for (const task of entry.tasks ?? []) upsertTask(task);
+    applyingUndoRef.current = false;
+  }, [readOnly, upsertProject, upsertTaskList, upsertMilestone, upsertTask]);
+  performUndoRef.current = performUndo;
+
+  useEffect(() => {
+    if (readOnly) return;
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      if (e.shiftKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      performUndoRef.current();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readOnly]);
+
   const commitDrag = useCallback(() => {
     const snap = dragRef.current;
     const previewMap = snap?.previewMap ?? new Map<string, GanttBarDates>();
@@ -1298,6 +1402,7 @@ export function ProjectGanttBoard({
 
     if (snap.target.kind === "project" && project) {
       const dates = clampDateRange(snap.previewStart, snap.previewEnd);
+      pushUndo({ project: cloneProject(project) });
       void upsertProject({
         ...project,
         start_date: dates.startKey,
@@ -1312,6 +1417,7 @@ export function ProjectGanttBoard({
       const ms = projectMilestones.find((m) => m.id === milestoneId);
       const preview = previewMap.get(`milestone:${milestoneId}`);
       if (ms && preview) {
+        pushUndo({ milestones: [cloneMilestone(ms)] });
         upsertMilestone({
           ...ms,
           start_date: preview.startKey,
@@ -1330,6 +1436,28 @@ export function ProjectGanttBoard({
         return;
       }
       const listDates = clampDateRange(snap.previewStart, snap.previewEnd);
+      const undoLists: TaskList[] = [cloneTaskList(list)];
+      const undoMilestones: Milestone[] = [];
+      const undoTasks: Task[] = [];
+      if (snap.mode === "move") {
+        for (const [otherId] of snap.cascadeListOrigins) {
+          const other = ganttLists.find((l) => l.id === otherId);
+          if (other) undoLists.push(cloneTaskList(other));
+        }
+        for (const [msId] of snap.cascadeMilestoneOrigins) {
+          const ms = projectMilestones.find((m) => m.id === msId);
+          if (ms) undoMilestones.push(cloneMilestone(ms));
+        }
+      }
+      for (const [taskId] of snap.listTaskOrigins) {
+        const task = projectTasks.find((t) => t.id === taskId);
+        if (task) undoTasks.push(cloneTask(task));
+      }
+      pushUndo({
+        taskLists: undoLists,
+        milestones: undoMilestones,
+        tasks: undoTasks,
+      });
       upsertTaskList({
         ...list,
         start_date: listDates.startKey,
@@ -1390,6 +1518,11 @@ export function ProjectGanttBoard({
       return;
     }
 
+    const undoTasks = snap.taskIds
+      .map((taskId) => projectTasks.find((t) => t.id === taskId))
+      .filter((t): t is Task => Boolean(t))
+      .map(cloneTask);
+    pushUndo({ tasks: undoTasks });
     for (const taskId of snap.taskIds) {
       const preview = previewMap.get(taskId);
       const task = projectTasks.find((t) => t.id === taskId);
@@ -1413,6 +1546,7 @@ export function ProjectGanttBoard({
     stopEdgeScroll,
     showDrawer,
     readOnly,
+    pushUndo,
   ]);
 
   const startDrag = useCallback(
@@ -1631,11 +1765,17 @@ export function ProjectGanttBoard({
         .filter((t) => !t.parent_id)
         .map((t) => t.id);
       if (siblings.length < 2) return;
+      const initialTasks = siblings
+        .map((id) => projectTasks.find((t) => t.id === id))
+        .filter((t): t is Task => Boolean(t))
+        .map(cloneTask);
       reorderRef.current = {
         taskId: task.id,
         listId: task.list_id,
         startY: e.clientY,
         order: siblings,
+        initialOrder: [...siblings],
+        initialTasks,
         pointerId: e.pointerId,
       };
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -1669,6 +1809,12 @@ export function ProjectGanttBoard({
       const snap = reorderRef.current;
       if (!snap || e.pointerId !== snap.pointerId) return;
       reorderRef.current = null;
+      const changed =
+        snap.order.length !== snap.initialOrder.length ||
+        snap.order.some((id, i) => id !== snap.initialOrder[i]);
+      if (changed) {
+        pushUndo({ tasks: snap.initialTasks });
+      }
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -1678,7 +1824,7 @@ export function ProjectGanttBoard({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [projectTasks, upsertTask]);
+  }, [projectTasks, upsertTask, pushUndo]);
 
   const drawerOpen =
     showDrawer && !readOnly && selectedTaskIds.length > 0 && project;
@@ -1692,57 +1838,78 @@ export function ProjectGanttBoard({
     <div
       ref={containerRef}
       className={cn(
-        "relative flex flex-col",
+        "relative flex",
         viewportExpanded
           ? "h-full min-h-0 flex-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]"
-          : "min-h-0",
+          : "min-h-0 items-start",
         className,
       )}
     >
-      <div className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--bg)]">
-        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-          <div className="flex items-center gap-1">
-            <NavBtn onClick={() => shiftAnchorWeek(-1)} label="Previous week">
-              <ChevronLeft size={16} />
-            </NavBtn>
-            <button
-              type="button"
-              className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-              onClick={goToday}
-            >
-              Today
-            </button>
-            <NavBtn onClick={() => shiftAnchorWeek(1)} label="Next week">
-              <ChevronRight size={16} />
-            </NavBtn>
-          </div>
-          <p className="text-sm font-medium">{rangeLabel}</p>
-          <div className="ml-auto flex items-center gap-1">
-            <NavBtn
-              onClick={() => setHalfZoom((z) => !z)}
-              label={halfZoom ? "Zoom in (full day width)" : "Zoom out (half day width)"}
-            >
-              {halfZoom ? <ZoomIn size={16} /> : <ZoomOut size={16} />}
-            </NavBtn>
-            {showExpandToggle ? (
-              <NavBtn
-                onClick={() => setViewportExpanded((v) => !v)}
-                label={viewportExpanded ? "Collapse Gantt" : "Expand Gantt"}
-              >
-                {viewportExpanded ? (
-                  <Minimize2 size={16} />
-                ) : (
-                  <Maximize2 size={16} />
-                )}
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col",
+          viewportExpanded && "h-full min-h-0",
+        )}
+      >
+        <div className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--bg)]">
+          <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+            <div className="flex items-center gap-1">
+              <NavBtn onClick={() => shiftAnchorWeek(-1)} label="Previous week">
+                <ChevronLeft size={16} />
               </NavBtn>
-            ) : null}
+              <button
+                type="button"
+                className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                onClick={goToday}
+              >
+                Today
+              </button>
+              <NavBtn onClick={() => shiftAnchorWeek(1)} label="Next week">
+                <ChevronRight size={16} />
+              </NavBtn>
+            </div>
+            <p className="text-sm font-medium">{rangeLabel}</p>
+            <div className="ml-auto flex items-center gap-1">
+              {!readOnly ? (
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => performUndo()}
+                  disabled={undoDepth === 0}
+                  title="Undo (Ctrl+Z)"
+                  aria-label="Undo"
+                >
+                  <Undo2 size={16} />
+                </button>
+              ) : null}
+              <NavBtn
+                onClick={() => setHalfZoom((z) => !z)}
+                label={
+                  halfZoom
+                    ? "Zoom in (full day width)"
+                    : "Zoom out (half day width)"
+                }
+              >
+                {halfZoom ? <ZoomIn size={16} /> : <ZoomOut size={16} />}
+              </NavBtn>
+              {showExpandToggle ? (
+                <NavBtn
+                  onClick={() => setViewportExpanded((v) => !v)}
+                  label={viewportExpanded ? "Collapse Gantt" : "Expand Gantt"}
+                >
+                  {viewportExpanded ? (
+                    <Minimize2 size={16} />
+                  ) : (
+                    <Maximize2 size={16} />
+                  )}
+                </NavBtn>
+              ) : null}
+            </div>
           </div>
-        </div>
 
-        <div className="flex min-w-0">
           <div
             ref={headerScrollRef}
-            className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             onScroll={syncBodyFromHeader}
           >
             <div style={{ minWidth: GANTT_LABEL_PX + totalWidth }}>
@@ -1822,18 +1989,8 @@ export function ProjectGanttBoard({
               </div>
             </div>
           </div>
-          {drawerOpen ? (
-            <div className="w-80 shrink-0 border-l border-[var(--border)] bg-[var(--bg)]" aria-hidden />
-          ) : null}
         </div>
-      </div>
 
-      <div
-        className={cn(
-          "flex min-w-0",
-          viewportExpanded ? "min-h-0 flex-1" : "w-full",
-        )}
-      >
         <div
           ref={scrollRef}
           className={cn(
@@ -2431,29 +2588,39 @@ export function ProjectGanttBoard({
             </div>
           </div>
         </div>
-
-        {drawerOpen && project ? (
-          <GanttDrawer
-            project={project}
-            selectedTaskIds={selectedTaskIds}
-            tasks={projectTasks}
-            lists={ganttLists}
-            people={state.people}
-            projectMembers={state.project_members}
-            profiles={state.profiles}
-            comments={state.task_comments}
-            myPersonId={myPerson?.id ?? null}
-            onClose={() => setSelectedTaskIds([])}
-            onSaveTasks={(updates) => {
-              for (const t of updates) upsertTask(t);
-            }}
-            onDeleteTask={(id) => {
-              deleteTask(id);
-              setSelectedTaskIds([]);
-            }}
-          />
-        ) : null}
       </div>
+
+      {drawerOpen && project ? (
+        <GanttDrawer
+          project={project}
+          selectedTaskIds={selectedTaskIds}
+          tasks={projectTasks}
+          lists={ganttLists}
+          people={state.people}
+          projectMembers={state.project_members}
+          profiles={state.profiles}
+          comments={state.task_comments}
+          myPersonId={myPerson?.id ?? null}
+          sticky={!viewportExpanded}
+          onClose={() => setSelectedTaskIds([])}
+          onSaveTasks={(updates) => {
+            const before = updates
+              .map((u) => projectTasks.find((t) => t.id === u.id))
+              .filter((t): t is Task => Boolean(t))
+              .map(cloneTask);
+            pushUndo({ tasks: before });
+            for (const t of updates) upsertTask(t);
+          }}
+          onDeleteTask={(id) => {
+            const before = projectTasks
+              .filter((t) => t.id === id || t.parent_id === id)
+              .map(cloneTask);
+            pushUndo({ tasks: before });
+            deleteTask(id);
+            setSelectedTaskIds([]);
+          }}
+        />
+      ) : null}
     </div>
   );
 
