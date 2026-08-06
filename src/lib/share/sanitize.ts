@@ -208,6 +208,16 @@ export interface ProjectPortalPayload {
    * Null for non-retainer / non-hours projects.
    */
   hoursRetainer: PortalHoursRetainer | null;
+  /**
+   * Statutory holidays relevant to the project team (for portal Gantt columns).
+   * Dates/names only — no calendar ownership PII beyond what's needed to paint.
+   */
+  holidayCalendarDays: {
+    id: string;
+    calendar_id: string;
+    date: string;
+    name: string;
+  }[];
 }
 
 /**
@@ -280,6 +290,46 @@ export function sanitizeProjectPortal(
     (l) => l.project_id === projectId && !l.hide_from_client,
   );
   const visibleListIds = new Set(visibleLists.map((l) => l.id));
+
+  const projectTasksForHolidays = state.tasks.filter(
+    (t) => t.project_id === projectId || visibleListIds.has(t.list_id),
+  );
+  const holidayTeamIds = projectTeamPersonIds(
+    projectId,
+    state.project_members,
+    state.assignments,
+    projectTasksForHolidays,
+  );
+  const holidayCalendarIds = new Set<string>();
+  for (const person of state.people) {
+    if (!holidayTeamIds.has(person.id)) continue;
+    if (person.holiday_calendar_id) {
+      holidayCalendarIds.add(person.holiday_calendar_id);
+    }
+  }
+  const holidayByDate = new Map<string, { id: string; calendar_id: string; date: string; name: string }>();
+  for (const day of state.holiday_calendar_days) {
+    if (!holidayCalendarIds.has(day.calendar_id)) continue;
+    if (!holidayByDate.has(day.date)) {
+      holidayByDate.set(day.date, {
+        id: day.id,
+        calendar_id: day.calendar_id,
+        date: day.date,
+        name: day.name,
+      });
+    }
+  }
+  for (const leave of state.leave_days) {
+    if (!holidayTeamIds.has(leave.person_id)) continue;
+    if (leave.kind !== "holiday") continue;
+    if (holidayByDate.has(leave.date)) continue;
+    holidayByDate.set(leave.date, {
+      id: `leave-${leave.id}`,
+      calendar_id: "portal-holidays",
+      date: leave.date,
+      name: leave.notes.trim() || "Statutory holiday",
+    });
+  }
 
   return {
     organizationName: state.organization.name,
@@ -363,5 +413,8 @@ export function sanitizeProjectPortal(
         sort_order: a.sort_order,
       })),
     hoursRetainer,
+    holidayCalendarDays: [...holidayByDate.values()].sort((a, b) =>
+      a.date.localeCompare(b.date),
+    ),
   };
 }

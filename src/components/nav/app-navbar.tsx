@@ -73,7 +73,7 @@ export function AppNavbar() {
     if (!mentionPersonId) return new Set<string>();
     return new Set(
       (state.unread_mentions ?? [])
-        .filter((r) => r.person_id === mentionPersonId)
+        .filter((r) => r.person_id === mentionPersonId && !r.read_at)
         .map((r) => r.comment_id),
     );
   }, [mentionPersonId, state.unread_mentions]);

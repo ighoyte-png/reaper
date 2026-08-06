@@ -221,6 +221,7 @@ export function PublicShareProvider({
       dismissBulletin: () => {},
       dismissBulletinFromBoard: () => {},
       dismissMention: () => {},
+      markMentionRead: () => {},
       dismissTaskThreadUnread: () => {},
       toggleProjectFavorite: () => {},
       reorderProjectFavorites: () => {},

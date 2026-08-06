@@ -232,6 +232,50 @@ export function withoutClientReviewTitle(title: string): string {
   return title;
 }
 
+/** Proper CR rows are children of a non-divider root parent. */
+export function isProperClientReviewChild(
+  task: Pick<Task, "parent_id" | "is_client_review" | "is_divider">,
+  byId: Map<
+    string,
+    Pick<Task, "id" | "parent_id" | "is_divider" | "is_client_review">
+  >,
+): boolean {
+  if (!task.is_client_review || task.is_divider || !task.parent_id) {
+    return false;
+  }
+  const parent = byId.get(task.parent_id);
+  if (!parent || parent.is_divider || parent.parent_id) return false;
+  return true;
+}
+
+/**
+ * Convert orphan / misplaced Client Review tasks to regular tasks (no delete).
+ * Returns only rows that need updating.
+ */
+export function orphanClientReviewDemotions<
+  T extends Pick<
+    Task,
+    | "id"
+    | "parent_id"
+    | "is_client_review"
+    | "is_divider"
+    | "title"
+  >,
+>(tasks: T[]): Array<T & { is_client_review: false; title: string }> {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const out: Array<T & { is_client_review: false; title: string }> = [];
+  for (const task of tasks) {
+    if (!task.is_client_review) continue;
+    if (isProperClientReviewChild(task, byId)) continue;
+    out.push({
+      ...task,
+      is_client_review: false,
+      title: withoutClientReviewTitle(task.title),
+    });
+  }
+  return out;
+}
+
 export function isClientReviewOpen(
   task: Pick<Task, "is_client_review" | "status" | "is_divider">,
 ): boolean {

@@ -131,6 +131,26 @@ export function resolveMilestoneBarDates(
   return { startKey: key, endKey: key };
 }
 
+/** Project overall timeline bar dates (for Gantt header row). */
+export function resolveProjectBarDates(
+  project: { start_date: string | null; end_date: string | null },
+  fallbackKey: string,
+): GanttBarDates {
+  if (project.start_date && project.end_date) {
+    return clampDateRange(project.start_date, project.end_date);
+  }
+  if (project.start_date) {
+    return { startKey: project.start_date, endKey: project.start_date };
+  }
+  if (project.end_date) {
+    return { startKey: project.end_date, endKey: project.end_date };
+  }
+  return { startKey: fallbackKey, endKey: fallbackKey };
+}
+
+/** Incomplete milestone chrome (done uses --status-healthy). */
+export const MILESTONE_PURPLE = "#673AB7";
+
 export function listHasOverdueOpenTasks(
   tasks: Task[],
   todayKey: string,

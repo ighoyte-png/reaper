@@ -124,6 +124,7 @@ export default function DashboardPage() {
     dismissBulletin,
     dismissBulletinFromBoard,
     dismissMention,
+    markMentionRead,
     newId,
     mode,
     ensureOrgTasks,
@@ -733,14 +734,23 @@ export default function DashboardPage() {
 
   const mentionPersonId = effectivePersonId ?? myPerson?.id ?? null;
   const manageWithoutPerson = effectiveCanManage && !mentionPersonId;
-  const unreadMentions = useMemo(() => {
-    if (!mentionPersonId) return new Set<string>();
-    return new Set(
-      (state.unread_mentions ?? [])
-        .filter((r) => r.person_id === mentionPersonId)
-        .map((r) => r.comment_id),
+  const mentionInbox = useMemo(() => {
+    if (!mentionPersonId) return [];
+    return (state.unread_mentions ?? []).filter(
+      (r) => r.person_id === mentionPersonId,
     );
   }, [mentionPersonId, state.unread_mentions]);
+  const unreadMentionIds = useMemo(
+    () =>
+      new Set(
+        mentionInbox.filter((r) => !r.read_at).map((r) => r.comment_id),
+      ),
+    [mentionInbox],
+  );
+  const inboxMentionIds = useMemo(
+    () => new Set(mentionInbox.map((r) => r.comment_id)),
+    [mentionInbox],
+  );
   const unreadBulletins = useMemo(
     () => new Set(state.unread_bulletin_ids ?? []),
     [state.unread_bulletin_ids],
@@ -867,7 +877,7 @@ export default function DashboardPage() {
     const taskById = new Map(state.tasks.map((t) => [t.id, t]));
     return state.task_comments
       .filter((c) => (c.mentioned_person_ids ?? []).includes(personId))
-      .filter((c) => unreadMentions.has(c.id))
+      .filter((c) => inboxMentionIds.has(c.id))
       .map((c) => {
         const task = taskById.get(c.task_id);
         const project = task ? projectById.get(task.project_id) : undefined;
@@ -878,7 +888,14 @@ export default function DashboardPage() {
         const author = state.profiles.find(
           (p) => p.id === c.author_profile_id,
         );
-        return { comment: c, task, project, client, author };
+        return {
+          comment: c,
+          task,
+          project,
+          client,
+          author,
+          unread: unreadMentionIds.has(c.id),
+        };
       })
       .filter((row) => row.task && row.project)
       .sort((a, b) =>
@@ -892,7 +909,8 @@ export default function DashboardPage() {
     state.profiles,
     projectById,
     clientById,
-    unreadMentions,
+    inboxMentionIds,
+    unreadMentionIds,
   ]);
 
   const viewAsControl =
@@ -1039,6 +1057,10 @@ export default function DashboardPage() {
             <TaggedCommentsPanel
               taggedComments={taggedComments}
               projectHref={projectHref}
+              onOpen={(commentId) => {
+                if (!mentionPersonId) return;
+                markMentionRead(commentId, mentionPersonId);
+              }}
               onDismiss={(commentId) => {
                 if (!mentionPersonId) return;
                 dismissMention(commentId, mentionPersonId);
@@ -1057,6 +1079,7 @@ export default function DashboardPage() {
               showAssignee={isPublicShare}
               projectHref={projectHref}
               viewAllHref={myTasksHref}
+              pulsePersonId={mentionPersonId}
               compact
               stretch={viewerFullyHidden}
             />
@@ -1110,7 +1133,7 @@ export default function DashboardPage() {
                 title="New Tagged Comments"
                 icon={MessageSquare}
                 className={
-                  taggedComments.length > 0
+                  unreadMentionIds.size > 0
                     ? "!border-0 bg-[var(--status-attention-wash)]"
                     : undefined
                 }
@@ -1118,11 +1141,13 @@ export default function DashboardPage() {
                 <div
                   className={cn(
                     "text-sm font-semibold tabular-nums",
-                    taggedComments.length > 0 &&
+                    unreadMentionIds.size > 0 &&
                       "text-[var(--status-attention)]",
                   )}
                 >
-                  {taggedComments.length} to review
+                  {unreadMentionIds.size > 0
+                    ? `${unreadMentionIds.size} to review`
+                    : `${taggedComments.length} tagged`}
                 </div>
               </KpiCard>
 
@@ -1343,6 +1368,7 @@ function SegmentBar({
 function TaggedCommentsPanel({
   taggedComments,
   projectHref,
+  onOpen,
   onDismiss,
   compact = false,
   stretch = false,
@@ -1353,13 +1379,16 @@ function TaggedCommentsPanel({
     project: Project | undefined;
     client: Client | undefined;
     author: Profile | undefined;
+    unread: boolean;
   }[];
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
+  onOpen: (commentId: string) => void;
   onDismiss: (commentId: string) => void;
   compact?: boolean;
   stretch?: boolean;
 }) {
   const total = taggedComments.length;
+  const unreadCount = taggedComments.filter((r) => r.unread).length;
   return (
     <section
       className={cn(
@@ -1375,8 +1404,12 @@ function TaggedCommentsPanel({
           aria-hidden
         />
         <h2 className="text-sm font-semibold">New Tagged Comments</h2>
-        {total > 0 ? (
+        {unreadCount > 0 ? (
           <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
+            {unreadCount}
+          </span>
+        ) : total > 0 ? (
+          <span className="rounded-full bg-[var(--bg-elevated)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-muted)]">
             {total}
           </span>
         ) : null}
@@ -1394,7 +1427,8 @@ function TaggedCommentsPanel({
               : cn("max-h-72 overflow-y-auto", !compact && "max-h-96"),
           )}
         >
-          {taggedComments.map(({ comment, task, project, client, author }) => {
+          {taggedComments.map(
+            ({ comment, task, project, client, author, unread }) => {
             const location = [
               author?.full_name ?? "Someone",
               client?.name,
@@ -1406,10 +1440,19 @@ function TaggedCommentsPanel({
               <li key={comment.id} className="relative">
                 <Link
                   href={projectHref(project!, `task=${task!.id}`)}
-                  className="block rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
+                  className="block rounded-md border border-[var(--border)] px-3 py-2 pl-3 pr-9 hover:bg-[var(--row-hover)]"
+                  onClick={() => onOpen(comment.id)}
                 >
                   <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
-                    <span className="truncate">{location}</span>
+                    <span className="flex min-w-0 items-center gap-1.5 truncate">
+                      {unread ? (
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-attention)]"
+                          aria-label="New"
+                        />
+                      ) : null}
+                      <span className="truncate">{location}</span>
+                    </span>
                     <span className="shrink-0">
                       {comment.created_at.slice(0, 10)}
                     </span>
@@ -1617,15 +1660,23 @@ function DashboardIdentityCard({
           ) : null}
           {!isPublicIdentity && personPods.length > 0 ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-1">
-              {personPods.map((pod) => (
-                <span
-                  key={pod.id}
-                  className="max-w-full truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
-                  title={pod.name}
-                >
-                  {pod.name}
-                </span>
-              ))}
+              {personPods.map((pod) => {
+                const isPodManager =
+                  Boolean(identityPerson) &&
+                  pod.manager_person_id === identityPerson!.id;
+                const label = isPodManager
+                  ? `${pod.name} Pod Manager`
+                  : pod.name;
+                return (
+                  <span
+                    key={pod.id}
+                    className="max-w-full truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+                    title={label}
+                  >
+                    {label}
+                  </span>
+                );
+              })}
             </div>
           ) : null}
           {!isPublicIdentity && identityPerson?.is_contractor ? (
@@ -1998,6 +2049,7 @@ function TaskPulse({
   showAssignee,
   projectHref,
   viewAllHref,
+  pulsePersonId,
   compact = false,
   stretch = false,
 }: {
@@ -2011,9 +2063,52 @@ function TaskPulse({
   showAssignee?: boolean;
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   viewAllHref: string;
+  /** When set, badge can be cleared for the day via View All. */
+  pulsePersonId?: string | null;
   compact?: boolean;
   stretch?: boolean;
 }) {
+  const todayKey = format(new Date(), "yyyy-MM-dd");
+  const badgeStorageKey =
+    pulsePersonId != null
+      ? `reaper-pulse-badge:${pulsePersonId}:${todayKey}`
+      : null;
+  const [badgeCleared, setBadgeCleared] = useState(() => {
+    if (!badgeStorageKey || typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(badgeStorageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (!badgeStorageKey || typeof window === "undefined") {
+      setBadgeCleared(false);
+      return;
+    }
+    try {
+      setBadgeCleared(localStorage.getItem(badgeStorageKey) === "1");
+    } catch {
+      setBadgeCleared(false);
+    }
+  }, [badgeStorageKey]);
+
+  const badgeTotal = badgeCleared ? 0 : total;
+  const hasFeed =
+    overdue.length > 0 ||
+    [...urgentByGroup.values()].some((list) => list.length > 0) ||
+    (!compact && highPriority.length > 0);
+
+  function clearBadgeForToday() {
+    if (!badgeStorageKey) return;
+    try {
+      localStorage.setItem(badgeStorageKey, "1");
+    } catch {
+      /* ignore */
+    }
+    setBadgeCleared(true);
+  }
+
   function row(task: Task, overdueRow: boolean) {
     const assignee = task.assignee_person_id
       ? peopleById.get(task.assignee_person_id) ?? null
@@ -2056,20 +2151,21 @@ function TaskPulse({
             aria-hidden
           />
           <h2 className="text-sm font-semibold">Task Pulse</h2>
-          {total > 0 ? (
+          {badgeTotal > 0 ? (
             <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
-              {total}
+              {badgeTotal}
             </span>
           ) : null}
         </div>
         <Link
           href={viewAllHref}
           className={buttonClass({ variant: "secondary", size: "sm" })}
+          onClick={clearBadgeForToday}
         >
           View All
         </Link>
       </div>
-      {total === 0 ? (
+      {!hasFeed ? (
         <p className="text-sm text-[var(--text-muted)]">
           Nothing overdue or urgent right now.
         </p>

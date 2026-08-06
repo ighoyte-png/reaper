@@ -87,6 +87,7 @@ import {
   upsertBulletinDismissalRow,
   deleteMentionUnreadRow,
   deleteMentionUnreadRows,
+  markMentionReadRow,
   deleteTaskThreadUnreadRow,
   seedBulletinUnreadRows,
   upsertClientRow,
@@ -338,13 +339,27 @@ function loadDemoState(): DemoState {
           )
         : (seed.dismissed_bulletin_ids ?? []),
       unread_mentions: Array.isArray(parsed.unread_mentions)
-        ? parsed.unread_mentions.filter(
-            (r): r is { comment_id: string; person_id: string } =>
-              Boolean(r) &&
-              typeof r === "object" &&
-              typeof (r as { comment_id?: unknown }).comment_id === "string" &&
-              typeof (r as { person_id?: unknown }).person_id === "string",
-          )
+        ? parsed.unread_mentions
+            .filter(
+              (r): r is {
+                comment_id: string;
+                person_id: string;
+                read_at?: string | null;
+              } =>
+                Boolean(r) &&
+                typeof r === "object" &&
+                typeof (r as { comment_id?: unknown }).comment_id ===
+                  "string" &&
+                typeof (r as { person_id?: unknown }).person_id === "string",
+            )
+            .map((r) => ({
+              comment_id: r.comment_id,
+              person_id: r.person_id,
+              read_at:
+                r.read_at != null && typeof r.read_at === "string"
+                  ? r.read_at
+                  : null,
+            }))
         : (seed.unread_mentions ?? []),
       unread_task_threads: Array.isArray(parsed.unread_task_threads)
         ? parsed.unread_task_threads.filter(
@@ -625,6 +640,8 @@ interface DataContextValue {
   dismissBulletinFromBoard: (id: string) => void;
   /** Mark a tagged comment as seen for a person (removes from unread inbox). */
   dismissMention: (commentId: string, personId: string) => void;
+  /** Clear orange unread on a mention; card stays until dismissMention. */
+  markMentionRead: (commentId: string, personId: string) => void;
   /** Mark assigner ↔ assignee task thread as read (opening the task). */
   dismissTaskThreadUnread: (taskId: string, personId: string) => void;
   upsertProjectTemplate: (
@@ -3682,7 +3699,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             }
             unread_mentions = [
               ...unread_mentions,
-              { comment_id: next.id, person_id },
+              { comment_id: next.id, person_id, read_at: null },
             ];
           }
           let unread_task_threads = prev.unread_task_threads;
@@ -3972,6 +3989,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
           noteLocalWrite("mention_unreads", `${commentId}:${personId}`);
           runRemoteSoft(async () => {
             await deleteMentionUnreadRow(supabaseRef.current!, {
+              comment_id: commentId,
+              person_id: personId,
+            });
+          });
+        }
+      },
+      markMentionRead: (commentId, personId) => {
+        if (!commentId || !personId) return;
+        const readAt = new Date().toISOString();
+        patch((prev) => {
+          let changed = false;
+          const next = prev.unread_mentions.map((r) => {
+            if (r.comment_id !== commentId || r.person_id !== personId) {
+              return r;
+            }
+            if (r.read_at) return r;
+            changed = true;
+            return { ...r, read_at: readAt };
+          });
+          if (!changed) return prev;
+          return { ...prev, unread_mentions: next };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("mention_unreads", `${commentId}:${personId}`);
+          runRemoteSoft(async () => {
+            await markMentionReadRow(supabaseRef.current!, {
               comment_id: commentId,
               person_id: personId,
             });

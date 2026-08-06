@@ -4,7 +4,16 @@ import { useMemo, type ReactNode } from "react";
 import { createDemoSeed } from "@/lib/demo/seed";
 import { DataContext, type DataContextValue } from "@/lib/data/store";
 import type { ProjectPortalPayload } from "@/lib/share/sanitize";
-import type { DemoState, Milestone, Profile, Task, TaskList } from "@/lib/types";
+import type {
+  DemoState,
+  HolidayCalendarDay,
+  Milestone,
+  Person,
+  Profile,
+  ProjectMember,
+  Task,
+  TaskList,
+} from "@/lib/types";
 
 function noopAsync(): Promise<void> {
   return Promise.resolve();
@@ -19,6 +28,9 @@ function portalViewerProfile(orgId: string): Profile {
     role: "member",
   };
 }
+
+const PORTAL_HOLIDAY_PERSON_ID = "portal-holiday-person";
+const PORTAL_HOLIDAY_CALENDAR_ID = "portal-holidays";
 
 /** Minimal read-only workspace slice for portal Gantt rendering. */
 export function portalPayloadToDemoState(
@@ -87,6 +99,56 @@ export function portalPayloadToDemoState(
     approved_by_client: m.approved_by_client,
   }));
 
+  const holidayDays = portal.holidayCalendarDays ?? [];
+  const holiday_calendar_days: HolidayCalendarDay[] = holidayDays.map((d) => ({
+    id: d.id,
+    organization_id: orgId,
+    calendar_id: PORTAL_HOLIDAY_CALENDAR_ID,
+    date: d.date,
+    name: d.name,
+  }));
+
+  /** Stub person so Gantt holidayByDate resolves calendar days for the project. */
+  const people: Person[] =
+    holiday_calendar_days.length > 0
+      ? [
+          {
+            id: PORTAL_HOLIDAY_PERSON_ID,
+            organization_id: orgId,
+            profile_id: null,
+            name: "",
+            email: "",
+            role_title: "",
+            department: "",
+            office: "",
+            capacity_hours_week: 0,
+            cost_rate: 0,
+            bill_rate: 0,
+            timezone: "UTC",
+            holiday_calendar_id: PORTAL_HOLIDAY_CALENDAR_ID,
+            avatar_url: null,
+            avatar_attachment_id: null,
+            hide_from_schedule: true,
+            hide_from_utilization: true,
+            is_contractor: false,
+            avatar_color: null,
+          },
+        ]
+      : [];
+  const project_members: ProjectMember[] =
+    people.length > 0
+      ? [
+          {
+            project_id: projectId,
+            person_id: PORTAL_HOLIDAY_PERSON_ID,
+            organization_id: orgId,
+            contractor_mode: null,
+            contractor_fixed_fee: null,
+            contractor_hours: null,
+          },
+        ]
+      : [];
+
   return {
     ...seed,
     organization: {
@@ -97,7 +159,7 @@ export function portalPayloadToDemoState(
     },
     sessionProfileId: null,
     profiles: [],
-    people: [],
+    people,
     clients: [],
     projects: [
       {
@@ -126,9 +188,21 @@ export function portalPayloadToDemoState(
     tasks,
     project_assets: [],
     assignments: [],
-    project_members: [],
+    project_members,
     task_comments: [],
     leave_days: [],
+    holiday_calendars:
+      holiday_calendar_days.length > 0
+        ? [
+            {
+              id: PORTAL_HOLIDAY_CALENDAR_ID,
+              organization_id: orgId,
+              name: "Holidays",
+              region: "",
+            },
+          ]
+        : [],
+    holiday_calendar_days,
     pods: [],
     pod_members: [],
     project_templates: [],
@@ -225,6 +299,7 @@ function buildPortalGanttContext(
     dismissBulletin: () => {},
     dismissBulletinFromBoard: () => {},
     dismissMention: () => {},
+    markMentionRead: () => {},
     dismissTaskThreadUnread: () => {},
     toggleProjectFavorite: () => {},
     reorderProjectFavorites: () => {},

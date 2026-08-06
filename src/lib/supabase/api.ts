@@ -651,7 +651,7 @@ export async function loadOrgBootstrap(
       : Promise.resolve({ data: [] as { bulletin_id: unknown }[], error: null }),
     supabase
       .from("mention_unreads")
-      .select("comment_id, person_id")
+      .select("comment_id, person_id, read_at")
       .eq("organization_id", orgId),
     sessionProfileId
       ? supabase
@@ -748,7 +748,11 @@ export async function loadOrgBootstrap(
       .map((row) => String((row as { bulletin_id: unknown }).bulletin_id))
       .filter(Boolean);
   }
-  let unread_mentions: { comment_id: string; person_id: string }[] = [];
+  let unread_mentions: {
+    comment_id: string;
+    person_id: string;
+    read_at: string | null;
+  }[] = [];
   if (mentionUnreadsRes.error) {
     if (
       /relation .*mention_unreads.* does not exist/i.test(
@@ -762,10 +766,18 @@ export async function loadOrgBootstrap(
     }
   } else {
     unread_mentions = (mentionUnreadsRes.data ?? [])
-      .map((row) => ({
-        comment_id: String((row as { comment_id: unknown }).comment_id),
-        person_id: String((row as { person_id: unknown }).person_id),
-      }))
+      .map((row) => {
+        const r = row as {
+          comment_id: unknown;
+          person_id: unknown;
+          read_at?: unknown;
+        };
+        return {
+          comment_id: String(r.comment_id),
+          person_id: String(r.person_id),
+          read_at: r.read_at != null ? String(r.read_at) : null,
+        };
+      })
       .filter((r) => r.comment_id && r.person_id);
   }
   const people = await resolvePeopleAvatars(
@@ -3139,6 +3151,35 @@ export async function deleteMentionUnreadRow(
   ) {
     console.warn(
       "mention_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
+/** Clear orange unread on a mention; card stays until dismiss. */
+export async function markMentionReadRow(
+  supabase: SupabaseClient,
+  row: {
+    comment_id: string;
+    person_id: string;
+  },
+): Promise<boolean> {
+  const readAt = new Date().toISOString();
+  const { error } = await supabase
+    .from("mention_unreads")
+    .update({ read_at: readAt })
+    .eq("comment_id", row.comment_id)
+    .eq("person_id", row.person_id);
+  if (!error) return true;
+  if (
+    /relation .*mention_unreads.* does not exist/i.test(error.message) ||
+    error.code === "42P01" ||
+    /Could not find the 'read_at' column/i.test(error.message) ||
+    (error.code === "PGRST204" && /read_at/i.test(error.message))
+  ) {
+    console.warn(
+      "mention_unreads.read_at missing — apply supabase/migrations/079_mention_read_at.sql",
     );
     return false;
   }

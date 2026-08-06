@@ -349,13 +349,28 @@ export function applyRealtimeTableEvent(
           (r) => r.comment_id === commentId && r.person_id === personId,
         )
       ) {
-        return state;
+        return {
+          ...state,
+          unread_mentions: state.unread_mentions.map((r) => {
+            if (r.comment_id !== commentId || r.person_id !== personId) {
+              return r;
+            }
+            const readAt =
+              source.read_at != null ? String(source.read_at) : null;
+            return { ...r, read_at: readAt };
+          }),
+        };
       }
       return {
         ...state,
         unread_mentions: [
           ...state.unread_mentions,
-          { comment_id: commentId, person_id: personId },
+          {
+            comment_id: commentId,
+            person_id: personId,
+            read_at:
+              source.read_at != null ? String(source.read_at) : null,
+          },
         ],
       };
     }

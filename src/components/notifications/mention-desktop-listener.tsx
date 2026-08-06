@@ -42,7 +42,7 @@ export function MentionDesktopListener() {
       return;
     }
     const mine = state.unread_mentions
-      .filter((r) => r.person_id === myPerson.id)
+      .filter((r) => r.person_id === myPerson.id && !r.read_at)
       .map((r) => r.comment_id);
 
     if (seenCommentIdsRef.current === null) {

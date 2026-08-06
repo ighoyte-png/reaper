@@ -95,6 +95,7 @@ import {
   isDownstreamOfOpenClientReview,
   listDisplayOrder,
   nextClientReviewStatus,
+  orphanClientReviewDemotions,
   parentTasks,
   sortTaskLists,
   taskDividerLabel,
@@ -388,6 +389,8 @@ export function ProjectTaskBoard({
     void ensureProjectData(projectId);
   }, [projectId, ensureProjectData]);
 
+  const orphanCrCleanedForProject = useRef<string | null>(null);
+
   const projectDataReady =
     isPublicShare ||
     !projectId ||
@@ -461,6 +464,24 @@ export function ProjectTaskBoard({
     allowSelectProp !== undefined
       ? allowSelectProp
       : !isPublicShare && (viewerCanManage || !readOnly);
+
+  useEffect(() => {
+    if (!projectDataReady || !projectId || !manageLists) return;
+    if (orphanCrCleanedForProject.current === projectId) return;
+    orphanCrCleanedForProject.current = projectId;
+    const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
+    for (const demoted of orphanClientReviewDemotions(projectTasks)) {
+      const full = projectTasks.find((t) => t.id === demoted.id);
+      if (!full) continue;
+      upsertTask({
+        ...full,
+        is_client_review: false,
+        title: demoted.title,
+      });
+    }
+    // One-shot cleanup after project tasks first become ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot on ready
+  }, [projectDataReady, projectId, manageLists]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -1010,6 +1031,27 @@ export function ProjectTaskBoard({
       ...emptyTaskAuditFields(),
     };
     upsertTask(task);
+    if (draft.is_client_review) {
+      const crTask: Task = {
+        id: newId("task"),
+        organization_id: state.organization.id,
+        project_id: projectId,
+        list_id: listId,
+        parent_id: task.id,
+        assignee_person_id: draft.assignee_person_id,
+        title: withClientReviewTitle(title),
+        is_divider: false,
+        is_client_review: true,
+        status: "upcoming",
+        start_date: null,
+        due_date: null,
+        notes: "",
+        sort_order: 0,
+        ...emptyTaskAuditFields(),
+      };
+      upsertTask(crTask);
+      setExpanded((prev) => new Set(prev).add(task.id));
+    }
     if (mode === "supabase") {
       void syncInlineAttachmentsFromHtml({
         entityType: "task_note",
@@ -1079,18 +1121,69 @@ export function ProjectTaskBoard({
   function saveEditingTask(taskId: string, draft: InlineTaskDraft) {
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task || isListGanttLocked(task.list_id)) return;
-    const title = draft.title.trim();
+    const titleLocked = Boolean(task.is_client_review && task.parent_id);
+    const title = titleLocked ? task.title : draft.title.trim();
     if (!title) return;
-    const isClientReview = Boolean(task.parent_id && draft.is_client_review);
-    upsertTask({
-      ...task,
-      title,
-      assignee_person_id: draft.assignee_person_id,
-      start_date: draft.start_date,
-      due_date: draft.due_date,
-      notes: draft.notes,
-      is_client_review: isClientReview,
-    });
+
+    if (task.parent_id) {
+      upsertTask({
+        ...task,
+        title,
+        assignee_person_id: draft.assignee_person_id,
+        start_date: draft.start_date,
+        due_date: draft.due_date,
+        notes: draft.notes,
+        is_client_review: task.is_client_review,
+      });
+    } else {
+      upsertTask({
+        ...task,
+        title,
+        assignee_person_id: draft.assignee_person_id,
+        start_date: draft.start_date,
+        due_date: draft.due_date,
+        notes: draft.notes,
+        is_client_review: false,
+      });
+
+      const children = state.tasks.filter(
+        (t) => t.parent_id === task.id && !t.is_divider,
+      );
+      const crChildren = children.filter((t) => t.is_client_review);
+
+      if (draft.is_client_review) {
+        if (crChildren.length === 0) {
+          const crTask: Task = {
+            id: newId("task"),
+            organization_id: state.organization.id,
+            project_id: projectId,
+            list_id: task.list_id,
+            parent_id: task.id,
+            assignee_person_id: draft.assignee_person_id,
+            title: withClientReviewTitle(title),
+            is_divider: false,
+            is_client_review: true,
+            status: "upcoming",
+            start_date: null,
+            due_date: null,
+            notes: "",
+            sort_order: children.length,
+            ...emptyTaskAuditFields(),
+          };
+          upsertTask(crTask);
+          setExpanded((prev) => new Set(prev).add(task.id));
+        }
+      } else if (crChildren.length > 0) {
+        for (const cr of crChildren) {
+          upsertTask({
+            ...cr,
+            is_client_review: false,
+            title: withoutClientReviewTitle(cr.title),
+          });
+        }
+      }
+    }
+
     if (mode === "supabase") {
       void syncInlineAttachmentsFromHtml({
         entityType: "task_note",
@@ -2086,7 +2179,11 @@ export function ProjectTaskBoard({
                   }
                   milestone={
                     milestone
-                      ? { name: milestone.name, status: milestone.status }
+                      ? {
+                          name: milestone.name,
+                          status: milestone.status,
+                          client_approved: milestone.client_approved,
+                        }
                       : null
                   }
                   onNameChange={(name) => upsertTaskList({ ...list, name })}
@@ -2205,7 +2302,11 @@ export function ProjectTaskBoard({
                       }
                       milestone={
                     milestone
-                      ? { name: milestone.name, status: milestone.status }
+                      ? {
+                          name: milestone.name,
+                          status: milestone.status,
+                          client_approved: milestone.client_approved,
+                        }
                       : null
                   }
                       onNameChange={(name) => upsertTaskList({ ...list, name })}
@@ -2380,7 +2481,11 @@ function ListSection({
   ctx: BoardCtx;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  milestone: { name: string; status: string } | null;
+  milestone: {
+    name: string;
+    status: string;
+    client_approved?: boolean;
+  } | null;
   onNameChange: (name: string) => void;
   drafting: boolean;
   onStartDraft: () => void;
@@ -2654,16 +2759,16 @@ function ListSection({
                 size={10}
                 className={cn(
                   "h-2.5 w-2.5 shrink-0",
-                  milestone.status === "done"
+                  milestone.status === "done" || milestone.client_approved
                     ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
-                    : "fill-[#f59e0b] text-[#f59e0b]",
+                    : "fill-[#673AB7] text-[#673AB7]",
                 )}
                 aria-hidden
               />
               <span
                 className={cn(
                   "min-w-0 truncate",
-                  milestone.status === "done" &&
+                  (milestone.status === "done" || milestone.client_approved) &&
                     "text-[var(--status-healthy)] line-through",
                 )}
               >
@@ -2682,6 +2787,7 @@ function ListSection({
                   }
                   status="upcoming"
                   submitLabel="Add task"
+                  allowClientReview
                   onDraftChange={(draft) =>
                     writeTaskCreateDraft(ctx.profileId, list.id, draft)
                   }
@@ -2771,6 +2877,7 @@ function InlineTaskForm({
   depth = 0,
   descriptionViewExpanded = false,
   allowClientReview = false,
+  titleLocked = false,
   taskIdForAttachments = null,
   storageMode = "demo",
   newId,
@@ -2790,7 +2897,10 @@ function InlineTaskForm({
   depth?: number;
   /** View-mode description expand state when opening edit. */
   descriptionViewExpanded?: boolean;
+  /** Parent tasks only: checkbox near assignee to opt into a CR child. */
   allowClientReview?: boolean;
+  /** Client Review subtasks keep a locked title. */
+  titleLocked?: boolean;
   taskIdForAttachments?: string | null;
   storageMode?: "demo" | "supabase";
   newId?: (prefix: string) => string;
@@ -2896,10 +3006,12 @@ function InlineTaskForm({
           aria-hidden
         />
         <input
-          autoFocus
-          className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+          autoFocus={!titleLocked}
+          className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-70"
           placeholder="Task title"
           value={title}
+          disabled={titleLocked}
+          title={titleLocked ? "Client Review title is locked" : undefined}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -2933,15 +3045,7 @@ function InlineTaskForm({
                 <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
                   <Checkbox
                     checked={isClientReview}
-                    onChange={(e) => {
-                      const on = e.target.checked;
-                      setIsClientReview(on);
-                      setTitle((prev) =>
-                        on
-                          ? withClientReviewTitle(prev)
-                          : withoutClientReviewTitle(prev),
-                      );
-                    }}
+                    onChange={(e) => setIsClientReview(e.target.checked)}
                     aria-label="Client Review"
                   />
                   Client Review
@@ -3414,9 +3518,14 @@ function TaskRow({
             start_date: task.start_date,
             due_date: task.due_date,
             notes: task.notes,
-            is_client_review: task.is_client_review,
+            is_client_review: !task.parent_id
+              ? (ctx.childrenMap.get(task.id) ?? []).some(
+                  (c) => c.is_client_review && !c.is_divider,
+                )
+              : false,
           }}
-          allowClientReview={Boolean(task.parent_id)}
+          allowClientReview={!task.parent_id && !task.is_divider}
+          titleLocked={Boolean(task.is_client_review && task.parent_id)}
           descriptionViewExpanded={descExpanded}
           taskIdForAttachments={task.id}
           storageMode={ctx.mode}

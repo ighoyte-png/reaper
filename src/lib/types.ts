@@ -427,8 +427,12 @@ export interface DemoState {
   unread_bulletin_ids: string[];
   /** System bulletin ids hidden from this profile's board. */
   dismissed_bulletin_ids: string[];
-  /** Unread @mention inbox rows (comment_id + mentioned person_id). */
-  unread_mentions: { comment_id: string; person_id: string }[];
+  /** Mention inbox rows (comment_id + person). Orange unread when read_at is null. */
+  unread_mentions: {
+    comment_id: string;
+    person_id: string;
+    read_at?: string | null;
+  }[];
   /** Tasks with unread assigner ↔ assignee comment thread for a person. */
   unread_task_threads: { task_id: string; person_id: string }[];
   /** Current profile's starred projects (sort_order = nav tab order). */

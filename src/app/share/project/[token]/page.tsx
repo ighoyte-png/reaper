@@ -34,8 +34,8 @@ import { compareTaskOrder } from "@/lib/domain/tasks";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { ProjectGanttBoard } from "@/components/projects/project-gantt-board";
 import {
-  PortalProjectTasksPie,
-  projectPortalTasksPieStats,
+  ProjectTasksPie,
+  projectTasksPieStats,
 } from "@/components/projects/project-tasks-pie";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import type {
@@ -462,16 +462,17 @@ export default function ProjectSharePage() {
     : teamSorted;
   const showTeamSection = Boolean(manager) || teamSorted.length > 0;
   const hasGantt = portal.taskLists.some((l) => l.gantt_enabled);
-  const portalPieStats = projectPortalTasksPieStats(
-    portal.tasks.map((t) => ({
-      status: t.status as TaskStatus,
-      is_divider: false as const,
-    })),
-  );
+  const pieTasks = portal.tasks.map((t) => ({
+    status: t.status as TaskStatus,
+    due_date: t.due_date ?? null,
+    is_divider: false as const,
+  }));
+  const showTasksPie = pieTasks.length >= 20;
+  const tasksPieStats = projectTasksPieStats(pieTasks, todayKey);
 
   const milestonesSection =
     milestonesSorted.length > 0 ? (
-      <section className="flex h-full flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <section className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <h2 className="mb-3 text-sm font-semibold">Milestones</h2>
         <div className="space-y-6">
           {milestonesSorted.map((m) => {
@@ -552,7 +553,7 @@ export default function ProjectSharePage() {
 
   const essentialsSection =
     assetsSorted.length > 0 ? (
-      <section className="flex h-full flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+      <section className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <h2 className="mb-3 text-sm font-semibold">Links & Essentials</h2>
         <ul className="space-y-1.5">
           {assetsSorted.map((a) => {
@@ -681,7 +682,7 @@ export default function ProjectSharePage() {
       {showTeamSection ? (
         <section>
           <h2 className="mb-3 text-sm font-semibold">Team</h2>
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {manager ? (
               <li className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center">
                 <PersonAvatar
@@ -807,23 +808,19 @@ export default function ProjectSharePage() {
           </section>
         </>
       ) : (
-        <>
-          <div className="grid gap-4 lg:grid-cols-2">
-            {tasksSection}
-            <div className="space-y-4">
-              {milestonesSection}
-              {essentialsSection}
-            </div>
+        <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+          {tasksSection}
+          <div className="space-y-4">
+            {milestonesSection}
+            {essentialsSection}
+            {showTasksPie ? (
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <h2 className="mb-3 text-sm font-semibold">Project Tasks</h2>
+                <ProjectTasksPie stats={tasksPieStats} />
+              </section>
+            ) : null}
           </div>
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-            <h2 className="mb-3 text-sm font-semibold">Project Tasks</h2>
-            <PortalProjectTasksPie
-              active={portalPieStats.active}
-              inReview={portalPieStats.inReview}
-              complete={portalPieStats.complete}
-            />
-          </section>
-        </>
+        </div>
       )}
 
       {approvingId ? (

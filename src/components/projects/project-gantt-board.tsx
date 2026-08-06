@@ -15,8 +15,13 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  GripVertical,
+  Maximize2,
+  Minimize2,
   PanelRightClose,
   Star,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { buttonClass } from "@/components/ui/button";
@@ -24,6 +29,7 @@ import { DateInput, Field } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { RichNotesHtml } from "@/components/ui/simple-rich-text";
 import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
+import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import { useData } from "@/lib/data/store";
 import { cn } from "@/lib/cn";
 import {
@@ -45,7 +51,10 @@ import {
   GANTT_LIST_ROW_H,
   GANTT_TASK_ROW_H,
   listBarColor,
+  MILESTONE_PURPLE,
   resolveListBarDates,
+  resolveMilestoneBarDates,
+  resolveProjectBarDates,
   resolveTaskBarDates,
   taskBarColor,
   taskShowsClientReviewStar,
@@ -67,7 +76,9 @@ import {
   spanColumnsPx,
   type ScheduleColumn,
 } from "@/lib/domain/schedule-zoom";
+import { readUserViewPrefs } from "@/lib/user-view-prefs";
 import type {
+  Milestone,
   Person,
   ProjectMember,
   Task,
@@ -90,7 +101,9 @@ type DragMode = "move" | "resize-start" | "resize-end";
 
 type DragTarget =
   | { kind: "list"; listId: string }
-  | { kind: "task"; taskId: string };
+  | { kind: "task"; taskId: string }
+  | { kind: "milestone"; milestoneId: string }
+  | { kind: "project" };
 
 type DragSnapshot = {
   target: DragTarget;
@@ -99,12 +112,16 @@ type DragSnapshot = {
   originEnd: string;
   previewStart: string;
   previewEnd: string;
-  /** Live preview geometry keyed by task id or `list:{id}`. */
+  /** Live preview geometry keyed by task id, `list:{id}`, `milestone:{id}`, or `project`. */
   previewMap: Map<string, GanttBarDates>;
   /** Task ids included in this drag (multi-select or single). */
   taskIds: string[];
-  /** For list move: all tasks in the list at drag start. */
+  /** For list move: all tasks shifted at drag start (including cascade). */
   listTaskOrigins: Map<string, GanttBarDates>;
+  /** For list move cascade: other list ids → dates. */
+  cascadeListOrigins: Map<string, GanttBarDates>;
+  /** For list move cascade: milestone ids → dates. */
+  cascadeMilestoneOrigins: Map<string, GanttBarDates>;
   dirty: boolean;
   pointerId: number;
   didMove: boolean;
@@ -113,10 +130,9 @@ type DragSnapshot = {
 const EDGE_SCROLL_PX = 40;
 const EDGE_SCROLL_SPEED = 14;
 const CLICK_MOVE_THRESHOLD = 4;
-const AVATAR_XS_PX = 20;
 const BAR_PAD_X = 6;
 const BAR_GAP = 4;
-const MILESTONE_ORANGE = "#f59e0b";
+const STATUS_CHIP_GAP = 4;
 
 let measureCanvas: HTMLCanvasElement | null = null;
 
@@ -132,6 +148,10 @@ function measureBarLabelWidth(text: string): number {
 
 function todayKey() {
   return toDateKey(startOfDay(new Date()));
+}
+
+function hoverWash(color: string): string {
+  return `color-mix(in srgb, ${color} 50%, black)`;
 }
 
 function NavBtn({
@@ -165,8 +185,7 @@ function GanttBarVisual({
   title,
   selected,
   readOnly,
-  showAssignee,
-  assignee,
+  showCrStar,
   emphasizeTop,
   onPointerDownBar,
   onPointerDownResizeStart,
@@ -182,8 +201,7 @@ function GanttBarVisual({
   title: string;
   selected?: boolean;
   readOnly?: boolean;
-  showAssignee?: boolean;
-  assignee?: Person | null;
+  showCrStar?: boolean;
   /** Task List parent bars: darker strip on the top 1/8. */
   emphasizeTop?: boolean;
   onPointerDownBar?: (e: ReactPointerEvent) => void;
@@ -199,9 +217,8 @@ function GanttBarVisual({
     dates.endKey,
     today,
   );
-  const showAvatar = Boolean(showAssignee && assignee);
-  const avatarSlot = showAvatar ? AVATAR_XS_PX + BAR_GAP : 0;
-  const availableForLabel = geo.width - BAR_PAD_X * 2 - avatarSlot;
+  const crSlot = showCrStar ? 12 + BAR_GAP : 0;
+  const availableForLabel = geo.width - BAR_PAD_X * 2 - crSlot;
   const labelWidth = label ? measureBarLabelWidth(label) : 0;
   const showLabel = Boolean(
     label && availableForLabel >= labelWidth && labelWidth > 0,
@@ -248,24 +265,21 @@ function GanttBarVisual({
         </div>
       ) : null}
       <div className="relative z-[2] flex h-full min-w-0 flex-1 items-center gap-1 px-1.5">
-        {showAvatar && assignee ? (
-          <PersonAvatar
-            avatarUrl={assignee.avatar_url}
-            avatarAttachmentId={assignee.avatar_attachment_id}
-            name={assignee.name}
-            size="xs"
-            fallback="initials"
-            color={personAvatarColor(assignee)}
-            className="shrink-0 ring-1 ring-white/30"
-          />
-        ) : null}
         {showLabel ? (
-          <span className="pointer-events-none min-w-0 flex-1 text-right text-xs font-medium text-white">
+          <span className="pointer-events-none min-w-0 flex-1 truncate text-left text-xs font-medium text-white">
             {label}
           </span>
         ) : (
           <span className="min-w-0 flex-1" aria-hidden />
         )}
+        {showCrStar ? (
+          <Star
+            size={12}
+            className="pointer-events-none shrink-0 text-white"
+            fill="currentColor"
+            aria-hidden
+          />
+        ) : null}
       </div>
       {!readOnly ? (
         <>
@@ -288,19 +302,26 @@ function GanttMilestoneMarker({
   columns,
   done,
   title,
+  readOnly,
+  onPointerDown,
 }: {
   dates: GanttBarDates;
   columns: ScheduleColumn[];
   done: boolean;
   title: string;
+  readOnly?: boolean;
+  onPointerDown?: (e: ReactPointerEvent) => void;
 }) {
   const geo = spanColumnsPx(columns, dates.startKey, dates.endKey);
   if (!geo) return null;
-  const color = done ? "var(--status-healthy)" : MILESTONE_ORANGE;
+  const color = done ? "var(--status-healthy)" : MILESTONE_PURPLE;
   const size = Math.min(geo.width - 4, GANTT_TASK_ROW_H - 6, 22);
   return (
     <div
-      className="pointer-events-auto absolute z-10 flex items-center justify-center rounded-sm"
+      className={cn(
+        "pointer-events-auto absolute z-10 flex items-center justify-center rounded-sm",
+        !readOnly && "cursor-grab active:cursor-grabbing",
+      )}
       style={{
         left: geo.left,
         width: geo.width,
@@ -310,6 +331,7 @@ function GanttMilestoneMarker({
         backgroundColor: color,
       }}
       title={title}
+      onPointerDown={readOnly ? undefined : onPointerDown}
     >
       <Star
         size={Math.max(10, size - 6)}
@@ -317,6 +339,27 @@ function GanttMilestoneMarker({
         fill="currentColor"
         aria-hidden
       />
+    </div>
+  );
+}
+
+function TaskStatusChipBesideBar({
+  dates,
+  columns,
+  status,
+}: {
+  dates: GanttBarDates;
+  columns: ScheduleColumn[];
+  status: TaskStatus;
+}) {
+  const geo = spanColumnsPx(columns, dates.startKey, dates.endKey);
+  if (!geo) return null;
+  return (
+    <div
+      className="pointer-events-none absolute z-[11] top-1/2 -translate-y-1/2"
+      style={{ left: geo.left + geo.width + STATUS_CHIP_GAP }}
+    >
+      <TaskStatusTag status={status} className="scale-90 origin-left shadow-sm" />
     </div>
   );
 }
@@ -628,22 +671,48 @@ export function ProjectGanttBoard({
   showDrawer = true,
   className,
 }: Props) {
-  const { state, upsertTask, upsertTaskList, myPerson } = useData();
+  const {
+    state,
+    profile,
+    upsertTask,
+    upsertTaskList,
+    upsertMilestone,
+    upsertProject,
+    myPerson,
+  } = useData();
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragSnapshot | null>(null);
   const dragStartClient = useRef({ x: 0, y: 0 });
   const edgeScrollRaf = useRef(0);
+  const seenListIdsRef = useRef<Set<string>>(new Set());
+  const panRef = useRef<{
+    pointerId: number;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
+  const reorderRef = useRef<{
+    taskId: string;
+    listId: string;
+    startY: number;
+    order: string[];
+    pointerId: number;
+  } | null>(null);
 
   const [anchor, setAnchor] = useState(() => weekStart(new Date()));
   const [expandedLists, setExpandedLists] = useState<Set<string>>(() => new Set());
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [panning, setPanning] = useState(false);
   const [dragVersion, setDragVersion] = useState(0);
   const [containerNarrow, setContainerNarrow] = useState(false);
+  const [halfZoom, setHalfZoom] = useState(false);
+  const [viewportExpanded, setViewportExpanded] = useState(false);
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   const today = todayKey();
-  const dayW = containerNarrow ? GANTT_DAY_W_NARROW : GANTT_DAY_W_DESKTOP;
+  const baseDayW = containerNarrow ? GANTT_DAY_W_NARROW : GANTT_DAY_W_DESKTOP;
+  const dayW = halfZoom ? Math.max(20, Math.round(baseDayW / 2)) : baseDayW;
 
   const project = state.projects.find((p) => p.id === projectId) ?? null;
   const ganttLists = useMemo(
@@ -654,6 +723,13 @@ export function ProjectGanttBoard({
     () => state.tasks.filter((t) => t.project_id === projectId),
     [state.tasks, projectId],
   );
+  const projectMilestones = useMemo(
+    () => state.milestones.filter((m) => m.project_id === projectId),
+    [state.milestones, projectId],
+  );
+
+  const showExpandToggle =
+    readUserViewPrefs(profile?.id).contentWidth === "constrained";
 
   const fallbackKey = useMemo(
     () => toDateKey(weekStart(anchor)),
@@ -682,11 +758,24 @@ export function ProjectGanttBoard({
     return () => ro.disconnect();
   }, []);
 
+  // Only auto-expand newly seen list ids (do not re-expand user-collapsed lists after drag).
   useEffect(() => {
     setExpandedLists((prev) => {
+      let changed = false;
       const next = new Set(prev);
-      for (const list of ganttLists) next.add(list.id);
-      return next;
+      const currentIds = new Set(ganttLists.map((l) => l.id));
+      for (const id of [...seenListIdsRef.current]) {
+        if (!currentIds.has(id)) seenListIdsRef.current.delete(id);
+      }
+      for (const list of ganttLists) {
+        if (seenListIdsRef.current.has(list.id)) continue;
+        seenListIdsRef.current.add(list.id);
+        if (!next.has(list.id)) {
+          next.add(list.id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
   }, [ganttLists]);
 
@@ -768,14 +857,21 @@ export function ProjectGanttBoard({
     return ganttLists.map((list) => {
       const tasks = ganttTasksForList(projectTasks, list.id);
       const milestone = list.milestone_id
-        ? state.milestones.find((m) => m.id === list.milestone_id) ?? null
+        ? projectMilestones.find((m) => m.id === list.milestone_id) ?? null
         : null;
       return { list, tasks, milestone };
     });
-  }, [ganttLists, projectTasks, state.milestones]);
+  }, [ganttLists, projectTasks, projectMilestones]);
+
+  const projectDates = useMemo(() => {
+    if (!project) return null;
+    const preview = dragRef.current?.previewMap.get("project");
+    if (preview) return preview;
+    return resolveProjectBarDates(project, fallbackKey);
+  }, [project, fallbackKey, dragVersion]);
 
   const totalBodyHeight = useMemo(() => {
-    let h = 0;
+    let h = GANTT_TASK_ROW_H; // project timeline row
     for (const { list, tasks, milestone } of listSections) {
       h += GANTT_LIST_ROW_H;
       if (expandedLists.has(list.id)) {
@@ -783,7 +879,7 @@ export function ProjectGanttBoard({
         if (milestone) h += GANTT_TASK_ROW_H;
       }
     }
-    return Math.max(h, GANTT_LIST_ROW_H);
+    return Math.max(h, GANTT_TASK_ROW_H + GANTT_LIST_ROW_H);
   }, [listSections, expandedLists]);
 
   const toggleListExpanded = useCallback((listId: string) => {
@@ -835,6 +931,22 @@ export function ProjectGanttBoard({
     [fallbackKey, dragVersion],
   );
 
+  const getMilestoneDates = useCallback(
+    (milestone: Milestone): GanttBarDates => {
+      const preview = dragRef.current?.previewMap.get(
+        `milestone:${milestone.id}`,
+      );
+      if (preview) return preview;
+      return (
+        resolveMilestoneBarDates(milestone) ?? {
+          startKey: fallbackKey,
+          endKey: fallbackKey,
+        }
+      );
+    },
+    [fallbackKey, dragVersion],
+  );
+
   const stopEdgeScroll = useCallback(() => {
     if (edgeScrollRaf.current) {
       cancelAnimationFrame(edgeScrollRaf.current);
@@ -878,6 +990,63 @@ export function ProjectGanttBoard({
       const snap = dragRef.current;
       if (!snap) return;
 
+      if (snap.target.kind === "project") {
+        if (snap.mode === "move") {
+          const delta = workingDayDelta(snap.originStart, col.startKey);
+          if (delta === 0) return;
+          snap.dirty = true;
+          snap.didMove = true;
+          const next = {
+            startKey: shiftWorkingDays(snap.originStart, delta),
+            endKey: shiftWorkingDays(snap.originEnd, delta),
+          };
+          snap.previewStart = next.startKey;
+          snap.previewEnd = next.endKey;
+          bumpDragPreview(new Map([["project", next]]));
+        } else if (snap.mode === "resize-end") {
+          const end =
+            col.endKey >= snap.originStart ? col.endKey : snap.originStart;
+          if (end === snap.previewEnd) return;
+          snap.dirty = true;
+          snap.didMove = true;
+          snap.previewEnd = end;
+          bumpDragPreview(
+            new Map([
+              ["project", { startKey: snap.originStart, endKey: end }],
+            ]),
+          );
+        } else if (snap.mode === "resize-start") {
+          const start =
+            col.startKey <= snap.originEnd ? col.startKey : snap.originEnd;
+          if (start === snap.previewStart) return;
+          snap.dirty = true;
+          snap.didMove = true;
+          snap.previewStart = start;
+          bumpDragPreview(
+            new Map([
+              ["project", { startKey: start, endKey: snap.originEnd }],
+            ]),
+          );
+        }
+        return;
+      }
+
+      if (snap.target.kind === "milestone") {
+        if (snap.mode !== "move") return;
+        const delta = workingDayDelta(snap.originStart, col.startKey);
+        if (delta === 0) return;
+        snap.dirty = true;
+        snap.didMove = true;
+        const key = shiftWorkingDays(snap.originStart, delta);
+        const next = { startKey: key, endKey: key };
+        snap.previewStart = key;
+        snap.previewEnd = key;
+        bumpDragPreview(
+          new Map([[`milestone:${snap.target.milestoneId}`, next]]),
+        );
+        return;
+      }
+
       if (snap.target.kind === "list") {
         const listId = snap.target.listId;
         const list = ganttLists.find((l) => l.id === listId);
@@ -893,8 +1062,20 @@ export function ProjectGanttBoard({
           };
           const preview = new Map<string, GanttBarDates>();
           preview.set(`list:${list.id}`, newList);
+          for (const [otherId, orig] of snap.cascadeListOrigins) {
+            preview.set(`list:${otherId}`, {
+              startKey: shiftWorkingDays(orig.startKey, delta),
+              endKey: shiftWorkingDays(orig.endKey, delta),
+            });
+          }
           for (const [taskId, orig] of snap.listTaskOrigins) {
             preview.set(taskId, {
+              startKey: shiftWorkingDays(orig.startKey, delta),
+              endKey: shiftWorkingDays(orig.endKey, delta),
+            });
+          }
+          for (const [msId, orig] of snap.cascadeMilestoneOrigins) {
+            preview.set(`milestone:${msId}`, {
               startKey: shiftWorkingDays(orig.startKey, delta),
               endKey: shiftWorkingDays(orig.endKey, delta),
             });
@@ -1015,6 +1196,32 @@ export function ProjectGanttBoard({
       return;
     }
 
+    if (snap.target.kind === "project" && project) {
+      const dates = clampDateRange(snap.previewStart, snap.previewEnd);
+      void upsertProject({
+        ...project,
+        start_date: dates.startKey,
+        end_date: dates.endKey,
+      });
+      setDragVersion((v) => v + 1);
+      return;
+    }
+
+    if (snap.target.kind === "milestone") {
+      const milestoneId = snap.target.milestoneId;
+      const ms = projectMilestones.find((m) => m.id === milestoneId);
+      const preview = previewMap.get(`milestone:${milestoneId}`);
+      if (ms && preview) {
+        upsertMilestone({
+          ...ms,
+          start_date: preview.startKey,
+          due_date: preview.endKey,
+        });
+      }
+      setDragVersion((v) => v + 1);
+      return;
+    }
+
     if (snap.target.kind === "list") {
       const listId = snap.target.listId;
       const list = ganttLists.find((l) => l.id === listId);
@@ -1028,6 +1235,40 @@ export function ProjectGanttBoard({
         start_date: listDates.startKey,
         end_date: listDates.endKey,
       });
+      if (snap.mode === "move") {
+        for (const [otherId, orig] of snap.cascadeListOrigins) {
+          const preview = previewMap.get(`list:${otherId}`);
+          const other = ganttLists.find((l) => l.id === otherId);
+          if (!other || !preview) continue;
+          upsertTaskList({
+            ...other,
+            start_date:
+              other.start_date != null || preview.startKey !== orig.startKey
+                ? preview.startKey
+                : null,
+            end_date:
+              other.end_date != null || preview.endKey !== orig.endKey
+                ? preview.endKey
+                : null,
+          });
+        }
+        for (const [msId, orig] of snap.cascadeMilestoneOrigins) {
+          const preview = previewMap.get(`milestone:${msId}`);
+          const ms = projectMilestones.find((m) => m.id === msId);
+          if (!ms || !preview) continue;
+          if (
+            preview.startKey === orig.startKey &&
+            preview.endKey === orig.endKey
+          ) {
+            continue;
+          }
+          upsertMilestone({
+            ...ms,
+            start_date: preview.startKey,
+            due_date: preview.endKey,
+          });
+        }
+      }
       for (const [taskId, orig] of snap.listTaskOrigins) {
         const preview = previewMap.get(taskId);
         if (!preview) continue;
@@ -1063,8 +1304,12 @@ export function ProjectGanttBoard({
   }, [
     ganttLists,
     projectTasks,
+    projectMilestones,
+    project,
     upsertTask,
     upsertTaskList,
+    upsertMilestone,
+    upsertProject,
     stopEdgeScroll,
     showDrawer,
     readOnly,
@@ -1078,6 +1323,8 @@ export function ProjectGanttBoard({
       dates: GanttBarDates,
       taskIds: string[],
       listTaskOrigins?: Map<string, GanttBarDates>,
+      cascadeListOrigins?: Map<string, GanttBarDates>,
+      cascadeMilestoneOrigins?: Map<string, GanttBarDates>,
     ) => {
       if (readOnly || e.button !== 0) return;
       e.stopPropagation();
@@ -1093,6 +1340,8 @@ export function ProjectGanttBoard({
         previewMap: new Map(),
         taskIds,
         listTaskOrigins: listTaskOrigins ?? new Map(),
+        cascadeListOrigins: cascadeListOrigins ?? new Map(),
+        cascadeMilestoneOrigins: cascadeMilestoneOrigins ?? new Map(),
         dirty: false,
         pointerId: e.pointerId,
         didMove: false,
@@ -1101,6 +1350,34 @@ export function ProjectGanttBoard({
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     },
     [readOnly],
+  );
+
+  const buildListMoveCascade = useCallback(
+    (list: TaskList) => {
+      const listTaskOrigins = new Map<string, GanttBarDates>();
+      const cascadeListOrigins = new Map<string, GanttBarDates>();
+      const cascadeMilestoneOrigins = new Map<string, GanttBarDates>();
+      const listsToShift = ganttLists.filter(
+        (l) => l.id === list.id || l.sort_order > list.sort_order,
+      );
+      for (const l of listsToShift) {
+        if (l.id !== list.id) {
+          cascadeListOrigins.set(l.id, resolveListBarDates(l, fallbackKey));
+        }
+        for (const t of ganttTasksForList(projectTasks, l.id)) {
+          listTaskOrigins.set(t.id, resolveTaskBarDates(t, l, fallbackKey));
+        }
+        if (l.milestone_id) {
+          const ms = projectMilestones.find((m) => m.id === l.milestone_id);
+          if (ms) {
+            const dates = resolveMilestoneBarDates(ms);
+            if (dates) cascadeMilestoneOrigins.set(ms.id, dates);
+          }
+        }
+      }
+      return { listTaskOrigins, cascadeListOrigins, cascadeMilestoneOrigins };
+    },
+    [ganttLists, projectTasks, projectMilestones, fallbackKey],
   );
 
   useEffect(() => {
@@ -1144,6 +1421,48 @@ export function ProjectGanttBoard({
     stopEdgeScroll,
   ]);
 
+  useEffect(() => {
+    if (!panning) return;
+    const onMove = (e: PointerEvent) => {
+      const pan = panRef.current;
+      const el = scrollRef.current;
+      if (!pan || !el || e.pointerId !== pan.pointerId) return;
+      const dx = e.clientX - pan.lastX;
+      const dy = e.clientY - pan.lastY;
+      pan.lastX = e.clientX;
+      pan.lastY = e.clientY;
+      el.scrollLeft -= dx;
+      el.scrollTop -= dy;
+    };
+    const onUp = (e: PointerEvent) => {
+      const pan = panRef.current;
+      if (!pan || e.pointerId !== pan.pointerId) return;
+      panRef.current = null;
+      setPanning(false);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [panning]);
+
+  function startBlankPan(e: ReactPointerEvent) {
+    if (e.button !== 0) return;
+    if (dragging) return;
+    e.preventDefault();
+    panRef.current = {
+      pointerId: e.pointerId,
+      lastX: e.clientX,
+      lastY: e.clientY,
+    };
+    setPanning(true);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  }
+
   function goToday() {
     setAnchor(weekStart(new Date()));
     if (scrollRef.current) scrollRef.current.scrollLeft = 0;
@@ -1153,27 +1472,78 @@ export function ProjectGanttBoard({
     setAnchor((a) => shiftWeek(a, delta));
   }
 
+  const startTaskReorder = useCallback(
+    (e: ReactPointerEvent, task: Task) => {
+      if (readOnly || e.button !== 0 || task.parent_id) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const siblings = ganttTasksForList(projectTasks, task.list_id)
+        .filter((t) => !t.parent_id)
+        .map((t) => t.id);
+      if (siblings.length < 2) return;
+      reorderRef.current = {
+        taskId: task.id,
+        listId: task.list_id,
+        startY: e.clientY,
+        order: siblings,
+        pointerId: e.pointerId,
+      };
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    },
+    [readOnly, projectTasks],
+  );
+
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      const snap = reorderRef.current;
+      if (!snap || e.pointerId !== snap.pointerId) return;
+      const deltaRows = Math.round(
+        (e.clientY - snap.startY) / GANTT_TASK_ROW_H,
+      );
+      const from = snap.order.indexOf(snap.taskId);
+      if (from < 0) return;
+      const to = Math.max(0, Math.min(snap.order.length - 1, from + deltaRows));
+      if (to === from) return;
+      const next = [...snap.order];
+      next.splice(from, 1);
+      next.splice(to, 0, snap.taskId);
+      snap.order = next;
+      snap.startY = e.clientY;
+      next.forEach((id, i) => {
+        const task = projectTasks.find((t) => t.id === id);
+        if (!task || task.sort_order === i) return;
+        upsertTask({ ...task, sort_order: i });
+      });
+    }
+    function onUp(e: PointerEvent) {
+      const snap = reorderRef.current;
+      if (!snap || e.pointerId !== snap.pointerId) return;
+      reorderRef.current = null;
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [projectTasks, upsertTask]);
+
   const drawerOpen =
     showDrawer && !readOnly && selectedTaskIds.length > 0 && project;
 
-  if (ganttLists.length === 0) {
-    return (
-      <div
-        className={cn(
-          "flex items-center justify-center rounded-md border border-dashed border-[var(--border)] p-8 text-sm text-[var(--text-muted)]",
-          className,
-        )}
-      >
-        No Gantt-enabled task lists for this project.
-      </div>
-    );
-  }
+  const projectGuideKeys = useMemo(() => {
+    if (!projectDates) return { start: null as string | null, end: null as string | null };
+    return { start: projectDates.startKey, end: projectDates.endKey };
+  }, [projectDates]);
 
-  return (
+  const boardInner = (
     <div
       ref={containerRef}
       className={cn(
         "relative flex min-h-0 flex-1 flex-col overflow-hidden",
+        viewportExpanded && "h-full rounded-md border border-[var(--border)] bg-[var(--bg)]",
         className,
       )}
     >
@@ -1194,12 +1564,35 @@ export function ProjectGanttBoard({
           </NavBtn>
         </div>
         <p className="text-sm font-medium">{rangeLabel}</p>
+        <div className="ml-auto flex items-center gap-1">
+          <NavBtn
+            onClick={() => setHalfZoom((z) => !z)}
+            label={halfZoom ? "Zoom in (full day width)" : "Zoom out (half day width)"}
+          >
+            {halfZoom ? <ZoomIn size={16} /> : <ZoomOut size={16} />}
+          </NavBtn>
+          {showExpandToggle ? (
+            <NavBtn
+              onClick={() => setViewportExpanded((v) => !v)}
+              label={viewportExpanded ? "Collapse Gantt" : "Expand Gantt"}
+            >
+              {viewportExpanded ? (
+                <Minimize2 size={16} />
+              ) : (
+                <Maximize2 size={16} />
+              )}
+            </NavBtn>
+          ) : null}
+        </div>
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1">
         <div
           ref={scrollRef}
-          className="min-h-0 min-w-0 flex-1 overflow-auto"
+          className={cn(
+            "min-h-0 min-w-0 flex-1 overflow-auto",
+            panning && "cursor-grabbing",
+          )}
         >
           <div style={{ minWidth: GANTT_LABEL_PX + totalWidth }}>
             {/* Sticky header */}
@@ -1306,14 +1699,158 @@ export function ProjectGanttBoard({
                   })}
                 </div>
               ) : null}
+
+              {/* Project start/end vertical guides */}
+              {(projectGuideKeys.start || projectGuideKeys.end) && (
+                <div
+                  className="pointer-events-none absolute bottom-0 top-0 z-[3]"
+                  style={{ left: GANTT_LABEL_PX, width: totalWidth }}
+                  aria-hidden
+                >
+                  {(["start", "end"] as const).map((edge) => {
+                    const key =
+                      edge === "start"
+                        ? projectGuideKeys.start
+                        : projectGuideKeys.end;
+                    if (!key) return null;
+                    const idx = columns.findIndex(
+                      (c) => key >= c.startKey && key <= c.endKey,
+                    );
+                    if (idx < 0) return null;
+                    const col = columns[idx]!;
+                    const left =
+                      columnOffsetPx(columns, idx) +
+                      (edge === "end" ? col.width - 2 : 0);
+                    return (
+                      <div
+                        key={`guide-${edge}`}
+                        className="absolute inset-y-0 w-0.5 bg-[var(--accent)]/50"
+                        style={{ left }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+
               {(() => {
                 let y = 0;
                 const rowNodes: ReactNode[] = [];
+
+                // Project overall timeline row
+                if (project && projectDates) {
+                  const projRowId = "project-timeline";
+                  const projHover = hoveredRowId === projRowId;
+                  const projColor = "var(--accent)";
+                  const projWash = projHover ? hoverWash(projColor) : undefined;
+                  const projRowY = y;
+                  y += GANTT_TASK_ROW_H;
+
+                  rowNodes.push(
+                    <div
+                      key={projRowId}
+                      className="absolute left-0 right-0 z-[2] flex"
+                      style={{ top: projRowY, height: GANTT_TASK_ROW_H }}
+                      onMouseEnter={() => setHoveredRowId(projRowId)}
+                      onMouseLeave={() =>
+                        setHoveredRowId((id) =>
+                          id === projRowId ? null : id,
+                        )
+                      }
+                    >
+                      <div
+                        className="sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] bg-[var(--bg)] px-2"
+                        style={{
+                          width: GANTT_LABEL_PX,
+                          height: GANTT_TASK_ROW_H,
+                          backgroundColor: projWash ?? "var(--bg)",
+                        }}
+                      >
+                        <span className="min-w-0 truncate text-[11px] font-semibold">
+                          {project.name}
+                        </span>
+                      </div>
+                      <div
+                        className={cn(
+                          "relative shrink-0 border-b border-[var(--border)]",
+                          readOnly ? "cursor-grab" : "cursor-grab",
+                        )}
+                        style={{
+                          width: totalWidth,
+                          height: GANTT_TASK_ROW_H,
+                          backgroundColor: projWash,
+                        }}
+                        onPointerDown={startBlankPan}
+                      >
+                        <ScheduleRowHitLayer
+                          columns={columns}
+                          width={totalWidth}
+                          height={GANTT_TASK_ROW_H}
+                          interactive={false}
+                        />
+                        {columns.find((c) => c.isToday) ? (
+                          <div
+                            className="pointer-events-none absolute inset-y-0 z-0"
+                            style={{
+                              left: columnOffsetPx(
+                                columns,
+                                columns.findIndex((c) => c.isToday),
+                              ),
+                              width: columns.find((c) => c.isToday)!.width,
+                              backgroundColor: "var(--today-col)",
+                            }}
+                          />
+                        ) : null}
+                        <GanttBarVisual
+                          dates={projectDates}
+                          columns={columns}
+                          today={today}
+                          color={projColor}
+                          height={GANTT_TASK_ROW_H - 4}
+                          label={project.name}
+                          title={project.name}
+                          readOnly={readOnly}
+                          onPointerDownBar={(e) => {
+                            startDrag(
+                              e,
+                              { kind: "project" },
+                              "move",
+                              projectDates,
+                              [],
+                            );
+                          }}
+                          onPointerDownResizeStart={(e) => {
+                            e.stopPropagation();
+                            startDrag(
+                              e,
+                              { kind: "project" },
+                              "resize-start",
+                              projectDates,
+                              [],
+                            );
+                          }}
+                          onPointerDownResizeEnd={(e) => {
+                            e.stopPropagation();
+                            startDrag(
+                              e,
+                              { kind: "project" },
+                              "resize-end",
+                              projectDates,
+                              [],
+                            );
+                          }}
+                        />
+                      </div>
+                    </div>,
+                  );
+                }
 
                 for (const { list, tasks, milestone } of listSections) {
                   const listDates = getListDates(list);
                   const listColor = listBarColor(list, tasks, today);
                   const expanded = expandedLists.has(list.id);
+                  const listRowId = `list:${list.id}`;
+                  const listHover = hoveredRowId === listRowId;
+                  const listWash = listHover ? hoverWash(listColor) : undefined;
                   const rowY = y;
                   y += GANTT_LIST_ROW_H;
 
@@ -1322,10 +1859,20 @@ export function ProjectGanttBoard({
                       key={`list-row-${list.id}`}
                       className="absolute left-0 right-0 z-[2] flex"
                       style={{ top: rowY, height: GANTT_LIST_ROW_H }}
+                      onMouseEnter={() => setHoveredRowId(listRowId)}
+                      onMouseLeave={() =>
+                        setHoveredRowId((id) =>
+                          id === listRowId ? null : id,
+                        )
+                      }
                     >
                       <div
-                        className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] bg-[var(--bg)] px-2"
-                        style={{ width: GANTT_LABEL_PX, height: GANTT_LIST_ROW_H }}
+                        className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] px-2"
+                        style={{
+                          width: GANTT_LABEL_PX,
+                          height: GANTT_LIST_ROW_H,
+                          backgroundColor: listWash ?? "var(--bg)",
+                        }}
                       >
                         <button
                           type="button"
@@ -1342,13 +1889,26 @@ export function ProjectGanttBoard({
                             )}
                           />
                         </button>
-                        <span className="min-w-0 truncate text-xs font-semibold">
+                        <button
+                          type="button"
+                          className="min-w-0 flex-1 truncate text-left text-xs font-semibold hover:underline"
+                          title={list.name}
+                          onClick={() => toggleListExpanded(list.id)}
+                        >
                           {list.name}
-                        </span>
+                        </button>
                       </div>
                       <div
-                        className="relative shrink-0 border-b border-[var(--border)]"
-                        style={{ width: totalWidth, height: GANTT_LIST_ROW_H }}
+                        className={cn(
+                          "relative shrink-0 border-b border-[var(--border)]",
+                          readOnly && "cursor-grab",
+                        )}
+                        style={{
+                          width: totalWidth,
+                          height: GANTT_LIST_ROW_H,
+                          backgroundColor: listWash,
+                        }}
+                        onPointerDown={startBlankPan}
                       >
                         <ScheduleRowHitLayer
                           columns={columns}
@@ -1380,20 +1940,16 @@ export function ProjectGanttBoard({
                           emphasizeTop
                           readOnly={readOnly}
                           onPointerDownBar={(e) => {
-                            const origins = new Map<string, GanttBarDates>();
-                            for (const t of tasks) {
-                              origins.set(
-                                t.id,
-                                resolveTaskBarDates(t, list, fallbackKey),
-                              );
-                            }
+                            const cascade = buildListMoveCascade(list);
                             startDrag(
                               e,
                               { kind: "list", listId: list.id },
                               "move",
                               listDates,
                               [],
-                              origins,
+                              cascade.listTaskOrigins,
+                              cascade.cascadeListOrigins,
+                              cascade.cascadeMilestoneOrigins,
                             );
                           }}
                           onPointerDownResizeStart={(e) => {
@@ -1429,6 +1985,10 @@ export function ProjectGanttBoard({
                       ? state.people.find((p) => p.id === task.assignee_person_id)
                       : null;
                     const selected = selectedTaskIds.includes(task.id);
+                    const barColor = taskBarColor(task, today, tasks);
+                    const taskRowId = `task:${task.id}`;
+                    const taskHover = hoveredRowId === taskRowId;
+                    const taskWash = taskHover ? hoverWash(barColor) : undefined;
                     const taskRowY = y;
                     y += GANTT_TASK_ROW_H;
 
@@ -1449,14 +2009,32 @@ export function ProjectGanttBoard({
                         key={`task-row-${task.id}`}
                         className="absolute left-0 right-0 z-[2] flex"
                         style={{ top: taskRowY, height: GANTT_TASK_ROW_H }}
+                        onMouseEnter={() => setHoveredRowId(taskRowId)}
+                        onMouseLeave={() =>
+                          setHoveredRowId((id) =>
+                            id === taskRowId ? null : id,
+                          )
+                        }
                       >
                         <div
-                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] bg-[var(--bg)] pl-8 pr-2"
+                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] pl-8 pr-2"
                           style={{
                             width: GANTT_LABEL_PX,
                             height: GANTT_TASK_ROW_H,
+                            backgroundColor: taskWash ?? "var(--bg)",
                           }}
                         >
+                          {!readOnly && !task.parent_id ? (
+                            <button
+                              type="button"
+                              className="touch-none shrink-0 cursor-grab p-0.5 text-[var(--text-muted)] opacity-60 hover:opacity-100 active:cursor-grabbing"
+                              aria-label="Drag to reorder within list"
+                              title="Drag to reorder within list"
+                              onPointerDown={(e) => startTaskReorder(e, task)}
+                            >
+                              <GripVertical size={12} />
+                            </button>
+                          ) : null}
                           {taskShowsClientReviewStar(task) ? (
                             <Star
                               size={10}
@@ -1471,21 +2049,38 @@ export function ProjectGanttBoard({
                           ) : null}
                           <span
                             className={cn(
-                              "min-w-0 truncate text-[11px] text-[var(--text-muted)]",
+                              "min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]",
                               task.status === "complete" &&
                                 task.is_client_review &&
                                 "text-[var(--status-healthy)] line-through",
                             )}
+                            title={task.title}
                           >
                             {task.title}
                           </span>
+                          {showAssignees && assignee ? (
+                            <PersonAvatar
+                              avatarUrl={assignee.avatar_url}
+                              avatarAttachmentId={assignee.avatar_attachment_id}
+                              name={assignee.name}
+                              size="xs"
+                              fallback="initials"
+                              color={personAvatarColor(assignee)}
+                              className="shrink-0"
+                            />
+                          ) : null}
                         </div>
                         <div
-                          className="relative shrink-0 border-b border-[var(--border)]"
+                          className={cn(
+                            "relative shrink-0 border-b border-[var(--border)]",
+                            readOnly && "cursor-grab",
+                          )}
                           style={{
                             width: totalWidth,
                             height: GANTT_TASK_ROW_H,
+                            backgroundColor: taskWash,
                           }}
+                          onPointerDown={startBlankPan}
                         >
                           <ScheduleRowHitLayer
                             columns={columns}
@@ -1497,14 +2092,13 @@ export function ProjectGanttBoard({
                             dates={taskDates}
                             columns={columns}
                             today={today}
-                            color={taskBarColor(task, today, tasks)}
+                            color={barColor}
                             height={GANTT_TASK_ROW_H - 4}
                             label={task.title}
                             title={task.title}
                             selected={selected}
                             readOnly={readOnly}
-                            showAssignee={showAssignees}
-                            assignee={assignee}
+                            showCrStar={taskShowsClientReviewStar(task)}
                             onPointerDownBar={(e) => {
                               if (e.metaKey || e.ctrlKey) {
                                 toggleTaskSelect(
@@ -1542,24 +2136,27 @@ export function ProjectGanttBoard({
                               );
                             }}
                           />
+                          <TaskStatusChipBesideBar
+                            dates={taskDates}
+                            columns={columns}
+                            status={task.status}
+                          />
                         </div>
                       </div>,
                     );
                   }
 
                   if (milestone) {
-                    const mKey =
-                      milestone.due_date ??
-                      milestone.start_date ??
-                      fallbackKey;
-                    const mDates: GanttBarDates = {
-                      startKey: mKey,
-                      endKey: mKey,
-                    };
-                    const msDone = milestone.status === "done";
+                    const mDates = getMilestoneDates(milestone);
+                    const msDone =
+                      milestone.status === "done" ||
+                      milestone.client_approved;
                     const msColor = msDone
                       ? "var(--status-healthy)"
-                      : MILESTONE_ORANGE;
+                      : MILESTONE_PURPLE;
+                    const msRowId = `milestone:${milestone.id}`;
+                    const msHover = hoveredRowId === msRowId;
+                    const msWash = msHover ? hoverWash(msColor) : undefined;
                     const msRowY = y;
                     y += GANTT_TASK_ROW_H;
 
@@ -1568,12 +2165,19 @@ export function ProjectGanttBoard({
                         key={`ms-row-${milestone.id}`}
                         className="absolute left-0 right-0 z-[2] flex"
                         style={{ top: msRowY, height: GANTT_TASK_ROW_H }}
+                        onMouseEnter={() => setHoveredRowId(msRowId)}
+                        onMouseLeave={() =>
+                          setHoveredRowId((id) =>
+                            id === msRowId ? null : id,
+                          )
+                        }
                       >
                         <div
-                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-b border-[var(--border)] bg-[var(--bg)] pl-8 pr-2"
+                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-b border-[var(--border)] pl-8 pr-2"
                           style={{
                             width: GANTT_LABEL_PX,
                             height: GANTT_TASK_ROW_H,
+                            backgroundColor: msWash ?? "var(--bg)",
                           }}
                         >
                           <Star
@@ -1589,16 +2193,22 @@ export function ProjectGanttBoard({
                                 ? "text-[var(--status-healthy)] line-through"
                                 : "text-[var(--text-muted)]",
                             )}
+                            title={milestone.name}
                           >
                             {milestone.name}
                           </span>
                         </div>
                         <div
-                          className="relative shrink-0 border-b border-[var(--border)]"
+                          className={cn(
+                            "relative shrink-0 border-b border-[var(--border)]",
+                            readOnly && "cursor-grab",
+                          )}
                           style={{
                             width: totalWidth,
                             height: GANTT_TASK_ROW_H,
+                            backgroundColor: msWash,
                           }}
+                          onPointerDown={startBlankPan}
                         >
                           <ScheduleRowHitLayer
                             columns={columns}
@@ -1611,6 +2221,19 @@ export function ProjectGanttBoard({
                             columns={columns}
                             done={msDone}
                             title={milestone.name}
+                            readOnly={readOnly}
+                            onPointerDown={(e) => {
+                              startDrag(
+                                e,
+                                {
+                                  kind: "milestone",
+                                  milestoneId: milestone.id,
+                                },
+                                "move",
+                                mDates,
+                                [],
+                              );
+                            }}
                           />
                         </div>
                       </div>,
@@ -1644,4 +2267,27 @@ export function ProjectGanttBoard({
       </div>
     </div>
   );
+
+  if (ganttLists.length === 0) {
+    return (
+      <div
+        className={cn(
+          "flex items-center justify-center rounded-md border border-dashed border-[var(--border)] p-8 text-sm text-[var(--text-muted)]",
+          className,
+        )}
+      >
+        No Gantt-enabled task lists for this project.
+      </div>
+    );
+  }
+
+  if (viewportExpanded) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg)] p-3">
+        {boardInner}
+      </div>
+    );
+  }
+
+  return boardInner;
 }

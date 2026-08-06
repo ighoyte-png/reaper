@@ -25,6 +25,7 @@ import {
   formatMoney,
   normalizeBudgetMode,
   personHoursSplitInRange,
+  projectDateSpan,
   projectHoursForecast,
   projectHoursSplitInRange,
   projectPlannedAmount,
@@ -75,7 +76,9 @@ export default function ProjectBudgetDetailPage() {
     dataStatus.projects[project.id] !== "error";
 
   const [year, setYear] = useState(() => new Date().getFullYear());
-  const [periodMode, setPeriodMode] = useState<"month" | "year">("month");
+  const [periodMode, setPeriodMode] = useState<"month" | "year" | "lifetime">(
+    "month",
+  );
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), monthIndex: now.getMonth() };
@@ -204,6 +207,23 @@ export default function ProjectBudgetDetailPage() {
   }, [project, projectMembers, state.people]);
 
   const periodRange = useMemo(() => {
+    if (periodMode === "lifetime" && project) {
+      const span = projectDateSpan(project, state.assignments);
+      if (span) {
+        return {
+          start: span.startKey,
+          end: span.endKey,
+          label: "Lifetime",
+        };
+      }
+      return {
+        start: project.start_date ?? toDateKey(new Date(year, 0, 1)),
+        end:
+          project.end_date ??
+          toDateKey(endOfMonth(new Date(year, 11, 1))),
+        label: "Lifetime",
+      };
+    }
     if (periodMode === "year") {
       return {
         start: toDateKey(new Date(year, 0, 1)),
@@ -217,7 +237,7 @@ export default function ProjectBudgetDetailPage() {
       end: toDateKey(endOfMonth(d)),
       label: format(d, "MMM yyyy"),
     };
-  }, [periodMode, year, selectedMonth]);
+  }, [periodMode, year, selectedMonth, project, state.assignments]);
 
   const periodSplit = useMemo(
     () =>
@@ -265,7 +285,8 @@ export default function ProjectBudgetDetailPage() {
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
-        isContractor: false as const,
+        moneyAmount: null as number | null,
+        is_contractor: person.is_contractor,
       };
     });
     const contractors = contractorRoster.map((person) => {
@@ -277,6 +298,19 @@ export default function ProjectBudgetDetailPage() {
         (mode == null && person.hide_from_schedule);
       if (isCommit) {
         const committed = contractorCommitted(person, member);
+        if (mode === "fixed_fee") {
+          return {
+            id: person.id,
+            name: person.name,
+            avatar_url: person.avatar_url,
+            avatar_attachment_id: person.avatar_attachment_id,
+            usedHours: 0,
+            plannedHours: 0,
+            totalHours: 0,
+            moneyAmount: committed.amount,
+            is_contractor: true,
+          };
+        }
         return {
           id: person.id,
           name: person.name,
@@ -285,7 +319,8 @@ export default function ProjectBudgetDetailPage() {
           usedHours: committed.hours,
           plannedHours: committed.hours,
           totalHours: committed.hours,
-          isContractor: true as const,
+          moneyAmount: null as number | null,
+          is_contractor: true,
         };
       }
       const split = personHoursSplitInRange(
@@ -303,12 +338,17 @@ export default function ProjectBudgetDetailPage() {
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
-        isContractor: true as const,
+        moneyAmount: null as number | null,
+        is_contractor: true,
       };
     });
     return {
       staff: staff.sort((a, b) => b.totalHours - a.totalHours),
-      contractors: contractors.sort((a, b) => b.totalHours - a.totalHours),
+      contractors: contractors.sort((a, b) => {
+        const aKey = a.moneyAmount ?? a.totalHours;
+        const bKey = b.moneyAmount ?? b.totalHours;
+        return bKey - aKey;
+      }),
     };
   }, [
     project,
@@ -748,6 +788,15 @@ export default function ProjectBudgetDetailPage() {
                 onSelect={() => setPeriodMode("year")}
               />
             </li>
+            {!isRetainer ? (
+              <li>
+                <PeriodChip
+                  label="Lifetime"
+                  selected={periodMode === "lifetime"}
+                  onSelect={() => setPeriodMode("lifetime")}
+                />
+              </li>
+            ) : null}
             {periodMode === "month" ? (
               <li className="flex items-center text-xs text-[var(--text-muted)]">
                 {periodRange.label}
@@ -761,7 +810,9 @@ export default function ProjectBudgetDetailPage() {
             <p className="mb-3 text-xs text-[var(--text-muted)]">
               {periodMode === "month"
                 ? `${periodRange.label} · `
-                : `${year} · `}
+                : periodMode === "lifetime"
+                  ? `Lifetime · `
+                  : `${year} · `}
               {showHoursMetrics
                 ? "Schedule Hours and Margin Against the Project Budget."
                 : showAmountMetrics
@@ -846,7 +897,9 @@ export default function ProjectBudgetDetailPage() {
               Team
               {periodMode === "month"
                 ? ` · ${periodRange.label}`
-                : ` · ${year}`}
+                : periodMode === "lifetime"
+                  ? " · Lifetime"
+                  : ` · ${year}`}
             </h2>
             {teamPeriod.staff.length === 0 &&
             teamPeriod.contractors.length === 0 ? (
@@ -879,7 +932,7 @@ export default function ProjectBudgetDetailPage() {
                       </tr>
                     ) : null}
                     {teamPeriod.contractors.map((row) => (
-                      <TeamRow key={row.id} row={row} showContractorTag />
+                      <TeamRow key={row.id} row={row} />
                     ))}
                   </tbody>
                 </table>
@@ -895,7 +948,6 @@ export default function ProjectBudgetDetailPage() {
 
 function TeamRow({
   row,
-  showContractorTag = false,
 }: {
   row: {
     id: string;
@@ -905,9 +957,11 @@ function TeamRow({
     usedHours: number;
     plannedHours: number;
     totalHours: number;
+    moneyAmount: number | null;
+    is_contractor: boolean;
   };
-  showContractorTag?: boolean;
 }) {
+  const money = row.moneyAmount != null;
   return (
     <tr className="border-b border-[var(--border)]/60">
       <td className="py-2 pr-2">
@@ -920,17 +974,17 @@ function TeamRow({
             fallback="initials"
           />
           <span className="min-w-0 truncate">{row.name}</span>
-          {showContractorTag ? <ContractorTag /> : null}
+          {row.is_contractor ? <ContractorTag /> : null}
         </div>
       </td>
       <td className="py-2 text-right tabular-nums">
-        {formatHours(row.usedHours)}
+        {money ? formatMoney(row.moneyAmount!) : formatHours(row.usedHours)}
       </td>
       <td className="py-2 text-right tabular-nums">
-        {formatHours(row.plannedHours)}
+        {money ? formatMoney(row.moneyAmount!) : formatHours(row.plannedHours)}
       </td>
       <td className="py-2 text-right tabular-nums">
-        {formatHours(row.totalHours)}
+        {money ? formatMoney(row.moneyAmount!) : formatHours(row.totalHours)}
       </td>
     </tr>
   );
