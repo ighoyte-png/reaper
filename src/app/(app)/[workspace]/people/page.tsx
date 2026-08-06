@@ -2,7 +2,7 @@
 
 import { Suspense, useMemo, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Clock, Mail, Pencil } from "lucide-react";
+import { Clock, Copy, Mail, Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -147,6 +147,12 @@ function PeoplePageContent() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
+  const [inviteLinkResult, setInviteLinkResult] = useState<{
+    name: string;
+    email: string;
+    actionLink: string;
+    resend: boolean;
+  } | null>(null);
   const [originalLoginEmail, setOriginalLoginEmail] = useState("");
 
   const editingLinkedProfile = editing?.profile_id
@@ -223,20 +229,34 @@ function PeoplePageContent() {
         error?: string;
         linkedExisting?: boolean;
         emailSent?: boolean;
+        actionLink?: string;
       };
       if (!res.ok) throw new Error(data.error || "Invite failed");
       await refresh();
-      if (data.emailSent) {
+      const actionLink = data.actionLink?.trim() || "";
+      if (actionLink) {
+        setInviteLinkResult({
+          name: person.name,
+          email,
+          actionLink,
+          resend,
+        });
+        setInviteTarget(null);
         push(
           resend
-            ? "Invite email resent. They can set a password from the link."
-            : "Invite email sent. They can set a password from the link.",
+            ? "Invite link ready — copy it below."
+            : "Invite link ready — copy it below.",
           "success",
         );
       } else {
-        push("Invite processed.", "success");
+        push(
+          resend
+            ? "Invite processed."
+            : "Invite processed.",
+          "success",
+        );
+        setInviteTarget(null);
       }
-      setInviteTarget(null);
     } catch (err) {
       setInviteEmailError(
         err instanceof Error ? err.message : "Invite failed",
@@ -723,8 +743,8 @@ function PeoplePageContent() {
         {canManage ? (
           <p className="mb-4 text-sm text-[var(--text-muted)]">
             Add people with their work email — <strong>Add & Invite</strong>{" "}
-            emails them. <strong>Invite</strong> / Create Invite Link only gives
-            you a copyable link. Members only see My Schedule.
+            creates a copyable invite link. <strong>Invite</strong> does the
+            same for existing people. Members only see My Schedule.
           </p>
         ) : null}
         <div className="mb-4 flex justify-end">
@@ -890,8 +910,8 @@ function PeoplePageContent() {
       {canManage && resendTarget && (
         <ConfirmDialog
           title="Resend Invite?"
-          message={`Send another invite email to ${resendTarget.name}${resendTarget.email ? ` (${resendTarget.email})` : ""}?`}
-          confirmLabel="Resend Invite"
+          message={`Create a new invite link for ${resendTarget.name}${resendTarget.email ? ` (${resendTarget.email})` : ""}?`}
+          confirmLabel="Create Link"
           tone="accent"
           onCancel={() => setResendTarget(null)}
           onConfirm={() => {
@@ -978,14 +998,14 @@ function PeoplePageContent() {
           <div className="grid gap-3">
             {inviteBusy ? (
               <p className="text-sm text-[var(--text-muted)]">
-                Sending invite email…
+                Creating invite link…
               </p>
             ) : (
               <>
                 <p className="text-sm text-[var(--text-muted)]">
                   Creates a <strong>member</strong> login linked to this person
-                  and emails them a secure invite. They set a password from that
-                  email.
+                  and shows a one-time invite link you can copy. Share that link
+                  so they can set a password (Auth email is rate-limited).
                 </p>
                 <Field label="Work email">
                   <input
@@ -1023,7 +1043,7 @@ function PeoplePageContent() {
                       }
                     }}
                   >
-                    {inviteBusy ? "Sending…" : "Send Invite Email"}
+                    {inviteBusy ? "Creating…" : "Create Invite Link"}
                   </Button>
                 </div>
               </>
@@ -1031,6 +1051,59 @@ function PeoplePageContent() {
           </div>
         </Modal>
       )}
+
+      {canManage && inviteLinkResult ? (
+        <Modal
+          title={
+            inviteLinkResult.resend
+              ? `Invite link · ${inviteLinkResult.name}`
+              : `Invite link · ${inviteLinkResult.name}`
+          }
+          onClose={() => setInviteLinkResult(null)}
+        >
+          <div className="grid gap-3">
+            <p className="text-sm text-[var(--text-muted)]">
+              One-time link for{" "}
+              <strong className="text-[var(--text)]">
+                {inviteLinkResult.email}
+              </strong>
+              . Opening it sets their password. Prefer copying over Auth email
+              while testing (rate limits).
+            </p>
+            <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-2">
+              <p className="break-all font-mono text-xs leading-relaxed text-[var(--text)]">
+                {inviteLinkResult.actionLink}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                variant="secondary"
+                size="lg"
+                onClick={() => setInviteLinkResult(null)}
+              >
+                Done
+              </Button>
+              <Button
+                variant="primary"
+                size="lg"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(
+                      inviteLinkResult.actionLink,
+                    );
+                    push("Invite link copied", "success");
+                  } catch {
+                    push("Could not copy — select the link manually", "warning");
+                  }
+                }}
+              >
+                <Copy size={14} />
+                Copy link
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
 
       {canManage && showPodsEditor ? (
         <PodsEditorModal onClose={() => setShowPodsEditor(false)} />
