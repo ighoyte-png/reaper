@@ -4,6 +4,20 @@ import type { TaskStatus } from "@/lib/types";
 
 const HOLD_YELLOW = "#f59e0b";
 
+function yellowChipClassName(className?: string) {
+  return cn(
+    "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
+    className,
+  );
+}
+
+function yellowChipStyle() {
+  return {
+    color: HOLD_YELLOW,
+    backgroundColor: `color-mix(in srgb, ${HOLD_YELLOW} 18%, transparent)`,
+  } as const;
+}
+
 export function taskStatusTagClassName(status: TaskStatus): string {
   return cn(
     "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
@@ -19,25 +33,25 @@ export function TaskStatusTag({
   status,
   className,
   isClientReview = false,
+  isDownstreamHold = false,
 }: {
   status: TaskStatus;
   className?: string;
-  /** Open Client Review tasks show a yellow Hold chip instead of Active. */
+  /** Client Review tasks show a yellow/green "Client Review" chip. */
   isClientReview?: boolean;
+  /**
+   * Tasks gated by an open Client Review above show Hold when Active or
+   * In Review (`upcoming` / `active`).
+   */
+  isDownstreamHold?: boolean;
 }) {
   if (isClientReview && status !== "complete") {
     return (
       <span
-        className={cn(
-          "rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
-          className,
-        )}
-        style={{
-          color: HOLD_YELLOW,
-          backgroundColor: `color-mix(in srgb, ${HOLD_YELLOW} 18%, transparent)`,
-        }}
+        className={yellowChipClassName(className)}
+        style={yellowChipStyle()}
       >
-        Hold
+        Client Review
       </span>
     );
   }
@@ -49,7 +63,20 @@ export function TaskStatusTag({
           className,
         )}
       >
-        Complete
+        Client Review
+      </span>
+    );
+  }
+  if (
+    isDownstreamHold &&
+    (status === "upcoming" || status === "active")
+  ) {
+    return (
+      <span
+        className={yellowChipClassName(className)}
+        style={yellowChipStyle()}
+      >
+        Hold
       </span>
     );
   }

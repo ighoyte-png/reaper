@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { buttonClass } from "@/components/ui/button";
-import { DateInput, Field } from "@/components/ui/form";
+import { DateInput, Field, ConfirmDialog } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { RichNotesHtml } from "@/components/ui/simple-rich-text";
 import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
@@ -67,6 +67,7 @@ import {
   isDownstreamOfOpenClientReview,
   listDisplayOrder,
   taskStatusLabel,
+  taskVisualTone,
 } from "@/lib/domain/tasks";
 import { notesHasContent } from "@/lib/notes-html";
 import {
@@ -369,17 +370,20 @@ function TaskStatusChipBesideBar({
   columns,
   status,
   isClientReview = false,
+  isDownstreamHold = false,
 }: {
   dates: GanttBarDates;
   columns: ScheduleColumn[];
   status: TaskStatus;
   isClientReview?: boolean;
+  isDownstreamHold?: boolean;
 }) {
   return (
     <GanttChipBesideBar dates={dates} columns={columns}>
       <TaskStatusTag
         status={status}
         isClientReview={isClientReview}
+        isDownstreamHold={isDownstreamHold}
         className="origin-left scale-90 shadow-sm"
       />
     </GanttChipBesideBar>
@@ -401,7 +405,7 @@ function MilestoneChipBesideBar({
         className={cn(
           "origin-left scale-90 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide shadow-sm",
           done &&
-            "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)] line-through",
+            "bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]",
         )}
         style={
           done
@@ -412,7 +416,7 @@ function MilestoneChipBesideBar({
               }
         }
       >
-        Milestone
+        {done ? "Approved" : "Milestone"}
       </span>
     </GanttChipBesideBar>
   );
@@ -473,6 +477,7 @@ function GanttDrawer({
   myPersonId,
   onClose,
   onSaveTasks,
+  onDeleteTask,
 }: {
   project: { id: string; manager_person_id: string | null };
   selectedTaskIds: string[];
@@ -485,8 +490,10 @@ function GanttDrawer({
   myPersonId: string | null;
   onClose: () => void;
   onSaveTasks: (updates: Task[]) => void;
+  onDeleteTask?: (taskId: string) => void;
 }) {
   const [tab, setTab] = useState<DrawerTab>("edit");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const selectedTasks = useMemo(
     () => tasks.filter((t) => selectedTaskIds.includes(t.id)),
     [tasks, selectedTaskIds],
@@ -512,6 +519,7 @@ function GanttDrawer({
     setStartDate(task.start_date ?? "");
     setEndDate(task.due_date ?? "");
     setTab("edit");
+    setConfirmDelete(false);
   }, [task?.id, multi, task, selectedTaskIds.join(",")]);
 
   const assigneeOptions = useMemo(() => {
@@ -576,6 +584,7 @@ function GanttDrawer({
   }
 
   return (
+    <>
     <aside className="flex w-80 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
       <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
         <p className="truncate text-sm font-semibold">
@@ -696,6 +705,15 @@ function GanttDrawer({
             >
               Save
             </button>
+            {onDeleteTask ? (
+              <button
+                type="button"
+                className="h-8 w-full cursor-pointer rounded-md px-3 text-sm text-[var(--status-over)] hover:bg-[var(--row-hover)]"
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete
+              </button>
+            ) : null}
           </div>
         ) : tab === "description" && task ? (
           notesHasContent(task.notes) ? (
@@ -715,6 +733,19 @@ function GanttDrawer({
         ) : null}
       </div>
     </aside>
+    {confirmDelete && task && onDeleteTask ? (
+      <ConfirmDialog
+        title="Delete task?"
+        message="Delete this task and its subtasks? This can't be undone."
+        confirmLabel="Delete"
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          onDeleteTask(task.id);
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 
@@ -732,6 +763,7 @@ export function ProjectGanttBoard({
     upsertTaskList,
     upsertMilestone,
     upsertProject,
+    deleteTask,
     myPerson,
   } = useData();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -2234,6 +2266,10 @@ export function ProjectGanttBoard({
                             columns={columns}
                             status={task.status}
                             isClientReview={task.is_client_review}
+                            isDownstreamHold={
+                              taskVisualTone(task, tasks) ===
+                              "downstream_locked"
+                            }
                           />
                         </div>
                       </div>,
@@ -2360,6 +2396,10 @@ export function ProjectGanttBoard({
             onClose={() => setSelectedTaskIds([])}
             onSaveTasks={(updates) => {
               for (const t of updates) upsertTask(t);
+            }}
+            onDeleteTask={(id) => {
+              deleteTask(id);
+              setSelectedTaskIds([]);
             }}
           />
         ) : null}

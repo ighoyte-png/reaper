@@ -978,10 +978,10 @@ function TeamRow({
         </div>
       </td>
       <td className="py-2 text-right tabular-nums">
-        {money ? formatMoney(row.moneyAmount!) : formatHours(row.usedHours)}
+        {money ? "—" : formatHours(row.usedHours)}
       </td>
       <td className="py-2 text-right tabular-nums">
-        {money ? formatMoney(row.moneyAmount!) : formatHours(row.plannedHours)}
+        {money ? "—" : formatHours(row.plannedHours)}
       </td>
       <td className="py-2 text-right tabular-nums">
         {money ? formatMoney(row.moneyAmount!) : formatHours(row.totalHours)}

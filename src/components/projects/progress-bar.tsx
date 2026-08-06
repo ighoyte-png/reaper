@@ -3,11 +3,12 @@
 import { Check } from "lucide-react";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { assetTooltip, assetViewForApprovalTooltip } from "@/lib/domain/assets";
+import { MILESTONE_PURPLE } from "@/lib/domain/gantt";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import { cn } from "@/lib/cn";
 import type { ProjectAssetKind } from "@/lib/types";
 
-/** Same format as ProjectManagerTag — green for milestone client approval. */
+/** Green chip for milestone client approval. */
 export function MilestoneApprovedTag({ className }: { className?: string }) {
   return (
     <span
@@ -21,27 +22,31 @@ export function MilestoneApprovedTag({ className }: { className?: string }) {
   );
 }
 
-/** Same chip style as Approved — indicates portal approval is enabled. */
+/** Purple chip when portal approval is enabled but not yet approved. */
 export function MilestoneReadyTag({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "shrink-0 rounded bg-[var(--status-healthy)]/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--status-healthy)]",
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
         className,
       )}
+      style={{
+        color: MILESTONE_PURPLE,
+        backgroundColor: `color-mix(in srgb, ${MILESTONE_PURPLE} 18%, transparent)`,
+      }}
     >
       Ready for Approval
     </span>
   );
 }
 
-/** Subtle green glow for portal approval / essentials hover affordances. */
+/** Subtle purple glow for portal approval / essentials hover affordances. */
 export const milestonePortalGlowClass =
   "rounded-md transition-[background-color,box-shadow] duration-150 " +
-  "hover:bg-[color-mix(in_srgb,var(--status-healthy)_12%,transparent)] " +
-  "hover:shadow-[0_0_0_1px_color-mix(in_srgb,var(--status-healthy)_40%,transparent),0_0_14px_color-mix(in_srgb,var(--status-healthy)_28%,transparent)] " +
-  "focus-visible:outline-none focus-visible:bg-[color-mix(in_srgb,var(--status-healthy)_12%,transparent)] " +
-  "focus-visible:shadow-[0_0_0_1px_color-mix(in_srgb,var(--status-healthy)_40%,transparent),0_0_14px_color-mix(in_srgb,var(--status-healthy)_28%,transparent)]";
+  "hover:bg-[color-mix(in_srgb,#673AB7_12%,transparent)] " +
+  "hover:shadow-[0_0_0_1px_color-mix(in_srgb,#673AB7_40%,transparent),0_0_14px_color-mix(in_srgb,#673AB7_28%,transparent)] " +
+  "focus-visible:outline-none focus-visible:bg-[color-mix(in_srgb,#673AB7_12%,transparent)] " +
+  "focus-visible:shadow-[0_0_0_1px_color-mix(in_srgb,#673AB7_40%,transparent),0_0_14px_color-mix(in_srgb,#673AB7_28%,transparent)]";
 
 export function MilestoneEssentialSlot({
   kind,
@@ -53,7 +58,7 @@ export function MilestoneEssentialSlot({
   kind: ProjectAssetKind | null;
   label?: string;
   url?: string;
-  /** When true, use the portal green glow on hover (separate from milestone row). */
+  /** When true, use the portal purple glow on hover (separate from milestone row). */
   glowHover?: boolean;
   /** Portal copy: "View [label/type] for Approval". */
   approvalTooltip?: boolean;
@@ -106,7 +111,7 @@ export function MilestoneApprovalCheck({
   /** Gray until hover (client approve affordance). */
   pending?: boolean;
   interactive?: boolean;
-  /** Portal green glow on hover (approve modal). */
+  /** Portal purple glow on hover (approve modal). */
   glowHover?: boolean;
   onClick?: () => void;
   className?: string;
@@ -223,22 +228,19 @@ export function ProgressBar({
           <div
             className={cn(
               "h-full rounded-full transition-[width]",
-              isComplete
+              approved
                 ? "bg-[var(--status-healthy)]"
-                : "bg-[var(--accent)]",
+                : isComplete
+                  ? undefined
+                  : "bg-[var(--accent)]",
             )}
-            style={{ width: `${clamped}%` }}
+            style={{
+              width: `${clamped}%`,
+              ...(!approved && isComplete
+                ? { backgroundColor: MILESTONE_PURPLE }
+                : undefined),
+            }}
           />
-          {approved ? (
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-full"
-              style={{
-                backgroundImage:
-                  "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
-              }}
-            />
-          ) : null}
         </div>
         {showFooter ? (
           <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">

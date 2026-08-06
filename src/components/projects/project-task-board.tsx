@@ -2784,9 +2784,9 @@ function ListSection({
                 <span
                   className={cn(
                     "shrink-0 rounded px-1.5 py-0.5 text-[11px] uppercase tracking-wide",
-                    milestone.status === "done" || milestone.client_approved
-                      ? "bg-[var(--task-complete-bg)] text-[var(--task-complete-fg)] line-through"
-                      : undefined,
+                    (milestone.status === "done" ||
+                      milestone.client_approved) &&
+                      "bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]",
                   )}
                   style={
                     milestone.status === "done" || milestone.client_approved
@@ -2797,7 +2797,9 @@ function ListSection({
                         }
                   }
                 >
-                  Milestone
+                  {milestone.status === "done" || milestone.client_approved
+                    ? "Approved"
+                    : "Milestone"}
                 </span>
               ) : null}
             </div>
@@ -3838,6 +3840,7 @@ function TaskRow({
           <TaskStatusTag
             status={task.status}
             isClientReview={task.is_client_review}
+            isDownstreamHold={tone === "downstream_locked"}
             className="shrink-0"
           />
         ) : null}
