@@ -1171,6 +1171,12 @@ export function ProjectTaskBoard({
           };
           upsertTask(crTask);
           setExpanded((prev) => new Set(prev).add(task.id));
+        } else {
+          const nextCrTitle = withClientReviewTitle(title);
+          for (const cr of crChildren) {
+            if (cr.title === nextCrTitle) continue;
+            upsertTask({ ...cr, title: nextCrTitle });
+          }
         }
       } else if (crChildren.length > 0) {
         for (const cr of crChildren) {
