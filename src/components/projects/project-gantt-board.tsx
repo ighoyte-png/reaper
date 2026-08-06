@@ -690,6 +690,8 @@ export function ProjectGanttBoard({
     pointerId: number;
     lastX: number;
     lastY: number;
+    /** Vertical scrollport when the Gantt itself does not scroll Y. */
+    verticalEl: HTMLElement | null;
   } | null>(null);
   const reorderRef = useRef<{
     taskId: string;
@@ -1433,7 +1435,11 @@ export function ProjectGanttBoard({
       pan.lastX = e.clientX;
       pan.lastY = e.clientY;
       el.scrollLeft -= dx;
-      el.scrollTop -= dy;
+      if (viewportExpanded) {
+        el.scrollTop -= dy;
+      } else if (pan.verticalEl) {
+        pan.verticalEl.scrollTop -= dy;
+      }
     };
     const onUp = (e: PointerEvent) => {
       const pan = panRef.current;
@@ -1449,16 +1455,38 @@ export function ProjectGanttBoard({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [panning]);
+  }, [panning, viewportExpanded]);
 
   function startBlankPan(e: ReactPointerEvent) {
     if (e.button !== 0) return;
     if (dragging) return;
     e.preventDefault();
+    const scrollEl = scrollRef.current;
+    let verticalEl: HTMLElement | null = null;
+    if (!viewportExpanded && scrollEl) {
+      let node: HTMLElement | null = scrollEl.parentElement;
+      while (node && node !== document.documentElement) {
+        const { overflowY } = getComputedStyle(node);
+        if (
+          (overflowY === "auto" ||
+            overflowY === "scroll" ||
+            overflowY === "overlay") &&
+          node.scrollHeight > node.clientHeight + 1
+        ) {
+          verticalEl = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+      if (!verticalEl) {
+        verticalEl = (document.scrollingElement as HTMLElement | null) ?? null;
+      }
+    }
     panRef.current = {
       pointerId: e.pointerId,
       lastX: e.clientX,
       lastY: e.clientY,
+      verticalEl,
     };
     setPanning(true);
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -1543,11 +1571,10 @@ export function ProjectGanttBoard({
     <div
       ref={containerRef}
       className={cn(
-        "relative flex min-h-0 flex-col overflow-hidden",
+        "relative flex flex-col",
         viewportExpanded
-          ? "h-full flex-1 rounded-md border border-[var(--border)] bg-[var(--bg)]"
-          : // Cap height so blank-space pan can scroll vertically (not only horizontally).
-            "h-[min(70dvh,calc(100dvh-14rem))]",
+          ? "h-full min-h-0 flex-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]"
+          : "min-h-0 overflow-hidden",
         className,
       )}
     >
@@ -1590,11 +1617,19 @@ export function ProjectGanttBoard({
         </div>
       </div>
 
-      <div className="flex min-h-0 min-w-0 flex-1">
+      <div
+        className={cn(
+          "flex min-w-0",
+          viewportExpanded ? "min-h-0 flex-1" : "w-full",
+        )}
+      >
         <div
           ref={scrollRef}
           className={cn(
-            "min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain",
+            "min-w-0 w-full",
+            viewportExpanded
+              ? "min-h-0 flex-1 overflow-auto overscroll-contain"
+              : "overflow-x-auto overflow-y-hidden",
             panning && "cursor-grabbing select-none",
           )}
         >
