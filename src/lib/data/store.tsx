@@ -2108,7 +2108,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const origin =
           typeof window !== "undefined"
             ? window.location.origin
-            : process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+            : (() => {
+                const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+                if (raw) {
+                  try {
+                    const o = new URL(raw).origin;
+                    if (
+                      !o.includes("localhost") &&
+                      !o.includes("127.0.0.1")
+                    ) {
+                      return o;
+                    }
+                  } catch {
+                    /* fall through */
+                  }
+                }
+                return "https://app.reaperpm.com";
+              })();
         // Land on /set-password so the browser that requested the reset can
         // exchange the PKCE code (the verifier lives in that browser's cookies).
         const { error } = await client.auth.resetPasswordForEmail(email, {

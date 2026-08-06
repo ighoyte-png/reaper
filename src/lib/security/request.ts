@@ -1,5 +1,7 @@
 /** Shared request origin / CSRF helpers for cookie-authenticated API routes. */
 
+export const DEFAULT_PUBLIC_APP_ORIGIN = "https://app.reaperpm.com";
+
 export function configuredSiteOrigin(): string | null {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (!raw) return null;
@@ -7,6 +9,15 @@ export function configuredSiteOrigin(): string | null {
     return new URL(raw).origin;
   } catch {
     return null;
+  }
+}
+
+export function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const host = new URL(origin).hostname;
+    return host === "localhost" || host === "127.0.0.1" || host === "::1";
+  } catch {
+    return false;
   }
 }
 
@@ -30,13 +41,21 @@ export function originFromRequest(request: Request): string | null {
   }
 }
 
-/** Origin to embed in user-facing links (share URLs, invite redirects). */
+/**
+ * Origin to embed in user-facing links (share URLs, invite redirects).
+ * Prefers the live request host, then non-local SITE_URL, then production.
+ * Avoids baking localhost into invite emails when SITE_URL is misconfigured.
+ */
 export function requestSiteOrigin(request: Request): string {
-  return (
-    originFromRequest(request) ||
-    configuredSiteOrigin() ||
-    "http://localhost:3000"
-  );
+  const fromReq = originFromRequest(request);
+  if (fromReq && !isLocalhostOrigin(fromReq)) return fromReq;
+
+  const configured = configuredSiteOrigin();
+  if (configured && !isLocalhostOrigin(configured)) return configured;
+
+  if (fromReq) return fromReq;
+  if (configured) return configured;
+  return DEFAULT_PUBLIC_APP_ORIGIN;
 }
 
 function requestOriginHeader(request: Request): string | null {

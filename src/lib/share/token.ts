@@ -23,10 +23,16 @@ export function clientSiteOrigin(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (raw) {
     try {
-      return new URL(raw).origin;
+      const origin = new URL(raw).origin;
+      if (
+        !origin.includes("localhost") &&
+        !origin.includes("127.0.0.1")
+      ) {
+        return origin;
+      }
     } catch {
       /* fall through */
     }
   }
-  return "http://localhost:3000";
+  return "https://app.reaperpm.com";
 }
