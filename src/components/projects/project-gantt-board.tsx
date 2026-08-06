@@ -152,7 +152,8 @@ function todayKey() {
 }
 
 function hoverWash(color: string): string {
-  return `color-mix(in srgb, ${color} 50%, black)`;
+  // Soft tint of the row color on --bg so labels stay legible (was 50% black).
+  return `color-mix(in srgb, ${color} 12%, var(--bg))`;
 }
 
 function NavBtn({
@@ -767,6 +768,8 @@ export function ProjectGanttBoard({
     myPerson,
   } = useData();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const syncingScrollRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragSnapshot | null>(null);
   const dragStartClient = useRef({ x: 0, y: 0 });
@@ -845,6 +848,13 @@ export function ProjectGanttBoard({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  useLayoutEffect(() => {
+    const body = scrollRef.current;
+    const header = headerScrollRef.current;
+    if (!body || !header) return;
+    header.scrollLeft = body.scrollLeft;
+  }, [totalWidth]);
 
   // Only auto-expand newly seen list ids (do not re-expand user-collapsed lists after drag).
   useEffect(() => {
@@ -1058,6 +1068,8 @@ export function ProjectGanttBoard({
       return;
     }
     el.scrollLeft += dx;
+    const header = headerScrollRef.current;
+    if (header) header.scrollLeft = el.scrollLeft;
     edgeScrollRaf.current = requestAnimationFrame(() => runEdgeScroll(clientX));
   }, [stopEdgeScroll]);
 
@@ -1521,6 +1533,8 @@ export function ProjectGanttBoard({
       pan.lastX = e.clientX;
       pan.lastY = e.clientY;
       el.scrollLeft -= dx;
+      const header = headerScrollRef.current;
+      if (header) header.scrollLeft = el.scrollLeft;
       if (viewportExpanded) {
         el.scrollTop -= dy;
       } else if (pan.verticalEl) {
@@ -1578,9 +1592,30 @@ export function ProjectGanttBoard({
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
   }
 
+  function syncHeaderFromBody() {
+    const body = scrollRef.current;
+    const header = headerScrollRef.current;
+    if (!body || !header || syncingScrollRef.current) return;
+    if (header.scrollLeft === body.scrollLeft) return;
+    syncingScrollRef.current = true;
+    header.scrollLeft = body.scrollLeft;
+    syncingScrollRef.current = false;
+  }
+
+  function syncBodyFromHeader() {
+    const body = scrollRef.current;
+    const header = headerScrollRef.current;
+    if (!body || !header || syncingScrollRef.current) return;
+    if (body.scrollLeft === header.scrollLeft) return;
+    syncingScrollRef.current = true;
+    body.scrollLeft = header.scrollLeft;
+    syncingScrollRef.current = false;
+  }
+
   function goToday() {
     setAnchor(weekStart(new Date()));
     if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+    if (headerScrollRef.current) headerScrollRef.current.scrollLeft = 0;
   }
 
   function shiftAnchorWeek(delta: number) {
@@ -1660,68 +1695,57 @@ export function ProjectGanttBoard({
         "relative flex flex-col",
         viewportExpanded
           ? "h-full min-h-0 flex-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]"
-          : "min-h-0 overflow-hidden",
+          : "min-h-0",
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-2">
-        <div className="flex items-center gap-1">
-          <NavBtn onClick={() => shiftAnchorWeek(-1)} label="Previous week">
-            <ChevronLeft size={16} />
-          </NavBtn>
-          <button
-            type="button"
-            className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-            onClick={goToday}
-          >
-            Today
-          </button>
-          <NavBtn onClick={() => shiftAnchorWeek(1)} label="Next week">
-            <ChevronRight size={16} />
-          </NavBtn>
-        </div>
-        <p className="text-sm font-medium">{rangeLabel}</p>
-        <div className="ml-auto flex items-center gap-1">
-          <NavBtn
-            onClick={() => setHalfZoom((z) => !z)}
-            label={halfZoom ? "Zoom in (full day width)" : "Zoom out (half day width)"}
-          >
-            {halfZoom ? <ZoomIn size={16} /> : <ZoomOut size={16} />}
-          </NavBtn>
-          {showExpandToggle ? (
-            <NavBtn
-              onClick={() => setViewportExpanded((v) => !v)}
-              label={viewportExpanded ? "Collapse Gantt" : "Expand Gantt"}
-            >
-              {viewportExpanded ? (
-                <Minimize2 size={16} />
-              ) : (
-                <Maximize2 size={16} />
-              )}
+      <div className="sticky top-0 z-30 border-b border-[var(--border)] bg-[var(--bg)]">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+          <div className="flex items-center gap-1">
+            <NavBtn onClick={() => shiftAnchorWeek(-1)} label="Previous week">
+              <ChevronLeft size={16} />
             </NavBtn>
-          ) : null}
+            <button
+              type="button"
+              className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+              onClick={goToday}
+            >
+              Today
+            </button>
+            <NavBtn onClick={() => shiftAnchorWeek(1)} label="Next week">
+              <ChevronRight size={16} />
+            </NavBtn>
+          </div>
+          <p className="text-sm font-medium">{rangeLabel}</p>
+          <div className="ml-auto flex items-center gap-1">
+            <NavBtn
+              onClick={() => setHalfZoom((z) => !z)}
+              label={halfZoom ? "Zoom in (full day width)" : "Zoom out (half day width)"}
+            >
+              {halfZoom ? <ZoomIn size={16} /> : <ZoomOut size={16} />}
+            </NavBtn>
+            {showExpandToggle ? (
+              <NavBtn
+                onClick={() => setViewportExpanded((v) => !v)}
+                label={viewportExpanded ? "Collapse Gantt" : "Expand Gantt"}
+              >
+                {viewportExpanded ? (
+                  <Minimize2 size={16} />
+                ) : (
+                  <Maximize2 size={16} />
+                )}
+              </NavBtn>
+            ) : null}
+          </div>
         </div>
-      </div>
 
-      <div
-        className={cn(
-          "flex min-w-0",
-          viewportExpanded ? "min-h-0 flex-1" : "w-full",
-        )}
-      >
-        <div
-          ref={scrollRef}
-          className={cn(
-            "min-w-0 w-full",
-            viewportExpanded
-              ? "min-h-0 flex-1 overflow-auto overscroll-contain"
-              : "overflow-x-auto overflow-y-hidden",
-            panning && "cursor-grabbing select-none",
-          )}
-        >
-          <div style={{ minWidth: GANTT_LABEL_PX + totalWidth }}>
-            {/* Sticky header */}
-            <div className="sticky top-0 z-30 bg-[var(--bg)]">
+        <div className="flex min-w-0">
+          <div
+            ref={headerScrollRef}
+            className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            onScroll={syncBodyFromHeader}
+          >
+            <div style={{ minWidth: GANTT_LABEL_PX + totalWidth }}>
               <div className="flex border-b border-[var(--border)]">
                 <div
                   className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
@@ -1749,7 +1773,7 @@ export function ProjectGanttBoard({
                   ))}
                 </div>
               </div>
-              <div className="flex border-b border-[var(--border)]">
+              <div className="flex">
                 <div
                   className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
                   style={{ width: GANTT_LABEL_PX, height: 28 }}
@@ -1758,44 +1782,70 @@ export function ProjectGanttBoard({
                   {columns.map((col) => {
                     const holidayName = holidayByDate.get(col.startKey);
                     return (
-                    <div
-                      key={col.id}
-                      className={cn(
-                        "relative flex items-center justify-center text-xs",
-                        col.isWeekBoundaryEnd
-                          ? "border-r-2 border-[var(--schedule-week-border)]"
-                          : "border-r border-[var(--schedule-day-border)]",
-                        col.isToday &&
-                          "bg-[var(--today-col)] font-semibold text-[var(--accent)]",
-                        holidayName && !col.isToday && "bg-[var(--leave-block-wash)]",
-                      )}
-                      style={{ width: col.width, height: 28 }}
-                      title={holidayName ?? undefined}
-                    >
-                      {holidayName ? (
-                        <div
-                          className="pointer-events-none absolute inset-0 opacity-80"
-                          style={{
-                            background:
-                              "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
-                          }}
-                          aria-hidden
-                        />
-                      ) : null}
-                      {col.isToday ? (
-                        <span
-                          className="absolute inset-x-1 bottom-0.5 z-[1] h-0.5 rounded-full bg-[var(--accent)]"
-                          aria-hidden
-                        />
-                      ) : null}
-                      <span className="relative z-[1]">{col.label}</span>
-                    </div>
+                      <div
+                        key={col.id}
+                        className={cn(
+                          "relative flex items-center justify-center text-xs",
+                          col.isWeekBoundaryEnd
+                            ? "border-r-2 border-[var(--schedule-week-border)]"
+                            : "border-r border-[var(--schedule-day-border)]",
+                          col.isToday &&
+                            "bg-[var(--today-col)] font-semibold text-[var(--accent)]",
+                          holidayName &&
+                            !col.isToday &&
+                            "bg-[var(--leave-block-wash)]",
+                        )}
+                        style={{ width: col.width, height: 28 }}
+                        title={holidayName ?? undefined}
+                      >
+                        {holidayName ? (
+                          <div
+                            className="pointer-events-none absolute inset-0 opacity-80"
+                            style={{
+                              background:
+                                "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
+                            }}
+                            aria-hidden
+                          />
+                        ) : null}
+                        {col.isToday ? (
+                          <span
+                            className="absolute inset-x-1 bottom-0.5 z-[1] h-0.5 rounded-full bg-[var(--accent)]"
+                            aria-hidden
+                          />
+                        ) : null}
+                        <span className="relative z-[1]">{col.label}</span>
+                      </div>
                     );
                   })}
                 </div>
               </div>
             </div>
+          </div>
+          {drawerOpen ? (
+            <div className="w-80 shrink-0 border-l border-[var(--border)] bg-[var(--bg)]" aria-hidden />
+          ) : null}
+        </div>
+      </div>
 
+      <div
+        className={cn(
+          "flex min-w-0",
+          viewportExpanded ? "min-h-0 flex-1" : "w-full",
+        )}
+      >
+        <div
+          ref={scrollRef}
+          className={cn(
+            "min-w-0 w-full",
+            viewportExpanded
+              ? "min-h-0 flex-1 overflow-auto overscroll-contain"
+              : "overflow-x-auto",
+            panning && "cursor-grabbing select-none",
+          )}
+          onScroll={syncHeaderFromBody}
+        >
+          <div style={{ minWidth: GANTT_LABEL_PX + totalWidth }}>
             {/* Body rows */}
             <div className="relative" style={{ height: totalBodyHeight }}>
               {holidayByDate.size > 0 ? (
