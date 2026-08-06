@@ -9,7 +9,6 @@ import {
   forwardRef,
   type KeyboardEvent,
   type MouseEvent,
-  type ReactNode,
 } from "react";
 import { Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -130,7 +129,6 @@ export function TaskDescriptionView({
   viewerProfileId,
   taskExpanded,
   onExpandedChange,
-  onCommentsBlockedChange,
   showAttachments = false,
 }: {
   html: string;
@@ -141,7 +139,6 @@ export function TaskDescriptionView({
   /** Parent task row expanded — resets first-view init when closed. */
   taskExpanded: boolean;
   onExpandedChange?: (expanded: boolean) => void;
-  onCommentsBlockedChange?: (blocked: boolean) => void;
   showAttachments?: boolean;
 }) {
   const measureRef = useRef<HTMLDivElement>(null);
@@ -228,13 +225,6 @@ export function TaskDescriptionView({
       ? fullHeight
       : undefined;
 
-  const commentsBlocked =
-    assigneeFirstView && exceeds && expanded;
-
-  useEffect(() => {
-    onCommentsBlockedChange?.(commentsBlocked);
-  }, [commentsBlocked, onCommentsBlockedChange]);
-
   function expandFromBody(e: MouseEvent | KeyboardEvent) {
     if (!showCollapsed) return;
     e.preventDefault();
@@ -284,10 +274,12 @@ export function TaskDescriptionView({
               : undefined
           }
         >
-          <RichNotesHtml
-            html={html}
-            className="text-sm leading-relaxed text-[var(--text)]"
-          />
+          <div className={cn(showCollapsed && "pb-8")}>
+            <RichNotesHtml
+              html={html}
+              className="text-sm leading-relaxed text-[var(--text)]"
+            />
+          </div>
         </div>
         {exceeds ? (
           <ExpandToggle
@@ -296,7 +288,7 @@ export function TaskDescriptionView({
               if (expanded) setExpandedState(false);
               else setExpandedState(true);
             }}
-            className="absolute bottom-0 right-0"
+            className="absolute bottom-0.5 right-1 z-10"
           />
         ) : null}
       </div>
@@ -398,7 +390,7 @@ export const TaskDescriptionEditor = forwardRef<
           <ExpandToggle
             expanded={expanded}
             onToggle={() => setExpanded((v) => !v)}
-            className="absolute bottom-2 right-2 z-10"
+            className="absolute bottom-0.5 right-1 z-10"
           />
         ) : null}
       </div>
@@ -452,20 +444,3 @@ export const TaskDescriptionCreateField = forwardRef<
   );
 });
 
-export function TaskDescriptionCommentsGate({
-  blocked,
-  children,
-}: {
-  blocked: boolean;
-  children: ReactNode;
-}) {
-  if (!blocked) return children;
-  return (
-    <div className="space-y-2">
-      <p className="text-xs text-[var(--text-muted)]">
-        Review the task description above before leaving a comment.
-      </p>
-      <div className="pointer-events-none opacity-50">{children}</div>
-    </div>
-  );
-}

@@ -56,7 +56,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import {
-  TaskDescriptionCommentsGate,
   TaskDescriptionCreateField,
   TaskDescriptionEditor,
   TaskDescriptionView,
@@ -3485,7 +3484,6 @@ function TaskRow({
   const isFocused = ctx.focusTaskId === task.id;
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
   const [descExpanded, setDescExpanded] = useState(false);
-  const [commentsBlocked, setCommentsBlocked] = useState(false);
   const ordered =
     ctx.orderedListTasksByListId.get(task.list_id) ?? [];
   const tone = taskVisualTone(task, ordered);
@@ -3844,7 +3842,6 @@ function TaskRow({
                     viewerProfileId={ctx.profileId}
                     taskExpanded={isExpanded}
                     onExpandedChange={setDescExpanded}
-                    onCommentsBlockedChange={setCommentsBlocked}
                     showAttachments={ctx.mode === "supabase"}
                   />
                 ) : ctx.mode === "supabase" ? (
@@ -3853,14 +3850,11 @@ function TaskRow({
                     entityId={task.id}
                   />
                 ) : null}
-                <TaskDescriptionCommentsGate blocked={commentsBlocked}>
-                  <CommentThread
-                    task={task}
-                    comments={taskComments}
-                    ctx={ctx}
-                    commentsDisabled={commentsBlocked}
-                  />
-                </TaskDescriptionCommentsGate>
+                <CommentThread
+                  task={task}
+                  comments={taskComments}
+                  ctx={ctx}
+                />
                 <TaskActivityMeta task={task} ctx={ctx} />
               </div>
             </div>
@@ -3978,12 +3972,10 @@ function CommentThread({
   task,
   comments,
   ctx,
-  commentsDisabled = false,
 }: {
   task: Task;
   comments: TaskComment[];
   ctx: BoardCtx;
-  commentsDisabled?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [replying, setReplying] = useState(false);
@@ -4101,8 +4093,7 @@ function CommentThread({
         ) : (
           <button
             type="button"
-            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[color-mix(in_srgb,var(--text)_22%,transparent)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={commentsDisabled}
+            className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[color-mix(in_srgb,var(--text)_22%,transparent)] px-2.5 text-xs text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
             onClick={() => setReplying(true)}
           >
             <Reply size={13} strokeWidth={1.75} />
