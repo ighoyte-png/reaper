@@ -15,6 +15,7 @@ import {
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
 import { ProjectManagerPerson, SandboxTag } from "@/components/projects/project-manager-person";
+import { SandboxIcon } from "@/components/projects/sandbox-icon";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
@@ -956,25 +957,31 @@ function ProjectCard({
         </div>
       </div>
       <div className="mt-auto space-y-3">
-        {overallPct != null ? (
-          <ProgressBar pct={overallPct} label="Overall Progress" />
-        ) : null}
-        {!isSandbox ? (
-          <div className="space-y-2">
-            <div
-              className={cn(
-                "text-xs",
-                health === "over" && "text-[var(--status-over)]",
-                health === "near" && "text-[var(--status-near)]",
-                (health === "healthy" || health === "none") &&
-                  "text-[var(--text-muted)]",
-              )}
-            >
-              Total {burn.totalHours}h
-            </div>
-            <BurnBar burn={burn} compact />
+        {isSandbox ? (
+          <div className="flex justify-center px-2 py-1">
+            <SandboxIcon className="w-full max-w-[9rem]" />
           </div>
-        ) : null}
+        ) : (
+          <>
+            {overallPct != null ? (
+              <ProgressBar pct={overallPct} label="Overall Progress" />
+            ) : null}
+            <div className="space-y-2">
+              <div
+                className={cn(
+                  "text-xs",
+                  health === "over" && "text-[var(--status-over)]",
+                  health === "near" && "text-[var(--status-near)]",
+                  (health === "healthy" || health === "none") &&
+                    "text-[var(--text-muted)]",
+                )}
+              >
+                Total {burn.totalHours}h
+              </div>
+              <BurnBar burn={burn} compact />
+            </div>
+          </>
+        )}
         {manager ? (
           <div className="border-t border-[var(--border)] pt-3">
             <ProjectManagerPerson person={manager} showTag />
