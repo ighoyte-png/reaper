@@ -242,6 +242,11 @@ export interface ProjectTemplate {
   organization_id: string;
   name: string;
   description: string;
+  /**
+   * Source project start_date when the template was saved with dates.
+   * Apply slides all template dates by (chosenStart − anchor).
+   */
+  anchor_start_date: string | null;
 }
 
 export interface TemplateMilestone {
@@ -251,6 +256,8 @@ export interface TemplateMilestone {
   name: string;
   offset_days: number;
   sort_order: number;
+  start_date: string | null;
+  due_date: string | null;
 }
 
 export interface TemplateTaskList {
@@ -260,6 +267,9 @@ export interface TemplateTaskList {
   template_milestone_id: string | null;
   name: string;
   sort_order: number;
+  gantt_enabled: boolean;
+  start_date: string | null;
+  end_date: string | null;
 }
 
 export interface TemplateTask {
@@ -272,6 +282,11 @@ export interface TemplateTask {
   notes: string;
   offset_days: number | null;
   sort_order: number;
+  start_date: string | null;
+  due_date: string | null;
+  assignee_person_id: string | null;
+  is_client_review: boolean;
+  is_divider: boolean;
 }
 
 export interface Person {

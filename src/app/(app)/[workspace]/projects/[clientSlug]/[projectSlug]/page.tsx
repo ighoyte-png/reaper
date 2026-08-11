@@ -1796,11 +1796,19 @@ export default function ProjectDetailPage() {
           templateId={confirmApplyTemplateId}
           projectName={project.name}
           onCancel={() => setConfirmApplyTemplateId(null)}
-          onConfirm={async () => {
-            await applyProjectTemplate(project.id, confirmApplyTemplateId);
+          onConfirm={async (options) => {
+            await applyProjectTemplate(
+              project.id,
+              confirmApplyTemplateId,
+              options,
+            );
             setConfirmApplyTemplateId(null);
             setTemplateId("");
-            push("Template applied — set milestone dates as needed");
+            push(
+              options.includeDates
+                ? "Template applied"
+                : "Template applied — set dates as needed",
+            );
           }}
         />
       ) : null}
@@ -1809,8 +1817,8 @@ export default function ProjectDetailPage() {
         <SaveAsTemplateDialog
           defaultName={exportName.trim() || `${project.name} Template`}
           onCancel={() => setConfirmSaveAsTemplate(false)}
-          onConfirm={async (name) => {
-            await exportProjectAsTemplate(project.id, name);
+          onConfirm={async (name, options) => {
+            await exportProjectAsTemplate(project.id, name, options);
             setConfirmSaveAsTemplate(false);
             setExportName("");
             push("Saved as template");

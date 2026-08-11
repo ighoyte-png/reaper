@@ -132,6 +132,7 @@ function testShareSanitize() {
       organization_id: seed.organization.id,
       name: "Internal playbook",
       description: "do not share",
+      anchor_start_date: null,
     },
   ];
 

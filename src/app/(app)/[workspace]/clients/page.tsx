@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { ApplyTemplateDialog } from "@/components/templates/apply-template-dialog";
+import type { TemplateApplyOptions } from "@/lib/domain/project-templates";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
@@ -350,6 +351,7 @@ function ClientsPageContent() {
     members: string[],
     terms: Record<string, ContractorTerms>,
     templateToApply: string,
+    templateOptions?: TemplateApplyOptions,
   ) {
     try {
       const saved = await upsertProject({
@@ -367,8 +369,12 @@ function ClientsPageContent() {
         saved.id,
         buildProjectMembersPayload(members, terms, state.people),
       );
-      if (templateToApply) {
-        await applyProjectTemplate(saved.id, templateToApply);
+      if (templateToApply && templateOptions) {
+        await applyProjectTemplate(
+          saved.id,
+          templateToApply,
+          templateOptions,
+        );
       }
 
       const managerId = project.manager_person_id;
@@ -1010,7 +1016,7 @@ function ClientsPageContent() {
           templateId={createTemplateId}
           projectName={projectDraft.name}
           onCancel={() => setPendingCreateApply(false)}
-          onConfirm={() => {
+          onConfirm={(options) => {
             const templateToApply = createTemplateId;
             setPendingCreateApply(false);
             void saveFollowUpProject(
@@ -1018,6 +1024,7 @@ function ClientsPageContent() {
               memberIds,
               contractorTerms,
               templateToApply,
+              options,
             );
           }}
         />

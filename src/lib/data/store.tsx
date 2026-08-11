@@ -21,7 +21,7 @@ import {
   applyRealtimeTableEvent,
   realtimeEchoId,
 } from "@/lib/data/realtime-patch";
-import { addDays, parseISO } from "date-fns";
+import { addDays, differenceInCalendarDays, parseISO } from "date-fns";
 import { assignmentOverlapsDateRange } from "@/lib/domain/recurrence";
 import { toDateKey } from "@/lib/domain/dates";
 import { canEditProject } from "@/lib/domain/project-access";
@@ -126,6 +126,14 @@ import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { personAvatarColor } from "@/lib/domain/people";
 import { workingDaysBetween } from "@/lib/domain/dates";
+import {
+  buildAppliedTemplate,
+  buildExportedTemplate,
+  maxSortOrder,
+  type TemplateApplyOptions,
+  type TemplateSaveOptions,
+} from "@/lib/domain/project-templates";
+import { shiftDateKey } from "@/lib/domain/copy-task-list";
 import { uniqueSlug } from "@/lib/slug";
 import {
   generateShareToken,
@@ -672,11 +680,13 @@ interface DataContextValue {
   applyProjectTemplate: (
     projectId: string,
     templateId: string,
+    options: TemplateApplyOptions,
   ) => Promise<void>;
-  /** Clone a project's milestones/task lists/tasks into a new reusable template (no assignees). */
+  /** Clone a project's milestones/task lists/tasks into a new reusable template. */
   exportProjectAsTemplate: (
     projectId: string,
     name: string,
+    options: TemplateSaveOptions,
   ) => Promise<void>;
   /** Enable/disable/rotate a project's public client-portal share link. */
   updateProjectShare: (
@@ -4208,7 +4218,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           );
         }
       },
-      applyProjectTemplate: async (projectId, templateId) => {
+      applyProjectTemplate: async (projectId, templateId, options) => {
+        const template = state.project_templates.find((t) => t.id === templateId);
+        if (!template) return;
         const tMilestones = state.template_milestones.filter(
           (m) => m.template_id === templateId,
         );
@@ -4220,91 +4232,67 @@ export function DataProvider({ children }: { children: ReactNode }) {
         );
 
         const organizationId = state.organization.id || orgId;
-
-        const milestoneIdMap = new Map<string, string>();
-        const newMilestones: Milestone[] = tMilestones.map((m) => {
-          const id = uid("ms");
-          milestoneIdMap.set(m.id, id);
-          return {
-            id,
-            organization_id: organizationId,
-            project_id: projectId,
-            name: m.name,
-            start_date: null,
-            due_date: null,
-            status: "upcoming",
-            client_approved: false,
-            sort_order: m.sort_order,
-            approval_enabled: false,
-            approval_name: "",
-            approval_email: "",
-            essential_kind: null,
-            essential_label: "",
-            essential_url: "",
-            approved_by_name: null,
-            approved_at: null,
-            approved_by_client: false,
-          };
-        });
-
-        const listIdMap = new Map<string, string>();
-        const newLists: TaskList[] = tLists.map((l) => {
-          const id = uid("list");
-          listIdMap.set(l.id, id);
-          return {
-            id,
-            organization_id: organizationId,
-            project_id: projectId,
-            milestone_id: l.template_milestone_id
-              ? milestoneIdMap.get(l.template_milestone_id) ?? null
-              : null,
-            name: l.name,
-            color: null,
-            sort_order: l.sort_order,
-            archived: false,
-            hide_from_client: false,
-            gantt_enabled: false,
-            start_date: null,
-            end_date: null,
-          };
-        });
-
-        const taskIdMap = new Map<string, string>();
-        for (const t of tTasks) taskIdMap.set(t.id, uid("task"));
-        const newTasks: Task[] = orderTasksParentsFirst(
-          tTasks.map((t) => ({
-            id: taskIdMap.get(t.id)!,
-            organization_id: organizationId,
-            project_id: projectId,
-            list_id: listIdMap.get(t.list_id) ?? "",
-            parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
-            assignee_person_id: null,
-            title: t.title,
-            is_divider: false,
-            is_client_review: false,
-            status: "upcoming" as const,
-            start_date: null,
-            due_date: null,
-            notes: t.notes,
-            sort_order: t.sort_order,
-            ...emptyTaskAuditFields(),
-            created_by_profile_id: profile?.id ?? null,
-          })),
+        const existingLists = state.task_lists.filter(
+          (l) => l.project_id === projectId,
         );
+        const existingMilestones = state.milestones.filter(
+          (m) => m.project_id === projectId,
+        );
+
+        const applied = buildAppliedTemplate({
+          organizationId,
+          projectId,
+          profileId: profile?.id ?? null,
+          template,
+          templateMilestones: tMilestones,
+          templateLists: tLists,
+          templateTasks: tTasks,
+          options,
+          listSortBase: maxSortOrder(existingLists),
+          milestoneSortBase: maxSortOrder(existingMilestones),
+          idFor: uid,
+        });
+
+        const project = state.projects.find((p) => p.id === projectId);
+        let updatedProject: Project | null = null;
+        if (project && applied.projectStartDate) {
+          const chosenStart = applied.projectStartDate;
+          let nextEnd = project.end_date;
+          if (project.start_date && project.end_date) {
+            const spanDays = differenceInCalendarDays(
+              parseISO(project.end_date),
+              parseISO(project.start_date),
+            );
+            nextEnd = shiftDateKey(chosenStart, spanDays);
+          }
+          updatedProject = {
+            ...project,
+            start_date: chosenStart,
+            end_date: nextEnd,
+          };
+        }
 
         patch((prev) => ({
           ...prev,
-          milestones: [...prev.milestones, ...newMilestones],
-          task_lists: [...prev.task_lists, ...newLists],
-          tasks: [...prev.tasks, ...newTasks],
+          projects: updatedProject
+            ? prev.projects.map((p) =>
+                p.id === updatedProject!.id ? updatedProject! : p,
+              )
+            : prev.projects,
+          milestones: [...prev.milestones, ...applied.milestones],
+          task_lists: [...prev.task_lists, ...applied.lists],
+          tasks: [...prev.tasks, ...applied.tasks],
         }));
 
         if (mode === "supabase" && supabaseRef.current) {
-          await runRemote(() =>
-            applyProjectTemplateRows(supabaseRef.current!, {
+          await runRemote(async () => {
+            if (updatedProject) {
+              await upsertProjectRow(supabaseRef.current!, updatedProject);
+            }
+            await applyProjectTemplateRows(supabaseRef.current!, {
               organizationId,
               projectId,
-              milestones: newMilestones.map((m) => ({
+              milestones: applied.milestones.map((m) => ({
                 id: m.id,
                 name: m.name,
                 due_date: m.due_date,
@@ -4312,29 +4300,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 status: "upcoming" as const,
                 sort_order: m.sort_order,
               })),
-              taskLists: newLists.map((l) => ({
+              taskLists: applied.lists.map((l) => ({
                 id: l.id,
                 milestone_id: l.milestone_id,
                 name: l.name,
                 color: l.color,
                 sort_order: l.sort_order,
+                gantt_enabled: l.gantt_enabled,
+                start_date: l.start_date,
+                end_date: l.end_date,
               })),
-              tasks: newTasks.map((t) => ({
+              tasks: applied.tasks.map((t) => ({
                 id: t.id,
                 list_id: t.list_id,
                 parent_id: t.parent_id,
                 title: t.title,
                 notes: t.notes,
+                start_date: t.start_date,
                 due_date: t.due_date,
                 sort_order: t.sort_order,
+                assignee_person_id: t.assignee_person_id,
+                is_client_review: t.is_client_review,
+                is_divider: t.is_divider,
                 created_by_profile_id: t.created_by_profile_id,
               })),
-            }),
-          );
+            });
+          });
         }
       },
-      exportProjectAsTemplate: async (projectId, name) => {
+      exportProjectAsTemplate: async (projectId, name, options) => {
         const organizationId = state.organization.id || orgId;
+        const project = state.projects.find((p) => p.id === projectId);
+        if (!project) return;
+
         const projectMilestones = state.milestones
           .filter((m) => m.project_id === projectId)
           .sort(
@@ -4350,87 +4348,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
           (t) => t.project_id === projectId && listIds.has(t.list_id),
         );
 
-        const templateId = uid("tmpl");
-        const newTemplate: ProjectTemplate = {
-          id: templateId,
-          organization_id: organizationId,
+        const exported = buildExportedTemplate({
+          organizationId,
+          templateId: uid("tmpl"),
           name,
-          description: "",
-        };
-
-        const milestoneIdMap = new Map<string, string>();
-        const newTemplateMilestones: TemplateMilestone[] = projectMilestones.map(
-          (m, idx) => {
-            const id = uid("tms");
-            milestoneIdMap.set(m.id, id);
-            return {
-              id,
-              organization_id: organizationId,
-              template_id: templateId,
-              name: m.name,
-              offset_days: 0,
-              sort_order: m.sort_order ?? idx,
-            };
-          },
-        );
-
-        const listIdMap = new Map<string, string>();
-        const newTemplateLists: TemplateTaskList[] = projectLists.map((l) => {
-          const id = uid("tlist");
-          listIdMap.set(l.id, id);
-          return {
-            id,
-            organization_id: organizationId,
-            template_id: templateId,
-            template_milestone_id: l.milestone_id
-              ? milestoneIdMap.get(l.milestone_id) ?? null
-              : null,
-            name: l.name,
-            sort_order: l.sort_order,
-          };
+          project,
+          milestones: projectMilestones,
+          lists: projectLists,
+          tasks: projectTasks,
+          options,
+          idFor: uid,
         });
-
-        const taskIdMap = new Map<string, string>();
-        for (const t of projectTasks) taskIdMap.set(t.id, uid("ttask"));
-        const newTemplateTasks: TemplateTask[] = orderTasksParentsFirst(
-          projectTasks.map((t) => ({
-            id: taskIdMap.get(t.id)!,
-            organization_id: organizationId,
-            template_id: templateId,
-            list_id: listIdMap.get(t.list_id) ?? "",
-            parent_id: t.parent_id ? taskIdMap.get(t.parent_id) ?? null : null,
-            title: t.title,
-            notes: t.notes,
-            offset_days: null,
-            sort_order: t.sort_order,
-          })),
-        );
 
         patch((prev) => ({
           ...prev,
-          project_templates: [...prev.project_templates, newTemplate],
+          project_templates: [...prev.project_templates, exported.template],
           template_milestones: [
             ...prev.template_milestones,
-            ...newTemplateMilestones,
+            ...exported.milestones,
           ],
           template_task_lists: [
             ...prev.template_task_lists,
-            ...newTemplateLists,
+            ...exported.lists,
           ],
-          template_tasks: [...prev.template_tasks, ...newTemplateTasks],
+          template_tasks: [...prev.template_tasks, ...exported.tasks],
         }));
 
         if (mode === "supabase" && supabaseRef.current) {
           const client = supabaseRef.current;
           await runRemote(async () => {
-            await upsertProjectTemplateRow(client, newTemplate);
-            for (const m of newTemplateMilestones) {
+            await upsertProjectTemplateRow(client, exported.template);
+            for (const m of exported.milestones) {
               await upsertTemplateMilestoneRow(client, m);
             }
-            for (const l of newTemplateLists) {
+            for (const l of exported.lists) {
               await upsertTemplateTaskListRow(client, l);
             }
-            for (const t of newTemplateTasks) {
+            for (const t of exported.tasks) {
               await upsertTemplateTaskRow(client, t);
             }
           });

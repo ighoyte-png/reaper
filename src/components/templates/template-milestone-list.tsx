@@ -75,6 +75,8 @@ export function TemplateMilestoneList({
       name: "New Milestone",
       offset_days: 0,
       sort_order: milestones.length,
+      start_date: null,
+      due_date: null,
     };
     upsertTemplateMilestone(m);
     setEditing(m);

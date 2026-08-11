@@ -24,6 +24,7 @@ import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { EmptyState, Modal, inputClass } from "@/components/ui/form";
 import { Button, buttonClass } from "@/components/ui/button";
 import { ApplyTemplateDialog } from "@/components/templates/apply-template-dialog";
+import type { TemplateApplyOptions } from "@/lib/domain/project-templates";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
@@ -350,6 +351,7 @@ function ProjectsPageContent() {
     members: string[],
     terms: Record<string, ContractorTerms>,
     templateToApply: string,
+    templateOptions?: TemplateApplyOptions,
     pmAction: "auto" | "apply" | "skip" = "auto",
     pmHoursOverride?: number,
   ) {
@@ -382,8 +384,12 @@ function ProjectsPageContent() {
         toSave.id,
         buildProjectMembersPayload(members, terms, state.people),
       );
-      if (templateToApply) {
-        await applyProjectTemplate(toSave.id, templateToApply);
+      if (templateToApply && templateOptions) {
+        await applyProjectTemplate(
+          toSave.id,
+          templateToApply,
+          templateOptions,
+        );
       }
 
       if (toSave.sandbox_mode) {
@@ -764,7 +770,7 @@ function ProjectsPageContent() {
           templateId={createTemplateId}
           projectName={editing.name}
           onCancel={() => setPendingCreateApply(false)}
-          onConfirm={async () => {
+          onConfirm={async (options) => {
             const templateToApply = createTemplateId;
             setPendingCreateApply(false);
             await saveProject(
@@ -772,6 +778,7 @@ function ProjectsPageContent() {
               memberIds,
               contractorTerms,
               templateToApply,
+              options,
             );
           }}
         />

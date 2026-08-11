@@ -120,6 +120,9 @@ export function TemplateTaskBoard({ templateId }: { templateId: string }) {
       template_milestone_id: null,
       name: "New List",
       sort_order: allLists.length,
+      gantt_enabled: false,
+      start_date: null,
+      end_date: null,
     };
     upsertTemplateTaskList(list);
   }
@@ -138,6 +141,11 @@ export function TemplateTaskBoard({ templateId }: { templateId: string }) {
       notes: "",
       offset_days: null,
       sort_order: siblings.length,
+      start_date: null,
+      due_date: null,
+      assignee_person_id: null,
+      is_client_review: false,
+      is_divider: false,
     };
     upsertTemplateTask(task);
     setEditingTask(task);

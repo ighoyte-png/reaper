@@ -49,6 +49,7 @@ export default function TemplatesPage() {
       organization_id: state.organization.id,
       name: "New Template",
       description: "",
+      anchor_start_date: null,
     };
     upsertProjectTemplate(template);
     push("Template created");
@@ -67,9 +68,10 @@ export default function TemplatesPage() {
         }
       />
       <p className="border-b border-[var(--border)] pb-3 pt-3 text-sm text-[var(--text-muted)] sm:pt-4">
-        Reusable milestone and task structures. Edit a template like a project
-        hub — only milestones and tasks are saved. Apply from a project or when
-        creating one; applied work starts undated and unassigned.
+        Reusable list and task structures. Save from a project to capture Gantt
+        dates, Client Reviews, and optional assignees. Apply from a project or
+        when creating one — choose what to import and slide dates from a start
+        date.
       </p>
       {templates.length === 0 ? (
         <div className="py-3 sm:py-5">

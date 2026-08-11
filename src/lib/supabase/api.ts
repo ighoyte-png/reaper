@@ -294,6 +294,9 @@ function mapProjectTemplate(row: Record<string, unknown>): ProjectTemplate {
     organization_id: String(row.organization_id),
     name: String(row.name ?? ""),
     description: String(row.description ?? ""),
+    anchor_start_date: row.anchor_start_date
+      ? String(row.anchor_start_date)
+      : null,
   };
 }
 
@@ -305,6 +308,8 @@ function mapTemplateMilestone(row: Record<string, unknown>): TemplateMilestone {
     name: String(row.name ?? ""),
     offset_days: num(row.offset_days),
     sort_order: num(row.sort_order),
+    start_date: row.start_date ? String(row.start_date) : null,
+    due_date: row.due_date ? String(row.due_date) : null,
   };
 }
 
@@ -318,6 +323,9 @@ function mapTemplateTaskList(row: Record<string, unknown>): TemplateTaskList {
       : null,
     name: String(row.name ?? ""),
     sort_order: num(row.sort_order),
+    gantt_enabled: Boolean(row.gantt_enabled),
+    start_date: row.start_date ? String(row.start_date) : null,
+    end_date: row.end_date ? String(row.end_date) : null,
   };
 }
 
@@ -332,6 +340,13 @@ function mapTemplateTask(row: Record<string, unknown>): TemplateTask {
     notes: String(row.notes ?? ""),
     offset_days: row.offset_days == null ? null : num(row.offset_days),
     sort_order: num(row.sort_order),
+    start_date: row.start_date ? String(row.start_date) : null,
+    due_date: row.due_date ? String(row.due_date) : null,
+    assignee_person_id: row.assignee_person_id
+      ? String(row.assignee_person_id)
+      : null,
+    is_client_review: Boolean(row.is_client_review),
+    is_divider: Boolean(row.is_divider),
   };
 }
 
@@ -3217,6 +3232,7 @@ export async function upsertProjectTemplateRow(
     organization_id: template.organization_id,
     name: template.name,
     description: template.description,
+    anchor_start_date: template.anchor_start_date,
   });
   if (error) throw error;
 }
@@ -3243,6 +3259,8 @@ export async function upsertTemplateMilestoneRow(
     name: milestone.name,
     offset_days: milestone.offset_days,
     sort_order: milestone.sort_order,
+    start_date: milestone.start_date,
+    due_date: milestone.due_date,
   });
   if (error) throw error;
 }
@@ -3269,6 +3287,9 @@ export async function upsertTemplateTaskListRow(
     template_milestone_id: list.template_milestone_id,
     name: list.name,
     sort_order: list.sort_order,
+    gantt_enabled: list.gantt_enabled,
+    start_date: list.start_date,
+    end_date: list.end_date,
   });
   if (error) throw error;
 }
@@ -3298,6 +3319,11 @@ export async function upsertTemplateTaskRow(
     notes: task.notes,
     offset_days: task.offset_days,
     sort_order: task.sort_order,
+    start_date: task.start_date,
+    due_date: task.due_date,
+    assignee_person_id: task.assignee_person_id,
+    is_client_review: task.is_client_review,
+    is_divider: task.is_divider,
   });
   if (error) throw error;
 }
@@ -3314,8 +3340,7 @@ export async function deleteTemplateTaskRow(
 }
 
 /**
- * Apply a project template: create undated milestones/task lists/tasks on a project.
- * Dates stay null so the user sets the schedule after initialization.
+ * Apply a project template: create milestones/task lists/tasks on a project.
  */
 export async function applyProjectTemplateRows(
   supabase: SupabaseClient,
@@ -3336,6 +3361,9 @@ export async function applyProjectTemplateRows(
       name: string;
       color: string | null;
       sort_order: number;
+      gantt_enabled: boolean;
+      start_date: string | null;
+      end_date: string | null;
     }[];
     tasks: {
       id: string;
@@ -3343,8 +3371,12 @@ export async function applyProjectTemplateRows(
       parent_id: string | null;
       title: string;
       notes: string;
+      start_date: string | null;
       due_date: string | null;
       sort_order: number;
+      assignee_person_id: string | null;
+      is_client_review: boolean;
+      is_divider: boolean;
       created_by_profile_id?: string | null;
     }[];
   },
@@ -3379,9 +3411,9 @@ export async function applyProjectTemplateRows(
     sort_order: l.sort_order,
     archived: false,
     hide_from_client: false,
-    gantt_enabled: false,
-    start_date: null,
-    end_date: null,
+    gantt_enabled: l.gantt_enabled,
+    start_date: l.start_date,
+    end_date: l.end_date,
   }));
   const now = new Date().toISOString();
   const taskRows = orderTasksParentsFirst(
@@ -3391,10 +3423,12 @@ export async function applyProjectTemplateRows(
       project_id: args.projectId,
       list_id: t.list_id,
       parent_id: t.parent_id,
-      assignee_person_id: null as string | null,
+      assignee_person_id: t.assignee_person_id,
       title: t.title,
+      is_divider: t.is_divider,
+      is_client_review: t.is_client_review,
       status: "upcoming" as const,
-      start_date: null as string | null,
+      start_date: t.start_date,
       due_date: t.due_date,
       notes: t.notes,
       sort_order: t.sort_order,
@@ -3605,6 +3639,7 @@ export async function seedDemoWorkspace(
     organization_id: organizationId,
     name: t.name,
     description: t.description,
+    anchor_start_date: t.anchor_start_date ?? null,
   }));
 
   const templateMilestones = seed.template_milestones.map((m) => ({
@@ -3614,6 +3649,8 @@ export async function seedDemoWorkspace(
     name: m.name,
     offset_days: m.offset_days,
     sort_order: m.sort_order,
+    start_date: m.start_date ?? null,
+    due_date: m.due_date ?? null,
   }));
 
   const templateTaskLists = seed.template_task_lists.map((l) => ({
@@ -3625,6 +3662,9 @@ export async function seedDemoWorkspace(
       : null,
     name: l.name,
     sort_order: l.sort_order,
+    gantt_enabled: Boolean(l.gantt_enabled),
+    start_date: l.start_date ?? null,
+    end_date: l.end_date ?? null,
   }));
 
   const templateTasks = seed.template_tasks.map((t) => ({
@@ -3637,6 +3677,13 @@ export async function seedDemoWorkspace(
     notes: t.notes,
     offset_days: t.offset_days,
     sort_order: t.sort_order,
+    start_date: t.start_date ?? null,
+    due_date: t.due_date ?? null,
+    assignee_person_id: t.assignee_person_id
+      ? remapId(ids, t.assignee_person_id)
+      : null,
+    is_client_review: Boolean(t.is_client_review),
+    is_divider: Boolean(t.is_divider),
   }));
 
   const assignments = seed.assignments.map((a) => ({
