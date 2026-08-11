@@ -139,7 +139,6 @@ function PeoplePageContent() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [resendTarget, setResendTarget] = useState<Person | null>(null);
   const [leaveTarget, setLeaveTarget] = useState<Person | null>(null);
   const [leaveDate, setLeaveDate] = useState("");
   const [leaveKind, setLeaveKind] = useState<LeaveKind>("vacation");
@@ -147,6 +146,10 @@ function PeoplePageContent() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
+  const [inviteResend, setInviteResend] = useState(false);
+  const [inviteDelivery, setInviteDelivery] = useState<"email" | "link">(
+    "email",
+  );
   const [inviteLinkResult, setInviteLinkResult] = useState<{
     name: string;
     email: string;
@@ -176,21 +179,28 @@ function PeoplePageContent() {
     );
   }
 
-  async function createInviteLink(
+  function openInviteModal(
     person: Person,
-    options: {
-      resend?: boolean;
-      emailOverride?: string;
-    } = {},
+    options: { resend?: boolean; emailOverride?: string } = {},
   ) {
-    const resend = Boolean(options.resend);
     setInviteTarget(person);
+    setInviteResend(Boolean(options.resend));
+    setInviteDelivery("email");
+    setInviteEmailError(null);
+    setInviteEmail(
+      (options.emailOverride ?? person.email ?? "").trim().toLowerCase(),
+    );
+  }
+
+  async function submitInvite() {
+    if (!inviteTarget) return;
+    const person = inviteTarget;
+    const resend = inviteResend;
+    const delivery = inviteDelivery;
     setInviteEmailError(null);
     setInviteBusy(true);
     const email =
-      (options.emailOverride ?? inviteEmail ?? person.email ?? "")
-        .trim()
-        .toLowerCase();
+      (inviteEmail || person.email || "").trim().toLowerCase();
     try {
       if (mode === "demo") {
         if (!resend) {
@@ -211,17 +221,24 @@ function PeoplePageContent() {
         return;
       }
 
+      if (!resend && !email) {
+        setInviteEmailError("Email is required");
+        push("Enter an email first", "warning");
+        return;
+      }
+
       const res = await fetch("/api/invite", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           resend
-            ? { personId: person.id, resend: true }
+            ? { personId: person.id, resend: true, delivery }
             : {
                 personId: person.id,
                 email,
                 fullName: person.name,
+                delivery,
               },
         ),
       });
@@ -230,32 +247,28 @@ function PeoplePageContent() {
         linkedExisting?: boolean;
         emailSent?: boolean;
         actionLink?: string;
+        email?: string;
       };
       if (!res.ok) throw new Error(data.error || "Invite failed");
       await refresh();
+      setInviteTarget(null);
+      const resultEmail = (data.email || email).trim().toLowerCase();
       const actionLink = data.actionLink?.trim() || "";
-      if (actionLink) {
+      if (delivery === "link" && actionLink) {
         setInviteLinkResult({
           name: person.name,
-          email,
+          email: resultEmail,
           actionLink,
           resend,
         });
-        setInviteTarget(null);
-        push(
-          resend
-            ? "Invite link ready — copy it below."
-            : "Invite link ready — copy it below.",
-          "success",
-        );
+        push("Invite link ready — copy it below.", "success");
       } else {
         push(
           resend
-            ? "Invite processed."
-            : "Invite processed.",
+            ? `Invite email resent to ${resultEmail || "their login"}.`
+            : `Invite email sent to ${resultEmail}.`,
           "success",
         );
-        setInviteTarget(null);
       }
     } catch (err) {
       setInviteEmailError(
@@ -352,12 +365,12 @@ function PeoplePageContent() {
       setAvatarPreview(null);
 
       if (isNewPerson && email && !row.profile_id) {
-        setInviteEmail(email);
-        await createInviteLink(
+        openInviteModal(
           { ...row, organization_id: state.organization.id },
           { emailOverride: email },
         );
         setIsNewPerson(false);
+        push("Person saved — choose how to invite them.");
       } else {
         setIsNewPerson(false);
         push("Person saved");
@@ -573,14 +586,9 @@ function PeoplePageContent() {
             title="Invite"
             aria-label="Invite"
             onClick={() => {
-              if (person.email?.trim()) {
-                void createInviteLink(person, {
-                  emailOverride: person.email,
-                });
-              } else {
-                setInviteTarget(person);
-                setInviteEmail("");
-              }
+              openInviteModal(person, {
+                emailOverride: person.email ?? undefined,
+              });
             }}
           >
             <Mail size={14} />
@@ -592,7 +600,9 @@ function PeoplePageContent() {
             title="Resend invite"
             aria-label="Resend invite"
             disabled={inviteBusy}
-            onClick={() => setResendTarget(person)}
+            onClick={() => {
+              openInviteModal(person, { resend: true });
+            }}
           >
             <Mail size={14} />
           </button>
@@ -745,8 +755,8 @@ function PeoplePageContent() {
         {canManage ? (
           <p className="mb-4 text-sm text-[var(--text-muted)]">
             Add people with their work email — <strong>Add & Invite</strong>{" "}
-            creates a copyable invite link. <strong>Invite</strong> does the
-            same for existing people. Members only see My Schedule.
+            saves them, then lets you email an invite or copy a one-time link.
+            Members only see My Schedule.
           </p>
         ) : null}
         <div className="mb-4 flex justify-end">
@@ -909,23 +919,6 @@ function PeoplePageContent() {
         />
       )}
 
-      {canManage && resendTarget && (
-        <ConfirmDialog
-          title="Resend Invite?"
-          message={`Create a new invite link for ${resendTarget.name}${resendTarget.email ? ` (${resendTarget.email})` : ""}?`}
-          confirmLabel="Create Link"
-          tone="accent"
-          onCancel={() => setResendTarget(null)}
-          onConfirm={() => {
-            const person = resendTarget;
-            setResendTarget(null);
-            void createInviteLink(person, {
-              resend: true,
-            });
-          }}
-        />
-      )}
-
       {canManage && leaveTarget && (
         <Modal
           title={`Add leave · ${leaveTarget.name}`}
@@ -988,11 +981,12 @@ function PeoplePageContent() {
       {canManage && inviteTarget && (
         <Modal
           title={
-            inviteBusy && inviteTarget.profile_id
-              ? `Resending · ${inviteTarget.name}`
+            inviteResend
+              ? `Resend invite · ${inviteTarget.name}`
               : `Invite ${inviteTarget.name}`
           }
           onClose={() => {
+            if (inviteBusy) return;
             setInviteTarget(null);
             setInviteEmailError(null);
           }}
@@ -1000,24 +994,71 @@ function PeoplePageContent() {
           <div className="grid gap-3">
             {inviteBusy ? (
               <p className="text-sm text-[var(--text-muted)]">
-                Creating invite link…
+                {inviteDelivery === "link"
+                  ? "Creating invite link…"
+                  : "Sending invite email…"}
               </p>
             ) : (
               <>
                 <p className="text-sm text-[var(--text-muted)]">
-                  Creates a <strong>member</strong> login linked to this person
-                  and shows a one-time invite link you can copy. Share that link
-                  so they can set a password (Auth email is rate-limited).
+                  {inviteResend
+                    ? "Send another invite so they can set or reset their password."
+                    : "Creates a member login linked to this person so they can set a password."}
                 </p>
-                <Field label="Work email">
-                  <input
-                    type="email"
-                    className={inputClass}
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="name@company.com"
-                  />
-                </Field>
+                {!inviteResend ? (
+                  <Field label="Work email">
+                    <input
+                      type="email"
+                      className={inputClass}
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="name@company.com"
+                    />
+                  </Field>
+                ) : inviteTarget.email || inviteEmail ? (
+                  <p className="text-sm text-[var(--text)]">
+                    {inviteTarget.email || inviteEmail}
+                  </p>
+                ) : null}
+                <fieldset className="grid gap-2">
+                  <legend className="text-xs font-medium text-[var(--text-muted)]">
+                    How to invite
+                  </legend>
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md border border-[var(--border)] px-3 py-2 has-[:checked]:border-[var(--accent)]">
+                    <input
+                      type="radio"
+                      name="invite-delivery"
+                      className="mt-0.5"
+                      checked={inviteDelivery === "email"}
+                      onChange={() => setInviteDelivery("email")}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium">
+                        Send email
+                      </span>
+                      <span className="block text-xs text-[var(--text-muted)]">
+                        Uses Supabase Auth email (Custom SMTP).
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-2 rounded-md border border-[var(--border)] px-3 py-2 has-[:checked]:border-[var(--accent)]">
+                    <input
+                      type="radio"
+                      name="invite-delivery"
+                      className="mt-0.5"
+                      checked={inviteDelivery === "link"}
+                      onChange={() => setInviteDelivery("link")}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium">
+                        Copy invite link
+                      </span>
+                      <span className="block text-xs text-[var(--text-muted)]">
+                        No email — show a one-time link you can copy.
+                      </span>
+                    </span>
+                  </label>
+                </fieldset>
                 {inviteEmailError ? (
                   <p className="text-xs text-[var(--danger)]">{inviteEmailError}</p>
                 ) : null}
@@ -1038,14 +1079,20 @@ function PeoplePageContent() {
                   <Button
                     variant="primary"
                     size="lg"
-                    disabled={inviteBusy || !inviteEmail.trim()}
+                    disabled={
+                      inviteBusy || (!inviteResend && !inviteEmail.trim())
+                    }
                     onClick={() => {
-                      if (inviteTarget) {
-                        void createInviteLink(inviteTarget);
-                      }
+                      void submitInvite();
                     }}
                   >
-                    {inviteBusy ? "Creating…" : "Create Invite Link"}
+                    {inviteDelivery === "link"
+                      ? inviteBusy
+                        ? "Creating…"
+                        : "Create Link"
+                      : inviteBusy
+                        ? "Sending…"
+                        : "Send Invite"}
                   </Button>
                 </div>
               </>
@@ -1056,11 +1103,7 @@ function PeoplePageContent() {
 
       {canManage && inviteLinkResult ? (
         <Modal
-          title={
-            inviteLinkResult.resend
-              ? `Invite link · ${inviteLinkResult.name}`
-              : `Invite link · ${inviteLinkResult.name}`
-          }
+          title={`Invite link · ${inviteLinkResult.name}`}
           onClose={() => setInviteLinkResult(null)}
         >
           <div className="grid gap-3">
@@ -1069,8 +1112,7 @@ function PeoplePageContent() {
               <strong className="text-[var(--text)]">
                 {inviteLinkResult.email}
               </strong>
-              . Opening it sets their password. Prefer copying over Auth email
-              while testing (rate limits).
+              . Opening it sets their password.
             </p>
             <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] p-2">
               <p className="break-all font-mono text-xs leading-relaxed text-[var(--text)]">

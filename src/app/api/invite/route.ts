@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { requireManagerApiAccess } from "@/lib/api/require-manager";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+
+type InviteDelivery = "email" | "link";
 
 /**
  * Invite / resend for managers.
- * Uses generateLink so managers always get a one-time actionLink to copy
- * (needed under Auth email rate limits). Does not call inviteUserByEmail /
- * resetPasswordForEmail afterward — those mint a new token and invalidate
- * the returned link. Never logs actionLink.
  *
- * Body: { personId, email?, fullName?, resend?: boolean }
+ * delivery: "email" (default) — Auth sends via dashboard Custom SMTP
+ *   (inviteUserByEmail / resetPasswordForEmail).
+ * delivery: "link" — mint generateLink only; return actionLink to copy.
+ *   Do not mix: sending after generateLink invalidates the returned link.
+ *
+ * Body: { personId, email?, fullName?, resend?: boolean, delivery?: "email" | "link" }
  */
 export async function POST(request: Request) {
   try {
@@ -23,9 +28,12 @@ export async function POST(request: Request) {
       email?: string;
       fullName?: string;
       resend?: boolean;
+      delivery?: string;
     };
     const personId = body.personId?.trim();
     const resend = Boolean(body.resend);
+    const delivery: InviteDelivery =
+      body.delivery === "link" ? "link" : "email";
 
     if (!personId) {
       return NextResponse.json(
@@ -70,7 +78,6 @@ export async function POST(request: Request) {
         );
       }
 
-      // Do not issue recovery links for admins via manager invite UI.
       if (profile.role === "admin") {
         return NextResponse.json(
           { error: "Ask an admin to reset that account from Auth settings" },
@@ -79,20 +86,41 @@ export async function POST(request: Request) {
       }
 
       const email = profile.email.toLowerCase();
-      const { data: linkData, error: linkError } =
-        await admin.auth.admin.generateLink({
-          type: "recovery",
+
+      if (delivery === "link") {
+        const { data: linkData, error: linkError } =
+          await admin.auth.admin.generateLink({
+            type: "recovery",
+            email,
+            options: { redirectTo },
+          });
+        const actionLink = linkData?.properties?.action_link ?? null;
+        if (linkError || !actionLink) {
+          console.error(
+            "[invite] resend generateLink failed",
+            linkError?.message,
+          );
+          return NextResponse.json(
+            { error: "Could not create invite link" },
+            { status: 400 },
+          );
+        }
+        return NextResponse.json({
+          ok: true,
+          resend: true,
+          userId: profile.id,
           email,
-          options: { redirectTo },
+          delivery: "link",
+          emailSent: false,
+          actionLink,
         });
-      const actionLink = linkData?.properties?.action_link ?? null;
-      if (linkError || !actionLink) {
-        console.error(
-          "[invite] resend generateLink failed",
-          linkError?.message,
-        );
+      }
+
+      const sent = await sendRecoveryEmail(email, redirectTo);
+      if (!sent.ok) {
+        console.error("[invite] resend recovery email failed", sent.error);
         return NextResponse.json(
-          { error: "Could not create invite link" },
+          { error: sent.error || "Could not send invite email" },
           { status: 400 },
         );
       }
@@ -102,8 +130,8 @@ export async function POST(request: Request) {
         resend: true,
         userId: profile.id,
         email,
-        emailSent: false,
-        actionLink,
+        delivery: "email",
+        emailSent: true,
       });
     }
 
@@ -132,64 +160,114 @@ export async function POST(request: Request) {
     const displayName = fullName || person.name;
 
     let userId: string | undefined;
-    let actionLink: string | null = null;
     let linkedExisting = false;
+    let actionLink: string | null = null;
+    let emailSent = false;
 
-    const { data: inviteLink, error: inviteLinkError } =
-      await admin.auth.admin.generateLink({
-        type: "invite",
-        email,
-        options: {
+    if (delivery === "link") {
+      const { data: inviteLink, error: inviteLinkError } =
+        await admin.auth.admin.generateLink({
+          type: "invite",
+          email,
+          options: {
+            data: { full_name: displayName },
+            redirectTo,
+          },
+        });
+
+      if (!inviteLinkError && inviteLink?.user?.id) {
+        userId = inviteLink.user.id;
+        actionLink = inviteLink.properties?.action_link ?? null;
+      } else {
+        const listed = await admin.auth.admin.listUsers({ perPage: 1000 });
+        const existing = listed.data.users.find(
+          (u) => u.email?.toLowerCase() === email,
+        );
+        if (!existing) {
+          console.error(
+            "[invite] generateLink failed",
+            inviteLinkError?.message,
+          );
+          return NextResponse.json(
+            { error: "Could not create invite link" },
+            { status: 400 },
+          );
+        }
+        userId = existing.id;
+        linkedExisting = true;
+        const { data: recoveryLink, error: recoveryError } =
+          await admin.auth.admin.generateLink({
+            type: "recovery",
+            email,
+            options: { redirectTo },
+          });
+        actionLink = recoveryLink?.properties?.action_link ?? null;
+        if (recoveryError || !actionLink) {
+          console.error(
+            "[invite] recovery generateLink failed",
+            recoveryError?.message,
+          );
+          return NextResponse.json(
+            { error: "Could not create invite link" },
+            { status: 400 },
+          );
+        }
+      }
+
+      if (!userId || !actionLink) {
+        return NextResponse.json(
+          { error: "Could not create invite link" },
+          { status: 400 },
+        );
+      }
+    } else {
+      const { data: invited, error: inviteError } =
+        await admin.auth.admin.inviteUserByEmail(email, {
           data: { full_name: displayName },
           redirectTo,
-        },
-      });
-
-    if (!inviteLinkError && inviteLink?.user?.id) {
-      userId = inviteLink.user.id;
-      actionLink = inviteLink.properties?.action_link ?? null;
-    } else {
-      // Existing Auth user: issue recovery link instead.
-      const listed = await admin.auth.admin.listUsers({ perPage: 1000 });
-      const existing = listed.data.users.find(
-        (u) => u.email?.toLowerCase() === email,
-      );
-      if (!existing) {
-        console.error(
-          "[invite] generateLink failed",
-          inviteLinkError?.message,
-        );
-        return NextResponse.json(
-          { error: "Could not create invite link" },
-          { status: 400 },
-        );
-      }
-      userId = existing.id;
-      linkedExisting = true;
-      const { data: recoveryLink, error: recoveryError } =
-        await admin.auth.admin.generateLink({
-          type: "recovery",
-          email,
-          options: { redirectTo },
         });
-      actionLink = recoveryLink?.properties?.action_link ?? null;
-      if (recoveryError || !actionLink) {
-        console.error(
-          "[invite] recovery generateLink failed",
-          recoveryError?.message,
+
+      if (!inviteError && invited?.user?.id) {
+        userId = invited.user.id;
+        emailSent = true;
+      } else {
+        const listed = await admin.auth.admin.listUsers({ perPage: 1000 });
+        const existing = listed.data.users.find(
+          (u) => u.email?.toLowerCase() === email,
         );
+        if (!existing) {
+          console.error(
+            "[invite] inviteUserByEmail failed",
+            inviteError?.message,
+          );
+          return NextResponse.json(
+            {
+              error:
+                inviteError?.message ||
+                "Could not send invite email. Check Auth SMTP settings.",
+            },
+            { status: 400 },
+          );
+        }
+        userId = existing.id;
+        linkedExisting = true;
+        const sent = await sendRecoveryEmail(email, redirectTo);
+        if (!sent.ok) {
+          console.error("[invite] recovery email failed", sent.error);
+          return NextResponse.json(
+            { error: sent.error || "Could not send invite email" },
+            { status: 400 },
+          );
+        }
+        emailSent = true;
+      }
+
+      if (!userId) {
         return NextResponse.json(
-          { error: "Could not create invite link" },
+          { error: "Could not send invite email" },
           { status: 400 },
         );
       }
-    }
-
-    if (!userId || !actionLink) {
-      return NextResponse.json(
-        { error: "Could not create invite link" },
-        { status: 400 },
-      );
     }
 
     const { data: existingProfile } = await admin
@@ -253,8 +331,9 @@ export async function POST(request: Request) {
       userId,
       linkedExisting,
       resend: false,
-      emailSent: false,
-      actionLink,
+      delivery,
+      emailSent,
+      ...(actionLink ? { actionLink } : {}),
     });
   } catch (err) {
     console.error(err);
@@ -263,4 +342,27 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+/** Triggers Auth recovery email (uses dashboard Custom SMTP). */
+async function sendRecoveryEmail(
+  email: string,
+  redirectTo: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, error: "Supabase is not configured" };
+  }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) {
+    return { ok: false, error: "Supabase is not configured" };
+  }
+  const mailer = createClient(url, anon, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const { error } = await mailer.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
