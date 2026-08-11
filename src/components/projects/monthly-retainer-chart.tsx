@@ -104,7 +104,7 @@ function MonthBarColumn({
           style={{ height: `${heightPct}%` }}
         >
           <div
-            className="relative w-full overflow-hidden bg-[var(--accent)]"
+            className="relative w-full overflow-hidden border-b border-[var(--progress-approved-hatch)] bg-[var(--accent)]"
             style={{ height: `${futurePct}%` }}
           >
             <div className="absolute inset-0" style={hatchStyle} aria-hidden />

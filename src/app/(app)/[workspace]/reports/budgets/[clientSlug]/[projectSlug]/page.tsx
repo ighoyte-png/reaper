@@ -36,7 +36,6 @@ import {
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   contractorCommitted,
-  isProjectBasisContractor,
 } from "@/lib/domain/contractor";
 import { toDateKey } from "@/lib/domain/dates";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
@@ -190,21 +189,26 @@ export default function ProjectBudgetDetailPage() {
       }
     }
     return sortPeopleByName(
-      state.people.filter(
-        (p) => ids.has(p.id) && !isProjectBasisContractor(p),
-      ),
+      state.people.filter((p) => ids.has(p.id) && !p.is_contractor),
     );
   }, [project, state.assignments, state.tasks, state.people]);
 
   const contractorRoster = useMemo(() => {
     if (!project) return [];
-    const ids = new Set(projectMembers.map((m) => m.person_id));
+    const ids = new Set<string>();
+    for (const m of projectMembers) ids.add(m.person_id);
+    for (const a of state.assignments) {
+      if (a.project_id === project.id) ids.add(a.person_id);
+    }
+    for (const t of state.tasks) {
+      if (t.project_id === project.id && t.assignee_person_id) {
+        ids.add(t.assignee_person_id);
+      }
+    }
     return sortPeopleByName(
-      state.people.filter(
-        (p) => ids.has(p.id) && isProjectBasisContractor(p),
-      ),
+      state.people.filter((p) => ids.has(p.id) && p.is_contractor),
     );
-  }, [project, projectMembers, state.people]);
+  }, [project, projectMembers, state.assignments, state.tasks, state.people]);
 
   const periodRange = useMemo(() => {
     if (periodMode === "lifetime" && project) {
@@ -286,19 +290,19 @@ export default function ProjectBudgetDetailPage() {
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
         moneyAmount: null as number | null,
+        dashUsedPlanned: false,
         is_contractor: person.is_contractor,
       };
     });
     const contractors = contractorRoster.map((person) => {
       const member = membersByPerson.get(person.id);
       const mode = member?.contractor_mode ?? null;
-      const isCommit =
-        mode === "fixed_fee" ||
-        mode === "hours" ||
-        (mode == null && person.hide_from_schedule);
-      if (isCommit) {
+      const isFixedFee = mode === "fixed_fee";
+      const isFixedHours =
+        mode === "hours" || (mode == null && person.hide_from_schedule);
+      if (isFixedFee || isFixedHours) {
         const committed = contractorCommitted(person, member);
-        if (mode === "fixed_fee") {
+        if (isFixedFee) {
           return {
             id: person.id,
             name: person.name,
@@ -308,6 +312,7 @@ export default function ProjectBudgetDetailPage() {
             plannedHours: 0,
             totalHours: 0,
             moneyAmount: committed.amount,
+            dashUsedPlanned: true,
             is_contractor: true,
           };
         }
@@ -316,10 +321,11 @@ export default function ProjectBudgetDetailPage() {
           name: person.name,
           avatar_url: person.avatar_url,
           avatar_attachment_id: person.avatar_attachment_id,
-          usedHours: committed.hours,
-          plannedHours: committed.hours,
+          usedHours: 0,
+          plannedHours: 0,
           totalHours: committed.hours,
           moneyAmount: null as number | null,
+          dashUsedPlanned: true,
           is_contractor: true,
         };
       }
@@ -339,6 +345,7 @@ export default function ProjectBudgetDetailPage() {
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
         moneyAmount: null as number | null,
+        dashUsedPlanned: false,
         is_contractor: true,
       };
     });
@@ -958,10 +965,12 @@ function TeamRow({
     plannedHours: number;
     totalHours: number;
     moneyAmount: number | null;
+    dashUsedPlanned?: boolean;
     is_contractor: boolean;
   };
 }) {
   const money = row.moneyAmount != null;
+  const dashPartial = Boolean(row.dashUsedPlanned) || money;
   return (
     <tr className="border-b border-[var(--border)]/60">
       <td className="py-2 pr-2">
@@ -978,10 +987,10 @@ function TeamRow({
         </div>
       </td>
       <td className="py-2 text-right tabular-nums">
-        {money ? "—" : formatHours(row.usedHours)}
+        {dashPartial ? "—" : formatHours(row.usedHours)}
       </td>
       <td className="py-2 text-right tabular-nums">
-        {money ? "—" : formatHours(row.plannedHours)}
+        {dashPartial ? "—" : formatHours(row.plannedHours)}
       </td>
       <td className="py-2 text-right tabular-nums">
         {money ? formatMoney(row.moneyAmount!) : formatHours(row.totalHours)}
