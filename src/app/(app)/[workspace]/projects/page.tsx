@@ -126,7 +126,7 @@ function ProjectsPageContent() {
     isPublicShare,
     myPerson,
   } = useData();
-  const { burns } = useProjectBurnsMap();
+  const { burns, ready: burnsReady } = useProjectBurnsMap();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
     useViewAs();
   const canManage = effectiveCanManage;
@@ -665,6 +665,7 @@ function ProjectsPageContent() {
                             href={projectHref(project)}
                             showManager={showManagers}
                             burn={burns.get(project.id)}
+                            loading={!burnsReady && !project.sandbox_mode}
                           />
                         ) : (
                           <ProjectCard
@@ -673,6 +674,7 @@ function ProjectsPageContent() {
                             href={projectHref(project)}
                             showManager={showManagers}
                             burn={burns.get(project.id)}
+                            loading={!burnsReady && !project.sandbox_mode}
                           />
                         ),
                       )}
@@ -870,11 +872,13 @@ function ProjectListRow({
   href,
   showManager,
   burn: burnProp,
+  loading = false,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
   burn?: ReturnType<typeof budgetBurn>;
+  loading?: boolean;
 }) {
   const { state } = useData();
   const isSandbox = Boolean(project.sandbox_mode);
@@ -894,6 +898,7 @@ function ProjectListRow({
         "flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--row-hover)]",
         project.status === "archived" && "opacity-60",
       )}
+      aria-busy={loading || undefined}
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -910,7 +915,16 @@ function ProjectListRow({
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--text-muted)]">
           {overallPct != null ? <span>{overallPct}% progress</span> : null}
-          {!isSandbox ? <span>{burn.totalHours}h</span> : null}
+          {!isSandbox ? (
+            loading ? (
+              <span
+                aria-hidden
+                className="inline-block h-3 w-12 animate-pulse rounded bg-[var(--bg-elevated)]"
+              />
+            ) : (
+              <span>{burn.totalHours}h</span>
+            )
+          ) : null}
           {manager ? <span className="truncate">{manager.name}</span> : null}
         </div>
       </div>
@@ -923,11 +937,13 @@ function ProjectCard({
   href,
   showManager,
   burn: burnProp,
+  loading = false,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
   burn?: ReturnType<typeof budgetBurn>;
+  loading?: boolean;
 }) {
   const { state } = useData();
   const isSandbox = Boolean(project.sandbox_mode);
@@ -948,6 +964,7 @@ function ProjectCard({
         "flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4 transition-colors hover:bg-[var(--row-hover)]",
         project.status === "archived" && "opacity-60",
       )}
+      aria-busy={loading || undefined}
     >
       <div className="mb-3 flex min-w-0 items-center gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
@@ -967,6 +984,16 @@ function ProjectCard({
         {isSandbox ? (
           <div className="flex justify-center px-2 py-1">
             <SandboxIcon className="w-full max-w-[9rem]" />
+          </div>
+        ) : loading ? (
+          <div className="space-y-3" aria-hidden>
+            {overallPct != null ? (
+              <div className="h-8 animate-pulse rounded bg-[var(--bg-elevated)]" />
+            ) : null}
+            <div className="space-y-2">
+              <div className="h-3 w-24 animate-pulse rounded bg-[var(--bg-elevated)]" />
+              <div className="h-3.5 w-full animate-pulse rounded-full bg-[var(--bg-elevated)]" />
+            </div>
           </div>
         ) : (
           <>

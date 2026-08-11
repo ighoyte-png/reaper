@@ -41,6 +41,63 @@ function forecastFromBurn(
   };
 }
 
+function Pulse({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "animate-pulse rounded bg-[var(--bg-elevated)]",
+        className,
+      )}
+    />
+  );
+}
+
+/** Skeleton matching BudgetCard layout while org burns/month bars load. */
+export function BudgetCardSkeleton({
+  showName = true,
+  monthly = false,
+}: {
+  showName?: boolean;
+  monthly?: boolean;
+}) {
+  return (
+    <div
+      className={panelClass({
+        className: "flex flex-col",
+      })}
+      aria-busy="true"
+      aria-label="Loading budget"
+    >
+      <div
+        className={cn(
+          "mb-3 flex min-w-0 items-center gap-2",
+          !showName && "justify-end",
+        )}
+      >
+        {showName ? <Pulse className="h-4 w-40 max-w-[55%]" /> : null}
+        <Pulse className="ml-auto h-5 w-16 shrink-0" />
+      </div>
+      <div className="mt-auto space-y-3">
+        <div className="space-y-2">
+          <Pulse className="h-3 w-28" />
+          {monthly ? (
+            <Pulse className="h-24 w-full" />
+          ) : (
+            <Pulse className="h-3.5 w-full rounded-full" />
+          )}
+        </div>
+        <div className="space-y-2 border-t border-[var(--border)] pt-3">
+          <Pulse className="h-3 w-16" />
+          <Pulse className="h-3 w-full" />
+          <Pulse className="h-3 w-full" />
+          <Pulse className="h-3 w-48 max-w-full" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BudgetCard({
   project,
   href,
@@ -53,28 +110,12 @@ export function BudgetCard({
   const { state, dataStatus } = useData();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
   const year = new Date().getFullYear();
-  const { barsByProject } = useMonthlyRetainerYearBarsMap(year);
+  const { barsByProject, ready: barsReady } =
+    useMonthlyRetainerYearBarsMap(year);
   const membersForProject = state.project_members.filter(
     (m) => m.project_id === project.id,
   );
   const projectReady = dataStatus.projects[project.id] === "ready";
-  const burn =
-    burns.get(project.id) ??
-    (burnsReady
-      ? budgetBurn(
-          project,
-          state.assignments,
-          state.people,
-          false,
-          new Date(),
-          membersForProject,
-        )
-      : // Avoid fee-only/zero-assignment flashes while RPC loads.
-        budgetBurn(project, [], [], false, new Date(), []));
-  const health = budgetHealth(burn);
-  const hoursFx = projectReady
-    ? projectHoursForecast(project, state.assignments, state.people)
-    : forecastFromBurn(project, burn);
   const mode = normalizeBudgetMode(
     project.budget_mode,
     project.budget_hours,
@@ -82,6 +123,43 @@ export function BudgetCard({
   );
   const isMonthlyHours =
     mode === "hours" && Boolean(project.budget_monthly_reset);
+  const metricsLoading =
+    !burnsReady ||
+    (isMonthlyHours && !projectReady && !barsReady);
+
+  if (metricsLoading) {
+    const skeleton = (
+      <BudgetCardSkeleton showName={showName} monthly={isMonthlyHours} />
+    );
+    if (href) {
+      return (
+        <Link
+          id={`project-card-${project.id}`}
+          href={href}
+          className="block transition-opacity hover:opacity-90"
+          aria-busy="true"
+        >
+          {skeleton}
+        </Link>
+      );
+    }
+    return skeleton;
+  }
+
+  const burn =
+    burns.get(project.id) ??
+    budgetBurn(
+      project,
+      state.assignments,
+      state.people,
+      false,
+      new Date(),
+      membersForProject,
+    );
+  const health = budgetHealth(burn);
+  const hoursFx = projectReady
+    ? projectHoursForecast(project, state.assignments, state.people)
+    : forecastFromBurn(project, burn);
   const showHoursMetrics = mode === "hours";
   const showAmountMetrics = mode === "amount";
   const yearBars = isMonthlyHours

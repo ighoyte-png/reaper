@@ -117,7 +117,7 @@ function ReportsPageContent() {
     mode,
     myPerson,
   } = useData();
-  const { burns } = useProjectBurnsMap();
+  const { burns, ready: burnsReady } = useProjectBurnsMap();
   const { effectiveCanManage, effectivePersonId } = useViewAs();
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
@@ -476,6 +476,7 @@ function ReportsPageContent() {
                     data={budgets}
                     plannedHours={plannedHoursAcrossSchedule}
                     budgetHref={budgetHref}
+                    loading={!burnsReady}
                   />
                 }
               />
@@ -782,6 +783,7 @@ function BudgetsOverview({
   data,
   plannedHours,
   budgetHref,
+  loading = false,
 }: {
   data: {
     tracked: number;
@@ -799,7 +801,44 @@ function BudgetsOverview({
   };
   plannedHours: number;
   budgetHref: (project: Pick<Project, "client_id" | "slug">) => string;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden"
+        aria-busy="true"
+        aria-label="Loading budgets"
+      >
+        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1.5">
+          {Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="inline-flex items-center gap-1.5">
+              <div className="h-5 w-7 animate-pulse rounded bg-[var(--bg-elevated)]" />
+              <div className="h-3 w-16 animate-pulse rounded bg-[var(--bg-elevated)]" />
+            </div>
+          ))}
+        </div>
+        <div className="min-h-0 min-w-0 flex-1 space-y-2 overflow-hidden">
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className="space-y-1.5 px-0.5 py-0.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="h-3 w-40 max-w-[60%] animate-pulse rounded bg-[var(--bg-elevated)]" />
+                <div className="h-3 w-8 animate-pulse rounded bg-[var(--bg-elevated)]" />
+              </div>
+              <div className="h-3.5 w-full animate-pulse rounded-full bg-[var(--bg-elevated)]" />
+            </div>
+          ))}
+        </div>
+        <div className="shrink-0 border-t border-[var(--border)] pt-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="h-3 w-48 max-w-[70%] animate-pulse rounded bg-[var(--bg-elevated)]" />
+            <div className="h-3 w-12 animate-pulse rounded bg-[var(--bg-elevated)]" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden">
       <div className="min-w-0 shrink-0">
