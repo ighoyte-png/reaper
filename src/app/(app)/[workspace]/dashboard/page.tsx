@@ -1908,11 +1908,8 @@ function TodaySchedule({
     ? "Today"
     : format(parseISO(scheduleDayKey), "EEEE, MMMM d");
 
-  const slices = useMemo(() => {
-    const byProject = new Map<
-      string,
-      { projectId: string; hours: number; color: string; label: string }
-    >();
+  const slices = useMemo((): SchedulePieSlice[] => {
+    const byProject = new Map<string, SchedulePieSlice>();
     for (const a of assignments) {
       const project = projects.find((p) => p.id === a.project_id);
       const client = project?.client_id
