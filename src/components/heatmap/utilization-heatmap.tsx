@@ -81,6 +81,7 @@ export function UtilizationHeatmap({
   personIds,
   showLegend = true,
   showTeamAverage = false,
+  teamAverageLabel = "Team Utilization",
 }: {
   weeks?: number;
   /** When set, only these people are shown (member / View As scoping). */
@@ -88,6 +89,8 @@ export function UtilizationHeatmap({
   showLegend?: boolean;
   /** Footer row with combined booked/available across all shown people. */
   showTeamAverage?: boolean;
+  /** Label for the pooled utilization footer row. */
+  teamAverageLabel?: string;
 }) {
   const {
     state,
@@ -268,7 +271,7 @@ export function UtilizationHeatmap({
             <div className="contents">
               <div className="sticky left-0 z-[1] flex items-center border-t-4 border-[var(--border)] bg-[var(--bg)] px-3 py-2.5">
                 <div className="truncate text-sm font-semibold leading-tight">
-                  Team Utilization
+                  {teamAverageLabel}
                 </div>
               </div>
               {anchors.map((anchor) => {

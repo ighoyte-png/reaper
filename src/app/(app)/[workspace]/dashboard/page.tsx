@@ -635,36 +635,30 @@ export default function DashboardPage() {
   const teamUtilization = useMemo(() => {
     const people = utilizationPeople;
     if (people.length === 0) {
-      return { avg: 0, thisWeekBooked: 0, thisWeekAvailable: 0 };
+      return { rate: 0, thisWeekBooked: 0, thisWeekAvailable: 0 };
     }
 
-    let sum = 0;
-    let n = 0;
     let thisWeekBooked = 0;
     let thisWeekAvailable = 0;
     for (const person of people) {
-      const booked = personBookedHoursInRange(
+      thisWeekBooked += personBookedHoursInRange(
         person.id,
         start,
         end,
         state.assignments,
         state.leave_days,
       );
-      const available = availableHoursInRange(
+      thisWeekAvailable += availableHoursInRange(
         person,
         start,
         end,
         state.leave_days,
       );
-      thisWeekBooked += booked;
-      thisWeekAvailable += available;
-      if (available <= 0) continue;
-      sum += utilizationPct(booked, available);
-      n += 1;
     }
 
     return {
-      avg: n > 0 ? sum / n : 0,
+      // Pooled hours (matches reports/utilization Team|Pod row), not mean of %.
+      rate: utilizationPct(thisWeekBooked, thisWeekAvailable),
       thisWeekBooked,
       thisWeekAvailable,
     };
@@ -1122,7 +1116,7 @@ export default function DashboardPage() {
                         capacityLevelTextClass(teamUtilizationLevel),
                       )}
                     >
-                      {Math.round(teamUtilization.avg)}% Avg
+                      {Math.round(teamUtilization.rate)}%
                     </div>
                     <SchedulePie
                       compact

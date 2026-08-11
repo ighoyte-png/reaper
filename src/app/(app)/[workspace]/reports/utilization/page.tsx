@@ -171,11 +171,16 @@ function UtilizationReportContent() {
 
         <section className="space-y-3">
           <h2 className="text-sm font-semibold">
-            Team Utilization - Next 8 Weeks
+            {podFilter === "all"
+              ? "Team Utilization - Next 8 Weeks"
+              : "Pod Utilization - Next 8 Weeks"}
           </h2>
           <UtilizationHeatmap
             weeks={8}
             showTeamAverage
+            teamAverageLabel={
+              podFilter === "all" ? "Team Utilization" : "Pod Utilization"
+            }
             personIds={scopedPersonIds}
           />
         </section>
