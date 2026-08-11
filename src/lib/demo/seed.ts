@@ -24,6 +24,17 @@ export function createDemoSeed(): DemoState {
       share_enabled: false,
       share_token: null,
     },
+    memberships: [
+      {
+        organization_id: ORG_ID,
+        role: "admin",
+        org: {
+          id: ORG_ID,
+          name: "Northwind Studio",
+          slug: "northwind",
+        },
+      },
+    ],
     profiles: [
       {
         id: "profile-admin",

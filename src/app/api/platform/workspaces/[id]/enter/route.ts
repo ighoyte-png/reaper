@@ -34,10 +34,11 @@ export async function POST(_request: Request, ctx: Ctx) {
     const { error } = await admin
       .from("profiles")
       .update({
-        organization_id: id,
-        role: "admin",
         email,
         full_name: fullName,
+        // Mirror active org — do not wipe other memberships.
+        organization_id: id,
+        role: "admin",
       })
       .eq("id", user.id);
     if (error) {
@@ -54,6 +55,34 @@ export async function POST(_request: Request, ctx: Ctx) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+  }
+
+  const { error: memError } = await admin
+    .from("organization_memberships")
+    .upsert(
+      {
+        user_id: user.id,
+        organization_id: id,
+        role: "admin",
+      },
+      { onConflict: "user_id,organization_id" },
+    );
+  if (memError) {
+    return NextResponse.json({ error: memError.message }, { status: 500 });
+  }
+
+  const { error: activeError } = await admin
+    .from("user_active_organization")
+    .upsert(
+      {
+        user_id: user.id,
+        organization_id: id,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    );
+  if (activeError) {
+    return NextResponse.json({ error: activeError.message }, { status: 500 });
   }
 
   return NextResponse.json({

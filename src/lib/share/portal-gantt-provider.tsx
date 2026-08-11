@@ -158,6 +158,7 @@ export function portalPayloadToDemoState(
       slug: "portal",
       share_enabled: false,
     },
+    memberships: [],
     sessionProfileId: null,
     profiles: [],
     people,
@@ -254,6 +255,7 @@ function buildPortalGanttContext(
     updateOrganizationName: async () => {},
     updateOrganizationSlug: async () => {},
     updateProfileRole: async () => {},
+    switchWorkspace: async () => {},
     upsertProject: async () => state.projects[0]!,
     setProjectMembers: async () => {},
     clearProjectSandboxTrackedData: async () => ({

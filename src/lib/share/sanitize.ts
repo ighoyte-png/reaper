@@ -84,6 +84,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
   return {
     ...state,
     profiles: [],
+    memberships: [],
     sessionProfileId: null,
     unread_bulletin_ids: [],
     dismissed_bulletin_ids: [],

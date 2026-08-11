@@ -187,6 +187,20 @@ async function main() {
     ]);
     if (profileErr) throw new Error(`seed profiles: ${profileErr.message}`);
 
+    const { error: memErr } = await admin.from("organization_memberships").insert([
+      { user_id: userAAdmin, organization_id: orgAId, role: "admin" },
+      { user_id: userAMember, organization_id: orgAId, role: "member" },
+      { user_id: userBAdmin, organization_id: orgBId, role: "admin" },
+    ]);
+    if (memErr) throw new Error(`seed memberships: ${memErr.message}`);
+
+    const { error: activeErr } = await admin.from("user_active_organization").insert([
+      { user_id: userAAdmin, organization_id: orgAId },
+      { user_id: userAMember, organization_id: orgAId },
+      { user_id: userBAdmin, organization_id: orgBId },
+    ]);
+    if (activeErr) throw new Error(`seed active org: ${activeErr.message}`);
+
     const { error: peopleErr } = await admin.from("people").insert([
       {
         id: personAAdminId,
@@ -393,6 +407,84 @@ async function main() {
         name: "member cannot see org B projects",
         ok: !error && (data?.length ?? 0) === 0,
         detail: error?.message ?? (data?.length ? `saw ${data.length}` : undefined),
+      });
+    }
+
+    // Multi-membership: invite existing Auth user into a second org.
+    {
+      const { error: memUpsertErr } = await admin
+        .from("organization_memberships")
+        .upsert(
+          {
+            user_id: userAMember,
+            organization_id: orgBId,
+            role: "member",
+          },
+          { onConflict: "user_id,organization_id" },
+        );
+      results.push({
+        name: "existing auth user can join second org membership",
+        ok: !memUpsertErr,
+        detail: memUpsertErr?.message,
+      });
+
+      const dual = await authedClient(url, anon, emailAMember, PASSWORD);
+      const { data: switched, error: switchErr } = await dual.rpc(
+        "switch_organization",
+        { p_organization_id: orgBId },
+      );
+      results.push({
+        name: "switch_organization updates active org",
+        ok: !switchErr && switched?.id === orgBId,
+        detail: switchErr?.message ?? (switched ? `id=${switched.id}` : "no org"),
+      });
+
+      const { data: orgBProjects, error: orgBErr } = await dual
+        .from("projects")
+        .select("id")
+        .eq("organization_id", orgBId);
+      // org B may have 0 projects; visibility must not error and must not leak A-only after switch
+      const { data: orgAProjects, error: orgAErr } = await dual
+        .from("projects")
+        .select("id")
+        .eq("organization_id", orgAId);
+      results.push({
+        name: "after switch, RLS scoped to new active org",
+        ok:
+          !orgBErr &&
+          !orgAErr &&
+          (orgAProjects?.length ?? 0) === 0 &&
+          (orgBProjects?.length ?? 0) === 0,
+        detail:
+          orgBErr?.message ||
+          orgAErr?.message ||
+          (orgAProjects?.length
+            ? `still saw ${orgAProjects.length} org-A project(s)`
+            : undefined),
+      });
+
+      // Soft-delete style: remove only the second membership; Auth user remains.
+      const { error: dropMemErr } = await admin
+        .from("organization_memberships")
+        .delete()
+        .eq("user_id", userAMember)
+        .eq("organization_id", orgBId);
+      const { count: remaining } = await admin
+        .from("organization_memberships")
+        .select("organization_id", { count: "exact", head: true })
+        .eq("user_id", userAMember);
+      results.push({
+        name: "removing one membership keeps other memberships",
+        ok: !dropMemErr && (remaining ?? 0) === 1,
+        detail:
+          dropMemErr?.message ??
+          `remaining memberships=${remaining ?? 0}`,
+      });
+
+      await admin.from("user_active_organization").upsert({
+        user_id: userAMember,
+        organization_id: orgAId,
+        updated_at: new Date().toISOString(),
       });
     }
 

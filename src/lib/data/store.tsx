@@ -73,7 +73,9 @@ import {
   loadLeaveForRange,
   loadMentionComments,
   loadOrgTasks,
+  loadOrgBootstrap,
   loadProjectData,
+  fetchMemberships,
   mapAssignment,
   rpcOrgForecast,
   rpcOrgTaskStats,
@@ -99,6 +101,7 @@ import {
   updateOrganizationNameRow,
   updateOrganizationSlugRow,
   updateProfileRoleRow,
+  switchOrganizationRpc,
   upsertPodRow,
   deletePodRow,
   setPodMembersRows,
@@ -119,7 +122,9 @@ import {
 } from "@/lib/supabase/api";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { usePathname, useRouter } from "next/navigation";
 import { canManage, isAdmin, personForProfile } from "@/lib/auth/roles";
+import { workspacePathAfterSwitch } from "@/lib/domain/workspace-memberships";
 import { clearViewAsStorage } from "@/lib/view-as-storage";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
@@ -410,6 +415,7 @@ function loadDemoState(): DemoState {
 function emptySupabaseState(): DemoState {
   return {
     organization: { id: "", name: "", slug: "" },
+    memberships: [],
     profiles: [],
     clients: [],
     projects: [],
@@ -499,6 +505,8 @@ interface DataContextValue {
   updateOrganizationSlug: (slug: string) => Promise<void>;
   /** Admin-only: change a profile's role (member / manager / admin). */
   updateProfileRole: (profileId: string, role: Role) => Promise<void>;
+  /** Switch active workspace by org id or slug; reloads bootstrap and navigates. */
+  switchWorkspace: (slugOrId: string, options?: { preservePath?: boolean }) => Promise<void>;
   upsertProject: (
     project: Omit<Project, "organization_id"> & { organization_id?: string },
   ) => Promise<Project>;
@@ -744,6 +752,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const mode: "demo" | "supabase" = isSupabaseConfigured()
     ? "supabase"
     : "demo";
+  const router = useRouter();
+  const pathname = usePathname();
   const [state, setState] = useState<DemoState>(() =>
     mode === "demo" ? createDemoSeed() : emptySupabaseState(),
   );
@@ -836,13 +846,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Existing profile → normal workspace load (may also be a platform admin).
-    const { data: existingProfile, error: profileLookupError } = await client
-      .from("profiles")
-      .select("id")
-      .eq("id", user.id)
-      .maybeSingle();
-    if (profileLookupError) throw profileLookupError;
+    // Existing membership → normal workspace load (may also be a platform admin).
+    const { data: existingMembership, error: membershipLookupError } =
+      await client
+        .from("organization_memberships")
+        .select("organization_id")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+    if (membershipLookupError) throw membershipLookupError;
 
     async function applyWorkspace(workspace: DemoState) {
       const personId =
@@ -907,14 +919,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    if (existingProfile) {
+    if (existingMembership) {
       setPlatformOnly(false);
       const workspace = await fetchWorkspace(client, user.id);
       await applyWorkspace(workspace);
       return;
     }
 
-    // No profile: allowlisted platform admins stay workspace-free.
+    // No membership: allowlisted platform admins stay workspace-free.
     let isPlatformAdmin = false;
     try {
       const meRes = await fetch("/api/platform/me");
@@ -2245,8 +2257,62 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }));
         if (mode === "supabase" && supabaseRef.current) {
           await runRemote(() =>
-            updateProfileRoleRow(supabaseRef.current!, profileId, role),
+            updateProfileRoleRow(
+              supabaseRef.current!,
+              profileId,
+              role,
+              state.organization.id,
+            ),
           );
+        }
+      },
+      switchWorkspace: async (slugOrId, options) => {
+        if (mode !== "supabase") return;
+        const target =
+          state.memberships.find(
+            (m) =>
+              m.organization_id === slugOrId || m.org.slug === slugOrId,
+          ) ?? null;
+        if (!target) {
+          throw new Error("You are not a member of that workspace");
+        }
+        const client = supabaseRef.current ?? createClient();
+        supabaseRef.current = client;
+
+        if (target.organization_id !== state.organization.id) {
+          await switchOrganizationRpc(client, target.organization_id);
+          const {
+            data: { user },
+          } = await client.auth.getUser();
+          const userId = user?.id ?? state.sessionProfileId;
+          if (!userId) {
+            throw new Error("Not signed in");
+          }
+          const [workspace, memberships] = await Promise.all([
+            loadOrgBootstrap(client, target.organization_id, userId),
+            fetchMemberships(client, userId),
+          ]);
+          orgTasksScopeRef.current = { all: false, personIds: new Set() };
+          mentionCommentsLoadedRef.current = new Set();
+          mentionCommentByIdRef.current = new Map();
+          mentionTaskByIdRef.current = new Map();
+          projectReadyRef.current = new Set();
+          scheduleRangeLoadedRef.current = null;
+          setOrgTasksStatus("idle");
+          setMentionCommentsStatus("idle");
+          setProjectDataStatus({});
+          setScheduleRangeLoaded(null);
+          setState({ ...workspace, memberships });
+        }
+
+        const currentSlug = state.organization.slug;
+        const nextSlug = target.org.slug;
+        let dest = `/${nextSlug}/dashboard`;
+        if (options?.preservePath && pathname && currentSlug) {
+          dest = workspacePathAfterSwitch(pathname, currentSlug, nextSlug);
+        }
+        if (pathname !== dest) {
+          router.replace(dest);
         }
       },
       upsertClient: (client) => {
@@ -4547,6 +4613,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       fetchPersonUtilizationWeeksRpc,
       fetchOrgForecastRpc,
       fetchOrgTaskStatsRpc,
+      router,
+      pathname,
     ],
   );
 

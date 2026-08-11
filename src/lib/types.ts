@@ -47,6 +47,17 @@ export interface Profile {
   role: Role;
 }
 
+/** Auth user's membership in a workspace (role is per-org). */
+export interface OrganizationMembership {
+  organization_id: string;
+  role: Role;
+  org: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+}
+
 export interface Client {
   id: string;
   organization_id: string;
@@ -426,6 +437,8 @@ export interface LeaveDay {
 
 export interface DemoState {
   organization: Organization;
+  /** Workspaces the signed-in user belongs to (supabase); demo uses the current org. */
+  memberships: OrganizationMembership[];
   profiles: Profile[];
   clients: Client[];
   projects: Project[];

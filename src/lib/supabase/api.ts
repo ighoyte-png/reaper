@@ -14,6 +14,7 @@ import type {
   LeaveDay,
   Milestone,
   Organization,
+  OrganizationMembership,
   Person,
   Profile,
   Project,
@@ -449,6 +450,7 @@ export function mapLeaveDay(row: Record<string, unknown>): LeaveDay {
 function emptyWorkspace(): DemoState {
   return {
     organization: { id: "", name: "", slug: "" },
+    memberships: [],
     profiles: [],
     clients: [],
     projects: [],
@@ -479,18 +481,75 @@ function emptyWorkspace(): DemoState {
   };
 }
 
+function mapMembershipRow(
+  row: Record<string, unknown>,
+): OrganizationMembership | null {
+  const organizationId = String(row.organization_id ?? "");
+  if (!organizationId) return null;
+  const orgRaw = row.organizations ?? row.org;
+  const org =
+    orgRaw && typeof orgRaw === "object"
+      ? (orgRaw as Record<string, unknown>)
+      : null;
+  const id = String(org?.id ?? organizationId);
+  const name = String(org?.name ?? "");
+  const slug = String(org?.slug ?? "");
+  if (!slug) return null;
+  return {
+    organization_id: organizationId,
+    role: row.role as Profile["role"],
+    org: { id, name, slug },
+  };
+}
+
+export async function fetchMemberships(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<OrganizationMembership[]> {
+  const { data, error } = await supabase
+    .from("organization_memberships")
+    .select("organization_id, role, organizations(id, name, slug)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? [])
+    .map((row) => mapMembershipRow(row as Record<string, unknown>))
+    .filter((m): m is OrganizationMembership => Boolean(m));
+}
+
+export async function switchOrganizationRpc(
+  supabase: SupabaseClient,
+  organizationId: string,
+): Promise<Organization> {
+  const { data, error } = await supabase.rpc("switch_organization", {
+    p_organization_id: organizationId,
+  });
+  if (error) throw error;
+  const org = data as Organization;
+  return {
+    id: String(org.id),
+    name: String(org.name ?? ""),
+    slug: String(org.slug ?? ""),
+    disabled_at: (org as { disabled_at?: string | null }).disabled_at ?? null,
+    share_enabled: Boolean(
+      (org as { share_enabled?: boolean }).share_enabled,
+    ),
+  };
+}
+
 /** Create org/profile if the auth user has none (common after email confirm). */
 export async function ensureProfileForUser(
   supabase: SupabaseClient,
   user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
 ): Promise<boolean> {
-  const { data: profile, error } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("id", user.id)
+  const { data: membership, error: memError } = await supabase
+    .from("organization_memberships")
+    .select("organization_id")
+    .eq("user_id", user.id)
+    .limit(1)
     .maybeSingle();
-  if (error) throw error;
-  if (profile) return false;
+  if (memError) throw memError;
+  if (membership) return false;
 
   const meta = user.user_metadata ?? {};
   const fullName =
@@ -598,6 +657,7 @@ function attachCommentExtras(
 export async function fetchWorkspace(
   supabase: SupabaseClient,
   userId: string,
+  options?: { organizationId?: string; slug?: string },
 ): Promise<DemoState> {
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
@@ -610,8 +670,52 @@ export async function fetchWorkspace(
     return { ...emptyWorkspace(), sessionProfileId: null };
   }
 
-  const orgId = profile.organization_id as string;
-  return loadOrgBootstrap(supabase, orgId, userId);
+  const memberships = await fetchMemberships(supabase, userId);
+  if (memberships.length === 0) {
+    return {
+      ...emptyWorkspace(),
+      sessionProfileId: userId,
+      profiles: [
+        {
+          id: String(profile.id),
+          organization_id: String(profile.organization_id ?? ""),
+          email: String(profile.email ?? ""),
+          full_name: String(profile.full_name ?? ""),
+          role: profile.role as Profile["role"],
+        },
+      ],
+      memberships: [],
+    };
+  }
+
+  let targetOrgId = options?.organizationId ?? null;
+  if (!targetOrgId && options?.slug) {
+    const bySlug = memberships.find((m) => m.org.slug === options.slug);
+    targetOrgId = bySlug?.organization_id ?? null;
+  }
+  if (!targetOrgId) {
+    const { data: activeOrgId } = await supabase.rpc("current_org_id");
+    if (activeOrgId && memberships.some((m) => m.organization_id === activeOrgId)) {
+      targetOrgId = String(activeOrgId);
+    }
+  }
+  if (!targetOrgId) {
+    targetOrgId = memberships[0]!.organization_id;
+  }
+
+  const membership = memberships.find((m) => m.organization_id === targetOrgId);
+  if (!membership) {
+    targetOrgId = memberships[0]!.organization_id;
+  }
+
+  // Activate URL/home org so RLS current_org_id() matches bootstrap scope.
+  const { data: activeBefore } = await supabase.rpc("current_org_id");
+  if (String(activeBefore ?? "") !== targetOrgId) {
+    await switchOrganizationRpc(supabase, targetOrgId!);
+  }
+
+  const workspace = await loadOrgBootstrap(supabase, targetOrgId!, userId);
+  return { ...workspace, memberships };
 }
 
 /** Thin shell: org, people, clients, projects, templates — no tasks/assignments. */
@@ -622,7 +726,7 @@ export async function loadOrgBootstrap(
 ): Promise<DemoState> {
   const [
     orgRes,
-    profilesRes,
+    membershipsRes,
     clientsRes,
     projectsRes,
     peopleRes,
@@ -642,7 +746,10 @@ export async function loadOrgBootstrap(
     templateTasksRes,
   ] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", orgId).single(),
-    supabase.from("profiles").select("*").eq("organization_id", orgId),
+    supabase
+      .from("organization_memberships")
+      .select("user_id, role, organization_id")
+      .eq("organization_id", orgId),
     supabase.from("clients").select("*").eq("organization_id", orgId),
     supabase.from("projects").select("*").eq("organization_id", orgId),
     supabase
@@ -703,9 +810,24 @@ export async function loadOrgBootstrap(
     supabase.from("template_tasks").select("*").eq("organization_id", orgId),
   ]);
 
-  for (const res of [orgRes, profilesRes, clientsRes, projectsRes, peopleRes]) {
+  for (const res of [orgRes, membershipsRes, clientsRes, projectsRes, peopleRes]) {
     if (res.error) throw res.error;
   }
+
+  const memberRows = (membershipsRes.data ?? []) as {
+    user_id: string;
+    role: Profile["role"];
+    organization_id: string;
+  }[];
+  const memberIds = memberRows.map((m) => String(m.user_id));
+  const roleByUser = new Map(
+    memberRows.map((m) => [String(m.user_id), m.role] as const),
+  );
+  const profilesRes =
+    memberIds.length > 0
+      ? await supabase.from("profiles").select("*").in("id", memberIds)
+      : { data: [] as Record<string, unknown>[], error: null };
+  if (profilesRes.error) throw profilesRes.error;
 
   const holiday_calendars: HolidayCalendar[] = calendarsRes.error
     ? []
@@ -928,13 +1050,16 @@ export async function loadOrgBootstrap(
         (organization as { share_enabled?: boolean }).share_enabled,
       ),
     },
-    profiles: (profilesRes.data ?? []).map((row) => ({
-      id: String(row.id),
-      organization_id: String(row.organization_id),
-      email: String(row.email ?? ""),
-      full_name: String(row.full_name ?? ""),
-      role: row.role as Profile["role"],
-    })),
+    profiles: (profilesRes.data ?? []).map((row) => {
+      const id = String(row.id);
+      return {
+        id,
+        organization_id: orgId,
+        email: String(row.email ?? ""),
+        full_name: String(row.full_name ?? ""),
+        role: (roleByUser.get(id) ?? row.role) as Profile["role"],
+      };
+    }),
     clients: (clientsRes.data ?? []).map((row) =>
       mapClient(row as Record<string, unknown>),
     ),
@@ -965,6 +1090,7 @@ export async function loadOrgBootstrap(
     template_task_lists,
     template_tasks,
     sessionProfileId,
+    memberships: [],
   };
 }
 
@@ -1531,11 +1657,13 @@ export async function updateProfileRoleRow(
   supabase: SupabaseClient,
   profileId: string,
   role: Profile["role"],
+  organizationId: string,
 ) {
-  const { error } = await supabase
-    .from("profiles")
-    .update({ role })
-    .eq("id", profileId);
+  const { error } = await supabase.rpc("set_membership_role", {
+    p_user_id: profileId,
+    p_organization_id: organizationId,
+    p_role: role,
+  });
   if (error) throw error;
 }
 

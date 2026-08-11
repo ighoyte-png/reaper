@@ -62,18 +62,37 @@ export async function requireManagerApiAccess(
     };
   }
 
-  const { data: caller, error: callerError } = await supabase
-    .from("profiles")
-    .select("id, organization_id, role, full_name")
-    .eq("id", user.id)
-    .single();
-
-  if (callerError || !caller) {
+  const { data: orgId, error: orgError } = await supabase.rpc("current_org_id");
+  if (orgError || !orgId) {
     return {
-      error: NextResponse.json({ error: "No profile" }, { status: 403 }),
+      error: NextResponse.json(
+        { error: "No active workspace" },
+        { status: 403 },
+      ),
     };
   }
-  if (!canManage(caller.role)) {
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("organization_memberships")
+    .select("role, organization_id")
+    .eq("user_id", user.id)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+
+  if (membershipError || !membership) {
+    return {
+      error: NextResponse.json({ error: "No membership" }, { status: 403 }),
+    };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const role = membership.role as Role;
+  if (!canManage(role)) {
     return {
       error: NextResponse.json(
         {
@@ -87,7 +106,12 @@ export async function requireManagerApiAccess(
   }
 
   return {
-    caller,
+    caller: {
+      id: user.id,
+      organization_id: String(membership.organization_id),
+      role,
+      full_name: profile?.full_name ?? null,
+    },
     admin: createAdminClient(),
     origin: originCheck.origin,
   };

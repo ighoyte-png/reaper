@@ -45,17 +45,15 @@ export async function DELETE(request: Request, context: RouteContext) {
       caller.organization_id,
     );
 
-    let profileRole: string | null = null;
+    let membershipRole: string | null = null;
     if (authUserId) {
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("id, role, organization_id")
-        .eq("id", authUserId)
+      const { data: membership } = await admin
+        .from("organization_memberships")
+        .select("role")
+        .eq("user_id", authUserId)
+        .eq("organization_id", caller.organization_id)
         .maybeSingle();
-
-      if (profile && profile.organization_id === caller.organization_id) {
-        profileRole = profile.role;
-      }
+      membershipRole = membership?.role ?? null;
 
       if (authUserId === caller.id) {
         return NextResponse.json(
@@ -64,17 +62,17 @@ export async function DELETE(request: Request, context: RouteContext) {
         );
       }
 
-      if (profileRole === "admin" && !isAdmin(caller.role)) {
+      if (membershipRole === "admin" && !isAdmin(caller.role)) {
         return NextResponse.json(
           { error: "Ask an admin to delete that account" },
           { status: 403 },
         );
       }
 
-      if (profileRole === "admin") {
+      if (membershipRole === "admin") {
         const { count, error: countError } = await admin
-          .from("profiles")
-          .select("id", { count: "exact", head: true })
+          .from("organization_memberships")
+          .select("user_id", { count: "exact", head: true })
           .eq("organization_id", caller.organization_id)
           .eq("role", "admin");
         if (countError) {
@@ -166,31 +164,89 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
 
     let authDeleted = false;
+    let membershipRemoved = false;
     if (authUserId) {
-      const { error: authDeleteError } =
-        await admin.auth.admin.deleteUser(authUserId);
-      if (authDeleteError) {
-        console.error(
-          "[people.delete] auth delete failed",
-          authDeleteError.message,
-        );
+      const { error: memDelError } = await admin
+        .from("organization_memberships")
+        .delete()
+        .eq("user_id", authUserId)
+        .eq("organization_id", orgId);
+      if (memDelError) {
         return NextResponse.json(
-          {
-            error:
-              "Person removed from the workspace, but could not delete their login. Remove them from Auth manually.",
-            personDeleted: true,
-            authDeleted: false,
-            authUserId,
-          },
-          { status: 502 },
+          { error: memDelError.message },
+          { status: 400 },
         );
       }
-      authDeleted = true;
+      membershipRemoved = true;
+
+      // If active org was this one, point at another membership or clear.
+      const { data: active } = await admin
+        .from("user_active_organization")
+        .select("organization_id")
+        .eq("user_id", authUserId)
+        .maybeSingle();
+      if (active?.organization_id === orgId) {
+        const { data: other } = await admin
+          .from("organization_memberships")
+          .select("organization_id, role")
+          .eq("user_id", authUserId)
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+        if (other?.organization_id) {
+          await admin.from("user_active_organization").upsert({
+            user_id: authUserId,
+            organization_id: other.organization_id,
+            updated_at: new Date().toISOString(),
+          });
+          await admin
+            .from("profiles")
+            .update({
+              organization_id: other.organization_id,
+              role: other.role,
+            })
+            .eq("id", authUserId);
+        } else {
+          await admin
+            .from("user_active_organization")
+            .delete()
+            .eq("user_id", authUserId);
+        }
+      }
+
+      const { count: remaining } = await admin
+        .from("organization_memberships")
+        .select("organization_id", { count: "exact", head: true })
+        .eq("user_id", authUserId);
+
+      if ((remaining ?? 0) === 0) {
+        const { error: authDeleteError } =
+          await admin.auth.admin.deleteUser(authUserId);
+        if (authDeleteError) {
+          console.error(
+            "[people.delete] auth delete failed",
+            authDeleteError.message,
+          );
+          return NextResponse.json(
+            {
+              error:
+                "Person removed from the workspace, but could not delete their login. Remove them from Auth manually.",
+              personDeleted: true,
+              membershipRemoved: true,
+              authDeleted: false,
+              authUserId,
+            },
+            { status: 502 },
+          );
+        }
+        authDeleted = true;
+      }
     }
 
     return NextResponse.json({
       ok: true,
       personDeleted: true,
+      membershipRemoved,
       authDeleted,
       authUserId: authUserId ?? null,
     });

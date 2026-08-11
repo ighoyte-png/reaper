@@ -1,12 +1,17 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { useData } from "@/lib/data/store";
+import {
+  homeWorkspaceSlug,
+  isMembershipSlug,
+  workspacePathAfterSwitch,
+} from "@/lib/domain/workspace-memberships";
 
 /**
- * Ensures the URL workspace segment matches the signed-in org slug.
- * Mismatch redirects to the same path under the correct workspace prefix.
+ * URL workspace slug is the source of truth for the active org.
+ * Membership slugs activate that org; unknown slugs redirect home.
  */
 export default function WorkspaceLayout({
   children,
@@ -16,18 +21,45 @@ export default function WorkspaceLayout({
   const params = useParams<{ workspace: string }>();
   const pathname = usePathname();
   const router = useRouter();
-  const { ready, state, isAuthenticated, isPublicShare } = useData();
+  const {
+    ready,
+    state,
+    isAuthenticated,
+    isPublicShare,
+    switchWorkspace,
+  } = useData();
   const orgSlug = state.organization.slug;
+  const memberships = state.memberships;
+  const [activating, setActivating] = useState(false);
+  const activatingSlugRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!ready || isPublicShare || !isAuthenticated) return;
-    if (!orgSlug || !params.workspace) return;
-    if (params.workspace === orgSlug) return;
+    const slug = params.workspace;
+    if (!slug) return;
 
-    const suffix = pathname.startsWith(`/${params.workspace}`)
-      ? pathname.slice(`/${params.workspace}`.length) || "/dashboard"
-      : "/dashboard";
-    router.replace(`/${orgSlug}${suffix.startsWith("/") ? suffix : `/${suffix}`}`);
+    if (slug === orgSlug) {
+      activatingSlugRef.current = null;
+      setActivating(false);
+      return;
+    }
+
+    if (isMembershipSlug(memberships, slug)) {
+      if (activatingSlugRef.current === slug) return;
+      activatingSlugRef.current = slug;
+      setActivating(true);
+      void switchWorkspace(slug, { preservePath: true }).catch(() => {
+        activatingSlugRef.current = null;
+        setActivating(false);
+      });
+      return;
+    }
+
+    const homeSlug =
+      homeWorkspaceSlug(memberships, state.organization.id) || orgSlug;
+    if (!homeSlug) return;
+
+    router.replace(workspacePathAfterSwitch(pathname, slug, homeSlug));
   }, [
     ready,
     isPublicShare,
@@ -36,15 +68,17 @@ export default function WorkspaceLayout({
     params.workspace,
     pathname,
     router,
+    memberships,
+    state.organization.id,
+    switchWorkspace,
   ]);
 
   if (
     ready &&
     !isPublicShare &&
     isAuthenticated &&
-    orgSlug &&
     params.workspace &&
-    params.workspace !== orgSlug
+    (activating || params.workspace !== orgSlug)
   ) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">

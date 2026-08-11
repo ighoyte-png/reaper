@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Building2,
+  Check,
   ChevronDown,
   LogOut,
   Menu,
@@ -54,7 +55,8 @@ function menuItemClass(active?: boolean) {
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { logout, state, myPerson, profile, shareBasePath } = useData();
+  const { logout, state, myPerson, profile, shareBasePath, switchWorkspace } =
+    useData();
   const { theme, toggleTheme } = useTheme();
   const appHref = useAppHref();
   const pathForNav = shareBasePath
@@ -298,14 +300,66 @@ export function AppNavbar() {
                             {identitySubtitle}
                           </p>
                         ) : null}
-                        <p className="mt-1.5 flex items-center gap-1 truncate text-[11px] leading-none text-[var(--text-muted)]">
-                          <Building2
-                            size={11}
-                            strokeWidth={1.75}
-                            className="shrink-0 opacity-70"
-                          />
-                          <span className="truncate">{workspaceName}</span>
-                        </p>
+                        {state.memberships.length > 1 ? (
+                          <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg)]/60 p-1">
+                            <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                              Workspaces
+                            </p>
+                            <ul className="space-y-0.5">
+                              {state.memberships.map((m) => {
+                                const active =
+                                  m.organization_id === state.organization.id;
+                                return (
+                                  <li key={m.organization_id}>
+                                    <button
+                                      type="button"
+                                      role="menuitemradio"
+                                      aria-checked={active}
+                                      className={cn(
+                                        "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors",
+                                        active
+                                          ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                                          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                                      )}
+                                      onClick={() => {
+                                        if (active) return;
+                                        setAccountOpen(false);
+                                        void switchWorkspace(m.org.slug, {
+                                          preservePath: true,
+                                        });
+                                      }}
+                                    >
+                                      <Building2
+                                        size={12}
+                                        strokeWidth={1.75}
+                                        className="shrink-0 opacity-70"
+                                      />
+                                      <span className="min-w-0 flex-1 truncate">
+                                        {m.org.name}
+                                      </span>
+                                      {active ? (
+                                        <Check
+                                          size={12}
+                                          strokeWidth={2}
+                                          className="shrink-0 text-[var(--text)]"
+                                        />
+                                      ) : null}
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          </div>
+                        ) : (
+                          <p className="mt-1.5 flex items-center gap-1 truncate text-[11px] leading-none text-[var(--text-muted)]">
+                            <Building2
+                              size={11}
+                              strokeWidth={1.75}
+                              className="shrink-0 opacity-70"
+                            />
+                            <span className="truncate">{workspaceName}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

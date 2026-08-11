@@ -156,6 +156,7 @@ export function PublicShareProvider({
       updateOrganizationName: async () => {},
       updateOrganizationSlug: async () => {},
       updateProfileRole: async () => {},
+      switchWorkspace: async () => {},
       upsertProject: async () => ({
         id: "",
         organization_id: "",

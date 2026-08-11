@@ -1,4 +1,4 @@
--- Two-agency RLS matrix for migration 057.
+-- Two-agency RLS matrix for migration 057 (+ multi-membership cases for 083).
 -- Prefer the automated runner (creates ephemeral orgs, asserts, cleans up):
 --
 --   npm run security:rls
@@ -6,6 +6,7 @@
 -- Requires NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
 -- and SUPABASE_SERVICE_ROLE_KEY (staging recommended).
 -- Set SECURITY_RLS_KEEP=1 to keep fixtures after a failure for debugging.
+-- Apply supabase/migrations/083_organization_memberships.sql before running.
 --
 -- Manual equivalent (run against a staging project with org A / org B):
 -- As member of A:
@@ -27,3 +28,11 @@
 -- Disable org A (set disabled_at): subsequent SELECT on projects must return 0 for that user.
 -- Insert assignment with organization_id = A and person_id from B: must fail same-org trigger.
 -- Storage: upload to person-avatars/<org-b>/<person>/x.jpg as org-A user: must fail.
+--
+-- Multi-membership (083):
+-- Seed organization_memberships + user_active_organization for each test user.
+-- Upsert a second membership for user A into org B (invite-existing path).
+--   select switch_organization('<org-b>');  -- must succeed when membership exists
+--   SELECT projects WHERE organization_id = org A — must return 0 while active is B
+-- Delete only the org-B membership — user keeps org-A membership (Auth user retained).
+-- Removing a person in one workspace must not delete Auth if other memberships remain.

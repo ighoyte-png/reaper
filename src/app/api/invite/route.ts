@@ -64,11 +64,24 @@ export async function POST(request: Request) {
         );
       }
 
+      const { data: membership, error: membershipError } = await admin
+        .from("organization_memberships")
+        .select("role")
+        .eq("user_id", person.profile_id)
+        .eq("organization_id", caller.organization_id)
+        .maybeSingle();
+
+      if (membershipError || !membership) {
+        return NextResponse.json(
+          { error: "Linked profile or membership not found" },
+          { status: 404 },
+        );
+      }
+
       const { data: profile, error: profileError } = await admin
         .from("profiles")
-        .select("id, email, full_name, organization_id, role")
+        .select("id, email, full_name")
         .eq("id", person.profile_id)
-        .eq("organization_id", caller.organization_id)
         .maybeSingle();
 
       if (profileError || !profile?.email) {
@@ -78,7 +91,7 @@ export async function POST(request: Request) {
         );
       }
 
-      if (profile.role === "admin") {
+      if (membership.role === "admin") {
         return NextResponse.json(
           { error: "Ask an admin to reset that account from Auth settings" },
           { status: 403 },
@@ -272,19 +285,9 @@ export async function POST(request: Request) {
 
     const { data: existingProfile } = await admin
       .from("profiles")
-      .select("id, organization_id")
+      .select("id, email, full_name")
       .eq("id", userId)
       .maybeSingle();
-
-    if (
-      existingProfile &&
-      existingProfile.organization_id !== caller.organization_id
-    ) {
-      return NextResponse.json(
-        { error: "That email already belongs to another organization" },
-        { status: 400 },
-      );
-    }
 
     if (!existingProfile) {
       const { error: profileError } = await admin.from("profiles").insert({
@@ -302,15 +305,45 @@ export async function POST(request: Request) {
       }
     } else {
       linkedExisting = true;
+      // Do not overwrite role/organization_id on profiles — memberships own those.
       await admin
         .from("profiles")
         .update({
-          email,
-          full_name: displayName,
-          role: "member",
+          email: existingProfile.email || email,
+          full_name: existingProfile.full_name || displayName,
         })
-        .eq("id", userId)
-        .eq("organization_id", caller.organization_id);
+        .eq("id", userId);
+    }
+
+    const { error: membershipError } = await admin
+      .from("organization_memberships")
+      .upsert(
+        {
+          user_id: userId,
+          organization_id: caller.organization_id,
+          role: "member",
+        },
+        { onConflict: "user_id,organization_id" },
+      );
+    if (membershipError) {
+      return NextResponse.json(
+        { error: membershipError.message },
+        { status: 400 },
+      );
+    }
+
+    // Ensure invitee has an active org if none yet.
+    const { data: active } = await admin
+      .from("user_active_organization")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!active) {
+      await admin.from("user_active_organization").upsert({
+        user_id: userId,
+        organization_id: caller.organization_id,
+        updated_at: new Date().toISOString(),
+      });
     }
 
     const { error: personLinkError } = await admin
