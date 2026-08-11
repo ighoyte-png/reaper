@@ -111,6 +111,8 @@ function ReportsPageContent() {
     state,
     isPublicShare,
     ensureScheduleRange,
+    ensureOrgTasks,
+    dataStatus,
     fetchOrgTaskStatsRpc,
     mode,
     myPerson,
@@ -166,6 +168,11 @@ function ReportsPageContent() {
     if (mode === "supabase") void ensureScheduleRange(utilStart, utilEnd);
   }, [mode, ensureScheduleRange, utilStart, utilEnd]);
 
+  // Task pie / My-scope counts need org tasks (bootstrap does not include them).
+  useEffect(() => {
+    void ensureOrgTasks();
+  }, [ensureOrgTasks]);
+
   const [taskStats, setTaskStats] = useState<{
     overdue: number;
     noDue: number;
@@ -177,12 +184,13 @@ function ReportsPageContent() {
 
   const useScopedTaskStats =
     scopeMine && managedProjectIds.length > 0;
+  const orgTasksReady =
+    mode !== "supabase" || dataStatus.orgTasks === "ready";
 
   useEffect(() => {
-    if (useScopedTaskStats) {
-      setTaskStats(null);
-      return;
-    }
+    // Keep last All-Data RPC stats while viewing My scope so switching back
+    // does not flash empty; My scope reads from ensureOrgTasks below.
+    if (useScopedTaskStats) return;
     let cancelled = false;
     async function load() {
       if (mode !== "supabase") {
@@ -190,10 +198,7 @@ function ReportsPageContent() {
         return;
       }
       const stats = await fetchOrgTaskStatsRpc(todayKey);
-      if (cancelled || !stats) {
-        if (!cancelled) setTaskStats(null);
-        return;
-      }
+      if (cancelled || !stats) return;
       setTaskStats({
         overdue: stats.overdue_count,
         noDue: stats.no_due_count,
@@ -360,8 +365,7 @@ function ReportsPageContent() {
     };
   }, [scopedProjects, state.assignments, state.people, state.clients, burns]);
 
-  const tasks = useMemo(() => {
-    if (taskStats && !useScopedTaskStats) return taskStats;
+  const tasksFromStore = useMemo(() => {
     const scopedIds = new Set(scopedProjects.map((p) => p.id));
     const tasksScoped = state.tasks.filter((t) => scopedIds.has(t.project_id));
     const openTasks = tasksScoped.filter((t) => t.status !== "complete");
@@ -389,14 +393,18 @@ function ReportsPageContent() {
       complete: complete.length,
       open: openTasks.length,
     };
-  }, [
-    taskStats,
-    useScopedTaskStats,
-    scopedProjects,
-    state.tasks,
-    todayKey,
-  ]);
+  }, [scopedProjects, state.tasks, todayKey]);
 
+  const tasks = useMemo(() => {
+    if (useScopedTaskStats) return tasksFromStore;
+    if (taskStats) return taskStats;
+    return tasksFromStore;
+  }, [useScopedTaskStats, taskStats, tasksFromStore]);
+
+  const tasksOverviewLoading =
+    useScopedTaskStats
+      ? !orgTasksReady
+      : !taskStats && !orgTasksReady;
   if (!canManage && !isPublicShare) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-[var(--text-muted)]">
@@ -445,7 +453,10 @@ function ReportsPageContent() {
                   report.path === "/reports/utilization" ? (
                     <UtilizationOverview data={utilization} />
                   ) : (
-                    <TasksOverview data={tasks} />
+                    <TasksOverview
+                      data={tasks}
+                      loading={tasksOverviewLoading}
+                    />
                   )
                 }
               />
@@ -838,6 +849,7 @@ function BudgetsOverview({
 
 function TasksOverview({
   data,
+  loading = false,
 }: {
   data: {
     overdue: number;
@@ -847,6 +859,7 @@ function TasksOverview({
     complete: number;
     open: number;
   };
+  loading?: boolean;
 }) {
   const slices: SchedulePieSlice[] = (
     [
@@ -879,6 +892,12 @@ function TasksOverview({
 
   const openMix =
     data.overdue + data.inProgress + data.noDue + data.upcoming;
+
+  if (loading) {
+    return (
+      <p className="text-sm text-[var(--text-muted)]">Loading tasks…</p>
+    );
+  }
 
   return (
     <div className="space-y-3">
