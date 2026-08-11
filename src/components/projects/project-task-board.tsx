@@ -1371,21 +1371,26 @@ export function ProjectTaskBoard({
     projectId,
   ]);
 
-  const assigneePeople = useMemo(
-    () =>
-      projectAssigneePeople(
-        projectId,
-        state.people,
-        state.project_members,
-        { managerPersonId: project?.manager_person_id },
-      ),
-    [
+  const assigneePeople = useMemo(() => {
+    const assignedOnTasks = state.tasks
+      .filter((t) => t.project_id === projectId)
+      .map((t) => t.assignee_person_id);
+    return projectAssigneePeople(
       projectId,
       state.people,
       state.project_members,
-      project?.manager_person_id,
-    ],
-  );
+      {
+        managerPersonId: project?.manager_person_id,
+        includePersonIds: assignedOnTasks,
+      },
+    );
+  }, [
+    projectId,
+    state.people,
+    state.project_members,
+    state.tasks,
+    project?.manager_person_id,
+  ]);
 
   useEffect(() => {
     if (!focusTaskId) return;
@@ -3584,7 +3589,9 @@ function TaskRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- exit once per isExiting
   }, [isExiting, task.id]);
 
-  const assignee = ctx.people.find((p) => p.id === task.assignee_person_id);
+  const assignee =
+    ctx.people.find((p) => p.id === task.assignee_person_id) ??
+    ctx.allPeople.find((p) => p.id === task.assignee_person_id);
   const taskComments = ctx.comments.filter((c) => c.task_id === task.id);
   const hasNotes = notesHasContent(task.notes);
   const kids = depth === 0 ? ctx.childrenMap.get(task.id) ?? [] : [];

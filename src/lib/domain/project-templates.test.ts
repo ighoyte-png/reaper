@@ -6,6 +6,7 @@ import {
   resolveTemplateAnchorStartDate,
   templateCapabilityFlags,
   templateDateShiftDays,
+  uniqueAssigneePersonIds,
 } from "@/lib/domain/project-templates";
 import type {
   Milestone,
@@ -292,5 +293,19 @@ describe("buildExportedTemplate / buildAppliedTemplate", () => {
     expect(applied.tasks[0]?.status).toBe("upcoming");
     expect(applied.tasks[0]?.assignee_person_id).toBe("person-1");
     expect(applied.projectStartDate).toBe("2026-04-01");
+  });
+});
+
+describe("uniqueAssigneePersonIds", () => {
+  it("returns distinct non-null assignee ids", () => {
+    expect(
+      uniqueAssigneePersonIds([
+        { assignee_person_id: "a" },
+        { assignee_person_id: null },
+        { assignee_person_id: "b" },
+        { assignee_person_id: "a" },
+        { assignee_person_id: undefined },
+      ]),
+    ).toEqual(["a", "b"]);
   });
 });

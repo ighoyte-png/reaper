@@ -135,6 +135,7 @@ import {
   buildAppliedTemplate,
   buildExportedTemplate,
   maxSortOrder,
+  uniqueAssigneePersonIds,
   type TemplateApplyOptions,
   type TemplateSaveOptions,
 } from "@/lib/domain/project-templates";
@@ -4477,6 +4478,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
           };
         }
 
+        // Include template assignees on the project team so Task List avatars
+        // (roster-scoped) resolve the same way as Gantt (org-scoped).
+        let nextProjectMembers: ProjectMember[] | null = null;
+        if (options.includeAssignees) {
+          const knownPeople = new Set(state.people.map((p) => p.id));
+          const existing = state.project_members.filter(
+            (m) => m.project_id === projectId,
+          );
+          const byPerson = new Map(existing.map((m) => [m.person_id, m]));
+          let added = false;
+          for (const personId of uniqueAssigneePersonIds(applied.tasks)) {
+            if (!knownPeople.has(personId) || byPerson.has(personId)) continue;
+            byPerson.set(personId, {
+              project_id: projectId,
+              person_id: personId,
+              organization_id: organizationId,
+              contractor_mode: null,
+              contractor_fixed_fee: null,
+              contractor_hours: null,
+            });
+            added = true;
+          }
+          if (added) nextProjectMembers = [...byPerson.values()];
+        }
+
         patch((prev) => ({
           ...prev,
           projects: updatedProject
@@ -4487,6 +4513,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           milestones: [...prev.milestones, ...applied.milestones],
           task_lists: [...prev.task_lists, ...applied.lists],
           tasks: [...prev.tasks, ...applied.tasks],
+          project_members: nextProjectMembers
+            ? [
+                ...prev.project_members.filter(
+                  (m) => m.project_id !== projectId,
+                ),
+                ...nextProjectMembers,
+              ]
+            : prev.project_members,
         }));
 
         if (mode === "supabase" && supabaseRef.current) {
@@ -4530,6 +4564,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 created_by_profile_id: t.created_by_profile_id,
               })),
             });
+            if (nextProjectMembers) {
+              await setProjectMembersRows(
+                supabaseRef.current!,
+                projectId,
+                organizationId,
+                nextProjectMembers.map((m) => ({
+                  person_id: m.person_id,
+                  contractor_mode: m.contractor_mode,
+                  contractor_fixed_fee: m.contractor_fixed_fee,
+                  contractor_hours: m.contractor_hours,
+                })),
+              );
+            }
           });
         }
       },

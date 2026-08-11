@@ -351,3 +351,18 @@ export function maxSortOrder(items: { sort_order: number }[]): number {
   if (items.length === 0) return -1;
   return Math.max(...items.map((i) => i.sort_order));
 }
+
+/** Distinct non-null assignee ids from applied/template tasks. */
+export function uniqueAssigneePersonIds(
+  tasks: { assignee_person_id?: string | null }[],
+): string[] {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const t of tasks) {
+    const id = t.assignee_person_id;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}

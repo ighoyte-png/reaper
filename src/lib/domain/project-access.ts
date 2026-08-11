@@ -94,6 +94,8 @@ export function projectAssigneePeople(
     managerPersonId?: string | null;
     /** Keep current assignee visible even if removed from roster. */
     includePersonId?: string | null;
+    /** Keep these people visible (e.g. assignees already on tasks). */
+    includePersonIds?: Iterable<string | null | undefined> | null;
   },
 ): Person[] {
   const ids = projectRosterPersonIds(
@@ -102,6 +104,11 @@ export function projectAssigneePeople(
     opts?.managerPersonId,
   );
   if (opts?.includePersonId) ids.add(opts.includePersonId);
+  if (opts?.includePersonIds) {
+    for (const id of opts.includePersonIds) {
+      if (id) ids.add(id);
+    }
+  }
   return people
     .filter((p) => ids.has(p.id))
     .sort((a, b) =>
