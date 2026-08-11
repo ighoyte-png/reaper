@@ -10,13 +10,22 @@ import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { ReaperLogo } from "@/components/brand/reaper-logo";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
+import { workspacePath } from "@/lib/paths";
 import {
   readUserViewPrefs,
   resolveDefaultStartPage,
 } from "@/lib/user-view-prefs";
 
 export default function SetPasswordPage() {
-  const { mode, updatePassword, refresh, profile, canManage } = useData();
+  const {
+    mode,
+    updatePassword,
+    refresh,
+    profile,
+    canManage,
+    isPlatformOnly,
+    state,
+  } = useData();
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -25,6 +34,7 @@ export default function SetPasswordPage() {
   const [hasSession, setHasSession] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [continueAfterSave, setContinueAfterSave] = useState(false);
 
   useDocumentTitle("Set password");
 
@@ -120,6 +130,31 @@ export default function SetPasswordPage() {
     };
   }, [mode]);
 
+  // Navigate after password save once org slug is available (same as login).
+  useEffect(() => {
+    if (!continueAfterSave) return;
+    if (isPlatformOnly) {
+      router.replace("/admin");
+      return;
+    }
+    const slug = state.organization.slug;
+    if (!slug) return;
+    const prefs = readUserViewPrefs(profile?.id);
+    router.replace(
+      workspacePath(
+        slug,
+        resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+      ),
+    );
+  }, [
+    continueAfterSave,
+    isPlatformOnly,
+    state.organization.slug,
+    profile?.id,
+    canManage,
+    router,
+  ]);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -136,10 +171,7 @@ export default function SetPasswordPage() {
       await updatePassword(password);
       await refresh();
       setDone(true);
-      const prefs = readUserViewPrefs(profile?.id);
-      router.replace(
-        resolveDefaultStartPage(prefs.defaultStartPage, canManage),
-      );
+      setContinueAfterSave(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not set password");
     } finally {
