@@ -77,6 +77,7 @@ import {
   loadProjectData,
   fetchMemberships,
   mapAssignment,
+  createAdditionalOrganization,
   rpcOrgForecast,
   rpcOrgTaskStats,
   rpcPersonUtilizationWeeks,
@@ -472,6 +473,10 @@ interface DataContextValue {
     fullName: string,
     orgName: string,
   ) => Promise<{ needsConfirmation: boolean }>;
+  /** Create another workspace while signed in; switches into it. */
+  createAdditionalWorkspace: (
+    orgName: string,
+  ) => Promise<{ slug: string; organizationId: string }>;
   /** Set password while already in an invite/recovery session. */
   updatePassword: (password: string) => Promise<void>;
   /** Change password (re-authenticates with the current password first). */
@@ -2064,8 +2069,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           },
         });
         if (error) {
-          setAuthError(error.message);
-          throw error;
+          const already =
+            /already registered|already been registered|user already/i.test(
+              error.message,
+            );
+          const message = already
+            ? "This email already has an account. Sign in, then create another workspace from Settings."
+            : error.message;
+          setAuthError(message);
+          throw new Error(message);
+        }
+        // With email confirmation on, existing emails return a fake user and no mail.
+        if (data.user && (data.user.identities?.length ?? 0) === 0) {
+          const message =
+            "This email already has an account. Sign in, then create another workspace from Settings.";
+          setAuthError(message);
+          throw new Error(message);
         }
         if (!data.session) {
           const message =
@@ -2076,6 +2095,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
         await bootstrapOrganization(client, orgName, fullName);
         await refreshSupabase(client);
         return { needsConfirmation: false };
+      },
+      createAdditionalWorkspace: async (orgName) => {
+        if (mode !== "supabase") {
+          throw new Error("Supabase is not configured");
+        }
+        const client = supabaseRef.current ?? createClient();
+        supabaseRef.current = client;
+        const name = orgName.trim() || "My workspace";
+        const orgId = await createAdditionalOrganization(
+          client,
+          name,
+          profile?.full_name ?? "",
+        );
+        const {
+          data: { user },
+        } = await client.auth.getUser();
+        if (!user) throw new Error("Not signed in");
+        const workspace = await fetchWorkspace(client, user.id, {
+          organizationId: orgId,
+        });
+        orgTasksScopeRef.current = { all: false, personIds: new Set() };
+        mentionCommentsLoadedRef.current = new Set();
+        mentionCommentByIdRef.current = new Map();
+        mentionTaskByIdRef.current = new Map();
+        projectReadyRef.current = new Set();
+        scheduleRangeLoadedRef.current = null;
+        setOrgTasksStatus("idle");
+        setMentionCommentsStatus("idle");
+        setProjectDataStatus({});
+        setScheduleRangeLoaded(null);
+        setPlatformOnly(false);
+        setState(workspace);
+        const slug = workspace.organization.slug;
+        if (slug) {
+          router.replace(`/${slug}/dashboard`);
+        }
+        return { slug, organizationId: orgId };
       },
       updatePassword: async (password) => {
         setAuthError(null);

@@ -1629,6 +1629,20 @@ export async function bootstrapOrganization(
   if (error) throw error;
 }
 
+/** Create another workspace for an already-signed-in user (admin membership). */
+export async function createAdditionalOrganization(
+  supabase: SupabaseClient,
+  orgName: string,
+  fullName?: string,
+): Promise<string> {
+  const { data, error } = await supabase.rpc("create_additional_organization", {
+    org_name: orgName,
+    user_full_name: fullName ?? null,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
 export async function updateOrganizationNameRow(
   supabase: SupabaseClient,
   orgId: string,

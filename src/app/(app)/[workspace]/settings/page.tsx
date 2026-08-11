@@ -63,6 +63,7 @@ export default function SettingsPage() {
     updatePersonAvatar,
     updateOrganizationName,
     updateOrganizationSlug,
+    createAdditionalWorkspace,
     newId,
     updateDemoShare,
   } = useData();
@@ -95,6 +96,9 @@ export default function SettingsPage() {
     state.organization.slug,
   );
   const [slugBusy, setSlugBusy] = useState(false);
+  const [createWsOpen, setCreateWsOpen] = useState(false);
+  const [createWsName, setCreateWsName] = useState("");
+  const [createWsBusy, setCreateWsBusy] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -521,6 +525,28 @@ export default function SettingsPage() {
                   {myPerson ? ` · linked to ${myPerson.name}` : ""} ·{" "}
                   {mode === "supabase" ? "Supabase" : "Local demo"}
                 </p>
+                {mode === "supabase" ? (
+                  <div className="mt-4 border-t border-[var(--border)] pt-3">
+                    <h3 className="text-xs font-semibold text-[var(--text)]">
+                      Another workspace
+                    </h3>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Your login can belong to more than one workspace. Create a
+                      new one as admin without leaving this account.
+                    </p>
+                    <Button
+                      className="mt-2"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setCreateWsName("");
+                        setCreateWsOpen(true);
+                      }}
+                    >
+                      Create workspace
+                    </Button>
+                  </div>
+                ) : null}
               </Panel>
 
               {myPerson ? (
@@ -1197,6 +1223,66 @@ export default function SettingsPage() {
                 }}
               >
                 {orgBusy ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {createWsOpen ? (
+        <Modal
+          title="Create workspace"
+          onClose={() => {
+            if (!createWsBusy) setCreateWsOpen(false);
+          }}
+        >
+          <div className="space-y-3">
+            <Field label="Workspace name">
+              <input
+                className={inputClass}
+                value={createWsName}
+                onChange={(e) => setCreateWsName(e.target.value)}
+                maxLength={120}
+                placeholder="e.g. New studio"
+                autoFocus
+              />
+            </Field>
+            <p className="text-xs text-[var(--text-muted)]">
+              You&apos;ll be an admin. Switch between workspaces from your
+              profile menu.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                disabled={createWsBusy}
+                onClick={() => setCreateWsOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={createWsBusy || !createWsName.trim()}
+                onClick={() => {
+                  void (async () => {
+                    setCreateWsBusy(true);
+                    try {
+                      await createAdditionalWorkspace(createWsName.trim());
+                      push("Workspace created");
+                      setCreateWsOpen(false);
+                    } catch (err) {
+                      push(
+                        err instanceof Error
+                          ? err.message
+                          : "Could not create workspace",
+                        "warning",
+                      );
+                    } finally {
+                      setCreateWsBusy(false);
+                    }
+                  })();
+                }}
+              >
+                {createWsBusy ? "Creating…" : "Create"}
               </Button>
             </div>
           </div>

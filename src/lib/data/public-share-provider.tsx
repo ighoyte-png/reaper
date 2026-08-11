@@ -142,6 +142,7 @@ export function PublicShareProvider({
       loginDemo: () => {},
       login: async () => {},
       signup: async () => ({ needsConfirmation: false }),
+      createAdditionalWorkspace: async () => ({ slug: "", organizationId: "" }),
       updatePassword: noopAsync,
       changePassword: noopAsync,
       requestPasswordReset: noopAsync,

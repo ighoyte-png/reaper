@@ -213,6 +213,10 @@ function LoginForm() {
           <form onSubmit={onSubmit} className="mt-4 space-y-3">
             {tab === "signup" && (
               <>
+                <p className="text-xs text-[var(--text-muted)]">
+                  For a brand-new email only. Already have an account? Sign in,
+                  then use Settings → Create workspace.
+                </p>
                 <label className="block text-xs text-[var(--text-muted)]">
                   Full name
                   <input
