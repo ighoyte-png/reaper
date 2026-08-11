@@ -36,15 +36,14 @@ export function ProjectColorBar({
       style={
         hatched
           ? {
-              backgroundColor: "transparent",
+              backgroundColor: color,
               backgroundImage: `repeating-linear-gradient(
                 -45deg,
-                ${color} 0,
-                ${color} 1px,
+                #ffffff 0,
+                #ffffff 1px,
                 transparent 1px,
                 transparent 3px
               )`,
-              boxShadow: `inset 0 0 0 1px ${color}`,
             }
           : { background: color }
       }

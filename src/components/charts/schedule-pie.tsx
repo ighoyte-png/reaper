@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatHours } from "@/lib/domain/budget";
 
@@ -12,6 +12,10 @@ export type SchedulePieSlice = {
   /** Diagonal hatch fill instead of solid (e.g. available capacity). */
   hatched?: boolean;
 };
+
+/** Target hatch spacing in CSS pixels — constant across pie sizes. */
+const HATCH_GAP_PX = 5;
+const HATCH_LINE_PX = 1.25;
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
   const a = ((angleDeg - 90) * Math.PI) / 180;
@@ -83,6 +87,22 @@ export function SchedulePie({
   centerScale?: 1 | 2;
 }) {
   const reactId = useId().replace(/:/g, "");
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [renderedPx, setRenderedPx] = useState(compact ? 56 : 208);
+
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setRenderedPx(w);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const total = slices.reduce((s, x) => s + x.hours, 0);
   const size = 100;
   const cx = 50;
@@ -91,6 +111,11 @@ export function SchedulePie({
   const rInner = 26;
   const gapDeg = slices.length > 1 ? 1.5 : 0;
   const usable = Math.max(0, 360 - gapDeg * slices.length);
+
+  // Convert CSS-px hatch spacing into viewBox units so density is stable
+  // when the pie is large or small (KPI vs full card).
+  const hatchCell = Math.max(1.5, (HATCH_GAP_PX / renderedPx) * size);
+  const hatchStroke = Math.max(0.4, (HATCH_LINE_PX / renderedPx) * size);
 
   const paths: {
     d: string;
@@ -151,25 +176,35 @@ export function SchedulePie({
       role="img"
       aria-label={`Schedule pie: ${formatHours(totalHours)} booked`}
     >
-      <svg viewBox={`0 0 ${size} ${size}`} className="size-full" aria-hidden>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${size} ${size}`}
+        className="size-full"
+        aria-hidden
+      >
         {hatchPaths.length > 0 ? (
           <defs>
             {hatchPaths.map((p) => (
               <pattern
                 key={p.patternId}
                 id={p.patternId!}
-                width="5"
-                height="5"
+                width={hatchCell}
+                height={hatchCell}
                 patternUnits="userSpaceOnUse"
                 patternTransform="rotate(45)"
               >
+                <rect
+                  width={hatchCell}
+                  height={hatchCell}
+                  fill={p.color}
+                />
                 <line
                   x1="0"
                   y1="0"
                   x2="0"
-                  y2="5"
-                  stroke={p.color}
-                  strokeWidth="1.35"
+                  y2={hatchCell}
+                  stroke="#ffffff"
+                  strokeWidth={hatchStroke}
                 />
               </pattern>
             ))}
