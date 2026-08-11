@@ -8,6 +8,8 @@ export type SchedulePieSlice = {
   hours: number;
   color: string;
   label: string;
+  /** Hollow stroke instead of solid fill (e.g. available capacity). */
+  outlined?: boolean;
 };
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
@@ -88,7 +90,12 @@ export function SchedulePie({
   const gapDeg = slices.length > 1 ? 1.5 : 0;
   const usable = Math.max(0, 360 - gapDeg * slices.length);
 
-  const paths: { d: string; color: string; key: string }[] = [];
+  const paths: {
+    d: string;
+    color: string;
+    key: string;
+    outlined?: boolean;
+  }[] = [];
   if (total > 0) {
     let cursor = 0;
     for (const slice of slices) {
@@ -97,7 +104,12 @@ export function SchedulePie({
       const end = cursor + sliceDeg + gapDeg / 2;
       const d = donutSlicePath(cx, cy, rOuter, rInner, start, end);
       if (d) {
-        paths.push({ d, color: slice.color, key: slice.projectId });
+        paths.push({
+          d,
+          color: slice.color,
+          key: slice.projectId,
+          outlined: slice.outlined,
+        });
       }
       cursor += sliceDeg + gapDeg;
     }
@@ -141,16 +153,27 @@ export function SchedulePie({
             strokeWidth={rOuter - rInner}
           />
         ) : (
-          paths.map((p) => (
-            <path
-              key={p.key}
-              d={p.d}
-              fill={p.color}
-              stroke="var(--bg)"
-              strokeWidth={0.6}
-              strokeLinejoin="round"
-            />
-          ))
+          paths.map((p) =>
+            p.outlined ? (
+              <path
+                key={p.key}
+                d={p.d}
+                fill="none"
+                stroke={p.color}
+                strokeWidth={1.75}
+                strokeLinejoin="round"
+              />
+            ) : (
+              <path
+                key={p.key}
+                d={p.d}
+                fill={p.color}
+                stroke="var(--bg)"
+                strokeWidth={0.6}
+                strokeLinejoin="round"
+              />
+            ),
+          )
         )}
       </svg>
       <div

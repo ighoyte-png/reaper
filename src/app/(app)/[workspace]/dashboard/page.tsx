@@ -675,12 +675,7 @@ export default function DashboardPage() {
     const available = teamUtilization.thisWeekAvailable;
     const free = Math.max(0, available - booked);
     const level = capacityLevel(booked, available, available <= 0);
-    // `low` shares --status-unavailable with the free slice; paint underutilized
-    // booked as healthy green so the donut stays two-tone (matches capacity legend intent).
-    const bookedColor =
-      level === "low"
-        ? "var(--status-healthy)"
-        : capacityLevelCssVar(level);
+    const bookedColor = capacityLevelCssVar(level);
     const slices: SchedulePieSlice[] = [];
     if (booked > 0.01) {
       slices.push({
@@ -696,6 +691,7 @@ export default function DashboardPage() {
         hours: free,
         color: "var(--status-unavailable)",
         label: "Available",
+        outlined: true,
       });
     }
     return slices;
