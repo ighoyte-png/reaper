@@ -51,7 +51,6 @@ import {
   isOnFullDayLeave,
   isOnLeave,
   personBookedHoursOnDay,
-  personLeaveHoursInRange,
   sumBookedHoursFromDayMap,
   utilizationPct,
 } from "@/lib/domain/capacity";
@@ -364,7 +363,7 @@ export function ScheduleGrid() {
     previewEnd: string;
   } | null>(null);
   const leaveDragSnapshot = useRef<{
-    mode: "resize-end" | "resize-start";
+    mode: "move" | "resize-end" | "resize-start";
     personId: string;
     kind: LeaveKind;
     hours_per_day: number | null;
@@ -374,6 +373,8 @@ export function ScheduleGrid() {
     originEnd: string;
     currentStart: string;
     currentEnd: string;
+    /** Day under the pointer when a move grab began. */
+    grabDateKey: string;
     dirty: boolean;
   } | null>(null);
   const [sliceMode, setSliceMode] = useState(false);
@@ -1909,8 +1910,12 @@ export function ScheduleGrid() {
     let end = snap.originEnd;
     if (snap.mode === "resize-end") {
       end = colEnd >= snap.originStart ? colEnd : snap.originStart;
-    } else {
+    } else if (snap.mode === "resize-start") {
       start = colStart <= snap.originEnd ? colStart : snap.originEnd;
+    } else {
+      const desiredDelta = workingDayDelta(snap.grabDateKey, colStart);
+      start = shiftWorkingDays(snap.originStart, desiredDelta);
+      end = shiftWorkingDays(snap.originEnd, desiredDelta);
     }
     if (start === snap.currentStart && end === snap.currentEnd) {
       return;
@@ -2480,6 +2485,13 @@ export function ScheduleGrid() {
                 draft?.personId === person.id ? draft : null;
               const personLeaveDraft =
                 leaveDraft?.personId === person.id ? leaveDraft : null;
+              const personLeaveEditPreview =
+                leaveEditForm?.person_id === person.id
+                  ? {
+                      start: leaveEditForm.start_date,
+                      end: leaveEditForm.end_date,
+                    }
+                  : null;
               const selectedAssignmentId =
                 selected?.person_id === person.id ? selectedId : null;
               const personSelectedOccurrence =
@@ -2523,6 +2535,7 @@ export function ScheduleGrid() {
                   columns={columns}
                   personDraft={personDraft}
                   personLeaveDraft={personLeaveDraft}
+                  personLeaveEditPreview={personLeaveEditPreview}
                   selectedAssignmentId={selectedAssignmentId}
                   selectedOccurrence={personSelectedOccurrence}
                   selectedLeaveBlockId={
@@ -2624,6 +2637,42 @@ export function ScheduleGrid() {
                           : spanDays.length > 1
                             ? `${typeLabel} · ${formatHours(hoursLabel)}/d · ${formatHours(hoursLabel * spanDays.length)}`
                             : `${typeLabel} · ${formatHours(hoursLabel)}`;
+                      const beginLeaveDrag = (
+                        mode: "move" | "resize-end" | "resize-start",
+                        grabDateKey: string,
+                      ) => {
+                        selectLeaveBlock(block);
+                        leaveDragSnapshot.current = {
+                          mode,
+                          personId: block.person_id,
+                          // Keep saved type/hours — pending Full Day
+                          // only applies via Save time off.
+                          kind: block.kind,
+                          hours_per_day: block.hours_per_day,
+                          notes: preview?.notes ?? block.notes,
+                          previousDayIds: preview?.dayIds ?? block.dayIds,
+                          originStart: blockStart,
+                          originEnd: blockEnd,
+                          currentStart: blockStart,
+                          currentEnd: blockEnd,
+                          grabDateKey,
+                          dirty: false,
+                        };
+                        // selectLeaveBlock resets the form to saved days —
+                        // restore the visual span we're dragging from.
+                        setLeaveEditForm((prev) =>
+                          prev && prev.person_id === block.person_id
+                            ? {
+                                ...prev,
+                                start_date: blockStart,
+                                end_date: blockEnd,
+                                notes: preview?.notes ?? block.notes,
+                                dayIds: preview?.dayIds ?? block.dayIds,
+                              }
+                            : prev,
+                        );
+                        setGridDragging(true);
+                      };
                       return (
                         <div
                           key={block.id}
@@ -2631,7 +2680,8 @@ export function ScheduleGrid() {
                           className={cn(
                             "pointer-events-auto absolute z-10 flex items-center rounded-sm border border-[var(--leave-block)]/50 px-1 text-[10px] font-medium leading-none",
                             "text-[var(--leave-block-fg)]",
-                            canManage && "cursor-pointer",
+                            canManage && "cursor-grab",
+                            gridDragging && "pointer-events-none",
                             isSelected &&
                               "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
                             fullHeight && "inset-y-0 z-[12] flex-col rounded-sm",
@@ -2654,7 +2704,32 @@ export function ScheduleGrid() {
                             if (e.button !== 0) return;
                             e.stopPropagation();
                             e.preventDefault();
-                            selectLeaveBlock(block);
+                            if (!canManage) {
+                              selectLeaveBlock(block);
+                              return;
+                            }
+                            if (isCoarse || e.pointerType === "touch") {
+                              selectLeaveBlock(block);
+                              return;
+                            }
+                            const rect = (
+                              e.currentTarget as HTMLElement
+                            ).getBoundingClientRect();
+                            const dayKey = dateKeyAtBlockX(
+                              e.clientX,
+                              rect.left,
+                              blockStart,
+                              blockEnd,
+                            );
+                            const grabDays = workingDaysBetween(
+                              blockStart,
+                              blockEnd,
+                            );
+                            const grabDateKey =
+                              dayKey && grabDays.includes(dayKey)
+                                ? dayKey
+                                : blockStart;
+                            beginLeaveDrag("move", grabDateKey);
                           }}
                         >
                           <div
@@ -2708,24 +2783,7 @@ export function ScheduleGrid() {
                                     selectLeaveBlock(block);
                                     return;
                                   }
-                                  selectLeaveBlock(block);
-                                  leaveDragSnapshot.current = {
-                                    mode: "resize-start",
-                                    personId: block.person_id,
-                                    // Keep saved type/hours — pending Full Day
-                                    // only applies via Save time off.
-                                    kind: block.kind,
-                                    hours_per_day: block.hours_per_day,
-                                    notes: preview?.notes ?? block.notes,
-                                    previousDayIds:
-                                      preview?.dayIds ?? block.dayIds,
-                                    originStart: blockStart,
-                                    originEnd: blockEnd,
-                                    currentStart: blockStart,
-                                    currentEnd: blockEnd,
-                                    dirty: false,
-                                  };
-                                  setGridDragging(true);
+                                  beginLeaveDrag("resize-start", blockStart);
                                 }}
                               />
                               <span
@@ -2741,22 +2799,7 @@ export function ScheduleGrid() {
                                     selectLeaveBlock(block);
                                     return;
                                   }
-                                  selectLeaveBlock(block);
-                                  leaveDragSnapshot.current = {
-                                    mode: "resize-end",
-                                    personId: block.person_id,
-                                    kind: block.kind,
-                                    hours_per_day: block.hours_per_day,
-                                    notes: preview?.notes ?? block.notes,
-                                    previousDayIds:
-                                      preview?.dayIds ?? block.dayIds,
-                                    originStart: blockStart,
-                                    originEnd: blockEnd,
-                                    currentStart: blockStart,
-                                    currentEnd: blockEnd,
-                                    dirty: false,
-                                  };
-                                  setGridDragging(true);
+                                  beginLeaveDrag("resize-end", blockEnd);
                                 }}
                               />
                             </>
@@ -2912,111 +2955,10 @@ export function ScheduleGrid() {
                           }}
                         />
                       ) : null}
-                      {zoom === "day"
-                        ? partialLeaveBlocks.map((block) =>
-                            leaveBlockEditors(block, false),
-                          )
-                        : columns.flatMap((col, colIndex) => {
-                            const leaveHours = personLeaveHoursInRange(
-                              person,
-                              col.startKey,
-                              col.endKey,
-                              state.leave_days,
-                            );
-                            if (leaveHours <= 0) return [];
-
-                            const overlapping = leaveBlocks.filter((b) =>
-                              columnsOverlapRange(
-                                col,
-                                b.start_date,
-                                b.end_date,
-                              ),
-                            );
-                            const primary = [...overlapping].sort(
-                              (a, b) =>
-                                overlapWorkingDays(
-                                  b.start_date,
-                                  b.end_date,
-                                  col,
-                                ).length -
-                                overlapWorkingDays(
-                                  a.start_date,
-                                  a.end_date,
-                                  col,
-                                ).length,
-                            )[0];
-                            const isSelected =
-                              !!primary &&
-                              selectedLeaveBlockId === primary.id;
-                            const hoursLabel = formatHours(leaveHours);
-                            const left = columnOffsetPx(columns, colIndex) + 2;
-                            const width = Math.max(col.width - 4, 8);
-                            const noteHtmls = overlapping
-                              .map((b) => b.notes)
-                              .filter((n) => notesHasContent(n));
-
-                            return [
-                              <div
-                                key={`leave-${person.id}-${col.id}`}
-                                data-schedule-block
-                                className={cn(
-                                  "pointer-events-auto absolute z-10 flex items-center rounded-sm border border-[var(--leave-block)]/50 px-1 text-[10px] font-medium leading-none",
-                                  "text-[var(--leave-block-fg)]",
-                                  canManage && "cursor-pointer",
-                                  isSelected &&
-                                    "ring-2 ring-[var(--leave-block)] ring-offset-1 ring-offset-[var(--bg)]",
-                                )}
-                                style={{
-                                  left,
-                                  width,
-                                  top: DAY_PAD_Y,
-                                  height: DAY_H,
-                                  backgroundColor: "var(--leave-block-wash)",
-                                  backgroundImage:
-                                    "repeating-linear-gradient(-45deg, transparent, transparent 4px, var(--leave-block-hatch) 4px, var(--leave-block-hatch) 8px)",
-                                }}
-                                title={
-                                  overlapping.length > 1
-                                    ? `Time off · ${hoursLabel} · ${overlapping.length} blocks`
-                                    : `Time off · ${hoursLabel}`
-                                }
-                                onPointerDown={(e) => {
-                                  if (e.button !== 0) return;
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  if (primary) selectLeaveBlock(primary);
-                                }}
-                              >
-                                <span className="truncate">{hoursLabel}</span>
-                                {noteHtmls.length > 0 ? (
-                                  <Tooltip
-                                    content={
-                                      <span className="flex flex-col gap-1.5">
-                                        {noteHtmls.map((html, i) => (
-                                          <RichNotesHtml
-                                            key={i}
-                                            html={html!}
-                                          />
-                                        ))}
-                                      </span>
-                                    }
-                                    className="ml-0.5 inline-flex shrink-0"
-                                  >
-                                    <span
-                                      className="inline-flex cursor-default opacity-90"
-                                      aria-label="Notes"
-                                      onMouseDown={(e) => e.stopPropagation()}
-                                    >
-                                      <StickyNote
-                                        size={13}
-                                        strokeWidth={2.5}
-                                      />
-                                    </span>
-                                  </Tooltip>
-                                ) : null}
-                              </div>,
-                            ];
-                          })}
+                      {(zoom === "day"
+                        ? partialLeaveBlocks
+                        : leaveBlocks
+                      ).map((block) => leaveBlockEditors(block, false))}
                     </div>
                   </div>
 
@@ -4676,6 +4618,9 @@ function personSectionPropsEqual(
     prev.columns === next.columns &&
     prev.personDraft === next.personDraft &&
     prev.personLeaveDraft === next.personLeaveDraft &&
+    prev.personLeaveEditPreview?.start ===
+      next.personLeaveEditPreview?.start &&
+    prev.personLeaveEditPreview?.end === next.personLeaveEditPreview?.end &&
     prev.selectedAssignmentId === next.selectedAssignmentId &&
     prev.selectedOccurrence === next.selectedOccurrence &&
     prev.selectedLeaveBlockId === next.selectedLeaveBlockId &&
@@ -4702,6 +4647,11 @@ type PersonLeaveDraft = {
   originEnd: string;
 };
 
+type PersonLeaveEditPreview = {
+  start: string;
+  end: string;
+};
+
 type PersonScheduleSectionProps = {
   person: Person;
   collapsed: boolean;
@@ -4721,6 +4671,8 @@ type PersonScheduleSectionProps = {
   columns: import("@/lib/domain/schedule-zoom").ScheduleColumn[];
   personDraft: PersonDraft | null;
   personLeaveDraft: PersonLeaveDraft | null;
+  /** Live sidebar/drag dates for the selected leave block on this person. */
+  personLeaveEditPreview: PersonLeaveEditPreview | null;
   selectedAssignmentId: string | null;
   selectedOccurrence: { start: string; end: string } | null;
   selectedLeaveBlockId: string | null;
