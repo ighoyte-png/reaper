@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  isPlatformAdminEmail,
+  evaluatePlatformAdmin,
   requirePlatformAdmin,
 } from "@/lib/platform-admin";
 import { createClient } from "@/lib/supabase/server";
@@ -15,8 +15,10 @@ export async function GET() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+    const evaluated = evaluatePlatformAdmin(user);
     return NextResponse.json({
-      isPlatformAdmin: isPlatformAdminEmail(user?.email),
+      isPlatformAdmin: evaluated.ok,
+      ...(evaluated.ok ? {} : { reason: evaluated.reason }),
     });
   } catch {
     return NextResponse.json({ isPlatformAdmin: false });

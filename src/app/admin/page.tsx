@@ -32,6 +32,7 @@ export default function PlatformAdminPage() {
   useDocumentTitle("Platform");
 
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [denyReason, setDenyReason] = useState<string | null>(null);
   const [allowSignup, setAllowSignup] = useState(true);
   const [maxImageMb, setMaxImageMb] = useState(10);
   const [maxDocumentMb, setMaxDocumentMb] = useState(25);
@@ -49,6 +50,12 @@ export default function PlatformAdminPage() {
     try {
       const meRes = await fetch("/api/platform/me", { method: "POST" });
       if (meRes.status === 403 || meRes.status === 401) {
+        const body = (await meRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setDenyReason(
+          body.error ?? "You don't have platform admin access.",
+        );
         setAllowed(false);
         return;
       }
@@ -57,9 +64,11 @@ export default function PlatformAdminPage() {
           error?: string;
         };
         push(body.error ?? "Platform admin unavailable", "warning");
+        setDenyReason(body.error ?? "Platform admin unavailable");
         setAllowed(false);
         return;
       }
+      setDenyReason(null);
       setAllowed(true);
 
       const [settingsRes, listRes] = await Promise.all([
@@ -257,6 +266,11 @@ export default function PlatformAdminPage() {
         <p className="text-sm text-[var(--text-muted)]">
           You don&apos;t have platform admin access.
         </p>
+        {denyReason ? (
+          <p className="max-w-md text-xs leading-relaxed text-[var(--text-muted)]">
+            {denyReason}
+          </p>
+        ) : null}
         <Link
           href={
             state.organization.slug

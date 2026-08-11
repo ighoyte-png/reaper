@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -24,7 +25,48 @@ function hasPlatformAdminMetadata(
 ): boolean {
   const meta = user?.app_metadata;
   if (!meta || typeof meta !== "object") return false;
-  return meta.platform_admin === true || meta.role === "platform_admin";
+  const flag = meta.platform_admin;
+  if (flag === true || flag === "true" || flag === 1) return true;
+  return meta.role === "platform_admin";
+}
+
+export type PlatformAdminEvaluation =
+  | { ok: true; email: string }
+  | { ok: false; reason: string };
+
+/**
+ * Same rules for nav link (/api/platform/me GET) and console gate (POST / requirePlatformAdmin).
+ */
+export function evaluatePlatformAdmin(
+  user: User | null | undefined,
+): PlatformAdminEvaluation {
+  if (!user) {
+    return { ok: false, reason: "Not signed in" };
+  }
+  if (platformAdminEmails().length === 0) {
+    return {
+      ok: false,
+      reason:
+        "Set PLATFORM_ADMIN_EMAILS in .env (comma-separated platform admin emails).",
+    };
+  }
+  const email = user.email ?? "";
+  if (!isPlatformAdminEmail(email)) {
+    return {
+      ok: false,
+      reason: "Your email is not in PLATFORM_ADMIN_EMAILS.",
+    };
+  }
+  const allowEmailOnly =
+    process.env.PLATFORM_ADMIN_ALLOW_EMAIL_ONLY === "true";
+  if (!hasPlatformAdminMetadata(user) && !allowEmailOnly) {
+    return {
+      ok: false,
+      reason:
+        "Platform admin requires Auth app_metadata.platform_admin=true (Authentication → Users → user → App Metadata), or set PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true temporarily.",
+    };
+  }
+  return { ok: true, email };
 }
 
 export async function requirePlatformAdmin() {
@@ -47,17 +89,6 @@ export async function requirePlatformAdmin() {
       ),
     };
   }
-  if (platformAdminEmails().length === 0) {
-    return {
-      error: NextResponse.json(
-        {
-          error:
-            "Set PLATFORM_ADMIN_EMAILS in .env (comma-separated platform admin emails).",
-        },
-        { status: 400 },
-      ),
-    };
-  }
 
   const supabase = await createClient();
   const {
@@ -70,29 +101,24 @@ export async function requirePlatformAdmin() {
     };
   }
 
-  const email = user.email ?? "";
-  if (!isPlatformAdminEmail(email)) {
+  const evaluated = evaluatePlatformAdmin(user);
+  if (!evaluated.ok) {
+    const status =
+      evaluated.reason === "Not signed in"
+        ? 401
+        : evaluated.reason.includes("PLATFORM_ADMIN_EMAILS") ||
+            evaluated.reason.includes("PLATFORM_ADMIN_ALLOW_EMAIL_ONLY") ||
+            evaluated.reason.includes("app_metadata")
+          ? 403
+          : 403;
     return {
-      error: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
-    };
-  }
-  const allowEmailOnly =
-    process.env.PLATFORM_ADMIN_ALLOW_EMAIL_ONLY === "true";
-  if (!hasPlatformAdminMetadata(user) && !allowEmailOnly) {
-    return {
-      error: NextResponse.json(
-        {
-          error:
-            "Platform admin requires app_metadata.platform_admin=true (or set PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true temporarily).",
-        },
-        { status: 403 },
-      ),
+      error: NextResponse.json({ error: evaluated.reason }, { status }),
     };
   }
 
   return {
     user,
-    email,
+    email: evaluated.email,
     admin: createAdminClient(),
   };
 }
