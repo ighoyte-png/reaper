@@ -34,6 +34,7 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  Highlighter,
   LayoutList,
   LayoutGrid,
   MessageSquare,
@@ -45,6 +46,7 @@ import {
   StickyNote,
   Trash2,
 } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ProjectTaskCalendar } from "@/components/projects/project-task-calendar";
 import { ProjectGanttBoard } from "@/components/projects/project-gantt-board";
 import { useToast } from "@/components/toast/toast-provider";
@@ -172,6 +174,22 @@ function InitialsAvatar({ person }: { person: Person }) {
   );
 }
 
+/** Lucide has Highlighter but not HighlighterOff — slash overlay reads as “clear”. */
+function HighlighterOffIcon({ size = 14 }: { size?: number }) {
+  return (
+    <span
+      className="relative inline-flex shrink-0"
+      style={{ width: size, height: size }}
+      aria-hidden
+    >
+      <Highlighter size={size} />
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <span className="h-px w-[130%] rotate-[-42deg] bg-current shadow-[0_0_0_1px_var(--bg)]" />
+      </span>
+    </span>
+  );
+}
+
 /** Shared read-only-ish context threaded through row/list/comment sub-components. */
 type BoardCtx = {
   people: Person[];
@@ -197,6 +215,8 @@ type BoardCtx = {
   hubTaskHref: ((taskId: string) => string) | null;
   /** Deep-link target from ?task= — slight blue highlight. */
   focusTaskId: string | null;
+  /** Remove deep-link highlight (clears ?task= from the URL). */
+  clearFocusTask: () => void;
   selected: Set<string>;
   toggleSelect: (id: string, shiftKey?: boolean) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
@@ -387,6 +407,17 @@ export function ProjectTaskBoard({
   } = useData();
   const { push: toast } = useToast();
   const projectHref = useProjectHref();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  function clearFocusTask() {
+    if (!searchParams.has("task")) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("task");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
   const project = state.projects.find((p) => p.id === projectId);
   const viewAs = useViewAsOptional();
 
@@ -1808,6 +1839,7 @@ export function ProjectTaskBoard({
         ? (taskId: string) => projectHref(project, `task=${taskId}`)
         : null,
     focusTaskId,
+    clearFocusTask,
     selected,
     toggleSelect,
     setParentsSelected,
@@ -3927,12 +3959,29 @@ function TaskRow({
           </button>
         ) : null}
         {!ctx.compact ? (
-          <TaskStatusTag
-            status={task.status}
-            isClientReview={task.is_client_review}
-            isDownstreamHold={tone === "downstream_locked"}
-            className="shrink-0"
-          />
+          <>
+            {isFocused ? (
+              <button
+                type="button"
+                className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--accent)] hover:bg-[var(--accent)]/15 hover:text-[var(--accent)]"
+                onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ctx.clearFocusTask();
+                }}
+                aria-label="Clear highlight"
+                title="Clear highlight"
+              >
+                <HighlighterOffIcon size={14} />
+              </button>
+            ) : null}
+            <TaskStatusTag
+              status={task.status}
+              isClientReview={task.is_client_review}
+              isDownstreamHold={tone === "downstream_locked"}
+              className="shrink-0"
+            />
+          </>
         ) : null}
         {ctx.allowSelect ? (
           <Checkbox
