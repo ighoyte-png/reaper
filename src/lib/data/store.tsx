@@ -73,6 +73,7 @@ import {
   loadLeaveForRange,
   loadMentionComments,
   loadOrgTasks,
+  loadOrgMilestones,
   loadOrgBootstrap,
   loadProjectData,
   fetchMemberships,
@@ -712,6 +713,7 @@ interface DataContextValue {
   /** Page-scoped fetch status (supabase mode). Demo always ready. */
   dataStatus: {
     orgTasks: "idle" | "loading" | "ready" | "error";
+    orgMilestones: "idle" | "loading" | "ready" | "error";
     mentionComments: "idle" | "loading" | "ready" | "error";
     projects: Record<string, "idle" | "loading" | "ready" | "error">;
     scheduleRange: { start: string; end: string } | null;
@@ -720,6 +722,7 @@ interface DataContextValue {
     assigneePersonId?: string | null;
     openOnly?: boolean;
   }) => Promise<void>;
+  ensureOrgMilestones: () => Promise<void>;
   ensureMentionComments: (
     commentIds?: string[],
   ) => Promise<import("@/lib/supabase/api").MentionCommentsBundle>;
@@ -788,6 +791,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [orgTasksStatus, setOrgTasksStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
+  const [orgMilestonesStatus, setOrgMilestonesStatus] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const [mentionCommentsStatus, setMentionCommentsStatus] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
@@ -802,6 +808,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     useState<string[]>([]);
 
   const orgTasksInflight = useRef<Promise<void> | null>(null);
+  const orgMilestonesInflight = useRef<Promise<void> | null>(null);
+  const orgMilestonesLoadedRef = useRef(false);
   const mentionCommentsInflight = useRef<Promise<{
     tasks: import("@/lib/types").Task[];
     task_comments: import("@/lib/types").TaskComment[];
@@ -907,12 +915,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           prev.organization.id === next.organization.id;
         if (!sameOrg) {
           orgTasksScopeRef.current = { all: false, personIds: new Set() };
+          orgMilestonesLoadedRef.current = false;
           mentionCommentsLoadedRef.current = new Set();
           mentionCommentByIdRef.current = new Map();
           mentionTaskByIdRef.current = new Map();
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
           setOrgTasksStatus("idle");
+          setOrgMilestonesStatus("idle");
           setMentionCommentsStatus("idle");
           setProjectDataStatus({});
           setScheduleRangeLoaded(null);
@@ -1515,6 +1525,40 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     [mode, state.organization.id],
   );
+
+  const ensureOrgMilestones = useCallback(async () => {
+    if (mode !== "supabase") {
+      orgMilestonesLoadedRef.current = true;
+      setOrgMilestonesStatus("ready");
+      return;
+    }
+    if (orgMilestonesLoadedRef.current) {
+      setOrgMilestonesStatus("ready");
+      return;
+    }
+    if (orgMilestonesInflight.current) return orgMilestonesInflight.current;
+    const client = supabaseRef.current ?? createClient();
+    const organizationId = state.organization.id;
+    if (!organizationId) return;
+
+    const run = (async () => {
+      setOrgMilestonesStatus("loading");
+      try {
+        const milestones = await loadOrgMilestones(client, organizationId);
+        setState((prev) => ({ ...prev, milestones }));
+        orgMilestonesLoadedRef.current = true;
+        setOrgMilestonesStatus("ready");
+      } catch (err) {
+        console.error(err);
+        setOrgMilestonesStatus("error");
+        throw err;
+      } finally {
+        orgMilestonesInflight.current = null;
+      }
+    })();
+    orgMilestonesInflight.current = run;
+    return run;
+  }, [mode, state.organization.id]);
 
   const ensureMentionComments = useCallback(
     async (commentIds?: string[]) => {
@@ -2139,12 +2183,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           organizationId: orgId,
         });
         orgTasksScopeRef.current = { all: false, personIds: new Set() };
+        orgMilestonesLoadedRef.current = false;
         mentionCommentsLoadedRef.current = new Set();
         mentionCommentByIdRef.current = new Map();
         mentionTaskByIdRef.current = new Map();
         projectReadyRef.current = new Set();
         scheduleRangeLoadedRef.current = null;
         setOrgTasksStatus("idle");
+        setOrgMilestonesStatus("idle");
         setMentionCommentsStatus("idle");
         setProjectDataStatus({});
         setScheduleRangeLoaded(null);
@@ -2263,11 +2309,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       newId: uid,
       dataStatus: {
         orgTasks: orgTasksStatus,
+        orgMilestones: orgMilestonesStatus,
         mentionComments: mentionCommentsStatus,
         projects: projectDataStatus,
         scheduleRange: scheduleRangeLoaded,
       },
       ensureOrgTasks,
+      ensureOrgMilestones,
       ensureMentionComments,
       ensureProjectData,
       ensureScheduleRange,
@@ -2373,12 +2421,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
             fetchMemberships(client, userId),
           ]);
           orgTasksScopeRef.current = { all: false, personIds: new Set() };
+          orgMilestonesLoadedRef.current = false;
           mentionCommentsLoadedRef.current = new Set();
           mentionCommentByIdRef.current = new Map();
           mentionTaskByIdRef.current = new Map();
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
           setOrgTasksStatus("idle");
+          setOrgMilestonesStatus("idle");
           setMentionCommentsStatus("idle");
           setProjectDataStatus({});
           setScheduleRangeLoaded(null);
@@ -4727,10 +4777,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refreshSupabase,
       noteLocalWrite,
       orgTasksStatus,
+      orgMilestonesStatus,
       mentionCommentsStatus,
       projectDataStatus,
       scheduleRangeLoaded,
       ensureOrgTasks,
+      ensureOrgMilestones,
       ensureMentionComments,
       ensureProjectData,
       ensureScheduleRange,

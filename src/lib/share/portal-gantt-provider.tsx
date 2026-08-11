@@ -321,11 +321,13 @@ function buildPortalGanttContext(
     newId: (prefix) => `${prefix}-portal`,
     dataStatus: {
       orgTasks: "ready",
+      orgMilestones: "ready",
       mentionComments: "ready",
       projects: { [portal.project.id]: "ready" },
       scheduleRange: null,
     },
     ensureOrgTasks: async () => {},
+    ensureOrgMilestones: async () => {},
     ensureMentionComments: async () => ({
       tasks: [],
       task_comments: [],

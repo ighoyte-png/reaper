@@ -1138,6 +1138,21 @@ export async function loadOrgTasks(
   return (data ?? []).map((row) => mapTask(row as Record<string, unknown>));
 }
 
+/** Org milestones for Project Timelines report. */
+export async function loadOrgMilestones(
+  supabase: SupabaseClient,
+  orgId: string,
+): Promise<Milestone[]> {
+  const { data, error } = await supabase
+    .from("milestones")
+    .select("*")
+    .eq("organization_id", orgId);
+  if (error) throw error;
+  return (data ?? []).map((row) =>
+    mapMilestone(row as Record<string, unknown>),
+  );
+}
+
 /** Fetch unread mention comments (+ parent tasks) by comment id. */
 export async function loadMentionComments(
   supabase: SupabaseClient,

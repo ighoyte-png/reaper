@@ -241,6 +241,7 @@ export function PublicShareProvider({
       newId: (prefix) => `${prefix}-ro`,
       dataStatus: {
         orgTasks: "ready",
+        orgMilestones: "ready",
         mentionComments: "ready",
         // Share payload already includes project rows; hubs wait on this map.
         projects: Object.fromEntries(
@@ -249,6 +250,7 @@ export function PublicShareProvider({
         scheduleRange: null,
       },
       ensureOrgTasks: async () => {},
+      ensureOrgMilestones: async () => {},
       ensureMentionComments: async () => ({
         tasks: [],
         task_comments: [],

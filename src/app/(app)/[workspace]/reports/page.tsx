@@ -5,6 +5,7 @@ import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { addWeeks, format } from "date-fns";
 import {
+  CalendarRange,
   ClipboardList,
   Gauge,
   LineChart,
@@ -13,6 +14,7 @@ import {
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
+import { ProgressBar } from "@/components/projects/progress-bar";
 import { BudgetStatusLine } from "@/components/reports/budget-status-line";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { buttonClass } from "@/components/ui/button";
@@ -30,6 +32,7 @@ import {
   budgetHealth,
   formatHours,
 } from "@/lib/domain/budget";
+import { projectDateProgress } from "@/lib/domain/progress";
 import { utilizationVisiblePeople } from "@/lib/domain/people";
 import {
   personIdsInPod,
@@ -52,17 +55,7 @@ const reports: {
   description: string;
   cta: string;
   icon: LucideIcon;
-  column: "left" | "right";
 }[] = [
-  {
-    path: "/reports/budgets",
-    title: "All Active Project Budgets",
-    description:
-      "Scheduled Hours and Contractor Expenses Tracked Against Project Budgets",
-    cta: "Scheduled Hours and Contractor Expenses Tracked Against Project Budgets",
-    icon: LineChart,
-    column: "right",
-  },
   {
     path: "/reports/utilization",
     title: "All People Utilization",
@@ -70,7 +63,6 @@ const reports: {
       "Utilization Percentage for All People Combined (Unless Disabled from Utilization Reporting)",
     cta: "Team Utilization vs Capacity by Week",
     icon: Gauge,
-    column: "left",
   },
   {
     path: "/reports/tasks",
@@ -79,7 +71,21 @@ const reports: {
       "Overdue Tasks, Tasks Missing a Due Date, and Recently Completed Tasks.",
     cta: "Overdue, No Due Date, and Recently Completed Work",
     icon: ClipboardList,
-    column: "left",
+  },
+  {
+    path: "/reports/timelines",
+    title: "Project Timelines",
+    description: "Projects Progress with a Defined Start and End Date",
+    cta: "Overall Progress for Projects with Fixed Timelines",
+    icon: CalendarRange,
+  },
+  {
+    path: "/reports/budgets",
+    title: "All Active Project Budgets",
+    description:
+      "Scheduled Hours and Contractor Expenses Tracked Against Project Budgets",
+    cta: "Scheduled Hours and Contractor Expenses Tracked Against Project Budgets",
+    icon: LineChart,
   },
 ];
 
@@ -365,6 +371,24 @@ function ReportsPageContent() {
     };
   }, [scopedProjects, state.assignments, state.people, state.clients, burns]);
 
+  const timelines = useMemo(() => {
+    const rows = scopedProjects
+      .filter((p) => p.status === "active")
+      .map((p) => {
+        const pct = projectDateProgress(p, todayKey);
+        if (pct == null) return null;
+        const client = state.clients.find((c) => c.id === p.client_id);
+        return {
+          id: p.id,
+          name: client?.name ? `${client.name} · ${p.name}` : p.name,
+          pct,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row != null)
+      .sort((a, b) => b.pct - a.pct);
+    return { rows };
+  }, [scopedProjects, state.clients, todayKey]);
+
   const tasksFromStore = useMemo(() => {
     const scopedIds = new Set(scopedProjects.map((p) => p.id));
     const tasksScoped = state.tasks.filter((t) => scopedIds.has(t.project_id));
@@ -441,47 +465,33 @@ function ReportsPageContent() {
         </section>
       ) : null}
       <div className="grid gap-3 py-3 sm:py-5 md:grid-cols-2 md:items-stretch">
-        <div className="flex h-full min-h-0 flex-col gap-3">
-          {reports
-            .filter((r) => r.column === "left")
-            .map((report) => (
-              <ReportCard
-                key={report.path}
-                report={report}
-                appHref={appHref}
-                overview={
-                  report.path === "/reports/utilization" ? (
-                    <UtilizationOverview data={utilization} />
-                  ) : (
-                    <TasksOverview
-                      data={tasks}
-                      loading={tasksOverviewLoading}
-                    />
-                  )
-                }
-              />
-            ))}
-        </div>
-        <div className="flex h-full min-h-0 flex-col">
-          {reports
-            .filter((r) => r.column === "right")
-            .map((report) => (
-              <ReportCard
-                key={report.path}
-                report={report}
-                appHref={appHref}
-                className="h-full flex-1"
-                overview={
-                  <BudgetsOverview
-                    data={budgets}
-                    plannedHours={plannedHoursAcrossSchedule}
-                    budgetHref={budgetHref}
-                    loading={!burnsReady}
-                  />
-                }
-              />
-            ))}
-        </div>
+        {reports.map((report) => (
+          <ReportCard
+            key={report.path}
+            report={report}
+            appHref={appHref}
+            className="h-full min-h-0"
+            overview={
+              report.path === "/reports/utilization" ? (
+                <UtilizationOverview data={utilization} />
+              ) : report.path === "/reports/tasks" ? (
+                <TasksOverview
+                  data={tasks}
+                  loading={tasksOverviewLoading}
+                />
+              ) : report.path === "/reports/timelines" ? (
+                <TimelinesOverview data={timelines} />
+              ) : (
+                <BudgetsOverview
+                  data={budgets}
+                  plannedHours={plannedHoursAcrossSchedule}
+                  budgetHref={budgetHref}
+                  loading={!burnsReady}
+                />
+              )
+            }
+          />
+        ))}
       </div>
     </PageContainer>
   );
@@ -882,6 +892,43 @@ function BudgetsOverview({
             {formatHours(plannedHours)}
           </span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TimelinesOverview({
+  data,
+}: {
+  data: {
+    rows: { id: string; name: string; pct: number }[];
+  };
+}) {
+  if (data.rows.length === 0) {
+    return (
+      <p className="text-xs text-[var(--text-muted)]">
+        No Projects with Timelines.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden">
+      <div className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
+        {data.rows.map((row) => (
+          <div
+            key={row.id}
+            className="min-w-0 space-y-1 rounded-md px-0.5 py-0.5"
+          >
+            <div className="flex min-w-0 items-baseline justify-between gap-2 text-[11px]">
+              <span className="min-w-0 truncate text-[var(--text-muted)]">
+                {row.name}
+              </span>
+              <span className="shrink-0 tabular-nums">{Math.round(row.pct)}%</span>
+            </div>
+            <ProgressBar pct={row.pct} />
+          </div>
+        ))}
       </div>
     </div>
   );
