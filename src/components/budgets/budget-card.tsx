@@ -28,20 +28,23 @@ export function BudgetCard({
   showName?: boolean;
 }) {
   const { state } = useData();
-  const { burns } = useProjectBurnsMap();
+  const { burns, ready: burnsReady } = useProjectBurnsMap();
   const membersForProject = state.project_members.filter(
     (m) => m.project_id === project.id,
   );
   const burn =
     burns.get(project.id) ??
-    budgetBurn(
-      project,
-      state.assignments,
-      state.people,
-      false,
-      new Date(),
-      membersForProject,
-    );
+    (burnsReady
+      ? budgetBurn(
+          project,
+          state.assignments,
+          state.people,
+          false,
+          new Date(),
+          membersForProject,
+        )
+      : // Avoid fee-only/zero-assignment flashes while RPC loads.
+        budgetBurn(project, [], [], false, new Date(), []));
   const health = budgetHealth(burn);
   const hoursFx = projectHoursForecast(
     project,

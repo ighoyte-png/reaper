@@ -1420,6 +1420,12 @@ export type ProjectBudgetBurnRow = {
   remaining_hours: number;
   remaining_amount: number | null;
   amount_over_by: number;
+  contractor_hours: number;
+  contractor_amount: number;
+  contractor_used_hours: number;
+  contractor_future_hours: number;
+  contractor_used_amount: number;
+  contractor_future_amount: number;
 };
 
 export type PersonUtilizationWeekRow = {
@@ -1459,6 +1465,12 @@ export async function rpcProjectBudgetBurns(
         ? null
         : num(row.remaining_amount),
     amount_over_by: num(row.amount_over_by),
+    contractor_hours: num(row.contractor_hours),
+    contractor_amount: num(row.contractor_amount),
+    contractor_used_hours: num(row.contractor_used_hours),
+    contractor_future_hours: num(row.contractor_future_hours),
+    contractor_used_amount: num(row.contractor_used_amount),
+    contractor_future_amount: num(row.contractor_future_amount),
   }));
 }
 

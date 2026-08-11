@@ -17,11 +17,11 @@ export function burnFromRpcRow(row: ProjectBudgetBurnRow): BudgetBurn {
     remainingAmount: row.remaining_amount,
     amountOverBy: row.amount_over_by,
     mode: row.mode,
-    contractorHours: 0,
-    contractorAmount: 0,
-    contractorUsedHours: 0,
-    contractorFutureHours: 0,
-    contractorUsedAmount: 0,
-    contractorFutureAmount: 0,
+    contractorHours: row.contractor_hours,
+    contractorAmount: row.contractor_amount,
+    contractorUsedHours: row.contractor_used_hours,
+    contractorFutureHours: row.contractor_future_hours,
+    contractorUsedAmount: row.contractor_used_amount,
+    contractorFutureAmount: row.contractor_future_amount,
   };
 }
