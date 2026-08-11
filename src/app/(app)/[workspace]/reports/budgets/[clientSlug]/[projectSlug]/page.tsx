@@ -37,6 +37,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   contractorCommitted,
 } from "@/lib/domain/contractor";
+import { personAvatarColor } from "@/lib/domain/people";
 import { toDateKey } from "@/lib/domain/dates";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
@@ -286,6 +287,7 @@ export default function ProjectBudgetDetailPage() {
         name: person.name,
         avatar_url: person.avatar_url,
         avatar_attachment_id: person.avatar_attachment_id,
+        avatar_color: person.avatar_color,
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
@@ -308,6 +310,7 @@ export default function ProjectBudgetDetailPage() {
             name: person.name,
             avatar_url: person.avatar_url,
             avatar_attachment_id: person.avatar_attachment_id,
+            avatar_color: person.avatar_color,
             usedHours: 0,
             plannedHours: 0,
             totalHours: 0,
@@ -321,6 +324,7 @@ export default function ProjectBudgetDetailPage() {
           name: person.name,
           avatar_url: person.avatar_url,
           avatar_attachment_id: person.avatar_attachment_id,
+          avatar_color: person.avatar_color,
           usedHours: 0,
           plannedHours: 0,
           totalHours: committed.hours,
@@ -341,6 +345,7 @@ export default function ProjectBudgetDetailPage() {
         name: person.name,
         avatar_url: person.avatar_url,
         avatar_attachment_id: person.avatar_attachment_id,
+        avatar_color: person.avatar_color,
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
@@ -961,6 +966,7 @@ function TeamRow({
     name: string;
     avatar_url: string | null;
     avatar_attachment_id?: string | null;
+    avatar_color?: string | null;
     usedHours: number;
     plannedHours: number;
     totalHours: number;
@@ -981,6 +987,11 @@ function TeamRow({
             name={row.name}
             size="xs"
             fallback="initials"
+            personId={row.id}
+            color={personAvatarColor({
+              id: row.id,
+              avatar_color: row.avatar_color ?? null,
+            })}
           />
           <span className="min-w-0 truncate">{row.name}</span>
           {row.is_contractor ? <ContractorTag /> : null}

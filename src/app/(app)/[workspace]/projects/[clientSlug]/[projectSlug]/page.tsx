@@ -45,6 +45,7 @@ import {
 } from "@/lib/domain/project-access";
 import { SandboxIcon } from "@/components/projects/sandbox-icon";
 import { isProjectFavorited } from "@/lib/domain/project-favorites";
+import { personAvatarColor } from "@/lib/domain/people";
 import {
   existingPmDailyHours,
   findPmProjectAssignments,
@@ -491,6 +492,8 @@ export default function ProjectDetailPage() {
                         name={p.name}
                         size="team"
                         fallback="initials"
+                        personId={p.id}
+                        color={personAvatarColor(p)}
                       />
                       <div className="flex min-w-0 flex-col gap-2 text-left">
                         <div className="min-w-0">

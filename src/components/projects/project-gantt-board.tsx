@@ -2542,6 +2542,7 @@ export function ProjectGanttBoard({
                               name={assignee.name}
                               size="xs"
                               fallback="initials"
+                              personId={assignee.id}
                               color={personAvatarColor(assignee)}
                               className="shrink-0"
                             />

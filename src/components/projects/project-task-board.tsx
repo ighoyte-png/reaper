@@ -160,6 +160,7 @@ function InitialsAvatar({ person }: { person: Person }) {
       name={person.name}
       size="xs"
       fallback="initials"
+      personId={person.id}
       color={personAvatarColor(person)}
       className="ring-1 ring-[var(--border)]"
     />
@@ -4211,6 +4212,8 @@ function CommentItem({
         size="row"
         fallback="initials"
         className="mt-0.5 shrink-0"
+        personId={authorPerson?.id}
+        color={authorPerson ? personAvatarColor(authorPerson) : null}
       />
       <div className="relative min-w-0 flex-1 rounded-md border border-[var(--border)] bg-[var(--comment-bg)] p-5 text-sm">
         <div className="mb-2 flex items-baseline justify-between gap-3">

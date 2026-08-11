@@ -4736,6 +4736,7 @@ const PersonScheduleSection = memo(function PersonScheduleSection({
                 name={person.name}
                 size="row"
                 fallback="initials"
+                personId={person.id}
                 color={personAvatarColor(person)}
               />
               <div className="min-w-0 flex-1">
@@ -5207,7 +5208,8 @@ function AssignmentAssignerDetails({
           name={person.name}
           size="lg"
           fallback="initials"
-          color={person.avatar_color}
+          personId={person.id}
+          color={personAvatarColor(person)}
         />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold leading-tight">

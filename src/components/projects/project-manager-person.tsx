@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { cn } from "@/lib/cn";
+import { personAvatarColor } from "@/lib/domain/people";
 import type { Person } from "@/lib/types";
 
 export function ProjectManagerTag({ className }: { className?: string }) {
@@ -74,6 +75,7 @@ export function ProjectManagerPerson({
 }: {
   person: Pick<
     Person,
+    | "id"
     | "name"
     | "role_title"
     | "avatar_url"
@@ -94,7 +96,8 @@ export function ProjectManagerPerson({
         name={person.name}
         size={size}
         fallback="initials"
-        color={person.avatar_color}
+        personId={person.id}
+        color={personAvatarColor(person)}
       />
       <div className="flex min-w-0 flex-col gap-2 text-left">
         <div className="min-w-0">

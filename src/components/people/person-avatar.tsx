@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { personAvatarColor } from "@/lib/domain/people";
 import {
   invalidateAttachmentDisplayUrl,
   resolveAttachmentDisplayUrl,
@@ -49,6 +50,7 @@ export function PersonAvatar({
   fallback = "initials",
   title,
   color,
+  personId,
 }: {
   avatarUrl: string | null | undefined;
   /** Durable R2 attachment id — preferred over expired signed avatarUrl. */
@@ -59,8 +61,10 @@ export function PersonAvatar({
   /** initials = letter circle when no photo (default). hidden = render nothing. */
   fallback?: "hidden" | "initials";
   title?: string;
-  /** Initials circle background (client palette hex). */
+  /** Initials circle background (client palette hex). Prefer with personId. */
   color?: string | null;
+  /** When set, missing/empty color falls back to a stable palette hash. */
+  personId?: string | null;
 }) {
   const [displayUrl, setDisplayUrl] = useState<string | null>(
     avatarUrl ?? null,
@@ -137,7 +141,9 @@ export function PersonAvatar({
 
   if (fallback === "hidden" || !label) return null;
 
-  const bg = color?.trim() || undefined;
+  const bg = personId
+    ? personAvatarColor({ id: personId, avatar_color: color ?? null })
+    : color?.trim() || undefined;
   return (
     <span
       title={title ?? label}

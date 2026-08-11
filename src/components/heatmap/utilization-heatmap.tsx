@@ -13,7 +13,7 @@ import {
   utilizationPct,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
-import { utilizationVisiblePeople } from "@/lib/domain/people";
+import { utilizationVisiblePeople, personAvatarColor } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { CapacityLevel } from "@/lib/types";
@@ -219,6 +219,8 @@ export function UtilizationHeatmap({
                   name={person.name}
                   size="row"
                   fallback="initials"
+                  personId={person.id}
+                  color={personAvatarColor(person)}
                 />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium leading-tight">

@@ -88,7 +88,7 @@ import {
 } from "@/lib/domain/recurrence";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { isFullyHiddenFromPlanning } from "@/lib/domain/contractor";
-import { utilizationVisiblePeople } from "@/lib/domain/people";
+import { utilizationVisiblePeople, personAvatarColor } from "@/lib/domain/people";
 import { taskUrgency, dueDateToneClass, type TaskUrgency } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
 import type {
@@ -1640,10 +1640,9 @@ function DashboardIdentityCard({
           }
           name={displayName}
           size="xl"
+          personId={identityPerson?.id}
           color={
-            identityPerson
-              ? identityPerson.avatar_color
-              : null
+            identityPerson ? personAvatarColor(identityPerson) : null
           }
         />
         <div className="min-w-0 flex-1">
@@ -1850,7 +1849,8 @@ function TaskRow({
                 name={assignee?.name}
                 size="xs"
                 fallback="initials"
-                color={assignee?.avatar_color}
+                personId={assignee?.id}
+                color={assignee ? personAvatarColor(assignee) : null}
               />
               <span className="truncate">
                 {assignee?.name ?? "Unassigned"}

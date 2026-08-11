@@ -27,6 +27,7 @@ import {
 import { useTheme } from "@/components/theme/theme-provider";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
+import { personAvatarColor } from "@/lib/domain/people";
 import { useAppHref } from "@/lib/hooks/use-app-href";
 import { stripWorkspacePrefix } from "@/lib/paths";
 import { isUnreadBulletin } from "@/lib/domain/bulletins";
@@ -256,6 +257,8 @@ export function AppNavbar() {
                   avatarAttachmentId={myPerson?.avatar_attachment_id}
                   name={accountName}
                   size="team"
+                  personId={myPerson?.id}
+                  color={myPerson ? personAvatarColor(myPerson) : null}
                 />
                 <span className="min-w-0 truncate text-xs font-medium leading-none text-[var(--text)]">
                   {accountName}
@@ -283,6 +286,8 @@ export function AppNavbar() {
                         name={accountName}
                         size="sm"
                         className="mt-0.5 ring-2 ring-[var(--bg)]"
+                        personId={myPerson?.id}
+                        color={myPerson ? personAvatarColor(myPerson) : null}
                       />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold leading-tight text-[var(--text)]">

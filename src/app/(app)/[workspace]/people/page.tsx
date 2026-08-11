@@ -498,6 +498,7 @@ function PeoplePageContent() {
             avatarAttachmentId={person.avatar_attachment_id}
             name={person.name}
             color={personAvatarColor(person)}
+            personId={person.id}
             size="lg"
           />
           <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -657,6 +658,7 @@ function PeoplePageContent() {
           avatarAttachmentId={person.avatar_attachment_id}
           name={person.name}
           color={personAvatarColor(person)}
+          personId={person.id}
           size="sm"
         />
         <div className="min-w-0 flex-1">

@@ -14,6 +14,7 @@ import { ProjectManagerTag } from "@/components/projects/project-manager-person"
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { Field, Modal, inputClass } from "@/components/ui/form";
 import { createDemoSeed, DEMO_STORAGE_KEY } from "@/lib/demo/seed";
+import { personAvatarColor } from "@/lib/domain/people";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import {
   sanitizeProjectPortal,
@@ -458,7 +459,7 @@ export default function ProjectSharePage() {
   const teamSorted = [...portal.team];
   const manager = portal.showProjectManagers ? portal.manager : null;
   const teamWithoutManager = manager
-    ? teamSorted.filter((m) => m.name !== manager.name)
+    ? teamSorted.filter((m) => m.id !== manager.id)
     : teamSorted;
   const showTeamSection = Boolean(manager) || teamSorted.length > 0;
   const hasGantt = portal.taskLists.some((l) => l.gantt_enabled);
@@ -687,8 +688,11 @@ export default function ProjectSharePage() {
               <li className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center">
                 <PersonAvatar
                   avatarUrl={manager.avatar_url}
+                  avatarAttachmentId={manager.avatar_attachment_id}
                   name={manager.name}
                   size="lg"
+                  personId={manager.id}
+                  color={personAvatarColor(manager)}
                 />
                 <div className="min-w-0 w-full">
                   <div className="truncate text-base font-semibold tracking-tight">
@@ -716,13 +720,16 @@ export default function ProjectSharePage() {
             ) : null}
             {teamWithoutManager.map((member) => (
               <li
-                key={member.name}
+                key={member.id}
                 className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center"
               >
                 <PersonAvatar
                   avatarUrl={member.avatar_url}
+                  avatarAttachmentId={member.avatar_attachment_id}
                   name={member.name}
                   size="lg"
+                  personId={member.id}
+                  color={personAvatarColor(member)}
                 />
                 <div className="min-w-0 w-full">
                   <div className="truncate text-base font-semibold tracking-tight">

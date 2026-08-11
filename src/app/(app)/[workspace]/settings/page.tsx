@@ -20,6 +20,7 @@ import { useViewAs } from "@/lib/view-as";
 import { clientSiteOrigin, publicShareUrl } from "@/lib/share/token";
 import { uploadPersonAvatarFile } from "@/lib/storage/avatar-upload";
 import { isAdmin } from "@/lib/auth/roles";
+import { personAvatarColor } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 import {
@@ -535,6 +536,8 @@ export default function SettingsPage() {
                       avatarAttachmentId={myPerson.avatar_attachment_id}
                       name={myPerson.name}
                       size="lg"
+                      personId={myPerson.id}
+                      color={personAvatarColor(myPerson)}
                     />
                     <div className="flex flex-col gap-1.5">
                       <input

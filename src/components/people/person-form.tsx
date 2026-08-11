@@ -135,6 +135,7 @@ export function PersonForm({
                     }
                     name={person.name}
                     color={personAvatarColor(person)}
+                    personId={person.id}
                     size="lg"
                   />
                   <div className="flex flex-col gap-1.5">

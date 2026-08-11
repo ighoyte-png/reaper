@@ -148,16 +148,22 @@ export interface ProjectPortalPayload {
   /** When true (2+ org managers), portal should highlight the project manager. */
   showProjectManagers: boolean;
   manager: {
+    id: string;
     name: string;
     email: string;
     title: string;
     avatar_url: string | null;
+    avatar_attachment_id: string | null;
+    avatar_color: string | null;
   } | null;
   /** Team members — names/titles/avatars only (emails stripped; PM email stays on manager). */
   team: {
+    id: string;
     name: string;
     title: string;
     avatar_url: string | null;
+    avatar_attachment_id: string | null;
+    avatar_color: string | null;
   }[];
   milestones: {
     id: string;
@@ -248,18 +254,24 @@ export function sanitizeProjectPortal(
       : null;
   const manager = managerPerson
     ? {
+        id: managerPerson.id,
         name: managerPerson.name,
         email: managerPerson.email,
         title: managerPerson.role_title,
         avatar_url: managerPerson.avatar_url ?? null,
+        avatar_attachment_id: managerPerson.avatar_attachment_id ?? null,
+        avatar_color: managerPerson.avatar_color ?? null,
       }
     : null;
   const team = state.people
     .filter((p) => teamIds.has(p.id))
     .map((p) => ({
+      id: p.id,
       name: p.name,
       title: p.role_title,
       avatar_url: p.avatar_url ?? null,
+      avatar_attachment_id: p.avatar_attachment_id ?? null,
+      avatar_color: p.avatar_color ?? null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
