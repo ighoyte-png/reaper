@@ -82,6 +82,7 @@ import {
   rpcOrgTaskStats,
   rpcPersonUtilizationWeeks,
   rpcProjectBudgetBurns,
+  rpcMonthlyRetainerYearBars,
   seedDemoWorkspace,
   upsertAssignmentRow,
   upsertBulletinRow,
@@ -733,6 +734,11 @@ interface DataContextValue {
   /** Soft-fail RPC helpers (demo / missing RPC → null; caller falls back to TS). */
   fetchProjectBudgetBurnsRpc: () => Promise<
     import("@/lib/supabase/api").ProjectBudgetBurnRow[] | null
+  >;
+  fetchMonthlyRetainerYearBarsRpc: (
+    year?: number,
+  ) => Promise<
+    import("@/lib/supabase/api").MonthlyRetainerYearBarRow[] | null
   >;
   fetchPersonUtilizationWeeksRpc: (
     weekStart: string,
@@ -1884,6 +1890,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [mode]);
 
+  const fetchMonthlyRetainerYearBarsRpc = useCallback(
+    async (year?: number) => {
+      if (mode !== "supabase") return null;
+      const client = supabaseRef.current ?? createClient();
+      try {
+        return await rpcMonthlyRetainerYearBars(client, year);
+      } catch (err) {
+        console.warn("rpc_monthly_retainer_year_bars failed", err);
+        return null;
+      }
+    },
+    [mode],
+  );
+
   const fetchPersonUtilizationWeeksRpc = useCallback(
     async (
       weekStartKey: string,
@@ -2253,6 +2273,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
+      fetchMonthlyRetainerYearBarsRpc,
       fetchPersonUtilizationWeeksRpc,
       fetchOrgForecastRpc,
       fetchOrgTaskStatsRpc,
@@ -4715,6 +4736,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
+      fetchMonthlyRetainerYearBarsRpc,
       fetchPersonUtilizationWeeksRpc,
       fetchOrgForecastRpc,
       fetchOrgTaskStatsRpc,

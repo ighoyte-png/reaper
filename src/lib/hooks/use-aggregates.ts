@@ -2,9 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useData } from "@/lib/data/store";
-import { burnFromRpcRow } from "@/lib/data/rpc-map";
-import { budgetBurn } from "@/lib/domain/budget";
+import {
+  burnFromRpcRow,
+  monthlyYearBarsFromRpcRows,
+} from "@/lib/data/rpc-map";
+import {
+  budgetBurn,
+  calendarYearBars,
+  type MonthBurnBar,
+} from "@/lib/domain/budget";
 import type { BudgetBurn } from "@/lib/types";
+import type { MonthlyRetainerYearBarRow } from "@/lib/supabase/api";
 
 /**
  * Org-wide burns via RPC (no full assignment dump). Prefer precise client
@@ -102,4 +110,88 @@ export function useProjectBurnsMap(): {
   ]);
 
   return { burns, ready };
+}
+
+/**
+ * Monthly-retainer Jan–Dec bars via RPC. Client calendarYearBars only for
+ * projects already loaded (assignments present).
+ */
+export function useMonthlyRetainerYearBarsMap(year: number): {
+  barsByProject: Map<string, MonthBurnBar[]>;
+  ready: boolean;
+} {
+  const { mode, state, dataStatus, fetchMonthlyRetainerYearBarsRpc } =
+    useData();
+  const [rpcRows, setRpcRows] = useState<
+    MonthlyRetainerYearBarRow[] | null | undefined
+  >(mode === "demo" ? null : undefined);
+  const [ready, setReady] = useState(mode === "demo");
+  const orgId = state.organization.id;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      if (mode === "demo") {
+        setRpcRows(null);
+        setReady(true);
+        return;
+      }
+      setRpcRows(undefined);
+      setReady(false);
+      const rows = await fetchMonthlyRetainerYearBarsRpc(year);
+      if (cancelled) return;
+      setRpcRows(rows);
+      setReady(true);
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, orgId, year, fetchMonthlyRetainerYearBarsRpc]);
+
+  const barsByProject = useMemo(() => {
+    const map = new Map<string, MonthBurnBar[]>();
+    const monthly = state.projects.filter(
+      (p) =>
+        !p.sandbox_mode &&
+        p.budget_mode === "hours" &&
+        p.budget_monthly_reset,
+    );
+
+    for (const p of monthly) {
+      const membersForProject = state.project_members.filter(
+        (m) => m.project_id === p.id,
+      );
+      const projectReady = dataStatus.projects[p.id] === "ready";
+      if (projectReady || mode === "demo") {
+        map.set(
+          p.id,
+          calendarYearBars(
+            p,
+            state.assignments,
+            state.people,
+            year,
+            new Date(),
+            membersForProject,
+          ),
+        );
+        continue;
+      }
+      if (rpcRows) {
+        map.set(p.id, monthlyYearBarsFromRpcRows(p, year, rpcRows));
+      }
+    }
+    return map;
+  }, [
+    rpcRows,
+    mode,
+    year,
+    state.projects,
+    state.assignments,
+    state.people,
+    state.project_members,
+    dataStatus.projects,
+  ]);
+
+  return { barsByProject, ready };
 }

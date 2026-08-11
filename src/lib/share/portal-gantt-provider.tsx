@@ -334,6 +334,7 @@ function buildPortalGanttContext(
     ensureScheduleRange: async () => {},
     setActiveRealtimeProjectIds: () => {},
     fetchProjectBudgetBurnsRpc: async () => null,
+    fetchMonthlyRetainerYearBarsRpc: async () => null,
     fetchPersonUtilizationWeeksRpc: async () => null,
     fetchOrgForecastRpc: async () => null,
     fetchOrgTaskStatsRpc: async () => null,

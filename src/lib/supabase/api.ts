@@ -1474,6 +1474,43 @@ export async function rpcProjectBudgetBurns(
   }));
 }
 
+export type MonthlyRetainerYearBarRow = {
+  project_id: string;
+  month_index: number;
+  used_hours: number;
+  future_hours: number;
+  used_amount: number;
+  future_amount: number;
+  contractor_used_hours: number;
+  contractor_future_hours: number;
+  contractor_used_amount: number;
+  contractor_future_amount: number;
+};
+
+export async function rpcMonthlyRetainerYearBars(
+  supabase: SupabaseClient,
+  year?: number,
+  asOf?: string,
+): Promise<MonthlyRetainerYearBarRow[]> {
+  const { data, error } = await supabase.rpc("rpc_monthly_retainer_year_bars", {
+    p_year: year ?? undefined,
+    p_as_of: asOf ?? undefined,
+  });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    project_id: String(row.project_id),
+    month_index: Math.trunc(num(row.month_index)),
+    used_hours: num(row.used_hours),
+    future_hours: num(row.future_hours),
+    used_amount: num(row.used_amount),
+    future_amount: num(row.future_amount),
+    contractor_used_hours: num(row.contractor_used_hours),
+    contractor_future_hours: num(row.contractor_future_hours),
+    contractor_used_amount: num(row.contractor_used_amount),
+    contractor_future_amount: num(row.contractor_future_amount),
+  }));
+}
+
 export async function rpcPersonUtilizationWeeks(
   supabase: SupabaseClient,
   weekStart: string,

@@ -5,7 +5,10 @@ import { BurnBar } from "@/components/ui/burn-bar";
 import { panelClass } from "@/components/ui/panel";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { useData } from "@/lib/data/store";
-import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
+import {
+  useMonthlyRetainerYearBarsMap,
+  useProjectBurnsMap,
+} from "@/lib/hooks/use-aggregates";
 import {
   budgetBurn,
   budgetHealth,
@@ -14,9 +17,29 @@ import {
   formatMoney,
   normalizeBudgetMode,
   projectHoursForecast,
+  type ProjectHoursForecast,
 } from "@/lib/domain/budget";
 import { cn } from "@/lib/cn";
 import type { Project } from "@/lib/types";
+
+function forecastFromBurn(
+  project: Project,
+  burn: ReturnType<typeof budgetBurn>,
+): ProjectHoursForecast {
+  const mode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  return {
+    hoursUsedToDate: burn.usedHours,
+    hoursFuturePlanned: burn.futureHours,
+    hoursTotalPlanned: burn.plannedHours,
+    hoursRemaining: mode === "hours" ? burn.remainingHours : null,
+    overBudget: mode === "hours" ? burn.overBy > 0 : burn.amountOverBy > 0,
+    mode,
+  };
+}
 
 export function BudgetCard({
   project,
@@ -27,11 +50,14 @@ export function BudgetCard({
   href?: string;
   showName?: boolean;
 }) {
-  const { state } = useData();
+  const { state, dataStatus } = useData();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
+  const year = new Date().getFullYear();
+  const { barsByProject } = useMonthlyRetainerYearBarsMap(year);
   const membersForProject = state.project_members.filter(
     (m) => m.project_id === project.id,
   );
+  const projectReady = dataStatus.projects[project.id] === "ready";
   const burn =
     burns.get(project.id) ??
     (burnsReady
@@ -46,11 +72,9 @@ export function BudgetCard({
       : // Avoid fee-only/zero-assignment flashes while RPC loads.
         budgetBurn(project, [], [], false, new Date(), []));
   const health = budgetHealth(burn);
-  const hoursFx = projectHoursForecast(
-    project,
-    state.assignments,
-    state.people,
-  );
+  const hoursFx = projectReady
+    ? projectHoursForecast(project, state.assignments, state.people)
+    : forecastFromBurn(project, burn);
   const mode = normalizeBudgetMode(
     project.budget_mode,
     project.budget_hours,
@@ -60,16 +84,18 @@ export function BudgetCard({
     mode === "hours" && Boolean(project.budget_monthly_reset);
   const showHoursMetrics = mode === "hours";
   const showAmountMetrics = mode === "amount";
-  const year = new Date().getFullYear();
   const yearBars = isMonthlyHours
-    ? calendarYearBars(
-        project,
-        state.assignments,
-        state.people,
-        year,
-        new Date(),
-        membersForProject,
-      )
+    ? (barsByProject.get(project.id) ??
+      (projectReady
+        ? calendarYearBars(
+            project,
+            state.assignments,
+            state.people,
+            year,
+            new Date(),
+            membersForProject,
+          )
+        : []))
     : [];
 
   const summary =
