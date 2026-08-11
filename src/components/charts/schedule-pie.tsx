@@ -1,5 +1,6 @@
 "use client";
 
+import { useId } from "react";
 import { cn } from "@/lib/cn";
 import { formatHours } from "@/lib/domain/budget";
 
@@ -8,8 +9,8 @@ export type SchedulePieSlice = {
   hours: number;
   color: string;
   label: string;
-  /** Hollow stroke instead of solid fill (e.g. available capacity). */
-  outlined?: boolean;
+  /** Diagonal hatch fill instead of solid (e.g. available capacity). */
+  hatched?: boolean;
 };
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
@@ -81,6 +82,7 @@ export function SchedulePie({
   /** Scale center labels (e.g. 2 = double default size). */
   centerScale?: 1 | 2;
 }) {
+  const reactId = useId().replace(/:/g, "");
   const total = slices.reduce((s, x) => s + x.hours, 0);
   const size = 100;
   const cx = 50;
@@ -94,7 +96,8 @@ export function SchedulePie({
     d: string;
     color: string;
     key: string;
-    outlined?: boolean;
+    hatched?: boolean;
+    patternId?: string;
   }[] = [];
   if (total > 0) {
     let cursor = 0;
@@ -104,16 +107,22 @@ export function SchedulePie({
       const end = cursor + sliceDeg + gapDeg / 2;
       const d = donutSlicePath(cx, cy, rOuter, rInner, start, end);
       if (d) {
+        const patternId = slice.hatched
+          ? `pie-hatch-${reactId}-${slice.projectId}`
+          : undefined;
         paths.push({
           d,
           color: slice.color,
           key: slice.projectId,
-          outlined: slice.outlined,
+          hatched: slice.hatched,
+          patternId,
         });
       }
       cursor += sliceDeg + gapDeg;
     }
   }
+
+  const hatchPaths = paths.filter((p) => p.hatched && p.patternId);
 
   const primary = centerValue ?? formatHours(totalHours);
   const valueClass = compact
@@ -143,6 +152,29 @@ export function SchedulePie({
       aria-label={`Schedule pie: ${formatHours(totalHours)} booked`}
     >
       <svg viewBox={`0 0 ${size} ${size}`} className="size-full" aria-hidden>
+        {hatchPaths.length > 0 ? (
+          <defs>
+            {hatchPaths.map((p) => (
+              <pattern
+                key={p.patternId}
+                id={p.patternId!}
+                width="5"
+                height="5"
+                patternUnits="userSpaceOnUse"
+                patternTransform="rotate(45)"
+              >
+                <line
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="5"
+                  stroke={p.color}
+                  strokeWidth="1.35"
+                />
+              </pattern>
+            ))}
+          </defs>
+        ) : null}
         {paths.length === 0 ? (
           <circle
             cx={cx}
@@ -153,27 +185,16 @@ export function SchedulePie({
             strokeWidth={rOuter - rInner}
           />
         ) : (
-          paths.map((p) =>
-            p.outlined ? (
-              <path
-                key={p.key}
-                d={p.d}
-                fill="none"
-                stroke={p.color}
-                strokeWidth={1.75}
-                strokeLinejoin="round"
-              />
-            ) : (
-              <path
-                key={p.key}
-                d={p.d}
-                fill={p.color}
-                stroke="var(--bg)"
-                strokeWidth={0.6}
-                strokeLinejoin="round"
-              />
-            ),
-          )
+          paths.map((p) => (
+            <path
+              key={p.key}
+              d={p.d}
+              fill={p.hatched && p.patternId ? `url(#${p.patternId})` : p.color}
+              stroke="var(--bg)"
+              strokeWidth={0.6}
+              strokeLinejoin="round"
+            />
+          ))
         )}
       </svg>
       <div

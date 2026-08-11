@@ -135,6 +135,7 @@ function UtilizationReportContent() {
           hours: free,
           color: "#94a3b8",
           label: "Available",
+          hatched: true,
         });
       }
 
@@ -224,7 +225,10 @@ function UtilizationReportContent() {
                         );
                         const row = (
                           <span className="flex items-center gap-2 text-sm">
-                            <ProjectColorBar color={slice.color} />
+                            <ProjectColorBar
+                              color={slice.color}
+                              hatched={isFree}
+                            />
                             <span className="min-w-0 flex-1 truncate">
                               {slice.label}
                             </span>

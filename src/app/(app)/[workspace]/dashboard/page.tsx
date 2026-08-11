@@ -691,7 +691,7 @@ export default function DashboardPage() {
         hours: free,
         color: "var(--status-unavailable)",
         label: "Available",
-        outlined: true,
+        hatched: true,
       });
     }
     return slices;
@@ -1947,6 +1947,7 @@ function TodaySchedule({
         hours: free,
         color: "#94a3b8",
         label: "Available",
+        hatched: true,
       });
     }
     return projectSlices;
@@ -2003,7 +2004,7 @@ function TodaySchedule({
               const isFree = slice.projectId === "__free__";
               const row = (
                 <span className="flex items-center gap-2 text-sm">
-                  <ProjectColorBar color={slice.color} />
+                  <ProjectColorBar color={slice.color} hatched={isFree} />
                   <span className="min-w-0 flex-1 truncate">{slice.label}</span>
                   <span className="shrink-0 tabular-nums text-xs text-[var(--text-muted)]">
                     {formatHours(slice.hours)}

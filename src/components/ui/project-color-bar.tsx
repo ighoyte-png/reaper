@@ -21,16 +21,33 @@ export function ProjectColorBar({
   color,
   size = "md",
   className,
+  hatched = false,
 }: {
   color: string;
   size?: ProjectColorBarSize;
   className?: string;
+  /** Diagonal hatch (e.g. Available capacity) instead of solid fill. */
+  hatched?: boolean;
 }) {
   return (
     <span
       aria-hidden
       className={cn("shrink-0 rounded-full", SIZE_CLASS[size], className)}
-      style={{ background: color }}
+      style={
+        hatched
+          ? {
+              backgroundColor: "transparent",
+              backgroundImage: `repeating-linear-gradient(
+                -45deg,
+                ${color} 0,
+                ${color} 1px,
+                transparent 1px,
+                transparent 3px
+              )`,
+              boxShadow: `inset 0 0 0 1px ${color}`,
+            }
+          : { background: color }
+      }
     />
   );
 }
