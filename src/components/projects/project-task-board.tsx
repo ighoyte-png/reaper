@@ -30,6 +30,7 @@ import {
   ChartGantt,
   ChevronDown,
   ChevronRight,
+  Copy,
   Eye,
   EyeOff,
   GripVertical,
@@ -67,6 +68,10 @@ import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
 import { MILESTONE_PURPLE } from "@/lib/domain/gantt";
+import {
+  buildCopiedTaskList,
+  canOfferAlignAfterSource,
+} from "@/lib/domain/copy-task-list";
 import {
   clearCommentDraft,
   readCommentDraft,
@@ -417,6 +422,10 @@ export function ProjectTaskBoard({
   const [draftingListId, setDraftingListId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmDeleteList, setConfirmDeleteList] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [confirmCopyAlign, setConfirmCopyAlign] = useState<{
     id: string;
     name: string;
   } | null>(null);
@@ -974,6 +983,49 @@ export function ProjectTaskBoard({
       end_date: null,
     };
     upsertTaskList(list);
+  }
+
+  function copyList(listId: string, alignAfterSource: boolean) {
+    if (!manageLists) return;
+    const sourceList = state.task_lists.find((l) => l.id === listId);
+    if (!sourceList || sourceList.project_id !== projectId) return;
+    const sourceTasks = state.tasks.filter((t) => t.list_id === listId);
+    const { list, tasks } = buildCopiedTaskList({
+      sourceList,
+      sourceTasks,
+      newListId: newId("tlist"),
+      idForTask: () => newId("task"),
+      organizationId: state.organization.id,
+      alignAfterSource,
+    });
+    for (const sibling of state.task_lists) {
+      if (
+        sibling.project_id === projectId &&
+        sibling.sort_order > sourceList.sort_order
+      ) {
+        upsertTaskList({
+          ...sibling,
+          sort_order: sibling.sort_order + 1,
+        });
+      }
+    }
+    upsertTaskList(list);
+    for (const task of tasks) {
+      upsertTask(task);
+    }
+    toast("List copied");
+  }
+
+  function requestCopyList(listId: string) {
+    if (!manageLists) return;
+    const sourceList = state.task_lists.find((l) => l.id === listId);
+    if (!sourceList || sourceList.project_id !== projectId) return;
+    const sourceTasks = state.tasks.filter((t) => t.list_id === listId);
+    if (canOfferAlignAfterSource(sourceList, sourceTasks)) {
+      setConfirmCopyAlign({ id: sourceList.id, name: sourceList.name });
+      return;
+    }
+    copyList(listId, false);
   }
 
   function addSubtask(listId: string, parentId: string) {
@@ -2222,6 +2274,7 @@ export function ProjectTaskBoard({
                     if (guardGanttStructuralEdit(list.id)) return;
                     setConfirmDeleteList({ id: list.id, name: list.name });
                   }}
+                  onCopy={() => requestCopyList(list.id)}
                   onUpdateList={(patch) =>
                     upsertTaskList({ ...list, ...patch })
                   }
@@ -2345,6 +2398,7 @@ export function ProjectTaskBoard({
                         if (guardGanttStructuralEdit(list.id)) return;
                         setConfirmDeleteList({ id: list.id, name: list.name });
                       }}
+                      onCopy={() => requestCopyList(list.id)}
                       onUpdateList={(patch) =>
                         upsertTaskList({ ...list, ...patch })
                       }
@@ -2371,6 +2425,25 @@ export function ProjectTaskBoard({
             for (const t of listTasks) deleteTask(t.id);
             deleteTaskList(confirmDeleteList.id);
             setConfirmDeleteList(null);
+          }}
+        />
+      ) : null}
+      {confirmCopyAlign ? (
+        <ConfirmDialog
+          title="Align dates after this list?"
+          message={`Slide the copy of "${confirmCopyAlign.name}" so it starts the day after this list ends? Task dates stay the same length relative to each other. Choose No to keep the same absolute dates.`}
+          confirmLabel="Yes"
+          cancelLabel="No"
+          tone="accent"
+          onCancel={() => {
+            const id = confirmCopyAlign.id;
+            setConfirmCopyAlign(null);
+            copyList(id, false);
+          }}
+          onConfirm={() => {
+            const id = confirmCopyAlign.id;
+            setConfirmCopyAlign(null);
+            copyList(id, true);
           }}
         />
       ) : null}
@@ -2478,6 +2551,7 @@ function ListSection({
   onUnarchive,
   onToggleHideFromClient,
   onDelete,
+  onCopy,
   onUpdateList,
   showGanttControls,
 }: {
@@ -2501,6 +2575,7 @@ function ListSection({
   onUnarchive: () => void;
   onToggleHideFromClient: () => void;
   onDelete: () => void;
+  onCopy: () => void;
   onUpdateList: (patch: Partial<TaskList>) => void;
   showGanttControls: boolean;
 }) {
@@ -2586,6 +2661,15 @@ function ListSection({
         )}
         {ctx.manageLists && ctx.listsEditMode ? (
           <div className="flex flex-wrap items-center gap-1">
+            <button
+              type="button"
+              className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+              onClick={onCopy}
+              aria-label={`Copy ${list.name}`}
+              title="Copy list"
+            >
+              <Copy size={14} />
+            </button>
             {showGanttControls ? (
               <>
                 <button

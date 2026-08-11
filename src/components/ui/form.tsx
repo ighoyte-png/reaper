@@ -112,6 +112,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel,
+  cancelLabel = "Cancel",
   tone,
   mode = "confirm",
   onConfirm,
@@ -122,6 +123,8 @@ export function ConfirmDialog({
   title: string;
   message: string;
   confirmLabel?: string;
+  /** Secondary button label in confirm mode (default Cancel). */
+  cancelLabel?: string;
   /** danger = red destructive; accent = primary action */
   tone?: "danger" | "accent";
   /** notice = single OK/Got it button (no Cancel) */
@@ -147,7 +150,7 @@ export function ConfirmDialog({
         <div className="mt-4 flex justify-end gap-2">
           {mode === "confirm" ? (
             <Button variant="secondary" size="lg" onClick={onCancel}>
-              Cancel
+              {cancelLabel}
             </Button>
           ) : null}
           <Button
