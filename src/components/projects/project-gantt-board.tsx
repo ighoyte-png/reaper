@@ -128,6 +128,83 @@ function cloneProject(project: Project): Project {
   return { ...project };
 }
 
+/** Reorder root tasks while keeping parent→children clumps intact. */
+function flattenGanttTasksByRootOrder(
+  listTasks: Task[],
+  rootOrder: string[],
+): Task[] {
+  const byId = new Map(listTasks.map((t) => [t.id, t]));
+  const childrenByParent = new Map<string, Task[]>();
+  for (const t of listTasks) {
+    if (!t.parent_id) continue;
+    const arr = childrenByParent.get(t.parent_id) ?? [];
+    arr.push(t);
+    childrenByParent.set(t.parent_id, arr);
+  }
+  for (const arr of childrenByParent.values()) {
+    arr.sort(
+      (a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title),
+    );
+  }
+  const out: Task[] = [];
+  const seen = new Set<string>();
+  for (const rootId of rootOrder) {
+    const root = byId.get(rootId);
+    if (!root || root.parent_id) continue;
+    out.push(root);
+    seen.add(root.id);
+    for (const c of childrenByParent.get(rootId) ?? []) {
+      out.push(c);
+      seen.add(c.id);
+    }
+  }
+  for (const t of listDisplayOrder(listTasks)) {
+    if (!seen.has(t.id)) out.push(t);
+  }
+  return out;
+}
+
+function moveRootOrder(
+  rootOrder: string[],
+  fromIndex: number,
+  toIndex: number,
+): string[] {
+  if (fromIndex === toIndex) return rootOrder;
+  const next = [...rootOrder];
+  const [moved] = next.splice(fromIndex, 1);
+  if (moved === undefined) return rootOrder;
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+/** Pick insert index by nearest group midpoint under the pointer. */
+function reorderTargetIndex(
+  clientY: number,
+  originClientY: number,
+  fromIndex: number,
+  rootHeights: number[],
+): number {
+  const n = rootHeights.length;
+  if (n === 0) return 0;
+  let fromTop = 0;
+  for (let i = 0; i < fromIndex; i++) fromTop += rootHeights[i] ?? 0;
+  const fromH = rootHeights[fromIndex] ?? GANTT_TASK_ROW_H;
+  const dragCenter = fromTop + fromH / 2 + (clientY - originClientY);
+  let best = fromIndex;
+  let bestDist = Number.POSITIVE_INFINITY;
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    const h = rootHeights[i] ?? GANTT_TASK_ROW_H;
+    const dist = Math.abs(dragCenter - (y + h / 2));
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+    y += h;
+  }
+  return best;
+}
+
 type DragMode = "move" | "resize-start" | "resize-end";
 
 type DragTarget =
@@ -867,12 +944,22 @@ export function ProjectGanttBoard({
     x: number;
     y: number;
   } | null>(null);
+  /** Live vertical reorder preview (committed only on pointer up). */
+  const [reorderPreview, setReorderPreview] = useState<{
+    listId: string;
+    taskId: string;
+    fromIndex: number;
+    toIndex: number;
+    rootOrder: string[];
+  } | null>(null);
   const reorderRef = useRef<{
     taskId: string;
     listId: string;
-    startY: number;
-    order: string[];
-    initialOrder: string[];
+    originClientY: number;
+    fromIndex: number;
+    toIndex: number;
+    rootOrder: string[];
+    rootHeights: number[];
     initialTasks: Task[];
     pointerId: number;
   } | null>(null);
@@ -1052,13 +1139,21 @@ export function ProjectGanttBoard({
 
   const listSections = useMemo(() => {
     return ganttLists.map((list) => {
-      const tasks = ganttTasksForList(projectTasks, list.id);
+      let tasks = ganttTasksForList(projectTasks, list.id);
+      if (reorderPreview?.listId === list.id) {
+        const previewOrder = moveRootOrder(
+          reorderPreview.rootOrder,
+          reorderPreview.fromIndex,
+          reorderPreview.toIndex,
+        );
+        tasks = flattenGanttTasksByRootOrder(tasks, previewOrder);
+      }
       const milestone = list.milestone_id
         ? projectMilestones.find((m) => m.id === list.milestone_id) ?? null
         : null;
       return { list, tasks, milestone };
     });
-  }, [ganttLists, projectTasks, projectMilestones]);
+  }, [ganttLists, projectTasks, projectMilestones, reorderPreview]);
 
   const projectDates = useMemo(() => {
     if (!project) return null;
@@ -1885,10 +1980,22 @@ export function ProjectGanttBoard({
       if (readOnly || e.button !== 0 || task.parent_id) return;
       e.stopPropagation();
       e.preventDefault();
-      const siblings = ganttTasksForList(projectTasks, task.list_id)
-        .filter((t) => !t.parent_id)
-        .map((t) => t.id);
+      const listTasks = ganttTasksForList(projectTasks, task.list_id);
+      const siblings = listTasks.filter((t) => !t.parent_id).map((t) => t.id);
       if (siblings.length < 2) return;
+      const fromIndex = siblings.indexOf(task.id);
+      if (fromIndex < 0) return;
+      const childCountByRoot = new Map<string, number>();
+      for (const t of listTasks) {
+        if (!t.parent_id) continue;
+        childCountByRoot.set(
+          t.parent_id,
+          (childCountByRoot.get(t.parent_id) ?? 0) + 1,
+        );
+      }
+      const rootHeights = siblings.map(
+        (id) => (1 + (childCountByRoot.get(id) ?? 0)) * GANTT_TASK_ROW_H,
+      );
       const initialTasks = siblings
         .map((id) => projectTasks.find((t) => t.id === id))
         .filter((t): t is Task => Boolean(t))
@@ -1896,12 +2003,21 @@ export function ProjectGanttBoard({
       reorderRef.current = {
         taskId: task.id,
         listId: task.list_id,
-        startY: e.clientY,
-        order: siblings,
-        initialOrder: [...siblings],
+        originClientY: e.clientY,
+        fromIndex,
+        toIndex: fromIndex,
+        rootOrder: siblings,
+        rootHeights,
         initialTasks,
         pointerId: e.pointerId,
       };
+      setReorderPreview({
+        listId: task.list_id,
+        taskId: task.id,
+        fromIndex,
+        toIndex: fromIndex,
+        rootOrder: siblings,
+      });
       setReorderGhost({
         title: task.title,
         x: e.clientX,
@@ -1922,22 +2038,20 @@ export function ProjectGanttBoard({
         x: e.clientX,
         y: e.clientY,
       });
-      const deltaRows = Math.round(
-        (e.clientY - snap.startY) / GANTT_TASK_ROW_H,
+      const to = reorderTargetIndex(
+        e.clientY,
+        snap.originClientY,
+        snap.fromIndex,
+        snap.rootHeights,
       );
-      const from = snap.order.indexOf(snap.taskId);
-      if (from < 0) return;
-      const to = Math.max(0, Math.min(snap.order.length - 1, from + deltaRows));
-      if (to === from) return;
-      const next = [...snap.order];
-      next.splice(from, 1);
-      next.splice(to, 0, snap.taskId);
-      snap.order = next;
-      snap.startY = e.clientY;
-      next.forEach((id, i) => {
-        const task = projectTasks.find((t) => t.id === id);
-        if (!task || task.sort_order === i) return;
-        upsertTask({ ...task, sort_order: i });
+      if (to === snap.toIndex) return;
+      snap.toIndex = to;
+      setReorderPreview({
+        listId: snap.listId,
+        taskId: snap.taskId,
+        fromIndex: snap.fromIndex,
+        toIndex: to,
+        rootOrder: snap.rootOrder,
       });
     }
     function onUp(e: PointerEvent) {
@@ -1945,12 +2059,19 @@ export function ProjectGanttBoard({
       if (!snap || e.pointerId !== snap.pointerId) return;
       reorderRef.current = null;
       setReorderGhost(null);
-      const changed =
-        snap.order.length !== snap.initialOrder.length ||
-        snap.order.some((id, i) => id !== snap.initialOrder[i]);
-      if (changed) {
-        pushUndo({ tasks: snap.initialTasks });
-      }
+      setReorderPreview(null);
+      if (snap.toIndex === snap.fromIndex) return;
+      const next = moveRootOrder(
+        snap.rootOrder,
+        snap.fromIndex,
+        snap.toIndex,
+      );
+      next.forEach((id, i) => {
+        const task = projectTasks.find((t) => t.id === id);
+        if (!task || task.sort_order === i) return;
+        upsertTask({ ...task, sort_order: i });
+      });
+      pushUndo({ tasks: snap.initialTasks });
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -2461,6 +2582,11 @@ export function ProjectGanttBoard({
 
                   if (!expanded) continue;
 
+                  const listReordering = reorderPreview?.listId === list.id;
+                  const draggingTaskId = listReordering
+                    ? reorderPreview.taskId
+                    : null;
+
                   for (const task of tasks) {
                     const taskDates = getTaskDates(task, list);
                     const assignee = task.assignee_person_id
@@ -2473,6 +2599,10 @@ export function ProjectGanttBoard({
                     const taskWash = taskHover ? hoverWash(barColor) : undefined;
                     const taskRowY = y;
                     y += GANTT_TASK_ROW_H;
+                    const isDraggedGroup =
+                      draggingTaskId != null &&
+                      (task.id === draggingTaskId ||
+                        task.parent_id === draggingTaskId);
 
                     const childIds = projectTasks
                       .filter((t) => t.parent_id === task.id)
@@ -2490,7 +2620,17 @@ export function ProjectGanttBoard({
                       <div
                         key={`task-row-${task.id}`}
                         className="absolute left-0 right-0 z-[2] flex"
-                        style={{ top: taskRowY, height: GANTT_TASK_ROW_H }}
+                        style={{
+                          top: taskRowY,
+                          height: GANTT_TASK_ROW_H,
+                          transition: listReordering
+                            ? "top 150ms ease"
+                            : undefined,
+                          // Leave an empty drop footprint; floating ghost is the drag cue.
+                          opacity: isDraggedGroup ? 0 : undefined,
+                          pointerEvents: isDraggedGroup ? "none" : undefined,
+                          zIndex: isDraggedGroup ? 3 : undefined,
+                        }}
                         onMouseEnter={() => setHoveredRowId(taskRowId)}
                         onMouseLeave={() =>
                           setHoveredRowId((id) =>
@@ -2776,7 +2916,7 @@ export function ProjectGanttBoard({
       ) : null}
       {reorderGhost ? (
         <div
-          className="pointer-events-none fixed z-[80] max-w-xs truncate rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm shadow-md"
+          className="pointer-events-none fixed z-[80] max-w-xs truncate rounded-md border border-[var(--accent)]/40 bg-[var(--bg)] px-3 py-2 text-sm shadow-lg ring-1 ring-[var(--accent)]/20"
           style={{
             left: reorderGhost.x + 12,
             top: reorderGhost.y + 12,
