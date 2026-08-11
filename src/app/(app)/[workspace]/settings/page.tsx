@@ -99,6 +99,7 @@ export default function SettingsPage() {
   const [createWsOpen, setCreateWsOpen] = useState(false);
   const [createWsName, setCreateWsName] = useState("");
   const [createWsBusy, setCreateWsBusy] = useState(false);
+  const [allowWorkspaceSignup, setAllowWorkspaceSignup] = useState(true);
   const [pwBusy, setPwBusy] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -142,6 +143,28 @@ export default function SettingsPage() {
         if (!cancelled) setIsPlatformAdmin(Boolean(body.isPlatformAdmin));
       } catch {
         /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/platform/settings");
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          allow_workspace_signup?: boolean;
+        };
+        if (cancelled) return;
+        const allow = body.allow_workspace_signup !== false;
+        setAllowWorkspaceSignup(allow);
+        if (!allow) setCreateWsOpen(false);
+      } catch {
+        /* default allow */
       }
     })();
     return () => {
@@ -530,21 +553,32 @@ export default function SettingsPage() {
                     <h3 className="text-xs font-semibold text-[var(--text)]">
                       Another workspace
                     </h3>
-                    <p className="mt-1 text-xs text-[var(--text-muted)]">
-                      Your login can belong to more than one workspace. Create a
-                      new one as admin without leaving this account.
-                    </p>
-                    <Button
-                      className="mt-2"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setCreateWsName("");
-                        setCreateWsOpen(true);
-                      }}
-                    >
-                      Create workspace
-                    </Button>
+                    {allowWorkspaceSignup ? (
+                      <>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
+                          Your login can belong to more than one workspace.
+                          Create a new one as admin without leaving this
+                          account.
+                        </p>
+                        <Button
+                          className="mt-2"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setCreateWsName("");
+                            setCreateWsOpen(true);
+                          }}
+                        >
+                          Create workspace
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        New workspace creation is currently closed by the
+                        platform admin. You can still switch to workspaces you
+                        already belong to.
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </Panel>
@@ -1229,7 +1263,7 @@ export default function SettingsPage() {
         </Modal>
       ) : null}
 
-      {createWsOpen ? (
+      {createWsOpen && allowWorkspaceSignup ? (
         <Modal
           title="Create workspace"
           onClose={() => {

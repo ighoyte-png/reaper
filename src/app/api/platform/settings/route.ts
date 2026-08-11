@@ -61,7 +61,7 @@ async function readAppSettings(): Promise<{
   }
 }
 
-/** Public: login page uses this to hide Create workspace. */
+/** Public: login + Settings use this to hide Create workspace. */
 export async function GET() {
   const settings = await readAppSettings();
   return NextResponse.json(settings);

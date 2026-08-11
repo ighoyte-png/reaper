@@ -333,8 +333,8 @@ export default function PlatformAdminPage() {
         <Panel>
           <h1 className="text-sm font-semibold">Workspace creation</h1>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            When off, the login page hides Create workspace and bootstrap
-            refuses new orgs.
+            When off, login and Settings hide Create workspace, and both
+            bootstrap and additional-org RPCs refuse new workspaces.
           </p>
           <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
             <input

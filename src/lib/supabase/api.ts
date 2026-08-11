@@ -669,18 +669,17 @@ export async function fetchWorkspace(
 
   const memberships = await fetchMemberships(supabase, userId);
 
-  // Profile may have been wiped by legacy ON DELETE CASCADE when an org was
-  // removed; rebuild from Auth + remaining memberships.
-  if (!profile && memberships.length > 0) {
+  // Rebuild wiped profiles and relink people.profile_id (member schedule uses myPerson).
+  if (memberships.length > 0) {
     const { data: restored, error: restoreError } = await supabase.rpc(
       "ensure_profile_from_memberships",
     );
     if (restoreError) {
       console.warn(
-        "[fetchWorkspace] profile rebuild failed",
+        "[fetchWorkspace] ensure_profile_from_memberships failed",
         restoreError.message,
       );
-    } else if (restored) {
+    } else if (restored && !profile) {
       profile = restored as typeof profile;
     }
     if (!profile) {
@@ -691,15 +690,6 @@ export async function fetchWorkspace(
         .maybeSingle();
       if (reloaded.error) throw reloaded.error;
       profile = reloaded.data;
-    }
-  } else if (profile && memberships.length > 0) {
-    const { data: activeOrgId } = await supabase.rpc("current_org_id");
-    if (!activeOrgId) {
-      try {
-        await supabase.rpc("ensure_profile_from_memberships");
-      } catch {
-        /* best-effort */
-      }
     }
   }
 
@@ -1671,6 +1661,24 @@ export async function createAdditionalOrganization(
   orgName: string,
   fullName?: string,
 ): Promise<string> {
+  // Client preflight; DB RPC still enforces allow_workspace_signup.
+  try {
+    const res = await fetch("/api/platform/settings");
+    if (res.ok) {
+      const body = (await res.json()) as { allow_workspace_signup?: boolean };
+      if (body.allow_workspace_signup === false) {
+        throw new Error("Workspace creation is disabled");
+      }
+    }
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === "Workspace creation is disabled"
+    ) {
+      throw err;
+    }
+  }
+
   const { data, error } = await supabase.rpc("create_additional_organization", {
     org_name: orgName,
     user_full_name: fullName ?? null,
