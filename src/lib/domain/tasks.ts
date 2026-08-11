@@ -456,7 +456,9 @@ export function taskThreadSubscriberPersonIds(
   };
   for (const c of comments) {
     if (c.task_id !== taskId) continue;
-    add(profileToPerson.get(c.author_profile_id) ?? null);
+    if (c.author_profile_id) {
+      add(profileToPerson.get(c.author_profile_id) ?? null);
+    }
     for (const id of c.mentioned_person_ids ?? []) add(id);
   }
   return out;

@@ -90,7 +90,7 @@ import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
 import { PRESET_COLORS } from "@/lib/domain/colors";
 import { projectTeamPersonIds, projectAssigneePeople, canEditProject } from "@/lib/domain/project-access";
-import { personAvatarColor } from "@/lib/domain/people";
+import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import {
   canCompleteTask,
   dueDateToneClass,
@@ -4235,14 +4235,17 @@ function CommentItem({
   const [saving, setSaving] = useState(false);
   const editorRef = useRef<SimpleRichTextEditorHandle>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const author = ctx.profiles.find((p) => p.id === comment.author_profile_id);
-  const authorPerson = ctx.people.find(
-    (p) => p.profile_id === comment.author_profile_id,
-  );
-  const displayName =
-    author?.full_name || authorPerson?.name || "Someone";
+  const author = comment.author_profile_id
+    ? ctx.profiles.find((p) => p.id === comment.author_profile_id)
+    : undefined;
+  const authorPerson = comment.author_profile_id
+    ? ctx.people.find((p) => p.profile_id === comment.author_profile_id)
+    : undefined;
+  const displayName = resolveAuthorLabel(author, authorPerson);
   const isAuthor = Boolean(
-    ctx.profileId && comment.author_profile_id === ctx.profileId,
+    ctx.profileId &&
+      comment.author_profile_id &&
+      comment.author_profile_id === ctx.profileId,
   );
   const canDelete = ctx.canManage || isAuthor;
   const wasEdited = Boolean(
@@ -4445,7 +4448,7 @@ function CommentReactions({
           .map((id) => {
             const profile = ctx.profiles.find((p) => p.id === id);
             const person = ctx.people.find((p) => p.profile_id === id);
-            return profile?.full_name || person?.name || "Someone";
+            return resolveAuthorLabel(profile, person);
           })
           .join(", ");
         return (

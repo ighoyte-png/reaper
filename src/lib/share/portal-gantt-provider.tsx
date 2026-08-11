@@ -132,6 +132,7 @@ export function portalPayloadToDemoState(
             hide_from_utilization: true,
             is_contractor: false,
             avatar_color: null,
+            deleted_at: null,
           },
         ]
       : [];
@@ -267,7 +268,7 @@ function buildPortalGanttContext(
     deleteProject: () => {},
     upsertPerson: async () => {},
     updatePersonAvatar: async () => {},
-    deletePerson: () => {},
+    deletePerson: async () => {},
     upsertPod: async () => {},
     deletePod: async () => {},
     setPodMembers: async () => {},

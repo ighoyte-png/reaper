@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { isUnreadBulletin } from "@/lib/domain/bulletins";
-import { personAvatarColor } from "@/lib/domain/people";
+import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import { notesPlainText } from "@/lib/notes-html";
 import {
   TASK_NOTE_MENTION_EVENT,
@@ -97,11 +97,7 @@ export function MentionDesktopListener() {
             ? (snap.profiles.find((p) => p.id === comment.author_profile_id) ??
               null)
             : null;
-          const authorName =
-            authorPerson?.name?.trim() ||
-            authorProfile?.full_name?.trim() ||
-            authorProfile?.email?.trim() ||
-            "Someone";
+          const authorName = resolveAuthorLabel(authorProfile, authorPerson);
           const snippet = notesPlainText(comment.body)
             .replace(/\s+/g, " ")
             .trim();

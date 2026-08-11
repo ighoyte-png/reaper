@@ -76,6 +76,7 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   hide_from_utilization: false,
   is_contractor: false,
   avatar_color: null,
+  deleted_at: null,
 });
 
 export default function PeoplePage() {
@@ -906,15 +907,25 @@ function PeoplePageContent() {
       {canManage && confirmDelete && editing && (
         <ConfirmDialog
           title="Delete Person?"
-          message={`Delete ${editing.name || "this person"}? Their assignments and leave will be removed. This can’t be undone.`}
+          message={`Delete ${editing.name || "this person"}? They’ll be removed from schedules and directories. Tasks and comments they created stay and show as “Deleted user”. Their login is removed. This can’t be undone.`}
           confirmLabel="Delete Person"
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
-            if (editing.id) deletePerson(editing.id);
-            setConfirmDelete(false);
-            setEditing(null);
-            setIsNewPerson(false);
-            push("Person deleted");
+            void (async () => {
+              if (!editing.id) return;
+              try {
+                await deletePerson(editing.id);
+                setConfirmDelete(false);
+                setEditing(null);
+                setIsNewPerson(false);
+                push("Person deleted");
+              } catch (err) {
+                push(
+                  err instanceof Error ? err.message : "Could not delete person",
+                  "warning",
+                );
+              }
+            })();
           }}
         />
       )}

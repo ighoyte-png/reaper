@@ -88,7 +88,7 @@ import {
 } from "@/lib/domain/recurrence";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { isFullyHiddenFromPlanning } from "@/lib/domain/contractor";
-import { utilizationVisiblePeople, personAvatarColor } from "@/lib/domain/people";
+import { utilizationVisiblePeople, personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import { taskUrgency, dueDateToneClass, type TaskUrgency } from "@/lib/domain/tasks";
 import { cn } from "@/lib/cn";
 import type {
@@ -885,15 +885,19 @@ export default function DashboardPage() {
           project?.client_id != null
             ? clientById.get(project.client_id)
             : undefined;
-        const author = state.profiles.find(
-          (p) => p.id === c.author_profile_id,
-        );
+        const author = c.author_profile_id
+          ? state.profiles.find((p) => p.id === c.author_profile_id)
+          : undefined;
+        const authorPerson = c.author_profile_id
+          ? state.people.find((p) => p.profile_id === c.author_profile_id)
+          : undefined;
         return {
           comment: c,
           task,
           project,
           client,
           author,
+          authorPerson,
           unread: unreadMentionIds.has(c.id),
         };
       })
@@ -907,6 +911,7 @@ export default function DashboardPage() {
     state.task_comments,
     state.tasks,
     state.profiles,
+    state.people,
     projectById,
     clientById,
     inboxMentionIds,
@@ -1379,6 +1384,7 @@ function TaggedCommentsPanel({
     project: Project | undefined;
     client: Client | undefined;
     author: Profile | undefined;
+    authorPerson: Person | undefined;
     unread: boolean;
   }[];
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
@@ -1428,9 +1434,9 @@ function TaggedCommentsPanel({
           )}
         >
           {taggedComments.map(
-            ({ comment, task, project, client, author, unread }) => {
+            ({ comment, task, project, client, author, authorPerson, unread }) => {
             const location = [
-              author?.full_name ?? "Someone",
+              resolveAuthorLabel(author, authorPerson),
               client?.name,
               project!.name,
             ]

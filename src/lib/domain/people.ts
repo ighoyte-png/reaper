@@ -32,3 +32,26 @@ export function personAvatarColor(
   if (color) return color;
   return avatarColorFromId(person.id);
 }
+
+/** Label for removed teammates / missing authorship. */
+export const DELETED_USER_LABEL = "Deleted user";
+
+export function isActivePerson(
+  person: Pick<Person, "deleted_at"> | null | undefined,
+): boolean {
+  return Boolean(person && !person.deleted_at);
+}
+
+/** Resolve a person/profile display name; falls back to Deleted user. */
+export function resolveAuthorLabel(
+  profile: { full_name?: string; email?: string } | null | undefined,
+  person: Pick<Person, "name" | "deleted_at"> | null | undefined,
+): string {
+  if (person?.deleted_at) return DELETED_USER_LABEL;
+  const fromProfile =
+    profile?.full_name?.trim() || profile?.email?.trim() || "";
+  if (fromProfile) return fromProfile;
+  const fromPerson = person?.name?.trim() || "";
+  if (fromPerson) return fromPerson;
+  return DELETED_USER_LABEL;
+}

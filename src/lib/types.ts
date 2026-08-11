@@ -198,7 +198,8 @@ export interface TaskComment {
   id: string;
   organization_id: string;
   task_id: string;
-  author_profile_id: string;
+  /** Null when the author's Auth/profile was removed. */
+  author_profile_id: string | null;
   body: string;
   created_at: string;
   /** Set when the author edits the body; null if never edited. */
@@ -323,6 +324,8 @@ export interface Person {
   is_contractor: boolean;
   /** Initials circle background when avatar_url is empty (client palette hex). */
   avatar_color: string | null;
+  /** Soft-deleted teammates remain for history but are hidden from directories. */
+  deleted_at: string | null;
 }
 
 export interface HolidayCalendar {

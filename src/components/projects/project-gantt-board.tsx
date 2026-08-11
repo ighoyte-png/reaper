@@ -65,7 +65,7 @@ import {
   type GanttBarDates,
 } from "@/lib/domain/gantt";
 import { projectAssigneePeople, projectTeamPersonIds } from "@/lib/domain/project-access";
-import { personAvatarColor } from "@/lib/domain/people";
+import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import {
   canCompleteTask,
   isDownstreamOfOpenClientReview,
@@ -584,11 +584,13 @@ function ReadOnlyComments({
   return (
     <div className="space-y-3">
       {sorted.map((c) => {
-        const author = profiles.find((p) => p.id === c.author_profile_id);
-        const authorPerson = people.find(
-          (p) => p.profile_id === c.author_profile_id,
-        );
-        const name = author?.full_name || authorPerson?.name || "Someone";
+        const author = c.author_profile_id
+          ? profiles.find((p) => p.id === c.author_profile_id)
+          : undefined;
+        const authorPerson = c.author_profile_id
+          ? people.find((p) => p.profile_id === c.author_profile_id)
+          : undefined;
+        const name = resolveAuthorLabel(author, authorPerson);
         return (
           <div
             key={c.id}

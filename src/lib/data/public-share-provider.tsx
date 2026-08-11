@@ -189,7 +189,7 @@ export function PublicShareProvider({
       deleteProject: () => {},
       upsertPerson: async () => {},
       updatePersonAvatar: async () => {},
-      deletePerson: () => {},
+      deletePerson: async () => {},
       upsertPod: async () => {},
       deletePod: async () => {},
       setPodMembers: async () => {},

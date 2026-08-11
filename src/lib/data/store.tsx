@@ -57,7 +57,6 @@ import {
   deleteHolidayCalendarRow,
   deleteLeaveRow,
   deleteMilestoneRow,
-  deletePersonRow,
   deleteProjectAssetRow,
   deleteProjectFavoriteRow,
   deleteProjectRow,
@@ -211,6 +210,7 @@ function loadDemoState(): DemoState {
           (p as Person).hide_from_utilization ?? p.hide_from_schedule,
         ),
         is_contractor: Boolean((p as Person).is_contractor),
+        deleted_at: (p as Person).deleted_at ?? null,
       })),
       leave_days: (parsed.leave_days ?? seed.leave_days).map((l) => ({
         ...l,
@@ -544,7 +544,7 @@ interface DataContextValue {
     avatarUrl: string | null,
     avatarAttachmentId?: string | null,
   ) => Promise<void>;
-  deletePerson: (id: string) => void;
+  deletePerson: (id: string) => Promise<void>;
   /** Create or update a pod (managers/admins). */
   upsertPod: (
     pod: Omit<Pod, "organization_id"> & { organization_id?: string },
@@ -2605,22 +2605,103 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         }
       },
-      deletePerson: (id) => {
-        patch((prev) => ({
-          ...prev,
-          people: prev.people.filter((p) => p.id !== id),
-          assignments: prev.assignments.filter((a) => a.person_id !== id),
-          leave_days: prev.leave_days.filter((l) => l.person_id !== id),
-          pods: prev.pods.map((pod) =>
-            pod.manager_person_id === id
-              ? { ...pod, manager_person_id: null }
-              : pod,
-          ),
-          pod_members: prev.pod_members.filter((m) => m.person_id !== id),
-        }));
-        if (mode === "supabase" && supabaseRef.current) {
-          runRemoteSoft(() => deletePersonRow(supabaseRef.current!, id));
+      deletePerson: async (id) => {
+        if (mode === "supabase") {
+          const existing = state.people.find((p) => p.id === id);
+          const profileId = existing?.profile_id ?? null;
+          const res = await fetch(`/api/people/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+            credentials: "same-origin",
+          });
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            personDeleted?: boolean;
+            authUserId?: string | null;
+          };
+          if (!res.ok) {
+            if (body.personDeleted) {
+              const client = supabaseRef.current ?? createClient();
+              await refreshSupabase(client);
+            }
+            throw new Error(body.error || "Could not delete person");
+          }
+          const removedProfileId = body.authUserId ?? profileId;
+          patch((prev) => ({
+            ...prev,
+            people: prev.people.filter((p) => p.id !== id),
+            profiles: removedProfileId
+              ? prev.profiles.filter((p) => p.id !== removedProfileId)
+              : prev.profiles,
+            tasks: prev.tasks.map((t) =>
+              t.assignee_person_id === id
+                ? { ...t, assignee_person_id: null }
+                : t,
+            ),
+            task_comments: removedProfileId
+              ? prev.task_comments.map((c) =>
+                  c.author_profile_id === removedProfileId
+                    ? { ...c, author_profile_id: null }
+                    : c,
+                )
+              : prev.task_comments,
+            assignments: prev.assignments.filter((a) => a.person_id !== id),
+            leave_days: prev.leave_days.filter((l) => l.person_id !== id),
+            project_members: prev.project_members.filter(
+              (m) => m.person_id !== id,
+            ),
+            projects: prev.projects.map((p) =>
+              p.manager_person_id === id
+                ? { ...p, manager_person_id: null }
+                : p,
+            ),
+            pods: prev.pods.map((pod) =>
+              pod.manager_person_id === id
+                ? { ...pod, manager_person_id: null }
+                : pod,
+            ),
+            pod_members: prev.pod_members.filter((m) => m.person_id !== id),
+          }));
+          return;
         }
+        patch((prev) => {
+          const profileId =
+            prev.people.find((p) => p.id === id)?.profile_id ?? null;
+          return {
+            ...prev,
+            people: prev.people.filter((p) => p.id !== id),
+            profiles: profileId
+              ? prev.profiles.filter((p) => p.id !== profileId)
+              : prev.profiles,
+            tasks: prev.tasks.map((t) =>
+              t.assignee_person_id === id
+                ? { ...t, assignee_person_id: null }
+                : t,
+            ),
+            task_comments: profileId
+              ? prev.task_comments.map((c) =>
+                  c.author_profile_id === profileId
+                    ? { ...c, author_profile_id: null }
+                    : c,
+                )
+              : prev.task_comments,
+            assignments: prev.assignments.filter((a) => a.person_id !== id),
+            leave_days: prev.leave_days.filter((l) => l.person_id !== id),
+            project_members: prev.project_members.filter(
+              (m) => m.person_id !== id,
+            ),
+            projects: prev.projects.map((p) =>
+              p.manager_person_id === id
+                ? { ...p, manager_person_id: null }
+                : p,
+            ),
+            pods: prev.pods.map((pod) =>
+              pod.manager_person_id === id
+                ? { ...pod, manager_person_id: null }
+                : pod,
+            ),
+            pod_members: prev.pod_members.filter((m) => m.person_id !== id),
+          };
+        });
       },
       upsertPod: async (pod) => {
         const row: Pod = {

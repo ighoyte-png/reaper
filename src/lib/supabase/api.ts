@@ -218,7 +218,9 @@ export function mapTaskComment(row: Record<string, unknown>): TaskComment {
     id: String(row.id),
     organization_id: String(row.organization_id),
     task_id: String(row.task_id),
-    author_profile_id: String(row.author_profile_id),
+    author_profile_id: row.author_profile_id
+      ? String(row.author_profile_id)
+      : null,
     body: String(row.body ?? ""),
     created_at: String(row.created_at ?? ""),
     updated_at: row.updated_at ? String(row.updated_at) : null,
@@ -377,6 +379,7 @@ function mapPerson(row: Record<string, unknown>): Person {
     ),
     is_contractor: Boolean(row.is_contractor),
     avatar_color: row.avatar_color ? String(row.avatar_color) : null,
+    deleted_at: row.deleted_at ? String(row.deleted_at) : null,
   };
 }
 
@@ -642,7 +645,11 @@ export async function loadOrgBootstrap(
     supabase.from("profiles").select("*").eq("organization_id", orgId),
     supabase.from("clients").select("*").eq("organization_id", orgId),
     supabase.from("projects").select("*").eq("organization_id", orgId),
-    supabase.from("people").select("*").eq("organization_id", orgId),
+    supabase
+      .from("people")
+      .select("*")
+      .eq("organization_id", orgId)
+      .is("deleted_at", null),
     supabase.from("project_members").select("*").eq("organization_id", orgId),
     supabase.from("holiday_calendars").select("*").eq("organization_id", orgId),
     supabase
@@ -2189,7 +2196,19 @@ export async function upsertPersonRow(
 }
 
 export async function deletePersonRow(supabase: SupabaseClient, id: string) {
-  const { error } = await supabase.from("people").delete().eq("id", id);
+  const { error } = await supabase
+    .from("people")
+    .update({
+      deleted_at: new Date().toISOString(),
+      profile_id: null,
+      name: "Deleted user",
+      email: "",
+      avatar_url: null,
+      avatar_attachment_id: null,
+      hide_from_schedule: true,
+      hide_from_utilization: true,
+    })
+    .eq("id", id);
   if (error) throw error;
 }
 
