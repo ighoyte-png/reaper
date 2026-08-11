@@ -13,6 +13,7 @@ import {
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
 import { BudgetStatusLine } from "@/components/reports/budget-status-line";
+import type { BudgetStatusFilter } from "@/components/reports/budget-status-line";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
@@ -77,10 +78,12 @@ const BUDGET_FILTER_DEFAULTS: {
   q: string;
   client: string;
   pm: string;
+  health: string;
 } = {
   q: "",
   client: "all",
   pm: "all",
+  health: "all",
 };
 
 export default function BudgetsReportPage() {
@@ -167,25 +170,11 @@ function BudgetsReportContent() {
     });
   }, [projects, clientFilter, managerFilter, query, state.clients]);
 
-  const groups = useMemo(() => {
-    const byClient = new Map<string | null, Project[]>();
-    for (const project of filtered) {
-      const key = project.client_id;
-      const list = byClient.get(key) ?? [];
-      list.push(project);
-      byClient.set(key, list);
-    }
-    const ordered: ClientGroup[] = [];
-    for (const client of clients) {
-      const list = byClient.get(client.id);
-      if (list?.length) ordered.push({ client, projects: list });
-    }
-    const noClient = byClient.get(null);
-    if (noClient?.length) ordered.push({ client: null, projects: noClient });
-    return ordered;
-  }, [filtered, clients]);
-
-  const packedRows = useMemo(() => packProjectRows(groups), [groups]);
+  const healthFilter = (
+    ["all", "tracked", "healthy", "near", "over"].includes(filters.health)
+      ? filters.health
+      : "all"
+  ) as BudgetStatusFilter;
 
   const budgetStatus = useMemo(() => {
     let tracked = 0;
@@ -203,8 +192,46 @@ function BudgetsReportContent() {
       else if (health === "near") near += 1;
       else if (health === "over") over += 1;
     }
-    return { tracked, healthy, near, over };
+    return {
+      all: filtered.length,
+      tracked,
+      healthy,
+      near,
+      over,
+    };
   }, [filtered, burns, state.assignments, state.people]);
+
+  const displayProjects = useMemo(() => {
+    if (healthFilter === "all") return filtered;
+    return filtered.filter((project) => {
+      const burn =
+        burns.get(project.id) ??
+        budgetBurn(project, state.assignments, state.people);
+      if (healthFilter === "tracked") return burn.mode !== "none";
+      if (burn.mode === "none") return false;
+      return budgetHealth(burn) === healthFilter;
+    });
+  }, [filtered, healthFilter, burns, state.assignments, state.people]);
+
+  const groups = useMemo(() => {
+    const byClient = new Map<string | null, Project[]>();
+    for (const project of displayProjects) {
+      const key = project.client_id;
+      const list = byClient.get(key) ?? [];
+      list.push(project);
+      byClient.set(key, list);
+    }
+    const ordered: ClientGroup[] = [];
+    for (const client of clients) {
+      const list = byClient.get(client.id);
+      if (list?.length) ordered.push({ client, projects: list });
+    }
+    const noClient = byClient.get(null);
+    if (noClient?.length) ordered.push({ client: null, projects: noClient });
+    return ordered;
+  }, [displayProjects, clients]);
+
+  const packedRows = useMemo(() => packProjectRows(groups), [groups]);
 
   const clientCounts = useMemo(() => {
     const counts = new Map<string | "none", number>();
@@ -281,11 +308,14 @@ function BudgetsReportContent() {
             />
 
             <BudgetStatusLine
+              all={budgetStatus.all}
               tracked={budgetStatus.tracked}
               healthy={budgetStatus.healthy}
               near={budgetStatus.near}
               over={budgetStatus.over}
-              className="mb-4"
+              active={healthFilter}
+              onSelect={(next) => setFilter("health", next)}
+              className="mb-8"
             />
 
             <label className="relative mb-4 block md:hidden">
