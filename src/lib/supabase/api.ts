@@ -659,18 +659,54 @@ export async function fetchWorkspace(
   userId: string,
   options?: { organizationId?: string; slug?: string },
 ): Promise<DemoState> {
-  const { data: profile, error: profileError } = await supabase
+  let { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("*")
     .eq("id", userId)
     .maybeSingle();
 
   if (profileError) throw profileError;
+
+  const memberships = await fetchMemberships(supabase, userId);
+
+  // Profile may have been wiped by legacy ON DELETE CASCADE when an org was
+  // removed; rebuild from Auth + remaining memberships.
+  if (!profile && memberships.length > 0) {
+    const { data: restored, error: restoreError } = await supabase.rpc(
+      "ensure_profile_from_memberships",
+    );
+    if (restoreError) {
+      console.warn(
+        "[fetchWorkspace] profile rebuild failed",
+        restoreError.message,
+      );
+    } else if (restored) {
+      profile = restored as typeof profile;
+    }
+    if (!profile) {
+      const reloaded = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+      if (reloaded.error) throw reloaded.error;
+      profile = reloaded.data;
+    }
+  } else if (profile && memberships.length > 0) {
+    const { data: activeOrgId } = await supabase.rpc("current_org_id");
+    if (!activeOrgId) {
+      try {
+        await supabase.rpc("ensure_profile_from_memberships");
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
+
   if (!profile) {
     return { ...emptyWorkspace(), sessionProfileId: null };
   }
 
-  const memberships = await fetchMemberships(supabase, userId);
   if (memberships.length === 0) {
     return {
       ...emptyWorkspace(),
@@ -1639,7 +1675,12 @@ export async function createAdditionalOrganization(
     org_name: orgName,
     user_full_name: fullName ?? null,
   });
-  if (error) throw error;
+  if (error) {
+    throw new Error(error.message || "Could not create workspace");
+  }
+  if (!data) {
+    throw new Error("Could not create workspace");
+  }
   return String(data);
 }
 

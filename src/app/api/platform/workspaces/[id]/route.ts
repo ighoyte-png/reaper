@@ -83,7 +83,13 @@ export async function DELETE(request: Request, ctx: Ctx) {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (profile?.organization_id === id) {
+  const { data: active } = await admin
+    .from("user_active_organization")
+    .select("organization_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (profile?.organization_id === id || active?.organization_id === id) {
     return NextResponse.json(
       {
         error:

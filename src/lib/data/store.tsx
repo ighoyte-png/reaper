@@ -2049,7 +2049,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const workspace = await fetchWorkspace(client, user.id);
         if (!workspace.sessionProfileId) {
           const message =
-            "Signed in, but workspace setup failed. In Supabase SQL Editor, run supabase/migrations/002_bootstrap.sql, then try again.";
+            workspace.memberships.length === 0
+              ? "Signed in, but this account has no workspace membership. Ask an admin to invite you, or create a workspace."
+              : "Signed in, but workspace setup failed. Apply supabase/migrations/087_profiles_org_set_null.sql, then try again.";
           setAuthError(message);
           throw new Error(message);
         }

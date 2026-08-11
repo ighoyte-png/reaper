@@ -1270,12 +1270,11 @@ export default function SettingsPage() {
                       push("Workspace created");
                       setCreateWsOpen(false);
                     } catch (err) {
-                      push(
-                        err instanceof Error
+                      const message =
+                        err instanceof Error && err.message.trim()
                           ? err.message
-                          : "Could not create workspace",
-                        "warning",
-                      );
+                          : "Could not create workspace";
+                      push(message, "warning");
                     } finally {
                       setCreateWsBusy(false);
                     }

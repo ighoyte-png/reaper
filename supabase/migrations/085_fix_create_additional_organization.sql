@@ -1,6 +1,7 @@
--- Allow signed-in users to create an additional workspace (multi-membership).
--- Distinct from bootstrap_organization, which is first-workspace / signup only.
--- See also 085_fix_create_additional_organization.sql for trigger-safe ordering.
+-- Fix create_additional_organization:
+-- 1) Allow when app_settings row is missing (NULL was treated as disabled).
+-- 2) Insert membership + active org before mirroring profile role/org
+--    so protect_profile_privileged_columns allows the sync.
 
 create or replace function public.create_additional_organization(
   org_name text,
@@ -25,6 +26,7 @@ begin
     raise exception 'Not authenticated';
   end if;
 
+  -- Missing app_settings row must not disable creation (SELECT INTO leaves NULL).
   select coalesce(
     (select s.allow_workspace_signup from public.app_settings s where s.id = 1),
     true
@@ -61,6 +63,7 @@ begin
   values (org_label, org_slug)
   returning id into new_org_id;
 
+  -- Ensure a profile row exists; do not move org/role yet (trigger).
   insert into public.profiles (id, organization_id, email, full_name, role)
   values (
     auth.uid(),
@@ -84,6 +87,7 @@ begin
     set organization_id = excluded.organization_id,
         updated_at = now();
 
+  -- Mirror active membership onto profiles (allowed because membership exists).
   perform public.sync_profile_active_org(auth.uid());
 
   return new_org_id;
