@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { buttonClass } from "@/components/ui/button";
-import { DateInput, Field, ConfirmDialog } from "@/components/ui/form";
+import { DateInput, Field, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { RichNotesHtml } from "@/components/ui/simple-rich-text";
 import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
@@ -34,11 +34,13 @@ import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import { useData } from "@/lib/data/store";
 import { cn } from "@/lib/cn";
 import {
+  parseDateKey,
   shiftWeek,
   shiftWorkingDays,
   toDateKey,
   weekStart,
   workingDayDelta,
+  workingDaysBetween,
 } from "@/lib/domain/dates";
 import {
   barPastFutureSplit,
@@ -52,6 +54,7 @@ import {
   GANTT_LIST_ROW_H,
   GANTT_TASK_ROW_H,
   listBarColor,
+  listIsComplete,
   MILESTONE_PURPLE,
   resolveListBarDates,
   resolveMilestoneBarDates,
@@ -138,6 +141,8 @@ type DragSnapshot = {
   mode: DragMode;
   originStart: string;
   originEnd: string;
+  /** Day under pointer at drag start (for move grab-relative deltas). */
+  grabDateKey: string;
   previewStart: string;
   previewEnd: string;
   /** Live preview geometry keyed by task id, `list:{id}`, `milestone:{id}`, or `project`. */
@@ -246,8 +251,9 @@ function GanttBarVisual({
     dates.endKey,
     today,
   );
-  const crSlot = showCrStar ? 12 + BAR_GAP : 0;
-  const availableForLabel = geo.width - BAR_PAD_X * 2 - crSlot;
+  const dayW = columns[0]?.width ?? 0;
+  const crCenterInFirstDay = showCrStar && dayW > 0;
+  const availableForLabel = geo.width - BAR_PAD_X * 2;
   const labelWidth = label ? measureBarLabelWidth(label) : 0;
   const showLabel = Boolean(
     label && availableForLabel >= labelWidth && labelWidth > 0,
@@ -293,22 +299,32 @@ function GanttBarVisual({
           />
         </div>
       ) : null}
+      {crCenterInFirstDay ? (
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 z-[3] flex items-center justify-center"
+          style={{ width: Math.min(dayW, geo.width) }}
+          aria-hidden
+        >
+          <Star
+            size={Math.min(12, Math.max(8, Math.min(dayW, height) - 4))}
+            className="text-white"
+            fill="currentColor"
+          />
+        </div>
+      ) : null}
       <div className="relative z-[2] flex h-full min-w-0 flex-1 items-center gap-1 px-1.5">
         {showLabel ? (
-          <span className="pointer-events-none min-w-0 flex-1 truncate text-left text-xs font-medium text-white">
+          <span
+            className={cn(
+              "pointer-events-none min-w-0 flex-1 truncate text-left text-xs font-medium text-white",
+              crCenterInFirstDay && "pl-3",
+            )}
+          >
             {label}
           </span>
         ) : (
           <span className="min-w-0 flex-1" aria-hidden />
         )}
-        {showCrStar ? (
-          <Star
-            size={12}
-            className="pointer-events-none shrink-0 text-white"
-            fill="currentColor"
-            aria-hidden
-          />
-        ) : null}
       </div>
       {!readOnly ? (
         <>
@@ -449,6 +465,25 @@ function MilestoneChipBesideBar({
     </GanttChipBesideBar>
   );
 }
+
+function ListCompleteChipBesideBar({
+  dates,
+  columns,
+}: {
+  dates: GanttBarDates;
+  columns: ScheduleColumn[];
+}) {
+  return (
+    <GanttChipBesideBar dates={dates} columns={columns}>
+      <span className="origin-left scale-90 rounded bg-[var(--status-healthy)]/15 px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--status-healthy)] shadow-sm">
+        List Complete
+      </span>
+    </GanttChipBesideBar>
+  );
+}
+
+/** Fixed leading slot so grip / icons keep titles left-aligned. */
+const GANTT_LABEL_LEAD_PX = 20;
 
 function ReadOnlyComments({
   taskId,
@@ -668,12 +703,14 @@ function GanttDrawer({
             </p>
             <Field label="Start date">
               <DateInput
+                className={cn(inputClass, "mt-0 h-8")}
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </Field>
             <Field label="End date">
               <DateInput
+                className={cn(inputClass, "mt-0 h-8")}
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -726,12 +763,14 @@ function GanttDrawer({
             </Field>
             <Field label="Start date">
               <DateInput
+                className={cn(inputClass, "mt-0 h-8")}
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
             </Field>
             <Field label="End date">
               <DateInput
+                className={cn(inputClass, "mt-0 h-8")}
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -816,8 +855,17 @@ export function ProjectGanttBoard({
     pointerId: number;
     lastX: number;
     lastY: number;
+    startX: number;
+    startY: number;
+    didMove: boolean;
     /** Vertical scrollport when the Gantt itself does not scroll Y. */
     verticalEl: HTMLElement | null;
+  } | null>(null);
+  const pendingScrollToKeyRef = useRef<string | null>(null);
+  const [reorderGhost, setReorderGhost] = useState<{
+    title: string;
+    x: number;
+    y: number;
   } | null>(null);
   const reorderRef = useRef<{
     taskId: string;
@@ -1100,9 +1148,15 @@ export function ProjectGanttBoard({
     }
   }, []);
 
-  const runEdgeScroll = useCallback((clientX: number) => {
+  const edgeScrollClientXRef = useRef(0);
+
+  const runEdgeScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el) {
+      edgeScrollRaf.current = 0;
+      return;
+    }
+    const clientX = edgeScrollClientXRef.current;
     const rect = el.getBoundingClientRect();
     const labelEdge = rect.left + GANTT_LABEL_PX;
     let dx = 0;
@@ -1112,14 +1166,23 @@ export function ProjectGanttBoard({
       dx = EDGE_SCROLL_SPEED;
     }
     if (dx === 0) {
-      stopEdgeScroll();
+      edgeScrollRaf.current = 0;
       return;
     }
     el.scrollLeft += dx;
     const header = headerScrollRef.current;
     if (header) header.scrollLeft = el.scrollLeft;
-    edgeScrollRaf.current = requestAnimationFrame(() => runEdgeScroll(clientX));
-  }, [stopEdgeScroll]);
+    edgeScrollRaf.current = requestAnimationFrame(runEdgeScroll);
+  }, []);
+
+  const ensureEdgeScroll = useCallback(
+    (clientX: number) => {
+      edgeScrollClientXRef.current = clientX;
+      if (edgeScrollRaf.current) return;
+      edgeScrollRaf.current = requestAnimationFrame(runEdgeScroll);
+    },
+    [runEdgeScroll],
+  );
 
   const columnFromClientX = useCallback(
     (clientX: number): ScheduleColumn | null => {
@@ -1140,7 +1203,7 @@ export function ProjectGanttBoard({
 
       if (snap.target.kind === "project") {
         if (snap.mode === "move") {
-          const delta = workingDayDelta(snap.originStart, col.startKey);
+          const delta = workingDayDelta(snap.grabDateKey, col.startKey);
           if (delta === 0) return;
           snap.dirty = true;
           snap.didMove = true;
@@ -1181,7 +1244,7 @@ export function ProjectGanttBoard({
 
       if (snap.target.kind === "milestone") {
         if (snap.mode !== "move") return;
-        const delta = workingDayDelta(snap.originStart, col.startKey);
+        const delta = workingDayDelta(snap.grabDateKey, col.startKey);
         if (delta === 0) return;
         snap.dirty = true;
         snap.didMove = true;
@@ -1200,7 +1263,7 @@ export function ProjectGanttBoard({
         const list = ganttLists.find((l) => l.id === listId);
         if (!list) return;
         if (snap.mode === "move") {
-          const delta = workingDayDelta(snap.originStart, col.startKey);
+          const delta = workingDayDelta(snap.grabDateKey, col.startKey);
           if (delta === 0) return;
           snap.dirty = true;
           snap.didMove = true;
@@ -1284,7 +1347,7 @@ export function ProjectGanttBoard({
       };
 
       if (snap.mode === "move") {
-        const delta = workingDayDelta(snap.originStart, col.startKey);
+        const delta = workingDayDelta(snap.grabDateKey, col.startKey);
         if (delta === 0) return;
         applyToTasks((orig) => ({
           startKey: shiftWorkingDays(orig.startKey, delta),
@@ -1564,11 +1627,18 @@ export function ProjectGanttBoard({
       e.stopPropagation();
       e.preventDefault();
       dragStartClient.current = { x: e.clientX, y: e.clientY };
+      const pointerCol = columnFromClientX(e.clientX);
+      const grabDays = workingDaysBetween(dates.startKey, dates.endKey);
+      const pointerKey = pointerCol?.startKey ?? dates.startKey;
+      const grabDateKey = grabDays.includes(pointerKey)
+        ? pointerKey
+        : dates.startKey;
       dragRef.current = {
         target,
         mode,
         originStart: dates.startKey,
         originEnd: dates.endKey,
+        grabDateKey,
         previewStart: dates.startKey,
         previewEnd: dates.endKey,
         previewMap: new Map(),
@@ -1583,7 +1653,7 @@ export function ProjectGanttBoard({
       setDragging(true);
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     },
-    [readOnly],
+    [readOnly, columnFromClientX],
   );
 
   const buildListMoveCascade = useCallback(
@@ -1626,9 +1696,10 @@ export function ProjectGanttBoard({
       ) {
         snap.didMove = true;
       }
+      if (!snap.didMove) return;
       const col = columnFromClientX(e.clientX);
       if (col) applyDragToColumn(col);
-      runEdgeScroll(e.clientX);
+      ensureEdgeScroll(e.clientX);
     };
 
     const onUp = (e: PointerEvent) => {
@@ -1651,7 +1722,7 @@ export function ProjectGanttBoard({
     applyDragToColumn,
     columnFromClientX,
     commitDrag,
-    runEdgeScroll,
+    ensureEdgeScroll,
     stopEdgeScroll,
   ]);
 
@@ -1664,8 +1735,15 @@ export function ProjectGanttBoard({
       e.preventDefault();
       const dx = e.clientX - pan.lastX;
       const dy = e.clientY - pan.lastY;
+      if (
+        Math.abs(e.clientX - pan.startX) > CLICK_MOVE_THRESHOLD ||
+        Math.abs(e.clientY - pan.startY) > CLICK_MOVE_THRESHOLD
+      ) {
+        pan.didMove = true;
+      }
       pan.lastX = e.clientX;
       pan.lastY = e.clientY;
+      if (!pan.didMove) return;
       el.scrollLeft -= dx;
       const header = headerScrollRef.current;
       if (header) header.scrollLeft = el.scrollLeft;
@@ -1678,8 +1756,10 @@ export function ProjectGanttBoard({
     const onUp = (e: PointerEvent) => {
       const pan = panRef.current;
       if (!pan || e.pointerId !== pan.pointerId) return;
+      const dismiss = !pan.didMove && showDrawer && !readOnly;
       panRef.current = null;
       setPanning(false);
+      if (dismiss) setSelectedTaskIds([]);
     };
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
@@ -1689,7 +1769,7 @@ export function ProjectGanttBoard({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [panning, viewportExpanded]);
+  }, [panning, viewportExpanded, showDrawer, readOnly]);
 
   function startBlankPan(e: ReactPointerEvent) {
     if (e.button !== 0) return;
@@ -1720,6 +1800,9 @@ export function ProjectGanttBoard({
       pointerId: e.pointerId,
       lastX: e.clientX,
       lastY: e.clientY,
+      startX: e.clientX,
+      startY: e.clientY,
+      didMove: false,
       verticalEl,
     };
     setPanning(true);
@@ -1752,6 +1835,44 @@ export function ProjectGanttBoard({
     if (headerScrollRef.current) headerScrollRef.current.scrollLeft = 0;
   }
 
+  const earliestGanttStartKey = useMemo(() => {
+    let earliest: string | null = project?.start_date ?? null;
+    const consider = (key: string | null | undefined) => {
+      if (!key) return;
+      if (!earliest || key < earliest) earliest = key;
+    };
+    for (const list of ganttLists) {
+      consider(list.start_date);
+      for (const task of ganttTasksForList(projectTasks, list.id)) {
+        consider(task.start_date ?? task.due_date);
+      }
+      if (list.milestone_id) {
+        const ms = projectMilestones.find((m) => m.id === list.milestone_id);
+        consider(ms?.start_date ?? ms?.due_date);
+      }
+    }
+    return earliest;
+  }, [project?.start_date, ganttLists, projectTasks, projectMilestones]);
+
+  function goShowStart() {
+    if (!earliestGanttStartKey) return;
+    pendingScrollToKeyRef.current = earliestGanttStartKey;
+    setAnchor(weekStart(parseDateKey(earliestGanttStartKey)));
+  }
+
+  useLayoutEffect(() => {
+    const key = pendingScrollToKeyRef.current;
+    if (!key) return;
+    const idx = columns.findIndex((c) => c.startKey === key);
+    if (idx < 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, columnOffsetPx(columns, idx) - dayW * 2);
+    const header = headerScrollRef.current;
+    if (header) header.scrollLeft = el.scrollLeft;
+    pendingScrollToKeyRef.current = null;
+  }, [columns, dayW]);
+
   function shiftAnchorWeek(delta: number) {
     setAnchor((a) => shiftWeek(a, delta));
   }
@@ -1778,6 +1899,11 @@ export function ProjectGanttBoard({
         initialTasks,
         pointerId: e.pointerId,
       };
+      setReorderGhost({
+        title: task.title,
+        x: e.clientX,
+        y: e.clientY,
+      });
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     },
     [readOnly, projectTasks],
@@ -1787,6 +1913,12 @@ export function ProjectGanttBoard({
     function onMove(e: PointerEvent) {
       const snap = reorderRef.current;
       if (!snap || e.pointerId !== snap.pointerId) return;
+      setReorderGhost({
+        title:
+          projectTasks.find((t) => t.id === snap.taskId)?.title ?? "Task",
+        x: e.clientX,
+        y: e.clientY,
+      });
       const deltaRows = Math.round(
         (e.clientY - snap.startY) / GANTT_TASK_ROW_H,
       );
@@ -1809,6 +1941,7 @@ export function ProjectGanttBoard({
       const snap = reorderRef.current;
       if (!snap || e.pointerId !== snap.pointerId) return;
       reorderRef.current = null;
+      setReorderGhost(null);
       const changed =
         snap.order.length !== snap.initialOrder.length ||
         snap.order.some((id, i) => id !== snap.initialOrder[i]);
@@ -1857,13 +1990,21 @@ export function ProjectGanttBoard({
               <NavBtn onClick={() => shiftAnchorWeek(-1)} label="Previous week">
                 <ChevronLeft size={16} />
               </NavBtn>
-              <button
-                type="button"
-                className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-                onClick={goToday}
-              >
-                Today
-              </button>
+            <button
+              type="button"
+              className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+              onClick={goToday}
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+              onClick={goShowStart}
+              disabled={!earliestGanttStartKey}
+            >
+              Show Start
+            </button>
               <NavBtn onClick={() => shiftAnchorWeek(1)} label="Next week">
                 <ChevronRight size={16} />
               </NavBtn>
@@ -2305,6 +2446,12 @@ export function ProjectGanttBoard({
                             );
                           }}
                         />
+                        {listIsComplete(list, tasks, today) ? (
+                          <ListCompleteChipBesideBar
+                            dates={listDates}
+                            columns={columns}
+                          />
+                        ) : null}
                       </div>
                     </div>,
                   );
@@ -2356,36 +2503,34 @@ export function ProjectGanttBoard({
                             backgroundColor: taskWash ?? "var(--bg)",
                           }}
                         >
-                          {!readOnly && !task.parent_id ? (
-                            <button
-                              type="button"
-                              className="touch-none shrink-0 cursor-grab p-0.5 text-[var(--text-muted)] opacity-60 hover:opacity-100 active:cursor-grabbing"
-                              aria-label="Drag to reorder within list"
-                              title="Drag to reorder within list"
-                              onPointerDown={(e) => startTaskReorder(e, task)}
-                            >
-                              <GripVertical size={12} />
-                            </button>
-                          ) : null}
-                          {taskShowsClientReviewStar(task) ? (
-                            <Star
-                              size={10}
-                              className={cn(
-                                "shrink-0",
-                                task.status === "complete"
-                                  ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
-                                  : "fill-[#f59e0b] text-[#f59e0b]",
-                              )}
-                              aria-hidden
-                            />
-                          ) : null}
                           <span
-                            className={cn(
-                              "min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]",
-                              task.status === "complete" &&
-                                task.is_client_review &&
-                                "text-[var(--status-healthy)] line-through",
-                            )}
+                            className="inline-flex shrink-0 items-center justify-center"
+                            style={{ width: GANTT_LABEL_LEAD_PX }}
+                          >
+                            {!readOnly && !task.parent_id ? (
+                              <button
+                                type="button"
+                                className="touch-none cursor-grab p-0.5 text-[var(--text-muted)] opacity-60 hover:opacity-100 active:cursor-grabbing"
+                                aria-label="Drag to reorder within list"
+                                title="Drag to reorder within list"
+                                onPointerDown={(e) => startTaskReorder(e, task)}
+                              >
+                                <GripVertical size={12} />
+                              </button>
+                            ) : taskShowsClientReviewStar(task) ? (
+                              <Star
+                                size={10}
+                                className={cn(
+                                  task.status === "complete"
+                                    ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
+                                    : "fill-[#f59e0b] text-[#f59e0b]",
+                                )}
+                                aria-hidden
+                              />
+                            ) : null}
+                          </span>
+                          <span
+                            className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]"
                             title={task.title}
                           >
                             {task.title}
@@ -2510,24 +2655,28 @@ export function ProjectGanttBoard({
                         }
                       >
                         <div
-                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1.5 border-r border-b border-[var(--border)] pl-8 pr-2"
+                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] pl-8 pr-2"
                           style={{
                             width: GANTT_LABEL_PX,
                             height: GANTT_TASK_ROW_H,
                             backgroundColor: msWash ?? "var(--bg)",
                           }}
                         >
-                          <Star
-                            size={12}
-                            className="shrink-0"
-                            style={{ color: msColor }}
-                            fill="currentColor"
-                          />
+                          <span
+                            className="inline-flex shrink-0 items-center justify-center"
+                            style={{ width: GANTT_LABEL_LEAD_PX }}
+                          >
+                            <Star
+                              size={12}
+                              style={{ color: msColor }}
+                              fill="currentColor"
+                            />
+                          </span>
                           <span
                             className={cn(
                               "min-w-0 truncate text-[11px] font-medium",
                               msDone
-                                ? "text-[var(--status-healthy)] line-through"
+                                ? "text-[var(--status-healthy)]"
                                 : "text-[var(--text-muted)]",
                             )}
                             title={milestone.name}
@@ -2621,6 +2770,17 @@ export function ProjectGanttBoard({
           }}
         />
       ) : null}
+      {reorderGhost ? (
+        <div
+          className="pointer-events-none fixed z-[80] max-w-xs truncate rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-sm shadow-md"
+          style={{
+            left: reorderGhost.x + 12,
+            top: reorderGhost.y + 12,
+          }}
+        >
+          {reorderGhost.title}
+        </div>
+      ) : null}
     </div>
   );
 
@@ -2632,7 +2792,7 @@ export function ProjectGanttBoard({
           className,
         )}
       >
-        No Gantt-enabled task lists for this project.
+        Enable Gantt on task list(s) to start making your Gantt
       </div>
     );
   }

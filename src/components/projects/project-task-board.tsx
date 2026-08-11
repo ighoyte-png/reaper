@@ -422,14 +422,6 @@ export function ProjectTaskBoard({
   const [ganttStructuralNotice, setGanttStructuralNotice] = useState(false);
   const [view, setView] = useState<TaskBoardView>("list");
 
-  function setTaskView(next: TaskBoardView) {
-    if (next === "card" || next === "calendar" || next === "gantt") {
-      setEditingTaskId(null);
-      setDraftingListId(null);
-    }
-    setView(next);
-  }
-
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
@@ -506,9 +498,21 @@ export function ProjectTaskBoard({
     Boolean(project?.manager_person_id) &&
     project?.manager_person_id === viewerPersonId;
 
-  const showGanttToggle =
-    activeLists.some((l) => l.gantt_enabled) &&
-    Boolean(project?.manager_person_id);
+  const ganttEnabledSomewhere = activeLists.some((l) => l.gantt_enabled);
+
+  function setTaskView(next: TaskBoardView) {
+    if (next === "card" || next === "calendar" || next === "gantt") {
+      setEditingTaskId(null);
+      setDraftingListId(null);
+    }
+    if (next === "gantt" && !ganttEnabledSomewhere) {
+      toast(
+        "Enable Gantt on task list(s) to start making your Gantt",
+        "warning",
+      );
+    }
+    setView(next);
+  }
 
   const listById = useMemo(() => {
     const map = new Map<string, TaskList>();
@@ -535,10 +539,6 @@ export function ProjectTaskBoard({
     }
     return false;
   }
-
-  useEffect(() => {
-    if (view === "gantt" && !showGanttToggle) setView("list");
-  }, [view, showGanttToggle]);
 
   useEffect(() => {
     onGanttActiveChange?.(view === "gantt");
@@ -882,7 +882,8 @@ export function ProjectTaskBoard({
     if (!bulkHasChanges || selected.size === 0) return;
     for (const id of selected) {
       const task = state.tasks.find((t) => t.id === id);
-      if (!task || isListGanttLocked(task.list_id)) continue;
+      if (!task) continue;
+      const ganttLocked = isListGanttLocked(task.list_id);
       const ordered = listDisplayOrder(
         visibleTasks.filter((t) => t.list_id === task.list_id),
       );
@@ -929,18 +930,18 @@ export function ProjectTaskBoard({
           }
         }
       }
-      if (viewerCanManage && bulkDraft.assigneeId !== undefined) {
+      if (!ganttLocked && viewerCanManage && bulkDraft.assigneeId !== undefined) {
         next = { ...next, assignee_person_id: bulkDraft.assigneeId };
         changed = true;
       }
-      if (viewerCanManage && bulkDraft.startDate !== undefined) {
+      if (!ganttLocked && viewerCanManage && bulkDraft.startDate !== undefined) {
         const list = listById.get(task.list_id);
         if (list?.gantt_enabled) {
           next = { ...next, start_date: bulkDraft.startDate || null };
           changed = true;
         }
       }
-      if (viewerCanManage && bulkDraft.dueDate !== undefined) {
+      if (!ganttLocked && viewerCanManage && bulkDraft.dueDate !== undefined) {
         next = { ...next, due_date: bulkDraft.dueDate || null };
         changed = true;
       }
@@ -1208,7 +1209,7 @@ export function ProjectTaskBoard({
   function cycleStatus(task: Task) {
     if (task.is_divider) return;
     if (isPublicShare) return;
-    if (isListGanttLocked(task.list_id)) return;
+    // Status is allowed even on Gantt-enabled lists; reorder stays structurally locked.
     // Schedule compact sidebar stays otherwise read-only; status cycling is allowed.
     if (readOnly && !compact) return;
 
@@ -1413,10 +1414,15 @@ export function ProjectTaskBoard({
     });
   }, [profile?.id, projectId, manageLists, allLists]);
 
-  function moveTaskToColumn(taskId: string, destStatus: TaskStatus, destIndex: number) {
+  function moveTaskToColumn(
+    taskId: string,
+    destStatus: TaskStatus,
+    _destIndex: number,
+  ) {
     const task = state.tasks.find((t) => t.id === taskId);
-    if (!task || isListGanttLocked(task.list_id)) return;
-    if (guardGanttStructuralEdit(task.list_id)) return;
+    if (!task) return;
+    if (isPublicShare) return;
+    if (readOnly && !compact) return;
 
     const ordered = listDisplayOrder(
       visibleTasks.filter((t) => t.list_id === task.list_id),
@@ -1435,31 +1441,20 @@ export function ProjectTaskBoard({
         );
         return;
       }
+    } else if (
+      destStatus === "complete" &&
+      !canCompleteTask(viewerPersonId, task, state.people, project ?? null)
+    ) {
+      toast(
+        "Only the project manager or task assigner can mark tasks complete",
+        "warning",
+      );
+      return;
     }
 
-    const sourceStatus = task.status;
-    const destSiblings = parentTasks(visibleTasks)
-      .filter((t) => t.status === destStatus && t.id !== taskId)
-      .sort((a, b) => a.sort_order - b.sort_order);
-    const nextOrder = [...destSiblings];
-    nextOrder.splice(Math.min(destIndex, nextOrder.length), 0, task);
-    nextOrder.forEach((t, i) => {
-      if (t.id === taskId) {
-        if (t.status !== destStatus || t.sort_order !== i) {
-          upsertTask({ ...t, status: destStatus, sort_order: i });
-        }
-      } else if (t.sort_order !== i) {
-        upsertTask({ ...t, sort_order: i });
-      }
-    });
-    if (sourceStatus !== destStatus) {
-      const sourceSiblings = parentTasks(visibleTasks)
-        .filter((t) => t.status === sourceStatus && t.id !== taskId)
-        .sort((a, b) => a.sort_order - b.sort_order);
-      sourceSiblings.forEach((t, i) => {
-        if (t.sort_order !== i) upsertTask({ ...t, sort_order: i });
-      });
-    }
+    if (task.status === destStatus) return;
+    // Keep list/Gantt sort_order; only change status.
+    upsertTask({ ...task, status: destStatus });
   }
 
   function handleListDragStart(event: DragStartEvent) {
@@ -1809,7 +1804,7 @@ export function ProjectTaskBoard({
               view={view}
               setView={setTaskView}
               allowCardView={allowCardView}
-              showGanttToggle={showGanttToggle}
+              showGanttEnabled={ganttEnabledSomewhere}
             />
           </div>
           {activeLists.length === 0 ? (
@@ -1850,7 +1845,10 @@ export function ProjectTaskBoard({
                         orderedListTasks={
                           orderedListTasksByListId.get(list.id) ?? []
                         }
-                        manageLists={listManage}
+                        manageLists={
+                          (!isPublicShare && (!readOnly || compact)) ||
+                          listManage
+                        }
                         onMove={moveTaskToColumn}
                       />
                     )}
@@ -1882,7 +1880,7 @@ export function ProjectTaskBoard({
                 view={view}
                 setView={setTaskView}
                 allowCardView={allowCardView}
-                showGanttToggle={showGanttToggle}
+                showGanttEnabled={ganttEnabledSomewhere}
               />
             </div>
             <ProjectTaskCalendar tasks={visibleTasks} todayKey={todayKey()} />
@@ -1911,7 +1909,7 @@ export function ProjectTaskBoard({
                 view={view}
                 setView={setTaskView}
                 allowCardView={allowCardView}
-                showGanttToggle={showGanttToggle}
+                showGanttEnabled={ganttEnabledSomewhere}
               />
             </div>
             <div data-gantt-root data-project-id={projectId}>
@@ -1944,7 +1942,7 @@ export function ProjectTaskBoard({
           view={view}
           setView={setTaskView}
           allowCardView={allowCardView}
-          showGanttToggle={showGanttToggle}
+          showGanttEnabled={ganttEnabledSomewhere}
         />
         {manageLists ? (
           <div className="ml-auto flex items-center gap-1">
@@ -2402,12 +2400,13 @@ function ViewToggle({
   view,
   setView,
   allowCardView,
-  showGanttToggle,
+  showGanttEnabled,
 }: {
   view: TaskBoardView;
   setView: (v: TaskBoardView) => void;
   allowCardView: boolean;
-  showGanttToggle: boolean;
+  /** When true, Gantt tab uses the special green accent. */
+  showGanttEnabled: boolean;
 }) {
   if (!allowCardView) return null;
   return (
@@ -2445,19 +2444,18 @@ function ViewToggle({
         <CalendarDays size={12} />
         Calendar
       </button>
-      {showGanttToggle ? (
-        <button
-          type="button"
-          className={cn(
-            "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
-            view === "gantt" && "bg-[var(--row-hover)]",
-          )}
-          onClick={() => setView("gantt")}
-        >
-          <ChartGantt size={12} />
-          Gantt
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={cn(
+          "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
+          view === "gantt" && "bg-[var(--row-hover)]",
+          showGanttEnabled && "text-[var(--status-healthy)]",
+        )}
+        onClick={() => setView("gantt")}
+      >
+        <ChartGantt size={12} />
+        Gantt
+      </button>
     </div>
   );
 }
@@ -3509,7 +3507,7 @@ function TaskRow({
   const isSelected = ctx.selected.has(task.id);
   const multiSelectDrag =
     listManage && ctx.selected.size > 1 && isSelected;
-  const canEditStatus = ctx.allowStatusEdit && !listLocked;
+  const canEditStatus = ctx.allowStatusEdit;
   const isFocused = ctx.focusTaskId === task.id;
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
   const [descExpanded, setDescExpanded] = useState(false);

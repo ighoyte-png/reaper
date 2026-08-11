@@ -172,14 +172,23 @@ export function listBarColor(
   if (listHasOverdueOpenTasks(tasks, todayKey)) {
     return "var(--status-over)";
   }
-  if (
-    list.end_date &&
-    todayKey >= list.end_date &&
-    !listHasOverdueOpenTasks(tasks, todayKey)
-  ) {
+  if (listIsComplete(list, tasks, todayKey)) {
     return "var(--status-healthy)";
   }
   return "var(--accent)";
+}
+
+/** List end date has arrived and there are no overdue incomplete tasks. */
+export function listIsComplete(
+  list: Pick<TaskList, "end_date">,
+  tasks: Task[],
+  todayKey: string,
+): boolean {
+  return Boolean(
+    list.end_date &&
+      todayKey >= list.end_date &&
+      !listHasOverdueOpenTasks(tasks, todayKey),
+  );
 }
 
 export function taskBarColor(
