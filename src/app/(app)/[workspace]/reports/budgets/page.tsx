@@ -17,7 +17,7 @@ import type { BudgetStatusFilter } from "@/components/reports/budget-status-line
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
-import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { budgetHealth } from "@/lib/domain/budget";
 import { useBudgetHref } from "@/lib/hooks/use-app-href";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
@@ -97,7 +97,7 @@ export default function BudgetsReportPage() {
 function BudgetsReportContent() {
   const { state } = useData();
   const budgetHref = useBudgetHref();
-  const { burns } = useProjectBurnsMap();
+  const { burns, ready: burnsReady } = useProjectBurnsMap();
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectParam = searchParams.get("project");
@@ -181,16 +181,16 @@ function BudgetsReportContent() {
     let healthy = 0;
     let near = 0;
     let over = 0;
-    for (const project of filtered) {
-      const burn =
-        burns.get(project.id) ??
-        budgetBurn(project, state.assignments, state.people);
-      if (burn.mode === "none") continue;
-      tracked += 1;
-      const health = budgetHealth(burn);
-      if (health === "healthy") healthy += 1;
-      else if (health === "near") near += 1;
-      else if (health === "over") over += 1;
+    if (burnsReady) {
+      for (const project of filtered) {
+        const burn = burns.get(project.id);
+        if (!burn || burn.mode === "none") continue;
+        tracked += 1;
+        const health = budgetHealth(burn);
+        if (health === "healthy") healthy += 1;
+        else if (health === "near") near += 1;
+        else if (health === "over") over += 1;
+      }
     }
     return {
       all: filtered.length,
@@ -199,19 +199,19 @@ function BudgetsReportContent() {
       near,
       over,
     };
-  }, [filtered, burns, state.assignments, state.people]);
+  }, [filtered, burns, burnsReady]);
 
   const displayProjects = useMemo(() => {
     if (healthFilter === "all") return filtered;
+    if (!burnsReady) return filtered;
     return filtered.filter((project) => {
-      const burn =
-        burns.get(project.id) ??
-        budgetBurn(project, state.assignments, state.people);
+      const burn = burns.get(project.id);
+      if (!burn) return false;
       if (healthFilter === "tracked") return burn.mode !== "none";
       if (burn.mode === "none") return false;
       return budgetHealth(burn) === healthFilter;
     });
-  }, [filtered, healthFilter, burns, state.assignments, state.people]);
+  }, [filtered, healthFilter, burns, burnsReady]);
 
   const groups = useMemo(() => {
     const byClient = new Map<string | null, Project[]>();
