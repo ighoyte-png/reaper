@@ -34,7 +34,6 @@ import {
   Eye,
   EyeOff,
   GripVertical,
-  Highlighter,
   LayoutList,
   LayoutGrid,
   MessageSquare,
@@ -171,22 +170,6 @@ function InitialsAvatar({ person }: { person: Person }) {
       color={personAvatarColor(person)}
       className="ring-1 ring-[var(--border)]"
     />
-  );
-}
-
-/** Lucide has Highlighter but not HighlighterOff — slash overlay reads as “clear”. */
-function HighlighterOffIcon({ size = 14 }: { size?: number }) {
-  return (
-    <span
-      className="relative inline-flex shrink-0"
-      style={{ width: size, height: size }}
-      aria-hidden
-    >
-      <Highlighter size={size} />
-      <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-        <span className="h-px w-[130%] rotate-[-42deg] bg-current shadow-[0_0_0_1px_var(--bg)]" />
-      </span>
-    </span>
   );
 }
 
@@ -3972,7 +3955,7 @@ function TaskRow({
                 aria-label="Clear highlight"
                 title="Clear highlight"
               >
-                <HighlighterOffIcon size={14} />
+                <Eye size={14} />
               </button>
             ) : null}
             <TaskStatusTag
