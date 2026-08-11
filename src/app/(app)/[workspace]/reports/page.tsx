@@ -546,7 +546,7 @@ function ReportCard({
           </div>
         </div>
 
-        <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-[var(--border)] pt-3">
+        <div className="mt-4 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden border-t border-[var(--border)] pt-3">
           {overview}
         </div>
       </div>
@@ -801,25 +801,26 @@ function BudgetsOverview({
   budgetHref: (project: Pick<Project, "client_id" | "slug">) => string;
 }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="shrink-0">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden">
+      <div className="min-w-0 shrink-0">
         <BudgetStatusLine
           tracked={data.tracked}
           healthy={data.healthy}
           near={data.near}
           over={data.over}
+          className="min-w-0"
         />
       </div>
       {data.rows.length > 0 ? (
-        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+        <div className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
           {data.rows.map((row) => (
             <Link
               key={row.id}
               href={budgetHref(row.project)}
-              className="-mx-1 block space-y-1 rounded-md px-1 py-0.5 hover:bg-[var(--row-hover)]"
+              className="block min-w-0 space-y-1 rounded-md px-0.5 py-0.5 hover:bg-[var(--row-hover)]"
             >
-              <div className="flex justify-between gap-2 text-[11px]">
-                <span className="truncate text-[var(--text-muted)]">
+              <div className="flex min-w-0 items-baseline justify-between gap-2 text-[11px]">
+                <span className="min-w-0 truncate text-[var(--text-muted)]">
                   {row.name}
                 </span>
                 <span className="shrink-0 tabular-nums">
@@ -833,12 +834,12 @@ function BudgetsOverview({
       ) : (
         <p className="text-xs text-[var(--text-muted)]">No Budgeted Projects.</p>
       )}
-      <div className="shrink-0 border-t border-[var(--border)] pt-2">
-        <div className="flex items-baseline justify-between gap-2 text-xs">
-          <span className="text-[var(--text-muted)]">
+      <div className="min-w-0 shrink-0 border-t border-[var(--border)] pt-2">
+        <div className="flex min-w-0 items-baseline justify-between gap-2 text-xs">
+          <span className="min-w-0 truncate text-[var(--text-muted)]">
             Hours Planned Across the Schedule
           </span>
-          <span className="tabular-nums font-medium text-[var(--text)]">
+          <span className="shrink-0 tabular-nums font-medium text-[var(--text)]">
             {formatHours(plannedHours)}
           </span>
         </div>
