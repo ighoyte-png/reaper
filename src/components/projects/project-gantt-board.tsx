@@ -252,7 +252,7 @@ function GanttBarVisual({
     today,
   );
   const dayW = columns[0]?.width ?? 0;
-  const crCenterInFirstDay = showCrStar && dayW > 0;
+  const crCenterInLastDay = showCrStar && dayW > 0;
   const availableForLabel = geo.width - BAR_PAD_X * 2;
   const labelWidth = label ? measureBarLabelWidth(label) : 0;
   const showLabel = Boolean(
@@ -299,9 +299,9 @@ function GanttBarVisual({
           />
         </div>
       ) : null}
-      {crCenterInFirstDay ? (
+      {crCenterInLastDay ? (
         <div
-          className="pointer-events-none absolute inset-y-0 left-0 z-[3] flex items-center justify-center"
+          className="pointer-events-none absolute inset-y-0 right-0 z-[3] flex items-center justify-center"
           style={{ width: Math.min(dayW, geo.width) }}
           aria-hidden
         >
@@ -317,7 +317,7 @@ function GanttBarVisual({
           <span
             className={cn(
               "pointer-events-none min-w-0 flex-1 truncate text-left text-xs font-medium text-white",
-              crCenterInFirstDay && "pl-3",
+              crCenterInLastDay && "pr-3",
             )}
           >
             {label}
@@ -952,7 +952,8 @@ export function ProjectGanttBoard({
     header.scrollLeft = body.scrollLeft;
   }, [totalWidth]);
 
-  // Only auto-expand newly seen list ids (do not re-expand user-collapsed lists after drag).
+  // Only auto-expand newly seen incomplete lists (completed stay collapsed on load;
+  // do not re-expand user-collapsed lists after drag).
   useEffect(() => {
     setExpandedLists((prev) => {
       let changed = false;
@@ -964,6 +965,8 @@ export function ProjectGanttBoard({
       for (const list of ganttLists) {
         if (seenListIdsRef.current.has(list.id)) continue;
         seenListIdsRef.current.add(list.id);
+        const tasks = ganttTasksForList(projectTasks, list.id);
+        if (listIsComplete(list, tasks, today)) continue;
         if (!next.has(list.id)) {
           next.add(list.id);
           changed = true;
@@ -971,7 +974,7 @@ export function ProjectGanttBoard({
       }
       return changed ? next : prev;
     });
-  }, [ganttLists]);
+  }, [ganttLists, projectTasks, today]);
 
   const headerGroups = useMemo(() => {
     type Group = {
