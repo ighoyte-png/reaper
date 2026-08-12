@@ -7,6 +7,9 @@ export async function GET(request: Request, { params }: Params) {
   const size = raw === "512" ? 512 : 192;
   const origin = new URL(request.url).origin;
   const logo = `${origin}/reaper_logo.svg`;
+  // Maskable (Android adaptive) icons need an opaque safe-zone background.
+  const maskable = new URL(request.url).searchParams.get("maskable") === "1";
+  const logoScale = maskable ? 0.72 : 0.88;
 
   return new ImageResponse(
     (
@@ -17,15 +20,15 @@ export async function GET(request: Request, { params }: Params) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#111111",
+          background: maskable ? "#111111" : "transparent",
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={logo}
           alt=""
-          width={Math.round(size * 0.72)}
-          height={Math.round(size * 0.72)}
+          width={Math.round(size * logoScale)}
+          height={Math.round(size * logoScale)}
           style={{ objectFit: "contain" }}
         />
       </div>
