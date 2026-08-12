@@ -1712,7 +1712,7 @@ export function ProjectTaskBoard({
             active.rect.current.translated ?? active.rect.current.initial;
           const overRect = over.rect;
           const insertAfter =
-            Boolean(activeRect) &&
+            activeRect != null &&
             activeRect.top + activeRect.height / 2 >
               overRect.top + overRect.height / 2;
           insertIndex = overIdx + (insertAfter ? 1 : 0);
