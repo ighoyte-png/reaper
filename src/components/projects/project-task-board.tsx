@@ -27,6 +27,7 @@ import {
   Archive,
   ArchiveRestore,
   CalendarDays,
+  CalendarX,
   ChartGantt,
   ChevronDown,
   ChevronRight,
@@ -2152,12 +2153,13 @@ export function ProjectTaskBoard({
                     <button
                       type="button"
                       className={cn(
-                        "h-7 shrink-0 cursor-pointer rounded-md px-1.5 text-[10px] font-medium",
+                        "inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md",
                         bulkDraft.startDate === ""
                           ? "bg-[var(--border)]/80 text-[var(--text)]"
                           : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
                       )}
-                      title="Clear start dates on selected tasks"
+                    title="Clear Start Dates"
+                    aria-label="Clear Start Dates"
                       aria-pressed={bulkDraft.startDate === ""}
                       onClick={() =>
                         setBulkDraft((prev) => ({
@@ -2166,7 +2168,7 @@ export function ProjectTaskBoard({
                         }))
                       }
                     >
-                      None
+                      <CalendarX size={14} strokeWidth={1.75} />
                     </button>
                   </div>
                 </label>
@@ -2191,12 +2193,13 @@ export function ProjectTaskBoard({
                   <button
                     type="button"
                     className={cn(
-                      "h-7 shrink-0 cursor-pointer rounded-md px-1.5 text-[10px] font-medium",
+                      "inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md",
                       bulkDraft.dueDate === ""
                         ? "bg-[var(--border)]/80 text-[var(--text)]"
                         : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
                     )}
-                    title="Clear due dates on selected tasks"
+                    title="Clear Due Dates"
+                    aria-label="Clear Due Dates"
                     aria-pressed={bulkDraft.dueDate === ""}
                     onClick={() =>
                       setBulkDraft((prev) => ({
@@ -2205,7 +2208,7 @@ export function ProjectTaskBoard({
                       }))
                     }
                   >
-                    None
+                    <CalendarX size={14} strokeWidth={1.75} />
                   </button>
                 </div>
               </label>
