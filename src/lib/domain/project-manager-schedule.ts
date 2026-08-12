@@ -201,7 +201,8 @@ export type PmScheduleIntent =
 
 /**
  * Decide whether to create / overwrite / align PM schedule time after a
- * project save. Empty hours skips create/overwrite; date align still possible.
+ * project save. Overwrite only when daily hours or timeline dates changed —
+ * unrelated project edits should not prompt.
  */
 export function resolvePmScheduleIntent(args: {
   /** Parsed daily hours from the form; null when blank. */
@@ -229,7 +230,17 @@ export function resolvePmScheduleIntent(args: {
   if (hasHours) {
     if (!startDate || !endDate) return { kind: "need_dates" };
     if (existing.length > 0) {
-      return { kind: "overwrite", hours: pmDailyHours };
+      const winner = pickPmAssignmentWinner(existing);
+      const existingHours = winner
+        ? roundAssignmentHours(winner.hours_per_day)
+        : null;
+      const nextHours = roundAssignmentHours(pmDailyHours);
+      const hoursChanged =
+        existingHours == null || existingHours !== nextHours;
+      if (hoursChanged || datesChanged) {
+        return { kind: "overwrite", hours: pmDailyHours };
+      }
+      return { kind: "none" };
     }
     return { kind: "create", hours: pmDailyHours };
   }
