@@ -427,9 +427,9 @@ export function ProjectTaskBoard({
     status?: TaskStatus;
     /** undefined = unchanged; null = unassigned */
     assigneeId?: string | null;
-    /** undefined = unchanged; Gantt-enabled lists only in the bar */
+    /** undefined = unchanged; "" = clear; Gantt-enabled lists only in the bar */
     startDate?: string;
-    /** undefined = unchanged */
+    /** undefined = unchanged; "" = clear */
     dueDate?: string;
   }>({});
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -2143,7 +2143,8 @@ export function ProjectTaskBoard({
                       const value = e.target.value;
                       setBulkDraft((prev) => ({
                         ...prev,
-                        startDate: value || undefined,
+                        // Empty string = clear dates; undefined = leave unchanged.
+                        startDate: value,
                       }));
                     }}
                   />
@@ -2160,7 +2161,8 @@ export function ProjectTaskBoard({
                     const value = e.target.value;
                     setBulkDraft((prev) => ({
                       ...prev,
-                      dueDate: value || undefined,
+                      // Empty string = clear dates; undefined = leave unchanged.
+                      dueDate: value,
                     }));
                   }}
                 />

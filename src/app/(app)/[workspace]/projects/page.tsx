@@ -729,7 +729,6 @@ function ProjectsPageContent() {
               !editing.sandbox_mode &&
               projectHasSandboxWipeRisk(
                 editing,
-                state.assignments,
                 state.milestones,
               )
             }

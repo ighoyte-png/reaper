@@ -36,7 +36,7 @@ import type {
 const DEFAULT_PROJECT_COLOR = "#3498DB";
 
 const SANDBOX_ENABLE_WARNING =
-  "Changing this Project to Sandbox Mode will Remove any Assignments on the Schedule Page, Remove Budgets, Timelines, Milestones and any Other Associated Data with Reporting.";
+  "Changing this project to Sandbox Mode will remove budgets, timelines, and milestones (and other reporting data). Schedule assignments and tasks are kept. The project will be excluded from reporting.";
 
 const SANDBOX_DESCRIPTION =
   "Enable Sandbox Mode to create a project that is 'off the record'. Sandbox Mode projects allow all Team Members to contribute equally, there is no Project Manager. Sandbox Projects can be used for brainstorming new ideas, discussing concepts for a future project, really anything that you can think of. Keep it isolated from the rest of the 'real work'!";
@@ -766,10 +766,10 @@ export function ProjectForm({
               </p>
               {project.sandbox_mode ? (
                 <p className="text-xs leading-snug text-[var(--text-muted)]">
-                  Save to apply. Enabling Sandbox Mode permanently removes
-                  schedule assignments, budgets, timelines, and milestones
-                  (tasks are kept). Disabling restores the standard project
-                  layout with blank schedule/budget data.
+                  Save to apply. Enabling Sandbox Mode removes budgets,
+                  timelines, and milestones (tasks and schedule assignments are
+                  kept). The project stays off reporting. Disabling restores the
+                  standard project layout.
                 </p>
               ) : null}
             </div>

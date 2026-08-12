@@ -2546,17 +2546,11 @@ export async function deleteAssignmentRow(
   if (error) throw error;
 }
 
-/** Wipe schedule/budget/timeline/milestone data when enabling sandbox mode. */
+/** Clear reporting-tracked project data when enabling sandbox (milestones). Schedule assignments are kept. */
 export async function clearProjectSandboxTrackedDataRows(
   supabase: SupabaseClient,
   projectId: string,
 ) {
-  const { error: asgErr } = await supabase
-    .from("assignments")
-    .delete()
-    .eq("project_id", projectId);
-  if (asgErr) throw asgErr;
-
   const { error: msErr } = await supabase
     .from("milestones")
     .delete()

@@ -1251,7 +1251,6 @@ export default function ProjectDetailPage() {
               !draft.sandbox_mode &&
               projectHasSandboxWipeRisk(
                 draft,
-                state.assignments,
                 state.milestones,
               )
             }

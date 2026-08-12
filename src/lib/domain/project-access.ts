@@ -150,7 +150,7 @@ export function nonSandboxProjects<T extends Pick<Project, "sandbox_mode">>(
   return projects.filter((p) => !p.sandbox_mode);
 }
 
-/** True when enabling sandbox would wipe schedule/budget/timeline/milestone data. */
+/** True when enabling sandbox would wipe budget/timeline/milestone data. */
 export function projectHasSandboxWipeRisk(
   project: Pick<
     Project,
@@ -162,10 +162,8 @@ export function projectHasSandboxWipeRisk(
     | "budget_amount"
     | "manager_person_id"
   >,
-  assignments: Pick<Assignment, "project_id">[],
   milestones: { project_id: string }[],
 ): boolean {
-  if (assignments.some((a) => a.project_id === project.id)) return true;
   if (milestones.some((m) => m.project_id === project.id)) return true;
   if (project.start_date || project.end_date) return true;
   if (project.manager_person_id) return true;

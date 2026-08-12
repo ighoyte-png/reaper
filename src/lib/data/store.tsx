@@ -520,8 +520,8 @@ interface DataContextValue {
     project: Omit<Project, "organization_id"> & { organization_id?: string },
   ) => Promise<Project>;
   /**
-   * When enabling sandbox: delete assignments + milestones for the project and
-   * return field overrides (timeline/budget/manager cleared). Does not touch tasks.
+   * When enabling sandbox: delete milestones for the project and return field
+   * overrides (timeline/budget/manager cleared). Keeps schedule assignments and tasks.
    */
   clearProjectSandboxTrackedData: (projectId: string) => Promise<{
     start_date: null;
@@ -2601,9 +2601,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         patch((prev) => ({
           ...prev,
-          assignments: prev.assignments.filter(
-            (a) => a.project_id !== projectId,
-          ),
           milestones: prev.milestones.filter((m) => m.project_id !== projectId),
         }));
         return {
