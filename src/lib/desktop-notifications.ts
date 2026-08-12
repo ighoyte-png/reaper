@@ -221,3 +221,51 @@ export function dispatchTaskNoteMention(detail: TaskNoteMentionBroadcast) {
     new CustomEvent(TASK_NOTE_MENTION_EVENT, { detail }),
   );
 }
+
+const PROMPT_SNOOZE_KEY = "reaper.notification-prompt.snooze-until";
+const PROMPT_DISMISS_KEY = "reaper.notification-prompt.dismissed";
+const PROMPT_SNOOZE_MS = 24 * 60 * 60 * 1000;
+
+/** Whether the in-app enable-notifications bar should be offered. */
+export function shouldOfferNotificationPermissionPrompt(): boolean {
+  if (!desktopNotificationsSupported()) return false;
+  if (Notification.permission === "granted") return false;
+  // Browser blocked — Enable can't recover without OS settings.
+  if (Notification.permission === "denied") return false;
+  try {
+    if (localStorage.getItem(PROMPT_DISMISS_KEY) === "1") return false;
+    const until = Number(localStorage.getItem(PROMPT_SNOOZE_KEY) || "");
+    if (Number.isFinite(until) && until > Date.now()) return false;
+  } catch {
+    /* private mode */
+  }
+  return true;
+}
+
+export function snoozeNotificationPermissionPrompt(days = 1): void {
+  try {
+    const ms = Math.max(0, days) * PROMPT_SNOOZE_MS;
+    localStorage.setItem(PROMPT_SNOOZE_KEY, String(Date.now() + ms));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Hide the prompt until the user clears storage (X dismiss). */
+export function dismissNotificationPermissionPrompt(): void {
+  try {
+    localStorage.setItem(PROMPT_DISMISS_KEY, "1");
+    localStorage.removeItem(PROMPT_SNOOZE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearNotificationPermissionPromptPrefs(): void {
+  try {
+    localStorage.removeItem(PROMPT_SNOOZE_KEY);
+    localStorage.removeItem(PROMPT_DISMISS_KEY);
+  } catch {
+    /* ignore */
+  }
+}

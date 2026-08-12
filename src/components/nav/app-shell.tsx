@@ -13,6 +13,7 @@ import { useAppHref } from "@/lib/hooks/use-app-href";
 import { loginPathWithNext, stripWorkspacePrefix } from "@/lib/paths";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 import { MentionDesktopListener } from "@/components/notifications/mention-desktop-listener";
+import { NotificationPermissionBanner } from "@/components/notifications/notification-permission-banner";
 
 function isSchedulePath(pathname: string, workspaceSlug: string): boolean {
   const path = stripWorkspacePrefix(pathname, workspaceSlug);
@@ -142,6 +143,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     <ViewAsProvider>
       <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
         <AppNavbar />
+        <NotificationPermissionBanner />
         <ViewAsBanner />
         <ViewAsRouteGuard />
         <MentionDesktopListener />
