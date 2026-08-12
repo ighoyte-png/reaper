@@ -1233,13 +1233,10 @@ function WidgetTitle({
   className?: string;
 }) {
   return (
-    <div className={cn("flex min-w-0 items-center gap-2", className)}>
-      <Icon
-        size={14}
-        strokeWidth={1.75}
-        className="shrink-0 text-[var(--text-muted)]"
-        aria-hidden
-      />
+    <div className={cn("flex min-w-0 items-center gap-3", className)}>
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+        <Icon size={16} strokeWidth={1.75} aria-hidden />
+      </div>
       <Tag className="text-sm font-semibold">{children}</Tag>
     </div>
   );
@@ -1397,13 +1394,10 @@ function TaggedCommentsPanel({
         stretch && "flex min-h-0 flex-1 flex-col",
       )}
     >
-      <div className="mb-3 flex items-center gap-2">
-        <MessageSquare
-          size={14}
-          strokeWidth={1.75}
-          className="shrink-0 text-[var(--text-muted)]"
-          aria-hidden
-        />
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+          <MessageSquare size={16} strokeWidth={1.75} aria-hidden />
+        </div>
         <h2 className="text-sm font-semibold">New Tagged Comments</h2>
         {unreadCount > 0 ? (
           <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
@@ -2142,13 +2136,10 @@ function TaskPulse({
       )}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Pin
-            size={14}
-            strokeWidth={1.75}
-            className="shrink-0 text-[var(--text-muted)]"
-            aria-hidden
-          />
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+            <Pin size={16} strokeWidth={1.75} aria-hidden />
+          </div>
           <h2 className="text-sm font-semibold">Task Pulse</h2>
           {badgeTotal > 0 ? (
             <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
@@ -2311,13 +2302,10 @@ function BulletinBoard({
   return (
     <section className={panelClass()}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Megaphone
-            size={14}
-            strokeWidth={1.75}
-            className="shrink-0 text-[var(--text-muted)]"
-            aria-hidden
-          />
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+            <Megaphone size={16} strokeWidth={1.75} aria-hidden />
+          </div>
           <h2 className="text-sm font-semibold">Bulletin Board</h2>
           {unreadCount > 0 ? (
             <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">

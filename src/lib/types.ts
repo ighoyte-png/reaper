@@ -24,6 +24,7 @@ export type ProjectAssetKind =
   | "chat"
   | "spreadsheet"
   | "document"
+  | "bugherd"
   | "custom";
 
 export interface Organization {

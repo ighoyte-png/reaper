@@ -817,7 +817,7 @@ function TasksReportContent() {
 
   const bucketTasks = useMemo(() => {
     const activeOnly = scopedTasks.filter(
-      (t) => !archivedListIds.has(t.list_id),
+      (t) => !archivedListIds.has(t.list_id) && !t.is_divider,
     );
     if (!myTasksMode) return activeOnly;
     return activeOnly.filter((t) => taskMatchesDateRange(t, dateFrom, dateTo));

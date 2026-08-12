@@ -723,9 +723,23 @@ export function ScheduleGrid() {
   const selectedBurn = useMemo(
     () =>
       selectedProject
-        ? budgetBurn(selectedProject, state.assignments, state.people)
+        ? budgetBurn(
+            selectedProject,
+            state.assignments,
+            state.people,
+            false,
+            new Date(),
+            state.project_members.filter(
+              (m) => m.project_id === selectedProject.id,
+            ),
+          )
         : null,
-    [selectedProject, state.assignments, state.people],
+    [
+      selectedProject,
+      state.assignments,
+      state.people,
+      state.project_members,
+    ],
   );
 
   const selected = state.assignments.find((a) => a.id === selectedId) ?? null;
@@ -1351,17 +1365,45 @@ export function ScheduleGrid() {
       setMobilePanelOpen(false);
       return;
     }
-    // This and all future: trim series so past weeks remain.
+    // This and all future: trim series so past weeks remain, and remove
+    // holiday-punch continuations / fragments from this date forward.
     if (pending.occurrence) {
-      const trimmed = endWeeklySeriesBeforeOccurrence(
-        pending.assignment,
-        pending.occurrence.start,
-      );
+      const fromKey = pending.occurrence.start;
+      const seed = pending.assignment;
+      const trimmed = endWeeklySeriesBeforeOccurrence(seed, fromKey);
       if (trimmed) {
         commitAssignment(trimmed, "Future occurrences removed");
       } else {
-        trackedDelete(pending.assignment.id);
+        trackedDelete(seed.id);
         push("Assignment deleted");
+      }
+
+      const related = state.assignments.filter(
+        (a) =>
+          a.id !== seed.id &&
+          a.person_id === seed.person_id &&
+          a.project_id === seed.project_id &&
+          a.hours_per_day === seed.hours_per_day,
+      );
+      for (const a of related) {
+        if (a.start_date >= fromKey) {
+          trackedDelete(a.id);
+          continue;
+        }
+        if ((a.recurrence ?? "none") === "weekly") {
+          const contTrim = endWeeklySeriesBeforeOccurrence(a, fromKey);
+          if (contTrim) {
+            commitAssignment(contTrim);
+          } else if (
+            !a.recurrence_end_date ||
+            a.recurrence_end_date >= fromKey
+          ) {
+            trackedDelete(a.id);
+          }
+        } else if (a.end_date >= fromKey) {
+          // One-off fragment overlapping this week forward — drop it.
+          trackedDelete(a.id);
+        }
       }
     } else {
       trackedDelete(pending.assignment.id);
@@ -1645,7 +1687,14 @@ export function ScheduleGrid() {
   function warnBudget(projectId: string, assignments: Assignment[]) {
     const project = projectsById.get(projectId);
     if (!project) return;
-    const burn = budgetBurn(project, assignments, state.people);
+    const burn = budgetBurn(
+      project,
+      assignments,
+      state.people,
+      false,
+      new Date(),
+      state.project_members.filter((m) => m.project_id === project.id),
+    );
     if (burn.overBy > 0) {
       push(`Over total budget by ${formatHours(burn.overBy)}`, "warning");
     }
@@ -2132,7 +2181,14 @@ export function ScheduleGrid() {
         client: project.client_id
           ? clientsById.get(project.client_id)
           : undefined,
-        burn: budgetBurn(project, state.assignments, state.people),
+        burn: budgetBurn(
+          project,
+          state.assignments,
+          state.people,
+          false,
+          new Date(),
+          state.project_members.filter((m) => m.project_id === project.id),
+        ),
       }));
   }, [
     canManage,
@@ -2140,6 +2196,7 @@ export function ScheduleGrid() {
     clientsById,
     state.assignments,
     state.people,
+    state.project_members,
     visiblePeople,
     startKey,
     endKey,
@@ -4217,7 +4274,14 @@ export function ScheduleGrid() {
             {(() => {
               const project = projectsById.get(editForm.project_id);
               if (!project) return null;
-              const burn = budgetBurn(project, state.assignments, state.people);
+              const burn = budgetBurn(
+                project,
+                state.assignments,
+                state.people,
+                false,
+                new Date(),
+                state.project_members.filter((m) => m.project_id === project.id),
+              );
               return (
                 <div>
                   <div className="mb-1 flex justify-between text-xs">

@@ -1703,7 +1703,20 @@ export function ProjectTaskBoard({
         insertIndex = destSiblings.length;
       } else {
         const overIdx = destSiblings.findIndex((t) => t.id === overTask.id);
-        insertIndex = overIdx < 0 ? destSiblings.length : overIdx;
+        if (overIdx < 0) {
+          insertIndex = destSiblings.length;
+        } else {
+          // Insert after the hovered row when the drag center is in its
+          // lower half (needed for thin dividers and normal tasks).
+          const activeRect =
+            active.rect.current.translated ?? active.rect.current.initial;
+          const overRect = over.rect;
+          const insertAfter =
+            Boolean(activeRect) &&
+            activeRect.top + activeRect.height / 2 >
+              overRect.top + overRect.height / 2;
+          insertIndex = overIdx + (insertAfter ? 1 : 0);
+        }
       }
     } else {
       return;

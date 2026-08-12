@@ -12,6 +12,7 @@ export const ASSET_KIND_LABELS: Record<ProjectAssetKind, string> = {
   chat: "Chat",
   spreadsheet: "Spreadsheet",
   document: "Document",
+  bugherd: "BugHerd",
   custom: "Custom",
 };
 
@@ -134,5 +135,6 @@ export function inferAssetKind(url: string): ProjectAssetKind {
     u.includes("netlify")
   )
     return "staging";
+  if (u.includes("bugherd.com")) return "bugherd";
   return "custom";
 }

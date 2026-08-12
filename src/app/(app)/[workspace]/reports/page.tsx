@@ -394,7 +394,9 @@ function ReportsPageContent() {
   const tasksFromStore = useMemo(() => {
     const scopedIds = new Set(scopedProjects.map((p) => p.id));
     const tasksScoped = state.tasks.filter((t) => scopedIds.has(t.project_id));
-    const openTasks = tasksScoped.filter((t) => t.status !== "complete");
+    const openTasks = tasksScoped.filter(
+      (t) => t.status !== "complete" && !t.is_divider,
+    );
     const overdue = openTasks.filter((t) => t.due_date && t.due_date < todayKey);
     const inProgress = openTasks.filter(
       (t) =>

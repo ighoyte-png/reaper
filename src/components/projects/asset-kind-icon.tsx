@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  Bug,
   File,
   FileText,
   Globe,
@@ -29,6 +30,7 @@ const ASSET_KIND_ICONS: Record<ProjectAssetKind, LucideIcon> = {
   chat: MessageCircle,
   spreadsheet: Sheet,
   document: File,
+  bugherd: Bug,
   custom: Link,
 };
 

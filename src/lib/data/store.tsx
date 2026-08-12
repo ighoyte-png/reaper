@@ -143,6 +143,7 @@ import {
 } from "@/lib/domain/project-templates";
 import { shiftDateKey } from "@/lib/domain/copy-task-list";
 import { uniqueSlug } from "@/lib/slug";
+import { sanitizeExternalUrl } from "@/lib/safe-url";
 import {
   generateShareToken,
   clientSiteOrigin,
@@ -2554,6 +2555,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
               : [...prev.projects, row],
           };
         });
+        // Seed Existing Website essential from the client's company website.
+        if (!existing && row.client_id) {
+          const client = state.clients.find((c) => c.id === row.client_id);
+          const raw = client?.company_website?.trim() ?? "";
+          if (raw) {
+            const href =
+              sanitizeExternalUrl(raw) ??
+              (/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+            if (href) {
+              const asset = {
+                id: uid("asset"),
+                organization_id: orgId,
+                project_id: row.id,
+                kind: "website",
+                label: "Existing Website",
+                url: href,
+                body: "",
+                sort_order: 0,
+                hide_from_client: false,
+              } satisfies ProjectAsset;
+              noteLocalWrite("project_assets", asset.id);
+              patch((prev) => ({
+                ...prev,
+                project_assets: [...prev.project_assets, asset],
+              }));
+              if (mode === "supabase" && supabaseRef.current) {
+                runRemoteSoft(() =>
+                  upsertProjectAssetRow(supabaseRef.current!, asset),
+                );
+              }
+            }
+          }
+        }
         return row;
       },
       clearProjectSandboxTrackedData: async (projectId) => {
