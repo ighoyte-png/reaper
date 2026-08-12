@@ -115,6 +115,7 @@ export function MentionDesktopListener() {
           const icon = await notificationPortraitIcon({
             name: authorName,
             avatarUrl: authorPerson?.avatar_url,
+            avatarAttachmentId: authorPerson?.avatar_attachment_id,
             color: authorPerson ? personAvatarColor(authorPerson) : null,
           });
 
@@ -165,6 +166,7 @@ export function MentionDesktopListener() {
         const icon = await notificationPortraitIcon({
           name: authorName,
           avatarUrl: detail.authorAvatarUrl,
+          avatarAttachmentId: detail.authorAvatarAttachmentId,
           color: detail.authorColor,
         });
         const project = stateRef.current.projects.find(
@@ -291,6 +293,7 @@ export function MentionDesktopListener() {
           ? await notificationPortraitIcon({
               name: authorName,
               avatarUrl: authorPerson.avatar_url,
+              avatarAttachmentId: authorPerson.avatar_attachment_id,
               color: personAvatarColor(authorPerson),
             })
           : reaperNotificationBadgeUrl();

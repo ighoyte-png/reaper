@@ -2803,6 +2803,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ...withOrg(expense),
           month_key: expense.month_key.slice(0, 10),
           notes: expense.notes ?? "",
+          repeat_monthly: Boolean(expense.repeat_monthly),
           updated_at: new Date().toISOString(),
           created_at: expense.created_at || new Date().toISOString(),
         } as ProjectContractorExpense;
@@ -4116,6 +4117,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               profile?.email?.trim() ||
               "Someone",
             authorAvatarUrl: myPerson?.avatar_url ?? null,
+            authorAvatarAttachmentId: myPerson?.avatar_attachment_id ?? null,
             authorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
           if (orgChannelRef.current) {

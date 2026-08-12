@@ -85,6 +85,64 @@ function classifyProjectPeople(
   };
 }
 
+function feeCommitIdsForProject(
+  commitIds: Set<string>,
+  membersByPerson: Map<string, ProjectMember>,
+  peopleById: Map<string, Person>,
+  monthlyRetainer: boolean,
+): Set<string> {
+  if (!monthlyRetainer) return commitIds;
+  // Monthly retainers use Contractor Expenses for fixed fees; keep hours commits.
+  const out = new Set<string>();
+  for (const personId of commitIds) {
+    const person = peopleById.get(personId);
+    if (!person) continue;
+    const mode = effectiveContractorMode(person, membersByPerson.get(personId));
+    if (mode === "hours") out.add(personId);
+  }
+  return out;
+}
+
+function attributeMonthlyExpenses(
+  project: Project,
+  contractorExpenses: ProjectContractorExpense[],
+  people: Person[],
+  monthKey: string,
+  monthStart: string,
+  asOf: Date,
+): {
+  usedHours: number;
+  usedAmount: number;
+  futureHours: number;
+  futureAmount: number;
+} {
+  if (!isMonthlyRetainerBudget(project)) {
+    return { usedHours: 0, usedAmount: 0, futureHours: 0, futureAmount: 0 };
+  }
+  const totals = contractorExpenseTotalsForMonth(
+    project.id,
+    contractorExpenses,
+    people,
+    monthKey,
+  );
+  const todayKey = toDateKey(asOf);
+  if (monthStart > todayKey) {
+    return {
+      usedHours: 0,
+      usedAmount: 0,
+      futureHours: totals.usedHours,
+      futureAmount: totals.usedAmount,
+    };
+  }
+  // Past and current months: treat expense as used/committed for the month.
+  return {
+    usedHours: totals.usedHours,
+    usedAmount: totals.usedAmount,
+    futureHours: 0,
+    futureAmount: 0,
+  };
+}
+
 function projectHoursInDateRangeForPeople(
   projectId: string,
   assignments: Assignment[],
@@ -150,7 +208,11 @@ export function contractorExpenseTotalsForMonth(
   const prefix = monthKey.slice(0, 7);
   for (const e of expenses) {
     if (e.project_id !== projectId) continue;
-    if (e.month_key.slice(0, 7) !== prefix) continue;
+    const expenseMonth = e.month_key.slice(0, 7);
+    const applies = e.repeat_monthly
+      ? expenseMonth <= prefix
+      : expenseMonth === prefix;
+    if (!applies) continue;
     usedAmount += e.amount;
     const person = peopleById.get(e.person_id);
     const rate =
@@ -162,6 +224,82 @@ export function contractorExpenseTotalsForMonth(
     if (rate > 0) usedHours += e.amount / rate;
   }
   return { usedHours, usedAmount };
+}
+
+/** Sum contractor expense $ (and derived hours) across an inclusive date range. */
+export function contractorExpenseTotalsInRange(
+  projectId: string,
+  expenses: ProjectContractorExpense[],
+  people: Person[],
+  rangeStart: string,
+  rangeEnd: string,
+): { hours: number; amount: number } {
+  const split = contractorExpenseSplitInRange(
+    projectId,
+    expenses,
+    people,
+    rangeStart,
+    rangeEnd,
+  );
+  return {
+    hours: split.usedHours + split.futureHours,
+    amount: split.usedAmount + split.futureAmount,
+  };
+}
+
+/** Expense used vs future within a date range (by calendar month vs asOf). */
+export function contractorExpenseSplitInRange(
+  projectId: string,
+  expenses: ProjectContractorExpense[],
+  people: Person[],
+  rangeStart: string,
+  rangeEnd: string,
+  asOf: Date = new Date(),
+): {
+  usedHours: number;
+  futureHours: number;
+  usedAmount: number;
+  futureAmount: number;
+} {
+  if (rangeEnd < rangeStart) {
+    return { usedHours: 0, futureHours: 0, usedAmount: 0, futureAmount: 0 };
+  }
+  const todayKey = toDateKey(asOf);
+  const start = new Date(
+    Number(rangeStart.slice(0, 4)),
+    Number(rangeStart.slice(5, 7)) - 1,
+    1,
+  );
+  const end = new Date(
+    Number(rangeEnd.slice(0, 4)),
+    Number(rangeEnd.slice(5, 7)) - 1,
+    1,
+  );
+  let usedHours = 0;
+  let futureHours = 0;
+  let usedAmount = 0;
+  let futureAmount = 0;
+  for (
+    let d = start;
+    d <= end;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+  ) {
+    const monthStart = toDateKey(startOfMonth(d));
+    const totals = contractorExpenseTotalsForMonth(
+      projectId,
+      expenses,
+      people,
+      format(d, "yyyy-MM"),
+    );
+    if (monthStart > todayKey) {
+      futureHours += totals.usedHours;
+      futureAmount += totals.usedAmount;
+    } else {
+      usedHours += totals.usedHours;
+      usedAmount += totals.usedAmount;
+    }
+  }
+  return { usedHours, futureHours, usedAmount, futureAmount };
 }
 
 function contractorCommitmentTotals(
@@ -430,21 +568,25 @@ export function budgetBurn(
         contractorScheduledIds,
         includeTentative,
       );
-      const commitUsed = isMonthlyRetainerBudget(project)
-        ? { usedHours: 0, usedAmount: 0, futureHours: 0, futureAmount: 0 }
-        : contractorCommitmentTotals(
-            project.id,
-            contractorCommitIds,
-            membersByPerson,
-            peopleById,
-            assignments,
-            rangeStart,
-            rangeEnd,
-            includeTentative,
-          );
+      const monthly = isMonthlyRetainerBudget(project);
+      const commitUsed = contractorCommitmentTotals(
+        project.id,
+        feeCommitIdsForProject(
+          contractorCommitIds,
+          membersByPerson,
+          peopleById,
+          monthly,
+        ),
+        membersByPerson,
+        peopleById,
+        assignments,
+        rangeStart,
+        rangeEnd,
+        includeTentative,
+      );
       contractorUsedHours += commitUsed.usedHours;
       contractorUsedAmount += commitUsed.usedAmount;
-      if (isMonthlyRetainerBudget(project)) {
+      if (monthly) {
         const expenseUsed = contractorExpenseTotalsForMonth(
           project.id,
           contractorExpenses,
@@ -745,11 +887,13 @@ function monthBurnSplit(
   const hasContractorTerms = projectMembers.some(
     (m) => m.project_id === project.id,
   );
-  const monthExpenses = contractorExpenseTotalsForMonth(
-    project.id,
+  const monthExpenses = attributeMonthlyExpenses(
+    project,
     contractorExpenses,
     people,
     monthKey,
+    monthStart,
+    asOf,
   );
   if (!hasContractorTerms) {
     const split = projectHoursSplitInRange(
@@ -771,22 +915,24 @@ function monthBurnSplit(
       false,
       { year, monthIndex },
     );
-    const expenseHours = isMonthlyRetainerBudget(project)
-      ? monthExpenses.usedHours
-      : 0;
-    const expenseAmount = isMonthlyRetainerBudget(project)
-      ? monthExpenses.usedAmount
-      : 0;
+    const expenseUsedHours = monthExpenses.usedHours;
+    const expenseUsedAmount = monthExpenses.usedAmount;
+    const expenseFutureHours = monthExpenses.futureHours;
+    const expenseFutureAmount = monthExpenses.futureAmount;
+    const expenseHours = expenseUsedHours + expenseFutureHours;
+    const expenseAmount = expenseUsedAmount + expenseFutureAmount;
     return {
       ...split,
-      usedHours: split.usedHours + expenseHours,
-      usedAmount: split.usedAmount + expenseAmount,
+      usedHours: split.usedHours + expenseUsedHours,
+      usedAmount: split.usedAmount + expenseUsedAmount,
+      futureHours: split.futureHours + expenseFutureHours,
+      futureAmount: split.futureAmount + expenseFutureAmount,
       contractorHours: expenseHours,
       contractorAmount: expenseAmount,
-      contractorUsedHours: expenseHours,
-      contractorFutureHours: 0,
-      contractorUsedAmount: expenseAmount,
-      contractorFutureAmount: 0,
+      contractorUsedHours: expenseUsedHours,
+      contractorFutureHours: expenseFutureHours,
+      contractorUsedAmount: expenseUsedAmount,
+      contractorFutureAmount: expenseFutureAmount,
       plannedHours: plannedHours + expenseHours,
       plannedAmount: plannedAmount + expenseAmount,
     };
@@ -821,6 +967,14 @@ function monthBurnSplit(
   let contractorUsedAmount = 0;
   let contractorFutureAmount = 0;
 
+  const monthly = isMonthlyRetainerBudget(project);
+  const feeCommitIds = feeCommitIdsForProject(
+    contractorCommitIds,
+    membersByPerson,
+    peopleById,
+    monthly,
+  );
+
   if (usedEnd >= monthStart) {
     internalUsedHours = projectHoursInDateRangeForPeople(
       project.id,
@@ -852,19 +1006,10 @@ function monthBurnSplit(
       usedEnd,
       contractorScheduledIds,
     );
-    if (isMonthlyRetainerBudget(project)) {
-      const expenseUsed = contractorExpenseTotalsForMonth(
-        project.id,
-        contractorExpenses,
-        people,
-        monthKey,
-      );
-      contractorUsedHours += expenseUsed.usedHours;
-      contractorUsedAmount += expenseUsed.usedAmount;
-    } else if (monthKey === commitMonthKey) {
+    if (!monthly && monthKey === commitMonthKey) {
       const commit = contractorCommitmentTotals(
         project.id,
-        contractorCommitIds,
+        feeCommitIds,
         membersByPerson,
         peopleById,
         assignments,
@@ -908,6 +1053,33 @@ function monthBurnSplit(
       contractorScheduledIds,
     );
   }
+
+  if (monthly && feeCommitIds.size > 0) {
+    const commit = contractorCommitmentTotals(
+      project.id,
+      feeCommitIds,
+      membersByPerson,
+      peopleById,
+      assignments,
+      monthStart,
+      monthEnd,
+      false,
+    );
+    if (monthStart > todayKey) {
+      contractorFutureHours += commit.usedHours;
+      contractorFutureAmount += commit.usedAmount;
+    } else {
+      contractorUsedHours += commit.usedHours;
+      contractorUsedAmount += commit.usedAmount;
+    }
+  }
+
+  // Expenses apply to the whole month (used or future), even when the used
+  // window does not overlap (pure future months).
+  contractorUsedHours += monthExpenses.usedHours;
+  contractorUsedAmount += monthExpenses.usedAmount;
+  contractorFutureHours += monthExpenses.futureHours;
+  contractorFutureAmount += monthExpenses.futureAmount;
 
   const plannedHours =
     internalUsedHours +

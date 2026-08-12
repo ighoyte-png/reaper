@@ -402,10 +402,12 @@ export interface ProjectContractorExpense {
   organization_id: string;
   project_id: string;
   person_id: string;
-  /** First day of month as yyyy-MM-dd. */
+  /** First day of month as yyyy-MM-dd. Start month when repeat_monthly. */
   month_key: string;
   amount: number;
   notes: string;
+  /** When true, amount applies to month_key and every later month. */
+  repeat_monthly: boolean;
   created_at: string;
   updated_at: string;
   created_by_profile_id: string | null;

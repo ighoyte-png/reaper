@@ -21,6 +21,8 @@ import {
   budgetBurn,
   budgetHealth,
   calendarYearBars,
+  contractorExpenseTotalsInRange,
+  contractorExpenseSplitInRange,
   formatHours,
   formatMoney,
   isMonthlyRetainerBudget,
@@ -263,19 +265,79 @@ export default function ProjectBudgetDetailPage() {
     };
   }, [periodMode, year, selectedMonth, project, state.assignments]);
 
-  const periodSplit = useMemo(
-    () =>
-      project
-        ? projectHoursSplitInRange(
-            project.id,
-            state.assignments,
-            state.people,
-            periodRange.start,
-            periodRange.end,
-          )
-        : null,
-    [project, state.assignments, state.people, periodRange],
-  );
+  const periodSplit = useMemo(() => {
+    if (!project) return null;
+    const split = projectHoursSplitInRange(
+      project.id,
+      state.assignments,
+      state.people,
+      periodRange.start,
+      periodRange.end,
+    );
+    if (!isMonthlyRetainerBudget(project)) return split;
+    const expenses = contractorExpenseSplitInRange(
+      project.id,
+      projectExpenses,
+      state.people,
+      periodRange.start,
+      periodRange.end,
+    );
+    return {
+      usedHours: split.usedHours + expenses.usedHours,
+      futureHours: split.futureHours + expenses.futureHours,
+      usedAmount: split.usedAmount + expenses.usedAmount,
+      futureAmount: split.futureAmount + expenses.futureAmount,
+    };
+  }, [
+    project,
+    state.assignments,
+    state.people,
+    periodRange,
+    projectExpenses,
+  ]);
+
+  const periodRevenueCost = useMemo(() => {
+    if (!project) {
+      return { revenue: 0, cost: 0, scheduleCost: 0, expenseCost: 0 };
+    }
+    const byId = new Map(state.people.map((p) => [p.id, p]));
+    const personIds = new Set<string>();
+    for (const a of state.assignments) {
+      if (a.project_id !== project.id || a.status !== "confirmed") continue;
+      personIds.add(a.person_id);
+    }
+    let revenue = 0;
+    let scheduleCost = 0;
+    for (const personId of personIds) {
+      const person = byId.get(personId);
+      const split = personHoursSplitInRange(
+        personId,
+        project.id,
+        state.assignments,
+        periodRange.start,
+        periodRange.end,
+      );
+      const hours = split.usedHours + split.futureHours;
+      revenue += hours * (person?.bill_rate ?? 0);
+      scheduleCost += hours * (person?.cost_rate ?? 0);
+    }
+    let expenseCost = 0;
+    if (isMonthlyRetainerBudget(project)) {
+      expenseCost = contractorExpenseTotalsInRange(
+        project.id,
+        projectExpenses,
+        state.people,
+        periodRange.start,
+        periodRange.end,
+      ).amount;
+    }
+    return {
+      revenue,
+      scheduleCost,
+      expenseCost,
+      cost: scheduleCost + expenseCost,
+    };
+  }, [project, state.assignments, state.people, periodRange, projectExpenses]);
 
   const selectedMonthKey =
     periodMode === "month"
@@ -389,28 +451,6 @@ export default function ProjectBudgetDetailPage() {
     state.assignments,
     periodRange,
   ]);
-
-  const periodRevenueCost = useMemo(() => {
-    if (!project) return { revenue: 0, cost: 0 };
-    const byId = new Map(state.people.map((p) => [p.id, p]));
-    let revenue = 0;
-    let cost = 0;
-    for (const a of state.assignments) {
-      if (a.project_id !== project.id || a.status !== "confirmed") continue;
-      const person = byId.get(a.person_id);
-      const split = personHoursSplitInRange(
-        a.person_id,
-        project.id,
-        state.assignments,
-        periodRange.start,
-        periodRange.end,
-      );
-      const hours = split.usedHours + split.futureHours;
-      revenue += hours * (person?.bill_rate ?? 0);
-      cost += hours * (person?.cost_rate ?? 0);
-    }
-    return { revenue, cost };
-  }, [project, state.assignments, state.people, periodRange]);
 
   function goBack() {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -526,7 +566,7 @@ export default function ProjectBudgetDetailPage() {
           : formatHours(periodRemainingHours);
 
   const periodRateMargin =
-    periodRevenueCost.revenue - periodRevenueCost.cost;
+    periodRevenueCost.revenue - periodRevenueCost.scheduleCost;
   const periodRateMarginPct =
     periodRevenueCost.revenue <= 0
       ? 0
@@ -535,11 +575,32 @@ export default function ProjectBudgetDetailPage() {
   let periodMargin: number | null = null;
   let periodMarginPct: number | null = null;
   if (mode === "amount" && periodBudgetCap != null) {
+    // Budget $ minus schedule cost rates and contractor expenses.
     periodMargin = periodBudgetCap - periodRevenueCost.cost;
     periodMarginPct =
       periodBudgetCap <= 0 ? null : (periodMargin / periodBudgetCap) * 100;
-  } else if (mode === "hours" && periodBudgetCap != null && periodPlannedHours > 0) {
-    const avgCost = periodRevenueCost.cost / periodPlannedHours;
+  } else if (
+    mode === "hours" &&
+    periodBudgetCap != null &&
+    periodPlannedHours > 0
+  ) {
+    const scheduleHours = Math.max(
+      0,
+      periodPlannedHours -
+        (isMonthlyRetainerBudget(project)
+          ? contractorExpenseTotalsInRange(
+              project.id,
+              projectExpenses,
+              state.people,
+              periodRange.start,
+              periodRange.end,
+            ).hours
+          : 0),
+    );
+    const avgCost =
+      scheduleHours > 0
+        ? periodRevenueCost.scheduleCost / scheduleHours
+        : 0;
     const unusedHours = periodBudgetCap - periodPlannedHours;
     periodMargin = unusedHours * avgCost;
     periodMarginPct =

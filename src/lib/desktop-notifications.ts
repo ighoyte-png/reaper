@@ -1,3 +1,9 @@
+import {
+  invalidateAttachmentDisplayUrl,
+  resolveAttachmentDisplayUrl,
+  seedAttachmentDisplayUrl,
+} from "@/lib/storage/client-upload";
+
 /** Browser / PWA desktop notifications for @mentions. */
 
 export function desktopNotificationsSupported(): boolean {
@@ -72,6 +78,34 @@ function drawInitialsPortrait(
   ctx.fillText(initialsFromName(name), size / 2, size / 2 + size * 0.02);
 }
 
+async function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const el = new Image();
+    el.crossOrigin = "anonymous";
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("avatar load failed"));
+    el.src = url;
+  });
+}
+
+/**
+ * Prefer a durable attachment id (shared signed-URL cache) over a possibly
+ * expired bootstrap `avatar_url` left in people state.
+ */
+export async function resolveNotificationAvatarUrl(opts: {
+  avatarUrl?: string | null;
+  avatarAttachmentId?: string | null;
+}): Promise<string | null> {
+  const attachmentId = opts.avatarAttachmentId?.trim() || null;
+  const seedUrl = opts.avatarUrl?.trim() || null;
+  if (attachmentId) {
+    if (seedUrl) seedAttachmentDisplayUrl(attachmentId, seedUrl);
+    const resolved = await resolveAttachmentDisplayUrl(attachmentId);
+    if (resolved) return resolved;
+  }
+  return seedUrl;
+}
+
 /**
  * Slack-style circular portrait for notification `icon`.
  * Uses the avatar when loadable; otherwise initials on the person color.
@@ -79,6 +113,7 @@ function drawInitialsPortrait(
 export async function notificationPortraitIcon(opts: {
   name: string;
   avatarUrl?: string | null;
+  avatarAttachmentId?: string | null;
   color?: string | null;
 }): Promise<string> {
   const size = 192;
@@ -90,16 +125,16 @@ export async function notificationPortraitIcon(opts: {
   const ctx = canvas.getContext("2d");
   if (!ctx) return reaperNotificationBadgeUrl();
 
-  const avatarUrl = opts.avatarUrl?.trim() || null;
-  if (avatarUrl) {
+  const attachmentId = opts.avatarAttachmentId?.trim() || null;
+  let avatarUrl = await resolveNotificationAvatarUrl({
+    avatarUrl: opts.avatarUrl,
+    avatarAttachmentId: attachmentId,
+  });
+
+  const tryDraw = async (url: string): Promise<string | null> => {
     try {
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const el = new Image();
-        el.crossOrigin = "anonymous";
-        el.onload = () => resolve(el);
-        el.onerror = () => reject(new Error("avatar load failed"));
-        el.src = avatarUrl;
-      });
+      const img = await loadImage(url);
+      ctx.save();
       ctx.clearRect(0, 0, size, size);
       ctx.beginPath();
       ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
@@ -109,15 +144,34 @@ export async function notificationPortraitIcon(opts: {
       const w = img.naturalWidth * scale;
       const h = img.naturalHeight * scale;
       ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-      return canvas.toDataURL("image/png");
+      const dataUrl = canvas.toDataURL("image/png");
+      ctx.restore();
+      return dataUrl;
     } catch {
-      /* fall through to initials */
+      try {
+        ctx.restore();
+      } catch {
+        /* ignore */
+      }
+      return null;
     }
+  };
+
+  if (avatarUrl) {
+    let drawn = await tryDraw(avatarUrl);
+    // Expired bootstrap URL: bust cache and mint once more.
+    if (!drawn && attachmentId) {
+      invalidateAttachmentDisplayUrl(attachmentId);
+      avatarUrl = await resolveAttachmentDisplayUrl(attachmentId);
+      if (avatarUrl) drawn = await tryDraw(avatarUrl);
+    }
+    if (drawn) return drawn;
   }
 
   drawInitialsPortrait(ctx, size, name, color);
   return canvas.toDataURL("image/png");
 }
+
 
 async function showViaServiceWorker(
   title: string,
@@ -210,6 +264,7 @@ export type TaskNoteMentionBroadcast = {
   taskTitle: string;
   authorName: string;
   authorAvatarUrl?: string | null;
+  authorAvatarAttachmentId?: string | null;
   authorColor?: string | null;
 };
 

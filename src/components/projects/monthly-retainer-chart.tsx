@@ -28,19 +28,39 @@ function barSplit(
 ): {
   used: number;
   future: number;
+  contractorUsed: number;
+  contractorFuture: number;
   contractor: number;
   total: number;
 } {
   if (unit === "amount") {
-    const contractor = bar.contractorAmount;
+    const contractorUsed = bar.contractorUsedAmount;
+    const contractorFuture = bar.contractorFutureAmount;
+    const contractor = contractorUsed + contractorFuture;
     const used = bar.usedAmount;
     const future = bar.futureAmount;
-    return { used, future, contractor, total: used + future + contractor };
+    return {
+      used,
+      future,
+      contractorUsed,
+      contractorFuture,
+      contractor,
+      total: used + future + contractor,
+    };
   }
-  const contractor = bar.contractorHours;
+  const contractorUsed = bar.contractorUsedHours;
+  const contractorFuture = bar.contractorFutureHours;
+  const contractor = contractorUsed + contractorFuture;
   const used = bar.usedHours;
   const future = bar.futureHours;
-  return { used, future, contractor, total: used + future + contractor };
+  return {
+    used,
+    future,
+    contractorUsed,
+    contractorFuture,
+    contractor,
+    total: used + future + contractor,
+  };
 }
 
 const contractorColor = "var(--status-healthy)";
@@ -51,6 +71,8 @@ function MonthBarColumn({
   total,
   used,
   future,
+  contractorUsed,
+  contractorFuture,
   contractor,
   maxValue,
   cap,
@@ -64,6 +86,8 @@ function MonthBarColumn({
   total: number;
   used: number;
   future: number;
+  contractorUsed: number;
+  contractorFuture: number;
   contractor: number;
   maxValue: number;
   cap: number;
@@ -130,6 +154,50 @@ function MonthBarColumn({
     );
   }
 
+  function renderContractorBar(heightPct: number) {
+    const cTotal = contractorUsed + contractorFuture;
+    const usedPct = cTotal > 0 ? (contractorUsed / cTotal) * 100 : 0;
+    const futurePct = cTotal > 0 ? (contractorFuture / cTotal) * 100 : 0;
+    const hatchAll =
+      futureMonth || (contractorFuture > 0 && contractorUsed <= 0);
+    if (contractorUsed > 0 && contractorFuture > 0) {
+      return (
+        <div
+          className="relative flex w-full flex-col justify-end overflow-hidden"
+          style={{ height: `${heightPct}%` }}
+        >
+          <div
+            className="relative w-full overflow-hidden"
+            style={{
+              height: `${futurePct}%`,
+              backgroundColor: contractorColor,
+            }}
+          >
+            <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+          </div>
+          <div
+            className="w-full"
+            style={{
+              height: `${usedPct}%`,
+              backgroundColor: contractorColor,
+            }}
+          />
+        </div>
+      );
+    }
+    return (
+      <div
+        className="relative w-full overflow-hidden"
+        style={{ height: `${heightPct}%`, backgroundColor: contractorColor }}
+      >
+        {hatchAll ? (
+          <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+        ) : null}
+      </div>
+    );
+  }
+
+  /** justify-end: last child sits at the bottom — contractor green at bottom. */
   function renderStackedBar(heightPct: number) {
     const contractorPct = total > 0 ? (contractor / total) * 100 : 0;
     const internalPct = total > 0 ? ((used + future) / total) * 100 : 0;
@@ -138,20 +206,10 @@ function MonthBarColumn({
         className="relative flex w-full flex-col justify-end overflow-hidden"
         style={{ height: `${heightPct}%` }}
       >
-        {hasContractor ? (
-          <div
-            className="w-full shrink-0"
-            style={{
-              height: `${contractorPct}%`,
-              backgroundColor: contractorColor,
-            }}
-          />
-        ) : null}
         {internalPct > 0 ? (
-          <div className="min-h-0 w-full flex-1">
-            {renderInternalBar(100)}
-          </div>
+          <div className="min-h-0 w-full flex-1">{renderInternalBar(100)}</div>
         ) : null}
+        {hasContractor ? renderContractorBar(contractorPct) : null}
       </div>
     );
   }
@@ -252,7 +310,7 @@ export function ProjectYearBurnChart({
     unit === "hours" ? 1 : 1,
   );
   const capPct = maxValue <= 0 ? 0 : (cap / maxValue) * 100;
-  const showCapLine = unit === "hours" && cap > 0;
+  const showCapLine = cap > 0;
   const hasContractor = bars.some((b) =>
     unit === "amount" ? b.contractorAmount > 0 : b.contractorHours > 0,
   );
@@ -313,7 +371,14 @@ export function ProjectYearBurnChart({
           />
         ) : null}
         {bars.map((bar) => {
-          const { used, future, contractor, total } = barSplit(bar, unit);
+          const {
+            used,
+            future,
+            contractorUsed,
+            contractorFuture,
+            contractor,
+            total,
+          } = barSplit(bar, unit);
           return (
             <MonthBarColumn
               key={bar.key}
@@ -322,6 +387,8 @@ export function ProjectYearBurnChart({
               total={total}
               used={used}
               future={future}
+              contractorUsed={contractorUsed}
+              contractorFuture={contractorFuture}
               contractor={contractor}
               maxValue={maxValue}
               cap={cap}
@@ -340,9 +407,7 @@ export function ProjectYearBurnChart({
               className={cn(
                 "block truncate text-[var(--text-muted)]",
                 compact ? "text-[8px]" : "text-[8px] sm:text-[10px]",
-                unit === "hours" &&
-                  isFutureMonth(bar.year, bar.monthIndex) &&
-                  "italic",
+                isFutureMonth(bar.year, bar.monthIndex) && "italic",
                 selectedMonthKey === bar.key &&
                   "font-semibold text-[var(--text)]",
               )}

@@ -1,6 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  addMonths,
+  addYears,
+  format,
+  isSameMonth,
+  parseISO,
+  startOfMonth,
+} from "date-fns";
+import {
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react";
 import { Field, inputClass, DateInput, ConfirmDialog } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -39,7 +53,6 @@ import type {
   ProjectStatus,
   ProjectTemplate,
 } from "@/lib/types";
-import { format, parseISO } from "date-fns";
 
 const DEFAULT_PROJECT_COLOR = "#3498DB";
 
@@ -188,9 +201,18 @@ export function ProjectForm({
         isProjectBasisContractor(person) &&
         !contractorTerms[person.id]
       ) {
+        const defaults = defaultContractorTermsForPerson(person);
         onContractorTermsChange({
           ...contractorTerms,
-          [person.id]: defaultContractorTermsForPerson(person),
+          [person.id]:
+            isMonthlyRetainer && defaults.contractor_mode === "fixed_fee"
+              ? {
+                  ...defaults,
+                  contractor_mode: person.hide_from_schedule
+                    ? "hours"
+                    : "scheduled",
+                }
+              : defaults,
         });
       }
       return;
@@ -655,12 +677,13 @@ export function ProjectForm({
               ) : null}
               {isMonthlyRetainer && projectBasisTeamMembers.length > 0 ? (
                 <p className="text-xs leading-snug text-[var(--text-muted)]">
-                  Add per-month contractor costs on the Contractor Expenses tab.
+                  Dollar fees go on the Contractor Expenses tab. Hours and
+                  Scheduled Time terms below still apply each month.
                 </p>
               ) : null}
-              {!isMonthlyRetainer && projectBasisTeamMembers.length > 0 ? (
+              {projectBasisTeamMembers.length > 0 ? (
                 <div className="space-y-4 border-t border-[var(--border)] pt-3">
-                  <p className="text-xs font-medium tracking-wide text-[var(--text-muted)]">
+                  <p className="text-xs font-medium text-[var(--text-muted)]">
                     Contractor Terms
                   </p>
                   {projectBasisTeamMembers.map((person) => {
@@ -678,6 +701,26 @@ export function ProjectForm({
                       hours,
                       person,
                     );
+                    const termOptions = (
+                      isMonthlyRetainer
+                        ? ([
+                            { value: "hours", label: "Hours" },
+                            {
+                              value: "scheduled",
+                              label: "Use Scheduled Time",
+                              disabled: person.hide_from_schedule,
+                            },
+                          ] as const)
+                        : ([
+                            { value: "fixed_fee", label: "Fixed Fee" },
+                            { value: "hours", label: "Hours" },
+                            {
+                              value: "scheduled",
+                              label: "Use Scheduled Time",
+                              disabled: person.hide_from_schedule,
+                            },
+                          ] as const)
+                    );
 
                     return (
                       <div
@@ -691,17 +734,7 @@ export function ProjectForm({
                           <ContractorTag />
                         </div>
                         <div className="flex flex-wrap gap-3 text-sm">
-                          {(
-                            [
-                              { value: "fixed_fee", label: "Fixed Fee" },
-                              { value: "hours", label: "Hours" },
-                              {
-                                value: "scheduled",
-                                label: "Use Scheduled Time",
-                                disabled: person.hide_from_schedule,
-                              },
-                            ] as const
-                          ).map((opt) => (
+                          {termOptions.map((opt) => (
                             <label
                               key={opt.value}
                               className={cn(
@@ -726,7 +759,13 @@ export function ProjectForm({
                             </label>
                           ))}
                         </div>
-                        {mode === "fixed_fee" ? (
+                        {isMonthlyRetainer && mode === "fixed_fee" ? (
+                          <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                            Use the Contractor Expenses tab for fixed dollar
+                            fees on monthly projects.
+                          </p>
+                        ) : null}
+                        {!isMonthlyRetainer && mode === "fixed_fee" ? (
                           <div className="space-y-1">
                             <label className="block text-xs text-[var(--text-muted)]">
                               Fixed Fee ($)
@@ -757,6 +796,7 @@ export function ProjectForm({
                           <div className="space-y-1">
                             <label className="block text-xs text-[var(--text-muted)]">
                               Hours
+                              {isMonthlyRetainer ? " (Per Month)" : ""}
                             </label>
                             <input
                               type="number"
@@ -900,74 +940,45 @@ function ContractorExpensesPanel({
   onDelete: (id: string) => Promise<void>;
 }) {
   const { state } = useData();
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const expenseYears = expenses.map((e) =>
-    Number(e.month_key.slice(0, 4)),
-  );
-  const startYear = project.start_date
-    ? Number(project.start_date.slice(0, 4))
-    : currentYear;
-  const years = [
-    ...new Set([
-      currentYear,
-      currentYear + 1,
-      startYear,
-      ...expenseYears,
-    ]),
-  ]
-    .filter((y) => Number.isFinite(y))
-    .sort((a, b) => b - a);
-
-  const [year, setYear] = useState(currentYear);
+  const thisMonth = startOfMonth(new Date());
+  const [month, setMonth] = useState(thisMonth);
   const [personId, setPersonId] = useState(contractors[0]?.id ?? "");
   const [amount, setAmount] = useState("");
-  const [monthKey, setMonthKey] = useState(monthKeyFromDate(now));
   const [notes, setNotes] = useState("");
+  const [repeatMonthly, setRepeatMonthly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editRepeat, setEditRepeat] = useState(false);
+
+  const viewedMonthKey = monthKeyFromDate(month);
+  const viewedPrefix = viewedMonthKey.slice(0, 7);
+  const isViewingCurrentMonth = isSameMonth(month, thisMonth);
 
   useEffect(() => {
     if (!personId && contractors[0]) setPersonId(contractors[0].id);
   }, [contractors, personId]);
 
-  useEffect(() => {
-    setMonthKey((prev) => {
-      if (prev.startsWith(String(year))) return prev;
-      const month = Number(prev.slice(5, 7)) || new Date().getMonth() + 1;
-      return monthKeyFromDate(new Date(year, month - 1, 1));
-    });
-  }, [year]);
-
-  const yearExpenses = useMemo(() => {
-    const prefix = String(year);
+  const monthRows = useMemo(() => {
     return expenses
-      .filter((e) => e.month_key.startsWith(prefix))
-      .sort((a, b) => b.month_key.localeCompare(a.month_key));
-  }, [expenses, year]);
-
-  const byMonth = useMemo(() => {
-    const map = new Map<string, ProjectContractorExpense[]>();
-    for (const e of yearExpenses) {
-      const key = e.month_key.slice(0, 7);
-      const list = map.get(key) ?? [];
-      list.push(e);
-      map.set(key, list);
-    }
-    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-  }, [yearExpenses]);
-
-  const monthOptions = useMemo(() => {
-    return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(year, i, 1);
-      return {
-        value: monthKeyFromDate(d),
-        label: format(d, "MMMM yyyy"),
-      };
-    });
-  }, [year]);
+      .filter((e) => {
+        const expenseMonth = e.month_key.slice(0, 7);
+        if (e.repeat_monthly) return expenseMonth <= viewedPrefix;
+        return expenseMonth === viewedPrefix;
+      })
+      .sort((a, b) => {
+        const an =
+          contractors.find((c) => c.id === a.person_id)?.name ??
+          state.people.find((p) => p.id === a.person_id)?.name ??
+          "";
+        const bn =
+          contractors.find((c) => c.id === b.person_id)?.name ??
+          state.people.find((p) => p.id === b.person_id)?.name ??
+          "";
+        return an.localeCompare(bn, undefined, { sensitivity: "base" });
+      });
+  }, [expenses, viewedPrefix, contractors, state.people]);
 
   function personName(personIdValue: string) {
     return (
@@ -988,15 +999,17 @@ function ContractorExpensesPanel({
         id: newId("pce"),
         project_id: project.id,
         person_id: personId,
-        month_key: monthKey.slice(0, 7) + "-01",
+        month_key: viewedMonthKey,
         amount: value,
         notes: notes.trim(),
+        repeat_monthly: repeatMonthly,
         created_at: nowIso,
         updated_at: nowIso,
         created_by_profile_id: null,
       });
       setAmount("");
       setNotes("");
+      setRepeatMonthly(false);
     } finally {
       setSaving(false);
     }
@@ -1011,6 +1024,7 @@ function ContractorExpensesPanel({
         ...row,
         amount: value,
         notes: editNotes.trim(),
+        repeat_monthly: editRepeat,
         updated_at: new Date().toISOString(),
       });
       setEditingId(null);
@@ -1030,9 +1044,186 @@ function ContractorExpensesPanel({
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <p className="text-sm text-[var(--text-muted)]">
-        Add contractor costs for each calendar month. Editing one month does not
-        change other months.
+        Add contractor costs for the selected month. Repeat Monthly applies the
+        same amount from that month onward.
       </p>
+
+      <div>
+        <div className="mb-2 flex items-center gap-0.5">
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            aria-label="Previous year"
+            title="Previous year"
+            onClick={() => setMonth((m) => startOfMonth(addYears(m, -1)))}
+          >
+            <ChevronsLeft size={15} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            aria-label="Previous month"
+            title="Previous month"
+            onClick={() => setMonth((m) => startOfMonth(addMonths(m, -1)))}
+          >
+            <ChevronLeft size={16} strokeWidth={2} />
+          </button>
+          <div className="min-w-0 flex-1 text-center text-xs font-medium text-[var(--text)]">
+            {format(month, "MMMM yyyy")}
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            aria-label="Next month"
+            title="Next month"
+            onClick={() => setMonth((m) => startOfMonth(addMonths(m, 1)))}
+          >
+            <ChevronRight size={16} strokeWidth={2} />
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+            aria-label="Next year"
+            title="Next year"
+            onClick={() => setMonth((m) => startOfMonth(addYears(m, 1)))}
+          >
+            <ChevronsRight size={15} strokeWidth={2} />
+          </button>
+        </div>
+        {!isViewingCurrentMonth ? (
+          <div className="mb-2 flex justify-center">
+            <button
+              type="button"
+              className="cursor-pointer text-[11px] text-[var(--accent)] hover:underline"
+              onClick={() => setMonth(thisMonth)}
+            >
+              Today
+            </button>
+          </div>
+        ) : null}
+
+        <div className="min-h-[8rem] rounded-md border border-[var(--border)] p-3">
+          {monthRows.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">
+              No contractor expenses for {format(month, "MMMM yyyy")}.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {monthRows.map((row) => {
+                const editing = editingId === row.id;
+                return (
+                  <li
+                    key={row.id}
+                    className="rounded-md border border-[var(--border)] px-3 py-2"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium">
+                            {personName(row.person_id)}
+                          </span>
+                          <ContractorTag />
+                          {row.repeat_monthly ? (
+                            <span className="text-[10px] text-[var(--text-muted)]">
+                              Repeat Monthly
+                              {row.month_key.slice(0, 7) !== viewedPrefix
+                                ? ` · from ${monthLabel(row.month_key)}`
+                                : ""}
+                            </span>
+                          ) : null}
+                        </div>
+                        {!editing ? (
+                          <>
+                            <p className="text-sm tabular-nums">
+                              {formatMoney(row.amount)}
+                            </p>
+                            {row.notes ? (
+                              <p className="text-xs text-[var(--text-muted)]">
+                                {row.notes}
+                              </p>
+                            ) : null}
+                          </>
+                        ) : null}
+                      </div>
+                      {!editing ? (
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--accent)]"
+                            onClick={() => {
+                              setEditingId(row.id);
+                              setEditAmount(String(row.amount));
+                              setEditNotes(row.notes ?? "");
+                              setEditRepeat(Boolean(row.repeat_monthly));
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--status-over)]"
+                            onClick={() => void onDelete(row.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                    {editing ? (
+                      <div className="mt-2 space-y-2">
+                        <Field label="Amount ($)">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            className={inputClass}
+                            value={editAmount}
+                            onChange={(e) => setEditAmount(e.target.value)}
+                          />
+                        </Field>
+                        <Field label="Notes">
+                          <input
+                            className={inputClass}
+                            value={editNotes}
+                            onChange={(e) => setEditNotes(e.target.value)}
+                            placeholder="Optional"
+                          />
+                        </Field>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={editRepeat}
+                            onChange={(e) => setEditRepeat(e.target.checked)}
+                          />
+                          Repeat Monthly
+                        </label>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            disabled={saving || editAmount === ""}
+                            onClick={() => void saveEdit(row)}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={saving}
+                            onClick={() => setEditingId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+
       {contractors.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           Add a Project-Basis Contractor on the Team tab first.
@@ -1050,23 +1241,44 @@ function ContractorExpensesPanel({
               }))}
             />
           </Field>
-          <Field label="Month">
-            <Select
-              value={monthKey}
-              onChange={setMonthKey}
-              options={monthOptions}
-            />
-          </Field>
-          <Field label="Amount ($)">
+          <label className="flex items-center gap-2 text-sm">
             <input
-              type="number"
-              min={0}
-              step={0.01}
-              className={inputClass}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              type="checkbox"
+              checked={repeatMonthly}
+              onChange={(e) => setRepeatMonthly(e.target.checked)}
             />
-          </Field>
+            Repeat Monthly
+          </label>
+          {!repeatMonthly ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Month">
+                <div className="flex h-9 items-center rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 text-sm text-[var(--text-muted)]">
+                  {format(month, "MMM yyyy")}
+                </div>
+              </Field>
+              <Field label="Amount ($)">
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputClass}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </Field>
+            </div>
+          ) : (
+            <Field label="Amount ($)">
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                className={inputClass}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            </Field>
+          )}
           <Field label="Notes">
             <input
               className={inputClass}
@@ -1084,128 +1296,6 @@ function ContractorExpensesPanel({
           </Button>
         </div>
       )}
-
-      <Field label="Year">
-        <Select
-          value={String(year)}
-          onChange={(v) => setYear(Number(v))}
-          options={years.map((y) => ({
-            value: String(y),
-            label: String(y),
-          }))}
-        />
-      </Field>
-
-      <div className="max-h-72 space-y-4 overflow-y-auto pr-1">
-        {byMonth.length === 0 ? (
-          <p className="text-sm text-[var(--text-muted)]">
-            No contractor expenses for {year}.
-          </p>
-        ) : (
-          byMonth.map(([ym, rows]) => (
-            <div key={ym} className="space-y-2">
-              <p className="text-xs font-medium text-[var(--text-muted)]">
-                {monthLabel(`${ym}-01`)}
-              </p>
-              <ul className="space-y-2">
-                {rows.map((row) => {
-                  const editing = editingId === row.id;
-                  return (
-                    <li
-                      key={row.id}
-                      className="rounded-md border border-[var(--border)] px-3 py-2"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium">
-                              {personName(row.person_id)}
-                            </span>
-                            <ContractorTag />
-                          </div>
-                          {!editing ? (
-                            <>
-                              <p className="text-sm tabular-nums">
-                                {formatMoney(row.amount)}
-                              </p>
-                              {row.notes ? (
-                                <p className="text-xs text-[var(--text-muted)]">
-                                  {row.notes}
-                                </p>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </div>
-                        {!editing ? (
-                          <div className="flex shrink-0 gap-2">
-                            <button
-                              type="button"
-                              className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--accent)]"
-                              onClick={() => {
-                                setEditingId(row.id);
-                                setEditAmount(String(row.amount));
-                                setEditNotes(row.notes ?? "");
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--status-over)]"
-                              onClick={() => void onDelete(row.id)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                      {editing ? (
-                        <div className="mt-2 space-y-2">
-                          <Field label="Amount ($)">
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              className={inputClass}
-                              value={editAmount}
-                              onChange={(e) => setEditAmount(e.target.value)}
-                            />
-                          </Field>
-                          <Field label="Notes">
-                            <input
-                              className={inputClass}
-                              value={editNotes}
-                              onChange={(e) => setEditNotes(e.target.value)}
-                              placeholder="Optional"
-                            />
-                          </Field>
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              disabled={saving || editAmount === ""}
-                              onClick={() => void saveEdit(row)}
-                            >
-                              Save
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              disabled={saving}
-                              onClick={() => setEditingId(null)}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 }
