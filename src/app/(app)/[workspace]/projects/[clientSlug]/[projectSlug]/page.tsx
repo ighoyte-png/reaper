@@ -370,14 +370,6 @@ export default function ProjectDetailPage() {
                 Budget
               </Link>
             ) : null}
-            {!isSandbox ? (
-            <Link
-              href={appHref("/schedule")}
-              className="inline-flex h-8 items-center rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-            >
-              Schedule
-            </Link>
-            ) : null}
             {canEdit ? (
               <button
                 type="button"
