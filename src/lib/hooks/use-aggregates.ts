@@ -69,6 +69,9 @@ export function useProjectBurnsMap(): {
       const membersForProject = state.project_members.filter(
         (m) => m.project_id === p.id,
       );
+      const expensesForProject = state.project_contractor_expenses.filter(
+        (e) => e.project_id === p.id,
+      );
       const clientBurn = () =>
         budgetBurn(
           p,
@@ -77,6 +80,7 @@ export function useProjectBurnsMap(): {
           false,
           new Date(),
           membersForProject,
+          expensesForProject,
         );
 
       const projectReady = dataStatus.projects[p.id] === "ready";
@@ -106,6 +110,7 @@ export function useProjectBurnsMap(): {
     state.assignments,
     state.people,
     state.project_members,
+    state.project_contractor_expenses,
     dataStatus.projects,
   ]);
 
@@ -154,13 +159,16 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
     const monthly = state.projects.filter(
       (p) =>
         !p.sandbox_mode &&
-        p.budget_mode === "hours" &&
+        (p.budget_mode === "hours" || p.budget_mode === "amount") &&
         p.budget_monthly_reset,
     );
 
     for (const p of monthly) {
       const membersForProject = state.project_members.filter(
         (m) => m.project_id === p.id,
+      );
+      const expensesForProject = state.project_contractor_expenses.filter(
+        (e) => e.project_id === p.id,
       );
       const projectReady = dataStatus.projects[p.id] === "ready";
       if (projectReady || mode === "demo") {
@@ -173,6 +181,7 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
             year,
             new Date(),
             membersForProject,
+            expensesForProject,
           ),
         );
         continue;
@@ -190,6 +199,7 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
     state.assignments,
     state.people,
     state.project_members,
+    state.project_contractor_expenses,
     dataStatus.projects,
   ]);
 

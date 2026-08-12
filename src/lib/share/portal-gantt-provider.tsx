@@ -259,6 +259,8 @@ function buildPortalGanttContext(
     switchWorkspace: async () => {},
     upsertProject: async () => state.projects[0]!,
     setProjectMembers: async () => {},
+    upsertProjectContractorExpense: async () => {},
+    deleteProjectContractorExpense: async () => {},
     clearProjectSandboxTrackedData: async () => ({
       start_date: null,
       end_date: null,

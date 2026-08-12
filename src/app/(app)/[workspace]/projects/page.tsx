@@ -376,7 +376,7 @@ function ProjectsPageContent() {
         budget_amount:
           toSave.budget_mode === "amount" ? toSave.budget_amount : null,
         budget_monthly_reset:
-          toSave.budget_mode === "hours"
+          toSave.budget_mode === "hours" || toSave.budget_mode === "amount"
             ? toSave.budget_monthly_reset
             : false,
       });

@@ -179,6 +179,8 @@ export function PublicShareProvider({
         sandbox_mode: false,
       }),
       setProjectMembers: async () => {},
+      upsertProjectContractorExpense: async () => {},
+      deleteProjectContractorExpense: async () => {},
       clearProjectSandboxTrackedData: async () => ({
         start_date: null,
         end_date: null,

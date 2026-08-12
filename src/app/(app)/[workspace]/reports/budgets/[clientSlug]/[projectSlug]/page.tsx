@@ -23,6 +23,7 @@ import {
   calendarYearBars,
   formatHours,
   formatMoney,
+  isMonthlyRetainerBudget,
   normalizeBudgetMode,
   personHoursSplitInRange,
   projectDateSpan,
@@ -90,7 +91,7 @@ export default function ProjectBudgetDetailPage() {
     ? state.clients.find((c) => c.id === project.client_id)
     : undefined;
 
-  const isRetainer = Boolean(project?.budget_monthly_reset);
+  const isRetainer = project ? isMonthlyRetainerBudget(project) : false;
 
   const projectMembers = useMemo(
     () =>
@@ -98,6 +99,15 @@ export default function ProjectBudgetDetailPage() {
         ? state.project_members.filter((m) => m.project_id === project.id)
         : [],
     [project, state.project_members],
+  );
+  const projectExpenses = useMemo(
+    () =>
+      project
+        ? state.project_contractor_expenses.filter(
+            (e) => e.project_id === project.id,
+          )
+        : [],
+    [project, state.project_contractor_expenses],
   );
 
   const burn = useMemo(
@@ -110,9 +120,10 @@ export default function ProjectBudgetDetailPage() {
             false,
             new Date(),
             projectMembers,
+            projectExpenses,
           )
         : null,
-    [project, state.assignments, state.people, projectMembers],
+    [project, state.assignments, state.people, projectMembers, projectExpenses],
   );
 
   const hoursFx = useMemo(
@@ -133,9 +144,17 @@ export default function ProjectBudgetDetailPage() {
             year,
             new Date(),
             projectMembers,
+            projectExpenses,
           )
         : [],
-    [project, state.assignments, state.people, year, projectMembers],
+    [
+      project,
+      state.assignments,
+      state.people,
+      year,
+      projectMembers,
+      projectExpenses,
+    ],
   );
 
   const weeklyPoints = useMemo(
@@ -440,10 +459,11 @@ export default function ProjectBudgetDetailPage() {
       : (burn.contractorHours ?? 0);
   const showHoursMetrics = mode === "hours";
   const showAmountMetrics = mode === "amount";
-  const monthlyCap =
-    mode === "hours" && project.budget_monthly_reset
-      ? project.budget_hours ?? 0
-      : undefined;
+  const monthlyCap = isMonthlyRetainerBudget(project)
+    ? mode === "amount"
+      ? project.budget_amount ?? 0
+      : project.budget_hours ?? 0
+    : undefined;
 
   const burnSummary =
     burn.mode === "none"
@@ -466,11 +486,18 @@ export default function ProjectBudgetDetailPage() {
       periodBudgetCap = monthly;
     } else if (periodMode === "year" && isRetainer) {
       periodBudgetCap = monthly * 12;
-    } else if (mode === "hours") {
+    } else {
       periodBudgetCap = project.budget_hours ?? 0;
     }
   } else if (mode === "amount") {
-    periodBudgetCap = project.budget_amount ?? 0;
+    const monthly = project.budget_amount ?? 0;
+    if (periodMode === "month" && isRetainer) {
+      periodBudgetCap = monthly;
+    } else if (periodMode === "year" && isRetainer) {
+      periodBudgetCap = monthly * 12;
+    } else {
+      periodBudgetCap = project.budget_amount ?? 0;
+    }
   }
 
   const periodRemainingHours =
@@ -588,12 +615,14 @@ export default function ProjectBudgetDetailPage() {
           </span>
           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
             {mode === "none"
-              ? "No budget"
+              ? "No Budget"
               : mode === "amount"
-                ? "Dollar budget"
+                ? project.budget_monthly_reset
+                  ? "Monthly Amount"
+                  : "Dollar Budget"
                 : project.budget_monthly_reset
-                  ? "Monthly hours"
-                  : "Hours budget"}
+                  ? "Monthly Hours"
+                  : "Hours Budget"}
           </span>
         </div>
 

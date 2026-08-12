@@ -15,6 +15,7 @@ import {
   calendarYearBars,
   formatHours,
   formatMoney,
+  isMonthlyRetainerBudget,
   normalizeBudgetMode,
   projectHoursForecast,
   type ProjectHoursForecast,
@@ -115,21 +116,23 @@ export function BudgetCard({
   const membersForProject = state.project_members.filter(
     (m) => m.project_id === project.id,
   );
+  const expensesForProject = state.project_contractor_expenses.filter(
+    (e) => e.project_id === project.id,
+  );
   const projectReady = dataStatus.projects[project.id] === "ready";
   const mode = normalizeBudgetMode(
     project.budget_mode,
     project.budget_hours,
     project.budget_amount,
   );
-  const isMonthlyHours =
-    mode === "hours" && Boolean(project.budget_monthly_reset);
+  const isMonthlyRetainer = isMonthlyRetainerBudget(project);
   const metricsLoading =
     !burnsReady ||
-    (isMonthlyHours && !projectReady && !barsReady);
+    (isMonthlyRetainer && !projectReady && !barsReady);
 
   if (metricsLoading) {
     const skeleton = (
-      <BudgetCardSkeleton showName={showName} monthly={isMonthlyHours} />
+      <BudgetCardSkeleton showName={showName} monthly={isMonthlyRetainer} />
     );
     if (href) {
       return (
@@ -155,6 +158,7 @@ export function BudgetCard({
       false,
       new Date(),
       membersForProject,
+      expensesForProject,
     );
   const health = budgetHealth(burn);
   const hoursFx = projectReady
@@ -162,7 +166,7 @@ export function BudgetCard({
     : forecastFromBurn(project, burn);
   const showHoursMetrics = mode === "hours";
   const showAmountMetrics = mode === "amount";
-  const yearBars = isMonthlyHours
+  const yearBars = isMonthlyRetainer
     ? (barsByProject.get(project.id) ??
       (projectReady
         ? calendarYearBars(
@@ -172,6 +176,7 @@ export function BudgetCard({
             year,
             new Date(),
             membersForProject,
+            expensesForProject,
           )
         : []))
     : [];
@@ -202,7 +207,9 @@ export function BudgetCard({
           {burn.mode === "none"
             ? "No Budget"
             : burn.mode === "amount"
-              ? "Dollar"
+              ? project.budget_monthly_reset
+                ? "Monthly Amount"
+                : "Dollar"
               : project.budget_monthly_reset
                 ? "Monthly Hours"
                 : "Hours"}
@@ -220,13 +227,17 @@ export function BudgetCard({
             )}
           >
             {summary}
-            {isMonthlyHours ? " · this month" : ""}
+            {isMonthlyRetainer ? " · this month" : ""}
           </div>
-          {isMonthlyHours ? (
+          {isMonthlyRetainer ? (
             <ProjectYearBurnChart
               bars={yearBars}
-              unit="hours"
-              monthlyCap={project.budget_hours ?? 0}
+              unit={mode === "amount" ? "amount" : "hours"}
+              monthlyCap={
+                mode === "amount"
+                  ? project.budget_amount ?? 0
+                  : project.budget_hours ?? 0
+              }
               year={year}
               compact
             />

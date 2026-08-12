@@ -21,6 +21,7 @@ import type {
   ProjectAsset,
   ProjectFavorite,
   ProjectMember,
+  ProjectContractorExpense,
   Pod,
   PodMember,
   ProjectTemplate,
@@ -402,6 +403,26 @@ function mapProjectMember(row: Record<string, unknown>): ProjectMember {
   };
 }
 
+export function mapProjectContractorExpense(
+  row: Record<string, unknown>,
+): ProjectContractorExpense {
+  const rawMonth = String(row.month_key ?? "").slice(0, 10);
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    project_id: String(row.project_id),
+    person_id: String(row.person_id),
+    month_key: rawMonth.length >= 7 ? `${rawMonth.slice(0, 7)}-01` : rawMonth,
+    amount: num(row.amount),
+    notes: String(row.notes ?? ""),
+    created_at: String(row.created_at ?? ""),
+    updated_at: String(row.updated_at ?? ""),
+    created_by_profile_id: row.created_by_profile_id
+      ? String(row.created_by_profile_id)
+      : null,
+  };
+}
+
 export function mapAssignment(row: Record<string, unknown>): Assignment {
   return {
     id: String(row.id),
@@ -458,6 +479,7 @@ function emptyWorkspace(): DemoState {
     people: [],
     assignments: [],
     project_members: [],
+    project_contractor_expenses: [],
     leave_days: [],
     holiday_calendars: [],
     holiday_calendar_days: [],
@@ -757,6 +779,7 @@ export async function loadOrgBootstrap(
     projectsRes,
     peopleRes,
     projectMembersRes,
+    contractorExpensesRes,
     calendarsRes,
     calendarDaysRes,
     bulletinsRes,
@@ -784,6 +807,10 @@ export async function loadOrgBootstrap(
       .eq("organization_id", orgId)
       .is("deleted_at", null),
     supabase.from("project_members").select("*").eq("organization_id", orgId),
+    supabase
+      .from("project_contractor_expenses")
+      .select("*")
+      .eq("organization_id", orgId),
     supabase.from("holiday_calendars").select("*").eq("organization_id", orgId),
     supabase
       .from("holiday_calendar_days")
@@ -878,6 +905,26 @@ export async function loadOrgBootstrap(
     : (projectMembersRes.data ?? []).map((row) =>
         mapProjectMember(row as Record<string, unknown>),
       );
+
+  let project_contractor_expenses: ProjectContractorExpense[] = [];
+  if (contractorExpensesRes.error) {
+    if (
+      /relation .*project_contractor_expenses.* does not exist/i.test(
+        contractorExpensesRes.error.message,
+      ) ||
+      contractorExpensesRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "project_contractor_expenses missing — apply supabase/migrations/093_monthly_amount_reset_contractor_expenses.sql",
+      );
+    } else {
+      throw contractorExpensesRes.error;
+    }
+  } else {
+    project_contractor_expenses = (contractorExpensesRes.data ?? []).map((row) =>
+      mapProjectContractorExpense(row as Record<string, unknown>),
+    );
+  }
 
   const bulletins: Bulletin[] = bulletinsRes.error
     ? []
@@ -1096,6 +1143,7 @@ export async function loadOrgBootstrap(
     people,
     assignments: [],
     project_members,
+    project_contractor_expenses,
     leave_days: [],
     holiday_calendars,
     holiday_calendar_days,
@@ -1903,7 +1951,9 @@ export async function upsertProjectRow(
       mode === "hours" ? (project.budget_hours ?? 0) : null,
     budget_amount: mode === "amount" ? project.budget_amount : null,
     budget_mode: mode,
-    budget_monthly_reset: mode === "hours" && Boolean(project.budget_monthly_reset),
+    budget_monthly_reset: mode === "hours" || mode === "amount"
+      ? Boolean(project.budget_monthly_reset)
+      : false,
     notes: project.notes,
     manager_person_id: project.manager_person_id ?? null,
     share_enabled: Boolean(project.share_enabled),
@@ -2238,6 +2288,62 @@ export async function setPodMembersRows(
   if (error) {
     if (missingPodsTable(error.message, error.code)) {
       console.warn("pods missing — apply supabase/migrations/052_pods.sql");
+      return;
+    }
+    throw error;
+  }
+}
+
+/** Upsert a monthly contractor expense line. */
+export async function upsertProjectContractorExpenseRow(
+  supabase: SupabaseClient,
+  row: ProjectContractorExpense,
+) {
+  const payload = {
+    id: row.id,
+    organization_id: row.organization_id,
+    project_id: row.project_id,
+    person_id: row.person_id,
+    month_key: row.month_key.slice(0, 10),
+    amount: row.amount,
+    notes: row.notes ?? "",
+    created_at: row.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    created_by_profile_id: row.created_by_profile_id,
+  };
+  const { error } = await supabase
+    .from("project_contractor_expenses")
+    .upsert(payload, { onConflict: "id" });
+  if (error) {
+    if (
+      /relation .*project_contractor_expenses.* does not exist/i.test(
+        error.message,
+      ) ||
+      error.code === "42P01"
+    ) {
+      throw new Error(
+        "Missing table project_contractor_expenses. Apply supabase/migrations/093_monthly_amount_reset_contractor_expenses.sql",
+      );
+    }
+    throw error;
+  }
+}
+
+export async function deleteProjectContractorExpenseRow(
+  supabase: SupabaseClient,
+  id: string,
+) {
+  const { error } = await supabase
+    .from("project_contractor_expenses")
+    .delete()
+    .eq("id", id);
+  if (error) {
+    if (
+      /relation .*project_contractor_expenses.* does not exist/i.test(
+        error.message,
+      ) ||
+      error.code === "42P01"
+    ) {
       return;
     }
     throw error;

@@ -5,6 +5,7 @@ import type {
   ContractorMode,
   Person,
   Project,
+  ProjectContractorExpense,
   ProjectMember,
 } from "@/lib/types";
 import {
@@ -136,6 +137,33 @@ function projectBillableAmountInDateRangeForPeople(
   return sum;
 }
 
+/** Sum contractor expenses for a project in a given yyyy-MM month. */
+export function contractorExpenseTotalsForMonth(
+  projectId: string,
+  expenses: ProjectContractorExpense[],
+  people: Person[],
+  monthKey: string,
+): { usedHours: number; usedAmount: number } {
+  const peopleById = new Map(people.map((p) => [p.id, p]));
+  let usedHours = 0;
+  let usedAmount = 0;
+  const prefix = monthKey.slice(0, 7);
+  for (const e of expenses) {
+    if (e.project_id !== projectId) continue;
+    if (e.month_key.slice(0, 7) !== prefix) continue;
+    usedAmount += e.amount;
+    const person = peopleById.get(e.person_id);
+    const rate =
+      person && (person.cost_rate > 0 || person.bill_rate > 0)
+        ? person.cost_rate > 0
+          ? person.cost_rate
+          : person.bill_rate
+        : 0;
+    if (rate > 0) usedHours += e.amount / rate;
+  }
+  return { usedHours, usedAmount };
+}
+
 function contractorCommitmentTotals(
   projectId: string,
   commitIds: Set<string>,
@@ -213,6 +241,22 @@ export function normalizeBudgetMode(
   if ((hours ?? 0) > 0) return "hours";
   if (amount != null && amount > 0) return "amount";
   return "none";
+}
+
+/** Hours or dollar budget with calendar-month reset (retainer). */
+export function isMonthlyRetainerBudget(
+  project: Pick<
+    Project,
+    "budget_mode" | "budget_hours" | "budget_amount" | "budget_monthly_reset"
+  >,
+): boolean {
+  if (!project.budget_monthly_reset) return false;
+  const mode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  return mode === "hours" || mode === "amount";
 }
 
 export function assignmentHours(assignment: Assignment): number {
@@ -298,6 +342,7 @@ export function budgetBurn(
   includeTentative = false,
   asOf: Date = new Date(),
   projectMembers: ProjectMember[] = [],
+  contractorExpenses: ProjectContractorExpense[] = [],
 ): BudgetBurn {
   const mode = normalizeBudgetMode(
     project.budget_mode,
@@ -312,7 +357,7 @@ export function budgetBurn(
 
   let rangeStart = "1970-01-01";
   let rangeEnd = "2099-12-31";
-  if (mode === "hours" && project.budget_monthly_reset) {
+  if (isMonthlyRetainerBudget(project)) {
     rangeStart = toDateKey(startOfMonth(asOf));
     rangeEnd = toDateKey(endOfMonth(asOf));
   }
@@ -385,18 +430,30 @@ export function budgetBurn(
         contractorScheduledIds,
         includeTentative,
       );
-      const commitUsed = contractorCommitmentTotals(
-        project.id,
-        contractorCommitIds,
-        membersByPerson,
-        peopleById,
-        assignments,
-        rangeStart,
-        rangeEnd,
-        includeTentative,
-      );
+      const commitUsed = isMonthlyRetainerBudget(project)
+        ? { usedHours: 0, usedAmount: 0, futureHours: 0, futureAmount: 0 }
+        : contractorCommitmentTotals(
+            project.id,
+            contractorCommitIds,
+            membersByPerson,
+            peopleById,
+            assignments,
+            rangeStart,
+            rangeEnd,
+            includeTentative,
+          );
       contractorUsedHours += commitUsed.usedHours;
       contractorUsedAmount += commitUsed.usedAmount;
+      if (isMonthlyRetainerBudget(project)) {
+        const expenseUsed = contractorExpenseTotalsForMonth(
+          project.id,
+          contractorExpenses,
+          people,
+          format(asOf, "yyyy-MM"),
+        );
+        contractorUsedHours += expenseUsed.usedHours;
+        contractorUsedAmount += expenseUsed.usedAmount;
+      }
     }
     if (futureStart <= rangeEnd) {
       internalFutureHours = projectHoursInDateRangeForPeople(
@@ -477,6 +534,21 @@ export function budgetBurn(
             includeTentative,
           )
         : 0;
+  }
+
+  if (isMonthlyRetainerBudget(project) && contractorExpenses.length > 0) {
+    // When there is no roster classification path, still attribute this month's expenses.
+    // (classified path already added expenses above.)
+    if (!classified) {
+      const expenseUsed = contractorExpenseTotalsForMonth(
+        project.id,
+        contractorExpenses,
+        people,
+        format(asOf, "yyyy-MM"),
+      );
+      contractorUsedHours += expenseUsed.usedHours;
+      contractorUsedAmount += expenseUsed.usedAmount;
+    }
   }
 
   const usedHours = internalUsedHours + contractorUsedHours;
@@ -650,6 +722,7 @@ function monthBurnSplit(
   monthIndex: number,
   asOf: Date,
   projectMembers: ProjectMember[],
+  contractorExpenses: ProjectContractorExpense[] = [],
 ): {
   usedHours: number;
   futureHours: number;
@@ -672,6 +745,12 @@ function monthBurnSplit(
   const hasContractorTerms = projectMembers.some(
     (m) => m.project_id === project.id,
   );
+  const monthExpenses = contractorExpenseTotalsForMonth(
+    project.id,
+    contractorExpenses,
+    people,
+    monthKey,
+  );
   if (!hasContractorTerms) {
     const split = projectHoursSplitInRange(
       project.id,
@@ -692,16 +771,24 @@ function monthBurnSplit(
       false,
       { year, monthIndex },
     );
+    const expenseHours = isMonthlyRetainerBudget(project)
+      ? monthExpenses.usedHours
+      : 0;
+    const expenseAmount = isMonthlyRetainerBudget(project)
+      ? monthExpenses.usedAmount
+      : 0;
     return {
       ...split,
-      contractorHours: 0,
-      contractorAmount: 0,
-      contractorUsedHours: 0,
+      usedHours: split.usedHours + expenseHours,
+      usedAmount: split.usedAmount + expenseAmount,
+      contractorHours: expenseHours,
+      contractorAmount: expenseAmount,
+      contractorUsedHours: expenseHours,
       contractorFutureHours: 0,
-      contractorUsedAmount: 0,
+      contractorUsedAmount: expenseAmount,
       contractorFutureAmount: 0,
-      plannedHours,
-      plannedAmount,
+      plannedHours: plannedHours + expenseHours,
+      plannedAmount: plannedAmount + expenseAmount,
     };
   }
 
@@ -765,7 +852,16 @@ function monthBurnSplit(
       usedEnd,
       contractorScheduledIds,
     );
-    if (monthKey === commitMonthKey) {
+    if (isMonthlyRetainerBudget(project)) {
+      const expenseUsed = contractorExpenseTotalsForMonth(
+        project.id,
+        contractorExpenses,
+        people,
+        monthKey,
+      );
+      contractorUsedHours += expenseUsed.usedHours;
+      contractorUsedAmount += expenseUsed.usedAmount;
+    } else if (monthKey === commitMonthKey) {
       const commit = contractorCommitmentTotals(
         project.id,
         contractorCommitIds,
@@ -1004,16 +1100,18 @@ export function calendarYearBars(
   year: number,
   asOf: Date = new Date(),
   projectMembers: ProjectMember[] = [],
+  contractorExpenses: ProjectContractorExpense[] = [],
 ): MonthBurnBar[] {
   const mode = normalizeBudgetMode(
     project.budget_mode,
     project.budget_hours,
     project.budget_amount,
   );
-  const monthlyHourCap =
-    mode === "hours" && project.budget_monthly_reset
-      ? project.budget_hours ?? 0
-      : 0;
+  const monthlyCap = isMonthlyRetainerBudget(project)
+    ? mode === "amount"
+      ? project.budget_amount ?? 0
+      : project.budget_hours ?? 0
+    : 0;
   const out: MonthBurnBar[] = [];
   for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
     const d = new Date(year, monthIndex, 1);
@@ -1025,9 +1123,10 @@ export function calendarYearBars(
       monthIndex,
       asOf,
       projectMembers,
+      contractorExpenses,
     );
     const value = mode === "amount" ? split.plannedAmount : split.plannedHours;
-    const cap = mode === "amount" ? 0 : monthlyHourCap;
+    const cap = monthlyCap;
     out.push({
       key: format(d, "yyyy-MM"),
       label: format(d, "MMM yyyy"),
@@ -1047,7 +1146,7 @@ export function calendarYearBars(
       contractorFutureAmount: split.contractorFutureAmount,
       value,
       cap,
-      budgetHours: monthlyHourCap,
+      budgetHours: mode === "hours" ? monthlyCap : 0,
       pct: cap <= 0 ? 0 : Math.min(999, (value / cap) * 100),
     });
   }
@@ -1188,7 +1287,7 @@ export function projectHoursForecast(
 
   let rangeStart = "1970-01-01";
   let rangeEnd = "2099-12-31";
-  if (mode === "hours" && project.budget_monthly_reset) {
+  if (isMonthlyRetainerBudget(project)) {
     const start = startOfMonth(asOf);
     const end = endOfMonth(asOf);
     rangeStart = toDateKey(start);

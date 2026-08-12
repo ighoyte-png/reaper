@@ -115,6 +115,8 @@ import {
   clearProjectSandboxTrackedDataRows,
   reorderProjectFavoriteRows,
   setProjectMembersRows,
+  upsertProjectContractorExpenseRow,
+  deleteProjectContractorExpenseRow,
   upsertProjectTemplateRow,
   upsertTaskCommentRow,
   toggleTaskCommentReactionRow,
@@ -167,6 +169,7 @@ import type {
   PodMember,
   Project,
   ProjectAsset,
+  ProjectContractorExpense,
   ProjectFavorite,
   ProjectMember,
   ProjectTemplate,
@@ -309,6 +312,11 @@ function loadDemoState(): DemoState {
             contractor_hours: m.contractor_hours ?? null,
           }))
         : seed.project_members,
+      project_contractor_expenses: Array.isArray(
+        parsed.project_contractor_expenses,
+      )
+        ? parsed.project_contractor_expenses
+        : seed.project_contractor_expenses ?? [],
       task_lists: (parsed.task_lists ?? seed.task_lists).map((l) => ({
         ...l,
         color: l.color ?? null,
@@ -429,6 +437,7 @@ function emptySupabaseState(): DemoState {
     people: [],
     assignments: [],
     project_members: [],
+    project_contractor_expenses: [],
     leave_days: [],
     holiday_calendars: [],
     holiday_calendar_days: [],
@@ -548,6 +557,12 @@ interface DataContextValue {
           >
         >,
   ) => Promise<void>;
+  upsertProjectContractorExpense: (
+    expense: Omit<ProjectContractorExpense, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => Promise<void>;
+  deleteProjectContractorExpense: (id: string) => Promise<void>;
   deleteProject: (id: string) => void;
   /** Star / unstar a project for the current profile. */
   toggleProjectFavorite: (projectId: string) => void;
@@ -2783,6 +2798,46 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ],
         }));
       },
+      upsertProjectContractorExpense: async (expense) => {
+        const row = {
+          ...withOrg(expense),
+          month_key: expense.month_key.slice(0, 10),
+          notes: expense.notes ?? "",
+          updated_at: new Date().toISOString(),
+          created_at: expense.created_at || new Date().toISOString(),
+        } as ProjectContractorExpense;
+        patch((prev) => {
+          const exists = prev.project_contractor_expenses.some(
+            (e) => e.id === row.id,
+          );
+          return {
+            ...prev,
+            project_contractor_expenses: exists
+              ? prev.project_contractor_expenses.map((e) =>
+                  e.id === row.id ? row : e,
+                )
+              : [...prev.project_contractor_expenses, row],
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            upsertProjectContractorExpenseRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteProjectContractorExpense: async (id) => {
+        patch((prev) => ({
+          ...prev,
+          project_contractor_expenses: prev.project_contractor_expenses.filter(
+            (e) => e.id !== id,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            deleteProjectContractorExpenseRow(supabaseRef.current!, id),
+          );
+        }
+      },
       deleteProject: (id) => {
         patch((prev) => ({
           ...prev,
@@ -2790,6 +2845,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           assignments: prev.assignments.filter((a) => a.project_id !== id),
           project_members: prev.project_members.filter(
             (m) => m.project_id !== id,
+          ),
+          project_contractor_expenses: prev.project_contractor_expenses.filter(
+            (e) => e.project_id !== id,
           ),
           milestones: prev.milestones.filter((m) => m.project_id !== id),
           project_favorites: prev.project_favorites.filter(

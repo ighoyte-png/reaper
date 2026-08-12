@@ -75,6 +75,9 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
   const project_members = state.project_members.filter(
     (m) => !hiddenProjectIds.has(m.project_id),
   );
+  const project_contractor_expenses = (
+    state.project_contractor_expenses ?? []
+  ).filter((e) => !hiddenProjectIds.has(e.project_id));
   const bulletins = state.bulletins.filter(
     (b) =>
       (!b.project_id || !hiddenProjectIds.has(b.project_id)) &&
@@ -107,6 +110,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     task_lists,
     tasks,
     project_members,
+    project_contractor_expenses,
     bulletins,
     people: state.people.map(
       (p): Person => ({

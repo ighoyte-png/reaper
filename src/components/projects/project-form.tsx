@@ -10,6 +10,7 @@ import {
 } from "@/components/people/pod-filter-bar";
 import { ContractorTag } from "@/components/projects/project-manager-person";
 import { cn } from "@/lib/cn";
+import { useData } from "@/lib/data/store";
 import {
   contractorAmountFromHours,
   contractorHoursFromFixedFee,
@@ -20,7 +21,12 @@ import {
   type ContractorTerms,
 } from "@/lib/domain/contractor";
 import { filterPeopleByPod } from "@/lib/domain/pods";
-import { formatHours, formatMoney, roundAssignmentHours } from "@/lib/domain/budget";
+import {
+  formatHours,
+  formatMoney,
+  isMonthlyRetainerBudget,
+  roundAssignmentHours,
+} from "@/lib/domain/budget";
 import type {
   BudgetMode,
   ContractorMode,
@@ -28,10 +34,12 @@ import type {
   Pod,
   PodMember,
   Project,
+  ProjectContractorExpense,
   ProjectMember,
   ProjectStatus,
   ProjectTemplate,
 } from "@/lib/types";
+import { format, parseISO } from "date-fns";
 
 const DEFAULT_PROJECT_COLOR = "#3498DB";
 
@@ -46,10 +54,23 @@ const TABS = [
   { id: "team", label: "Team" },
   { id: "timeline", label: "Timeline" },
   { id: "budget", label: "Budget" },
+  { id: "expenses", label: "Contractor Expenses" },
   { id: "sandbox", label: "Sandbox Mode" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+function monthKeyFromDate(d: Date): string {
+  return format(d, "yyyy-MM-01");
+}
+
+function monthLabel(monthKey: string): string {
+  try {
+    return format(parseISO(monthKey.slice(0, 10)), "MMMM yyyy");
+  } catch {
+    return monthKey.slice(0, 7);
+  }
+}
 
 export function ProjectForm({
   project,
@@ -105,6 +126,12 @@ export function ProjectForm({
   /** When true, enabling sandbox prompts a wipe warning. */
   sandboxWipeRisk?: boolean;
 }) {
+  const {
+    state,
+    newId,
+    upsertProjectContractorExpense,
+    deleteProjectContractorExpense,
+  } = useData();
   const [tab, setTab] = useState<TabId>("details");
   const { showPods, podTabs, podFilter, setPodFilter } = usePodFilter(pods);
   const clientsSorted = [...clients].sort((a, b) =>
@@ -178,18 +205,25 @@ export function ProjectForm({
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
 
+  const isMonthlyRetainer = isMonthlyRetainerBudget(project);
+
   const visibleTabs = useMemo(
     () =>
       TABS.filter((item) => {
         if (
           project.sandbox_mode &&
-          (item.id === "timeline" || item.id === "budget")
+          (item.id === "timeline" ||
+            item.id === "budget" ||
+            item.id === "expenses")
         ) {
+          return false;
+        }
+        if (item.id === "expenses" && !isMonthlyRetainer) {
           return false;
         }
         return true;
       }),
-    [project.sandbox_mode],
+    [project.sandbox_mode, isMonthlyRetainer],
   );
 
   useEffect(() => {
@@ -212,7 +246,9 @@ export function ProjectForm({
       budget_hours: mode === "hours" ? (project.budget_hours ?? 80) : null,
       budget_amount: mode === "amount" ? (project.budget_amount ?? 0) : null,
       budget_monthly_reset:
-        mode === "hours" ? Boolean(project.budget_monthly_reset) : false,
+        mode === "hours" || mode === "amount"
+          ? Boolean(project.budget_monthly_reset)
+          : false,
     });
   }
 
@@ -342,7 +378,7 @@ export function ProjectForm({
                   }
                   options={[
                     { value: "active", label: "Active" },
-                    { value: "on_hold", label: "On hold" },
+                    { value: "on_hold", label: "On Hold" },
                     { value: "completed", label: "Completed" },
                     { value: "archived", label: "Archived" },
                   ]}
@@ -382,7 +418,7 @@ export function ProjectForm({
 
           {tab === "team" ? (
             <>
-              <Field label="Team members">
+              <Field label="Team Members">
                 {showPods ? (
                   <PodFilterBar
                     pods={podTabs}
@@ -433,7 +469,7 @@ export function ProjectForm({
                 </div>
               </Field>
               {!project.sandbox_mode ? (
-              <Field label="Project manager">
+              <Field label="Project Manager">
                 <Select
                   searchable
                   value={project.manager_person_id ?? ""}
@@ -466,7 +502,7 @@ export function ProjectForm({
           {tab === "timeline" ? (
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Start date">
+                <Field label="Start Date">
                   <DateInput
                     className={inputClass}
                     value={project.start_date ?? ""}
@@ -478,7 +514,7 @@ export function ProjectForm({
                     }
                   />
                 </Field>
-                <Field label="Completion date">
+                <Field label="Completion Date">
                   <DateInput
                     className={inputClass}
                     value={project.end_date ?? ""}
@@ -492,7 +528,7 @@ export function ProjectForm({
                 </Field>
               </div>
               {showPmHours ? (
-                <Field label="Project manager daily hours (optional)">
+                <Field label="Project Manager Daily Hours (Optional)">
                   <input
                     type="number"
                     min={0.01}
@@ -531,65 +567,44 @@ export function ProjectForm({
 
           {tab === "budget" ? (
             <>
-              <Field label="Budget type">
+              <Field label="Budget Type">
                 <Select
                   value={project.budget_mode}
                   onChange={(v) => setMode(v as BudgetMode)}
                   options={[
                     {
                       value: "none",
-                      label: "None (internal / time-off tracking)",
+                      label: "None (Internal / Time-Off Tracking)",
                     },
                     {
                       value: "hours",
-                      label: "Hourly (total hours bucket)",
+                      label: "Hourly (Total Hours Bucket)",
                     },
                     {
                       value: "amount",
-                      label: "Dollar amount (hours × bill rates)",
+                      label: "Dollar Amount (Hours × Bill Rates)",
                     },
                   ]}
                 />
               </Field>
               {project.budget_mode === "hours" ? (
-                <>
-                  <Field label="Total budget (hours)">
-                    <input
-                      type="number"
-                      min={1}
-                      className={inputClass}
-                      value={project.budget_hours ?? ""}
-                      onChange={(e) =>
-                        onChange({
-                          ...project,
-                          budget_hours: Number(e.target.value) || 0,
-                        })
-                      }
-                    />
-                  </Field>
-                  <label className="flex items-start gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="mt-1"
-                      checked={Boolean(project.budget_monthly_reset)}
-                      onChange={(e) =>
-                        onChange({
-                          ...project,
-                          budget_monthly_reset: e.target.checked,
-                        })
-                      }
-                    />
-                    <span>
-                      Monthly reset
-                      <span className="block text-xs text-[var(--text-muted)]">
-                        Treat the hours budget as a recurring monthly retainer
-                      </span>
-                    </span>
-                  </label>
-                </>
+                <Field label="Total Budget (Hours)">
+                  <input
+                    type="number"
+                    min={1}
+                    className={inputClass}
+                    value={project.budget_hours ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...project,
+                        budget_hours: Number(e.target.value) || 0,
+                      })
+                    }
+                  />
+                </Field>
               ) : null}
               {project.budget_mode === "amount" ? (
-                <Field label="Total budget ($)">
+                <Field label="Total Budget ($)">
                   <input
                     type="number"
                     min={0}
@@ -607,6 +622,30 @@ export function ProjectForm({
                   />
                 </Field>
               ) : null}
+              {project.budget_mode === "hours" ||
+              project.budget_mode === "amount" ? (
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={Boolean(project.budget_monthly_reset)}
+                    onChange={(e) =>
+                      onChange({
+                        ...project,
+                        budget_monthly_reset: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    Monthly Reset
+                    <span className="block text-xs text-[var(--text-muted)]">
+                      {project.budget_mode === "amount"
+                        ? "Treat the dollar budget as a recurring monthly retainer"
+                        : "Treat the hours budget as a recurring monthly retainer"}
+                    </span>
+                  </span>
+                </label>
+              ) : null}
               {fullTimeStyleTeamMembers.length > 0 ? (
                 <p className="text-xs leading-snug text-[var(--text-muted)]">
                   {fullTimeStyleTeamMembers.length === 1
@@ -614,10 +653,15 @@ export function ProjectForm({
                     : `${fullTimeStyleTeamMembers.length} contractors on the schedule use their profile rates — no per-project terms needed.`}
                 </p>
               ) : null}
-              {projectBasisTeamMembers.length > 0 ? (
+              {isMonthlyRetainer && projectBasisTeamMembers.length > 0 ? (
+                <p className="text-xs leading-snug text-[var(--text-muted)]">
+                  Add per-month contractor costs on the Contractor Expenses tab.
+                </p>
+              ) : null}
+              {!isMonthlyRetainer && projectBasisTeamMembers.length > 0 ? (
                 <div className="space-y-4 border-t border-[var(--border)] pt-3">
-                  <p className="text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                    Contractor terms
+                  <p className="text-xs font-medium tracking-wide text-[var(--text-muted)]">
+                    Contractor Terms
                   </p>
                   {projectBasisTeamMembers.map((person) => {
                     const terms =
@@ -685,7 +729,7 @@ export function ProjectForm({
                         {mode === "fixed_fee" ? (
                           <div className="space-y-1">
                             <label className="block text-xs text-[var(--text-muted)]">
-                              Fixed fee ($)
+                              Fixed Fee ($)
                             </label>
                             <input
                               type="number"
@@ -748,6 +792,19 @@ export function ProjectForm({
                 </div>
               ) : null}
             </>
+          ) : null}
+
+          {tab === "expenses" && isMonthlyRetainer ? (
+            <ContractorExpensesPanel
+              project={project}
+              contractors={projectBasisTeamMembers}
+              expenses={state.project_contractor_expenses.filter(
+                (e) => e.project_id === project.id,
+              )}
+              newId={newId}
+              onUpsert={upsertProjectContractorExpense}
+              onDelete={deleteProjectContractorExpense}
+            />
           ) : null}
 
           {tab === "sandbox" ? (
@@ -819,6 +876,336 @@ export function ProjectForm({
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function ContractorExpensesPanel({
+  project,
+  contractors,
+  expenses,
+  newId,
+  onUpsert,
+  onDelete,
+}: {
+  project: Omit<Project, "organization_id">;
+  contractors: Person[];
+  expenses: ProjectContractorExpense[];
+  newId: (prefix: string) => string;
+  onUpsert: (
+    expense: Omit<ProjectContractorExpense, "organization_id"> & {
+      organization_id?: string;
+    },
+  ) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const { state } = useData();
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const expenseYears = expenses.map((e) =>
+    Number(e.month_key.slice(0, 4)),
+  );
+  const startYear = project.start_date
+    ? Number(project.start_date.slice(0, 4))
+    : currentYear;
+  const years = [
+    ...new Set([
+      currentYear,
+      currentYear + 1,
+      startYear,
+      ...expenseYears,
+    ]),
+  ]
+    .filter((y) => Number.isFinite(y))
+    .sort((a, b) => b - a);
+
+  const [year, setYear] = useState(currentYear);
+  const [personId, setPersonId] = useState(contractors[0]?.id ?? "");
+  const [amount, setAmount] = useState("");
+  const [monthKey, setMonthKey] = useState(monthKeyFromDate(now));
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+
+  useEffect(() => {
+    if (!personId && contractors[0]) setPersonId(contractors[0].id);
+  }, [contractors, personId]);
+
+  useEffect(() => {
+    setMonthKey((prev) => {
+      if (prev.startsWith(String(year))) return prev;
+      const month = Number(prev.slice(5, 7)) || new Date().getMonth() + 1;
+      return monthKeyFromDate(new Date(year, month - 1, 1));
+    });
+  }, [year]);
+
+  const yearExpenses = useMemo(() => {
+    const prefix = String(year);
+    return expenses
+      .filter((e) => e.month_key.startsWith(prefix))
+      .sort((a, b) => b.month_key.localeCompare(a.month_key));
+  }, [expenses, year]);
+
+  const byMonth = useMemo(() => {
+    const map = new Map<string, ProjectContractorExpense[]>();
+    for (const e of yearExpenses) {
+      const key = e.month_key.slice(0, 7);
+      const list = map.get(key) ?? [];
+      list.push(e);
+      map.set(key, list);
+    }
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [yearExpenses]);
+
+  const monthOptions = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(year, i, 1);
+      return {
+        value: monthKeyFromDate(d),
+        label: format(d, "MMMM yyyy"),
+      };
+    });
+  }, [year]);
+
+  function personName(personIdValue: string) {
+    return (
+      contractors.find((c) => c.id === personIdValue)?.name ??
+      state.people.find((p) => p.id === personIdValue)?.name ??
+      "Contractor"
+    );
+  }
+
+  async function addExpense() {
+    if (!personId || !project.id) return;
+    const value = Number(amount);
+    if (!Number.isFinite(value) || value < 0) return;
+    setSaving(true);
+    try {
+      const nowIso = new Date().toISOString();
+      await onUpsert({
+        id: newId("pce"),
+        project_id: project.id,
+        person_id: personId,
+        month_key: monthKey.slice(0, 7) + "-01",
+        amount: value,
+        notes: notes.trim(),
+        created_at: nowIso,
+        updated_at: nowIso,
+        created_by_profile_id: null,
+      });
+      setAmount("");
+      setNotes("");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEdit(row: ProjectContractorExpense) {
+    const value = Number(editAmount);
+    if (!Number.isFinite(value) || value < 0) return;
+    setSaving(true);
+    try {
+      await onUpsert({
+        ...row,
+        amount: value,
+        notes: editNotes.trim(),
+        updated_at: new Date().toISOString(),
+      });
+      setEditingId(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!project.id) {
+    return (
+      <p className="text-sm text-[var(--text-muted)]">
+        Save the project first, then add contractor expenses.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-col gap-4">
+      <p className="text-sm text-[var(--text-muted)]">
+        Add contractor costs for each calendar month. Editing one month does not
+        change other months.
+      </p>
+      {contractors.length === 0 ? (
+        <p className="text-sm text-[var(--text-muted)]">
+          Add a Project-Basis Contractor on the Team tab first.
+        </p>
+      ) : (
+        <div className="space-y-3 rounded-md border border-[var(--border)] p-3">
+          <p className="text-sm font-medium">Add Expense</p>
+          <Field label="Contractor">
+            <Select
+              value={personId}
+              onChange={setPersonId}
+              options={contractors.map((c) => ({
+                value: c.id,
+                label: c.name,
+              }))}
+            />
+          </Field>
+          <Field label="Month">
+            <Select
+              value={monthKey}
+              onChange={setMonthKey}
+              options={monthOptions}
+            />
+          </Field>
+          <Field label="Amount ($)">
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              className={inputClass}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+          </Field>
+          <Field label="Notes">
+            <input
+              className={inputClass}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Optional"
+            />
+          </Field>
+          <Button
+            type="button"
+            disabled={saving || !personId || amount === ""}
+            onClick={() => void addExpense()}
+          >
+            Add Expense
+          </Button>
+        </div>
+      )}
+
+      <Field label="Year">
+        <Select
+          value={String(year)}
+          onChange={(v) => setYear(Number(v))}
+          options={years.map((y) => ({
+            value: String(y),
+            label: String(y),
+          }))}
+        />
+      </Field>
+
+      <div className="max-h-72 space-y-4 overflow-y-auto pr-1">
+        {byMonth.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">
+            No contractor expenses for {year}.
+          </p>
+        ) : (
+          byMonth.map(([ym, rows]) => (
+            <div key={ym} className="space-y-2">
+              <p className="text-xs font-medium text-[var(--text-muted)]">
+                {monthLabel(`${ym}-01`)}
+              </p>
+              <ul className="space-y-2">
+                {rows.map((row) => {
+                  const editing = editingId === row.id;
+                  return (
+                    <li
+                      key={row.id}
+                      className="rounded-md border border-[var(--border)] px-3 py-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium">
+                              {personName(row.person_id)}
+                            </span>
+                            <ContractorTag />
+                          </div>
+                          {!editing ? (
+                            <>
+                              <p className="text-sm tabular-nums">
+                                {formatMoney(row.amount)}
+                              </p>
+                              {row.notes ? (
+                                <p className="text-xs text-[var(--text-muted)]">
+                                  {row.notes}
+                                </p>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                        {!editing ? (
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              type="button"
+                              className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--accent)]"
+                              onClick={() => {
+                                setEditingId(row.id);
+                                setEditAmount(String(row.amount));
+                                setEditNotes(row.notes ?? "");
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--status-over)]"
+                              onClick={() => void onDelete(row.id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                      {editing ? (
+                        <div className="mt-2 space-y-2">
+                          <Field label="Amount ($)">
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              className={inputClass}
+                              value={editAmount}
+                              onChange={(e) => setEditAmount(e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Notes">
+                            <input
+                              className={inputClass}
+                              value={editNotes}
+                              onChange={(e) => setEditNotes(e.target.value)}
+                              placeholder="Optional"
+                            />
+                          </Field>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              disabled={saving || editAmount === ""}
+                              onClick={() => void saveEdit(row)}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              disabled={saving}
+                              onClick={() => setEditingId(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

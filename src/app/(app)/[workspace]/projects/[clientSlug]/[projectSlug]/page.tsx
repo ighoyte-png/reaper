@@ -46,6 +46,7 @@ import {
 import { SandboxIcon } from "@/components/projects/sandbox-icon";
 import { isProjectFavorited } from "@/lib/domain/project-favorites";
 import { personAvatarColor } from "@/lib/domain/people";
+import { isMonthlyRetainerBudget } from "@/lib/domain/budget";
 import {
   existingPmDailyHours,
   findPmProjectAssignments,
@@ -219,7 +220,7 @@ export default function ProjectDetailPage() {
     state.projects,
   ]);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
-  const isRetainer = Boolean(project?.budget_monthly_reset);
+  const isRetainer = project ? isMonthlyRetainerBudget(project) : false;
   const projectBudgetHref = project
     ? budgetHref(project)
     : appHref("/reports/budgets");
@@ -1276,7 +1277,8 @@ export default function ProjectDetailPage() {
                       ? toSave.budget_amount
                       : null,
                   budget_monthly_reset:
-                    toSave.budget_mode === "hours"
+                    toSave.budget_mode === "hours" ||
+                    toSave.budget_mode === "amount"
                       ? Boolean(toSave.budget_monthly_reset)
                       : false,
                 });

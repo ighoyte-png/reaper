@@ -1,6 +1,9 @@
 import { format } from "date-fns";
 import type { MonthBurnBar } from "@/lib/domain/budget";
-import { normalizeBudgetMode } from "@/lib/domain/budget";
+import {
+  isMonthlyRetainerBudget,
+  normalizeBudgetMode,
+} from "@/lib/domain/budget";
 import type { BudgetBurn, Project } from "@/lib/types";
 import type {
   MonthlyRetainerYearBarRow,
@@ -43,10 +46,11 @@ export function monthlyYearBarsFromRpcRows(
     project.budget_hours,
     project.budget_amount,
   );
-  const monthlyHourCap =
-    mode === "hours" && project.budget_monthly_reset
-      ? project.budget_hours ?? 0
-      : 0;
+  const monthlyCap = isMonthlyRetainerBudget(project)
+    ? mode === "amount"
+      ? project.budget_amount ?? 0
+      : project.budget_hours ?? 0
+    : 0;
   const byMonth = new Map(
     rows
       .filter((r) => r.project_id === project.id)
@@ -70,7 +74,7 @@ export function monthlyYearBarsFromRpcRows(
     const plannedHours = usedHours + futureHours + contractorHours;
     const plannedAmount = usedAmount + futureAmount + contractorAmount;
     const value = mode === "amount" ? plannedAmount : plannedHours;
-    const cap = mode === "amount" ? 0 : monthlyHourCap;
+    const cap = monthlyCap;
     out.push({
       key: format(d, "yyyy-MM"),
       label: format(d, "MMM yyyy"),
@@ -90,7 +94,7 @@ export function monthlyYearBarsFromRpcRows(
       contractorFutureAmount,
       value,
       cap,
-      budgetHours: monthlyHourCap,
+      budgetHours: mode === "hours" ? monthlyCap : 0,
       pct: cap <= 0 ? 0 : Math.min(999, (value / cap) * 100),
     });
   }

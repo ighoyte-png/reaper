@@ -396,6 +396,21 @@ export interface ProjectMember {
   contractor_hours: number | null;
 }
 
+/** Per-month contractor expense line for monthly-reset project budgets. */
+export interface ProjectContractorExpense {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  person_id: string;
+  /** First day of month as yyyy-MM-dd. */
+  month_key: string;
+  amount: number;
+  notes: string;
+  created_at: string;
+  updated_at: string;
+  created_by_profile_id: string | null;
+}
+
 /** Per-user starred project (nav tabs + sidebars). */
 export interface ProjectFavorite {
   id: string;
@@ -447,6 +462,7 @@ export interface DemoState {
   people: Person[];
   assignments: Assignment[];
   project_members: ProjectMember[];
+  project_contractor_expenses: ProjectContractorExpense[];
   leave_days: LeaveDay[];
   holiday_calendars: HolidayCalendar[];
   holiday_calendar_days: HolidayCalendarDay[];

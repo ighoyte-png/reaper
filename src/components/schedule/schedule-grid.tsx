@@ -745,6 +745,9 @@ export function ScheduleGrid() {
             state.project_members.filter(
               (m) => m.project_id === selectedProject.id,
             ),
+            state.project_contractor_expenses.filter(
+              (e) => e.project_id === selectedProject.id,
+            ),
           )
         : null,
     [
@@ -752,6 +755,7 @@ export function ScheduleGrid() {
       state.assignments,
       state.people,
       state.project_members,
+      state.project_contractor_expenses,
     ],
   );
 
@@ -1707,6 +1711,9 @@ export function ScheduleGrid() {
       false,
       new Date(),
       state.project_members.filter((m) => m.project_id === project.id),
+      state.project_contractor_expenses.filter(
+        (e) => e.project_id === project.id,
+      ),
     );
     if (burn.overBy > 0) {
       push(`Over total budget by ${formatHours(burn.overBy)}`, "warning");
@@ -2197,6 +2204,9 @@ export function ScheduleGrid() {
           false,
           new Date(),
           state.project_members.filter((m) => m.project_id === project.id),
+          state.project_contractor_expenses.filter(
+            (e) => e.project_id === project.id,
+          ),
         ),
       }));
   }, [
@@ -2206,6 +2216,7 @@ export function ScheduleGrid() {
     state.assignments,
     state.people,
     state.project_members,
+    state.project_contractor_expenses,
     visiblePeople,
     startKey,
     endKey,
@@ -4303,6 +4314,9 @@ export function ScheduleGrid() {
                 false,
                 new Date(),
                 state.project_members.filter((m) => m.project_id === project.id),
+                state.project_contractor_expenses.filter(
+                  (e) => e.project_id === project.id,
+                ),
               );
               return (
                 <div>

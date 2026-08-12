@@ -361,7 +361,7 @@ function ClientsPageContent() {
         budget_amount:
           project.budget_mode === "amount" ? project.budget_amount : null,
         budget_monthly_reset:
-          project.budget_mode === "hours"
+          project.budget_mode === "hours" || project.budget_mode === "amount"
             ? project.budget_monthly_reset
             : false,
       });
