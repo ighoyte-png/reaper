@@ -19,6 +19,7 @@ import {
 } from "@/lib/demo/seed";
 import {
   applyRealtimeTableEvent,
+  isTrueLocalEcho,
   realtimeEchoId,
 } from "@/lib/data/realtime-patch";
 import { addDays, differenceInCalendarDays, parseISO } from "date-fns";
@@ -779,6 +780,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [platformOnly, setPlatformOnly] = useState(false);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const orgChannelRef = useRef<RealtimeChannel | null>(null);
+  const projectChannelsRef = useRef<Map<string, RealtimeChannel>>(new Map());
   const orgId = state.organization.id || ORG_ID;
   /** Recently written row ids — ignore realtime echoes of our own optimistic writes. */
   const localWritesRef = useRef<Map<string, number>>(new Map());
@@ -788,6 +790,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * resurrect rows after a newer undo/delete.
    */
   const leaveWriteEpochRef = useRef(0);
+
+  type PendingRealtimeEvent = {
+    table: string;
+    eventType: string;
+    newRecord: Record<string, unknown> | null;
+    oldRecord: Record<string, unknown> | null;
+  };
+  const pendingRealtimeRef = useRef<PendingRealtimeEvent[]>([]);
+  const realtimeFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const activeRealtimeProjectIdsRef = useRef<string[]>([]);
 
   const [orgTasksStatus, setOrgTasksStatus] = useState<
     "idle" | "loading" | "ready" | "error"
@@ -1047,159 +1061,217 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [mode, refreshSupabase]);
 
-  // Live sync: org shell always; project task traffic only for active projects.
-  useEffect(() => {
-    if (mode !== "supabase" || !ready) return;
-    const client = supabaseRef.current;
-    const organizationId = state.organization.id;
-    if (!client || !organizationId) return;
+  activeRealtimeProjectIdsRef.current = activeRealtimeProjectIds;
 
-    type PendingEvent = {
-      table: string;
-      eventType: string;
-      newRecord: Record<string, unknown> | null;
-      oldRecord: Record<string, unknown> | null;
-    };
-    let pending: PendingEvent[] = [];
-    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  const catchUpProjectRealtimeData = useCallback(
+    async (projectId: string) => {
+      if (mode !== "supabase" || !projectId) return;
+      const client = supabaseRef.current;
+      const organizationId = state.organization.id;
+      if (!client || !organizationId) return;
+      try {
+        const bundle = await loadProjectData(
+          client,
+          organizationId,
+          projectId,
+        );
+        setState((prev) => {
+          const dropTasks = new Set(
+            prev.tasks
+              .filter((t) => t.project_id === projectId)
+              .map((t) => t.id),
+          );
+          return {
+            ...prev,
+            milestones: [
+              ...prev.milestones.filter((m) => m.project_id !== projectId),
+              ...bundle.milestones,
+            ],
+            task_lists: [
+              ...prev.task_lists.filter((l) => l.project_id !== projectId),
+              ...bundle.task_lists,
+            ],
+            tasks: [
+              ...prev.tasks.filter((t) => t.project_id !== projectId),
+              ...bundle.tasks,
+            ],
+            task_comments: [
+              ...prev.task_comments.filter((c) => !dropTasks.has(c.task_id)),
+              ...bundle.task_comments,
+            ],
+            project_assets: [
+              ...prev.project_assets.filter((a) => a.project_id !== projectId),
+              ...bundle.project_assets,
+            ],
+            assignments: [
+              ...prev.assignments.filter((a) => a.project_id !== projectId),
+              ...bundle.assignments,
+            ],
+          };
+        });
+        projectReadyRef.current.add(projectId);
+      } catch (err) {
+        console.warn("project realtime catch-up failed", projectId, err);
+      }
+    },
+    [mode, state.organization.id],
+  );
 
-    const flush = () => {
-      flushTimer = null;
-      const batch = pending;
-      pending = [];
-      if (batch.length === 0) return;
-      setState((prev) => {
-        let next = prev;
-        for (const ev of batch) {
+  const flushPendingRealtime = useCallback(() => {
+    realtimeFlushTimerRef.current = null;
+    const batch = pendingRealtimeRef.current;
+    pendingRealtimeRef.current = [];
+    if (batch.length === 0) return;
+    setState((prev) => {
+      let next = prev;
+      for (const ev of batch) {
+        const echoId = realtimeEchoId(
+          ev.table,
+          ev.eventType,
+          ev.newRecord,
+          ev.oldRecord,
+        );
+        if (
+          shouldIgnoreLocalEcho(ev.table, echoId) &&
+          isTrueLocalEcho(
+            next,
+            ev.table,
+            ev.eventType,
+            ev.newRecord,
+            ev.oldRecord,
+          )
+        ) {
+          continue;
+        }
+        if (
+          ev.table === "tasks" ||
+          ev.table === "task_lists" ||
+          ev.table === "project_assets" ||
+          ev.table === "milestones" ||
+          ev.table === "task_comments" ||
+          ev.table === "task_comment_mentions" ||
+          ev.table === "task_comment_reactions"
+        ) {
+          const active = new Set(activeRealtimeProjectIdsRef.current);
+          if (active.size === 0 && projectReadyRef.current.size === 0) {
+            continue;
+          }
           if (
             ev.table === "tasks" ||
             ev.table === "task_lists" ||
             ev.table === "project_assets" ||
-            ev.table === "milestones" ||
-            ev.table === "task_comments" ||
-            ev.table === "task_comment_mentions" ||
-            ev.table === "task_comment_reactions"
+            ev.table === "milestones"
           ) {
-            const active = new Set(activeRealtimeProjectIds);
-            if (active.size === 0 && projectReadyRef.current.size === 0) {
+            const pid = String(
+              (ev.newRecord ?? ev.oldRecord)?.project_id ?? "",
+            );
+            if (
+              pid &&
+              !active.has(pid) &&
+              !projectReadyRef.current.has(pid)
+            ) {
               continue;
             }
+          } else if (
+            ev.table === "task_comment_reactions" ||
+            ev.table === "task_comment_mentions"
+          ) {
+            const commentId = String(
+              (ev.newRecord ?? ev.oldRecord)?.comment_id ?? "",
+            );
+            const comment = next.task_comments.find((c) => c.id === commentId);
+            if (!comment) continue;
+            const task = next.tasks.find((t) => t.id === comment.task_id);
+            if (!task) continue;
             if (
-              ev.table === "tasks" ||
-              ev.table === "task_lists" ||
-              ev.table === "project_assets" ||
-              ev.table === "milestones"
+              !active.has(task.project_id) &&
+              !projectReadyRef.current.has(task.project_id)
             ) {
-              const pid = String(
-                (ev.newRecord ?? ev.oldRecord)?.project_id ?? "",
-              );
-              if (
-                pid &&
-                !active.has(pid) &&
-                !projectReadyRef.current.has(pid)
-              ) {
-                continue;
-              }
-            } else if (
-              ev.table === "task_comment_reactions" ||
-              ev.table === "task_comment_mentions"
-            ) {
-              const commentId = String(
-                (ev.newRecord ?? ev.oldRecord)?.comment_id ?? "",
-              );
-              const comment = next.task_comments.find((c) => c.id === commentId);
-              if (!comment) continue;
-              const task = next.tasks.find((t) => t.id === comment.task_id);
-              if (!task) continue;
-              if (
-                !active.has(task.project_id) &&
-                !projectReadyRef.current.has(task.project_id)
-              ) {
-                continue;
-              }
-            } else {
-              const taskId = String(
-                (ev.newRecord ?? ev.oldRecord)?.task_id ?? "",
-              );
-              const task = next.tasks.find((t) => t.id === taskId);
-              if (!task) continue;
-              if (
-                !active.has(task.project_id) &&
-                !projectReadyRef.current.has(task.project_id)
-              ) {
-                continue;
-              }
+              continue;
             }
-          } else if (ev.table === "assignments" || ev.table === "leave_days") {
-            if (ev.eventType !== "DELETE") {
-              const loaded = scheduleRangeLoadedRef.current;
-              const row = ev.newRecord;
-              if (!row) continue;
-              if (ev.table === "assignments") {
-                const mapped = mapAssignment(row);
-                if (!projectReadyRef.current.has(mapped.project_id)) {
-                  if (!loaded) continue;
-                  const padStart = toDateKey(
-                    addDays(parseISO(loaded.start), -SCHEDULE_EVICT_PAD_DAYS),
-                  );
-                  const padEnd = toDateKey(
-                    addDays(parseISO(loaded.end), SCHEDULE_EVICT_PAD_DAYS),
-                  );
-                  if (
-                    !assignmentOverlapsDateRange(mapped, padStart, padEnd)
-                  ) {
-                    continue;
-                  }
-                }
-              } else {
+          } else {
+            const taskId = String(
+              (ev.newRecord ?? ev.oldRecord)?.task_id ?? "",
+            );
+            const task = next.tasks.find((t) => t.id === taskId);
+            if (!task) continue;
+            if (
+              !active.has(task.project_id) &&
+              !projectReadyRef.current.has(task.project_id)
+            ) {
+              continue;
+            }
+          }
+        } else if (ev.table === "assignments" || ev.table === "leave_days") {
+          if (ev.eventType !== "DELETE") {
+            const loaded = scheduleRangeLoadedRef.current;
+            const row = ev.newRecord;
+            if (!row) continue;
+            if (ev.table === "assignments") {
+              const mapped = mapAssignment(row);
+              if (!projectReadyRef.current.has(mapped.project_id)) {
                 if (!loaded) continue;
-                const date = String(row.date ?? "").slice(0, 10);
                 const padStart = toDateKey(
                   addDays(parseISO(loaded.start), -SCHEDULE_EVICT_PAD_DAYS),
                 );
                 const padEnd = toDateKey(
                   addDays(parseISO(loaded.end), SCHEDULE_EVICT_PAD_DAYS),
                 );
-                if (!date || date < padStart || date > padEnd) continue;
+                if (!assignmentOverlapsDateRange(mapped, padStart, padEnd)) {
+                  continue;
+                }
               }
+            } else {
+              if (!loaded) continue;
+              const date = String(row.date ?? "").slice(0, 10);
+              const padStart = toDateKey(
+                addDays(parseISO(loaded.start), -SCHEDULE_EVICT_PAD_DAYS),
+              );
+              const padEnd = toDateKey(
+                addDays(parseISO(loaded.end), SCHEDULE_EVICT_PAD_DAYS),
+              );
+              if (!date || date < padStart || date > padEnd) continue;
             }
           }
-          next = applyRealtimeTableEvent(
-            next,
-            ev.table,
-            ev.eventType,
-            ev.newRecord,
-            ev.oldRecord,
-          );
         }
-        return next;
-      });
-    };
+        next = applyRealtimeTableEvent(
+          next,
+          ev.table,
+          ev.eventType,
+          ev.newRecord,
+          ev.oldRecord,
+        );
+      }
+      return next;
+    });
+  }, [shouldIgnoreLocalEcho]);
 
-    const onChange =
-      (table: string) =>
+  const enqueueRealtimeChange = useCallback(
+    (table: string) =>
       (payload: {
         eventType: string;
         new: Record<string, unknown>;
         old: Record<string, unknown>;
       }) => {
-        const id = realtimeEchoId(
-          table,
-          payload.eventType,
-          payload.new,
-          payload.old,
-        );
-        if (shouldIgnoreLocalEcho(table, id)) return;
-        pending.push({
+        pendingRealtimeRef.current.push({
           table,
           eventType: payload.eventType,
           newRecord: payload.new ?? null,
           oldRecord: payload.old ?? null,
         });
-        if (flushTimer == null) {
-          flushTimer = setTimeout(flush, 16);
+        if (realtimeFlushTimerRef.current == null) {
+          realtimeFlushTimerRef.current = setTimeout(flushPendingRealtime, 16);
         }
-      };
+      },
+    [flushPendingRealtime],
+  );
+
+  // Live sync: org shell stays mounted for the org session.
+  useEffect(() => {
+    if (mode !== "supabase" || !ready) return;
+    const client = supabaseRef.current;
+    const organizationId = state.organization.id;
+    if (!client || !organizationId) return;
 
     const orgChannel = client
       .channel(`org-live:${organizationId}`)
@@ -1211,7 +1283,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "assignments",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("assignments"),
+        enqueueRealtimeChange("assignments"),
       )
       .on(
         "postgres_changes",
@@ -1221,7 +1293,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "leave_days",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("leave_days"),
+        enqueueRealtimeChange("leave_days"),
       )
       .on(
         "postgres_changes",
@@ -1231,7 +1303,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "bulletins",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("bulletins"),
+        enqueueRealtimeChange("bulletins"),
       )
       .on(
         "postgres_changes",
@@ -1241,7 +1313,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "bulletin_unreads",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("bulletin_unreads"),
+        enqueueRealtimeChange("bulletin_unreads"),
       )
       .on(
         "postgres_changes",
@@ -1251,7 +1323,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "mention_unreads",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("mention_unreads"),
+        enqueueRealtimeChange("mention_unreads"),
       )
       .on(
         "postgres_changes",
@@ -1261,7 +1333,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "task_thread_unreads",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("task_thread_unreads"),
+        enqueueRealtimeChange("task_thread_unreads"),
       )
       .on(
         "postgres_changes",
@@ -1271,7 +1343,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "task_comments",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("task_comments"),
+        enqueueRealtimeChange("task_comments"),
       )
       .on(
         "postgres_changes",
@@ -1281,7 +1353,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "task_comment_mentions",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("task_comment_mentions"),
+        enqueueRealtimeChange("task_comment_mentions"),
       )
       .on(
         "postgres_changes",
@@ -1291,7 +1363,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "task_comment_reactions",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("task_comment_reactions"),
+        enqueueRealtimeChange("task_comment_reactions"),
       )
       .on(
         "postgres_changes",
@@ -1301,7 +1373,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "pods",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("pods"),
+        enqueueRealtimeChange("pods"),
       )
       .on(
         "postgres_changes",
@@ -1311,7 +1383,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           table: "pod_members",
           filter: `organization_id=eq.${organizationId}`,
         },
-        onChange("pod_members"),
+        enqueueRealtimeChange("pod_members"),
       )
       .on(
         "broadcast",
@@ -1326,8 +1398,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     orgChannelRef.current = orgChannel;
 
-    const projectChannels = activeRealtimeProjectIds.map((projectId) =>
-      client
+    return () => {
+      if (realtimeFlushTimerRef.current) {
+        clearTimeout(realtimeFlushTimerRef.current);
+        realtimeFlushTimerRef.current = null;
+      }
+      orgChannelRef.current = null;
+      void client.removeChannel(orgChannel);
+    };
+  }, [mode, ready, state.organization.id, enqueueRealtimeChange]);
+
+  // Project task traffic: add/remove channels without tearing down the org channel.
+  useEffect(() => {
+    if (mode !== "supabase" || !ready) return;
+    const client = supabaseRef.current;
+    if (!client) return;
+
+    const wanted = new Set(activeRealtimeProjectIds);
+    const existing = projectChannelsRef.current;
+
+    for (const [projectId, channel] of [...existing]) {
+      if (!wanted.has(projectId)) {
+        void client.removeChannel(channel);
+        existing.delete(projectId);
+      }
+    }
+
+    for (const projectId of wanted) {
+      if (existing.has(projectId)) continue;
+      const channel = client
         .channel(`project-live:${projectId}`)
         .on(
           "postgres_changes",
@@ -1337,7 +1436,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             table: "tasks",
             filter: `project_id=eq.${projectId}`,
           },
-          onChange("tasks"),
+          enqueueRealtimeChange("tasks"),
         )
         .on(
           "postgres_changes",
@@ -1347,7 +1446,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             table: "task_lists",
             filter: `project_id=eq.${projectId}`,
           },
-          onChange("task_lists"),
+          enqueueRealtimeChange("task_lists"),
         )
         .on(
           "postgres_changes",
@@ -1357,7 +1456,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             table: "project_assets",
             filter: `project_id=eq.${projectId}`,
           },
-          onChange("project_assets"),
+          enqueueRealtimeChange("project_assets"),
         )
         .on(
           "postgres_changes",
@@ -1367,26 +1466,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
             table: "milestones",
             filter: `project_id=eq.${projectId}`,
           },
-          onChange("milestones"),
+          enqueueRealtimeChange("milestones"),
         )
-        .subscribe(),
-    );
-
-    return () => {
-      if (flushTimer) clearTimeout(flushTimer);
-      orgChannelRef.current = null;
-      void client.removeChannel(orgChannel);
-      for (const ch of projectChannels) {
-        void client.removeChannel(ch);
-      }
-    };
+        .subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            void catchUpProjectRealtimeData(projectId);
+          }
+        });
+      existing.set(projectId, channel);
+    }
   }, [
     mode,
     ready,
-    state.organization.id,
-    shouldIgnoreLocalEcho,
     activeRealtimeProjectIds,
+    enqueueRealtimeChange,
+    catchUpProjectRealtimeData,
   ]);
+
+  // Drop project channels when leaving the live supabase session / switching org.
+  useEffect(() => {
+    return () => {
+      const client = supabaseRef.current;
+      for (const [, channel] of projectChannelsRef.current) {
+        if (client) void client.removeChannel(channel);
+      }
+      projectChannelsRef.current.clear();
+    };
+  }, [mode, ready, state.organization.id]);
+
+  // Heal gaps after sleep / background tab.
+  useEffect(() => {
+    if (mode !== "supabase" || !ready) return;
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      for (const projectId of activeRealtimeProjectIdsRef.current) {
+        void catchUpProjectRealtimeData(projectId);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [mode, ready, catchUpProjectRealtimeData]);
 
   useEffect(() => {
     if (!ready || mode !== "demo") return;

@@ -3118,6 +3118,61 @@ function InlineTaskForm({
   const notesEditorRef = useRef<SimpleRichTextEditorHandle>(null);
   const [savingNotes, setSavingNotes] = useState(false);
 
+  const titleRef = useRef(title);
+  const assigneeIdRef = useRef(assigneeId);
+  const startDateRef = useRef(startDate);
+  const dueDateRef = useRef(dueDate);
+  const notesRef = useRef(notes);
+  const isClientReviewRef = useRef(isClientReview);
+  titleRef.current = title;
+  assigneeIdRef.current = assigneeId;
+  startDateRef.current = startDate;
+  dueDateRef.current = dueDate;
+  notesRef.current = notes;
+  isClientReviewRef.current = isClientReview;
+
+  const initialBaselineRef = useRef<{
+    title: string;
+    assignee_person_id: string;
+    start_date: string;
+    due_date: string;
+    notes: string;
+    is_client_review: boolean;
+  } | null>(null);
+
+  // Pull remote task updates into undirtied fields while the edit form is open.
+  useEffect(() => {
+    const next = {
+      title: initial?.title ?? "",
+      assignee_person_id: initial?.assignee_person_id ?? "",
+      start_date: initial?.start_date ?? "",
+      due_date: initial?.due_date ?? "",
+      notes: initial?.notes ?? "",
+      is_client_review: Boolean(initial?.is_client_review),
+    };
+    const prev = initialBaselineRef.current;
+    if (prev) {
+      if (titleRef.current === prev.title) setTitle(next.title);
+      if (assigneeIdRef.current === prev.assignee_person_id) {
+        setAssigneeId(next.assignee_person_id);
+      }
+      if (startDateRef.current === prev.start_date) setStartDate(next.start_date);
+      if (dueDateRef.current === prev.due_date) setDueDate(next.due_date);
+      if (notesRef.current === prev.notes) setNotes(next.notes);
+      if (isClientReviewRef.current === prev.is_client_review) {
+        setIsClientReview(next.is_client_review);
+      }
+    }
+    initialBaselineRef.current = next;
+  }, [
+    initial?.title,
+    initial?.assignee_person_id,
+    initial?.start_date,
+    initial?.due_date,
+    initial?.notes,
+    initial?.is_client_review,
+  ]);
+
   const assigneeOptions = useMemo(() => {
     const byId = new Map(people.map((p) => [p.id, p]));
     const currentId = initial?.assignee_person_id;

@@ -10,13 +10,92 @@ import {
   mapTaskComment,
   mapTaskList,
 } from "@/lib/supabase/api";
-import type { DemoState, PodMember } from "@/lib/types";
+import type { DemoState, PodMember, Task, TaskList } from "@/lib/types";
 
 function upsertById<T extends { id: string }>(list: T[], row: T): T[] {
   const exists = list.some((x) => x.id === row.id);
   return exists
     ? list.map((x) => (x.id === row.id ? row : x))
     : [...list, row];
+}
+
+/**
+ * Fields that matter for live board sync. Used to ignore true local-write
+ * echoes while still applying concurrent remote edits during the echo TTL.
+ */
+export function taskRealtimeEqual(a: Task, b: Task): boolean {
+  return (
+    a.id === b.id &&
+    a.project_id === b.project_id &&
+    a.list_id === b.list_id &&
+    a.parent_id === b.parent_id &&
+    a.assignee_person_id === b.assignee_person_id &&
+    a.title === b.title &&
+    Boolean(a.is_divider) === Boolean(b.is_divider) &&
+    Boolean(a.is_client_review) === Boolean(b.is_client_review) &&
+    a.status === b.status &&
+    a.start_date === b.start_date &&
+    a.due_date === b.due_date &&
+    a.notes === b.notes &&
+    a.sort_order === b.sort_order &&
+    a.edited_at === b.edited_at &&
+    a.edited_by_profile_id === b.edited_by_profile_id &&
+    a.status_changed_at === b.status_changed_at &&
+    a.status_changed_by_profile_id === b.status_changed_by_profile_id
+  );
+}
+
+export function taskListRealtimeEqual(a: TaskList, b: TaskList): boolean {
+  return (
+    a.id === b.id &&
+    a.project_id === b.project_id &&
+    a.milestone_id === b.milestone_id &&
+    a.name === b.name &&
+    a.color === b.color &&
+    a.sort_order === b.sort_order &&
+    Boolean(a.archived) === Boolean(b.archived) &&
+    Boolean(a.hide_from_client) === Boolean(b.hide_from_client) &&
+    Boolean(a.gantt_enabled) === Boolean(b.gantt_enabled) &&
+    a.start_date === b.start_date &&
+    a.end_date === b.end_date
+  );
+}
+
+/**
+ * When a local write is still in the echo TTL, return true only if applying
+ * this event would be a no-op relative to current state (true self-echo).
+ * Concurrent remote edits that differ from local state must still apply.
+ */
+export function isTrueLocalEcho(
+  state: DemoState,
+  table: string,
+  eventType: string,
+  newRecord: Record<string, unknown> | null | undefined,
+  oldRecord: Record<string, unknown> | null | undefined,
+): boolean {
+  if (eventType === "DELETE") {
+    const id = String(oldRecord?.id ?? "");
+    if (!id) return true;
+    if (table === "tasks") {
+      return !state.tasks.some((t) => t.id === id);
+    }
+    if (table === "task_lists") {
+      return !state.task_lists.some((l) => l.id === id);
+    }
+    return true;
+  }
+  if (!newRecord) return true;
+  if (table === "tasks") {
+    const mapped = mapTask(newRecord);
+    const existing = state.tasks.find((t) => t.id === mapped.id);
+    return Boolean(existing && taskRealtimeEqual(existing, mapped));
+  }
+  if (table === "task_lists") {
+    const mapped = mapTaskList(newRecord);
+    const existing = state.task_lists.find((l) => l.id === mapped.id);
+    return Boolean(existing && taskListRealtimeEqual(existing, mapped));
+  }
+  return true;
 }
 
 /** Id used for local-write echo suppression (mentions keyed by comment_id). */
