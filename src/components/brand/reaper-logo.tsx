@@ -12,8 +12,8 @@ export function ReaperLogo({
     <Image
       src="/reaper_logo.svg"
       alt={title}
-      width={506}
-      height={626}
+      width={550}
+      height={502}
       priority
       className={cn("w-auto shrink-0", className ?? "h-10")}
     />
