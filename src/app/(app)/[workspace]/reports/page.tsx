@@ -1028,7 +1028,7 @@ function TasksOverview({
               className="!size-full max-w-none"
             />
           </div>
-          <ul className="min-w-0 space-y-1.5 self-stretch">
+          <ul className="min-w-0 space-y-1.5">
             {slices.map((slice) => {
               const pct =
                 openMix > 0 ? Math.round((slice.hours / openMix) * 100) : 0;

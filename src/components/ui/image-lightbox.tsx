@@ -110,7 +110,7 @@ export function ImageLightbox({
     zoomBy(delta);
   }
 
-  function onPointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+  function onPointerDown(e: ReactPointerEvent<HTMLImageElement>) {
     if (scale <= 1) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = {
@@ -122,7 +122,7 @@ export function ImageLightbox({
     };
   }
 
-  function onPointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+  function onPointerMove(e: ReactPointerEvent<HTMLImageElement>) {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     setOffset({
@@ -131,7 +131,7 @@ export function ImageLightbox({
     });
   }
 
-  function onPointerUp(e: ReactPointerEvent<HTMLDivElement>) {
+  function onPointerUp(e: ReactPointerEvent<HTMLImageElement>) {
     if (dragRef.current?.pointerId === e.pointerId) {
       dragRef.current = null;
     }
@@ -235,29 +235,35 @@ export function ImageLightbox({
       </div>
 
       <div
-        className={cn(
-          "relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4",
-          scale > 1 ? "cursor-grab active:cursor-grabbing" : "cursor-zoom-in",
-        )}
-        onClick={(e) => e.stopPropagation()}
-        onWheel={onWheel}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        onDoubleClick={() => {
-          if (scale === 1) setZoom(2);
-          else resetView();
+        className="relative flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden p-4"
+        onClick={(e) => {
+          // Close when clicking the dimmed stage, not the image itself.
+          if (e.target === e.currentTarget) onClose();
         }}
+        onWheel={onWheel}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
           alt={alt || ""}
           draggable={false}
-          className="max-h-full max-w-full select-none object-contain transition-transform duration-100"
+          className={cn(
+            "max-h-full max-w-full select-none object-contain transition-transform duration-100",
+            scale > 1
+              ? "cursor-grab active:cursor-grabbing"
+              : "cursor-zoom-in",
+          )}
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onDoubleClick={() => {
+            if (scale === 1) setZoom(2);
+            else resetView();
           }}
         />
       </div>

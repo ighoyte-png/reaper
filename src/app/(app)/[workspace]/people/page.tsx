@@ -138,6 +138,10 @@ function PeoplePageContent() {
   const [selectedPodIds, setSelectedPodIds] = useState<string[]>([]);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  /** Attachment id present when the edit form opened — used to detect Remove Photo. */
+  const [avatarAttachmentIdAtOpen, setAvatarAttachmentIdAtOpen] = useState<
+    string | null
+  >(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState<Person | null>(null);
@@ -307,11 +311,13 @@ function PeoplePageContent() {
         avatar_url = uploaded.avatarUrl;
         avatar_attachment_id = uploaded.avatarAttachmentId;
       } else if (
-        !avatar_url &&
-        avatar_attachment_id &&
-        mode === "supabase"
+        mode === "supabase" &&
+        !avatar_attachment_id &&
+        avatarAttachmentIdAtOpen
       ) {
-        const res = await fetch(`/api/storage/${avatar_attachment_id}`, {
+        // User clicked Remove Photo (clears attachment id). R2 avatars often
+        // have a null avatar_url in state — that must NOT delete the image.
+        const res = await fetch(`/api/storage/${avatarAttachmentIdAtOpen}`, {
           method: "DELETE",
         });
         if (!res.ok) {
@@ -320,6 +326,7 @@ function PeoplePageContent() {
           };
           throw new Error(body.error || "Could not remove photo");
         }
+        avatar_url = null;
         avatar_attachment_id = null;
       }
       const avatar_color = editing.avatar_color ?? randomAvatarColor();
@@ -364,6 +371,7 @@ function PeoplePageContent() {
       setEditing(null);
       setAvatarFile(null);
       setAvatarPreview(null);
+      setAvatarAttachmentIdAtOpen(null);
 
       if (isNewPerson && email && !row.profile_id) {
         openInviteModal(
@@ -388,6 +396,7 @@ function PeoplePageContent() {
     setEditing(person);
     setAvatarFile(null);
     setAvatarPreview(person.avatar_url);
+    setAvatarAttachmentIdAtOpen(person.avatar_attachment_id ?? null);
     setOriginalLoginEmail((person.email ?? "").trim().toLowerCase());
     const linked = person.profile_id
       ? state.profiles.find((p) => p.id === person.profile_id)
@@ -893,6 +902,7 @@ function PeoplePageContent() {
               setIsNewPerson(false);
               setAvatarFile(null);
               setAvatarPreview(null);
+              setAvatarAttachmentIdAtOpen(null);
             }}
             onDelete={
               !isNewPerson && editing.id
