@@ -3,6 +3,7 @@ import type {
   AttachmentPlacement,
   EntityFileAttachment,
 } from "@/lib/storage/types";
+import { compressImageForUpload } from "@/lib/storage/compress-image";
 import {
   extractAttachmentIdsFromNotesHtml,
   notesToEditorHtml,
@@ -33,8 +34,9 @@ export async function uploadFileToR2(input: {
   placement?: AttachmentPlacement;
   onProgress?: (pct: number) => void;
 }): Promise<ClientUploadResult> {
-  const magicBase64 = await readMagicBase64(input.file);
-  const filename = input.file.name || "upload";
+  const file = await compressImageForUpload(input.file);
+  const magicBase64 = await readMagicBase64(file);
+  const filename = file.name || "upload";
   const presignRes = await fetch("/api/storage/presign-upload", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -42,8 +44,8 @@ export async function uploadFileToR2(input: {
       entityType: input.entityType,
       entityId: input.entityId,
       filename,
-      mimeType: input.file.type || "application/octet-stream",
-      sizeBytes: input.file.size,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
       magicBase64,
       imagesOnly: input.imagesOnly,
       placement: input.placement ?? "inline",
@@ -79,7 +81,7 @@ export async function uploadFileToR2(input: {
       else reject(new Error(`Upload failed (${xhr.status})`));
     };
     xhr.onerror = () => reject(new Error("Upload network error"));
-    xhr.send(input.file);
+    xhr.send(file);
   });
 
   input.onProgress?.(95);
@@ -97,9 +99,9 @@ export async function uploadFileToR2(input: {
 
   return {
     attachmentId: presign.attachmentId,
-    mimeType: presign.mimeType || input.file.type,
+    mimeType: presign.mimeType || file.type,
     originalFilename: filename,
-    sizeBytes: input.file.size,
+    sizeBytes: file.size,
   };
 }
 

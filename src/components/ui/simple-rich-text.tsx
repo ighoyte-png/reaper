@@ -41,6 +41,11 @@ import type {
   EntityFileAttachment,
 } from "@/lib/storage/types";
 import { FileAttachmentList } from "@/components/ui/file-attachments";
+import {
+  ImageLightbox,
+  imageLightboxTargetFromEvent,
+  type ImageLightboxTarget,
+} from "@/components/ui/image-lightbox";
 
 const editorContentClass = cn(
   "min-h-[4.5rem] px-2 py-2 text-sm leading-relaxed text-[var(--text)] outline-none",
@@ -59,6 +64,7 @@ const editorContentClass = cn(
   "[&_ul+p]:mt-2 [&_ol+p]:mt-2",
   "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
   "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
+  "[&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:max-w-full [&_img]:rounded-md",
 );
 
 /** Keep caret scroll inside the editor scroller — avoid yanking the page. */
@@ -264,7 +270,12 @@ export const SimpleRichTextEditor = forwardRef<
     EntityFileAttachment[]
   >([]);
   const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<ImageLightboxTarget | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const openLightboxRef = useRef((target: ImageLightboxTarget) => {
+    setLightbox(target);
+  });
+  openLightboxRef.current = (target) => setLightbox(target);
   const onAttachmentErrorRef = useRef(onAttachmentError);
   onAttachmentErrorRef.current = onAttachmentError;
   const onFileAttachmentsChangeRef = useRef(onFileAttachmentsChange);
@@ -507,7 +518,7 @@ export const SimpleRichTextEditor = forwardRef<
           inline: true,
           allowBase64: false,
           HTMLAttributes: {
-            class: "max-w-full rounded-md",
+            class: "max-w-full cursor-zoom-in rounded-md",
           },
         }),
       );
@@ -553,6 +564,15 @@ export const SimpleRichTextEditor = forwardRef<
           "data-placeholder": placeholder,
         },
         handleScrollToSelection: (view) => scrollSelectionIntoEditor(view),
+        handleDOMEvents: {
+          click: (_view, event) => {
+            const target = imageLightboxTargetFromEvent(event);
+            if (!target) return false;
+            event.preventDefault();
+            openLightboxRef.current(target);
+            return true;
+          },
+        },
         handlePaste: (_view, event) => {
           if (!attachmentsActive) return false;
           const files = imageFilesFromDataTransfer(event.clipboardData);
@@ -935,6 +955,14 @@ export const SimpleRichTextEditor = forwardRef<
           </div>
         </Modal>
       ) : null}
+      {lightbox ? (
+        <ImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          attachmentId={lightbox.attachmentId}
+          onClose={() => setLightbox(null)}
+        />
+      ) : null}
     </div>
   );
 });
@@ -981,6 +1009,7 @@ export function RichNotesHtml({
   const [displayHtml, setDisplayHtml] = useState(() =>
     prepareRichNotesDisplayHtml(html),
   );
+  const [lightbox, setLightbox] = useState<ImageLightboxTarget | null>(null);
 
   useEffect(() => {
     const prepared = prepareRichNotesDisplayHtml(html);
@@ -1039,27 +1068,44 @@ export function RichNotesHtml({
 
   if (!displayHtml) return null;
   return (
-    <span
-      className={cn(
-        "rich-notes block leading-relaxed [&_a]:pointer-events-auto",
-        "[&_img]:my-2 [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded-md",
-        "[&_img.rich-notes-img-pending]:min-h-32 [&_img.rich-notes-img-pending]:w-full [&_img.rich-notes-img-pending]:max-w-md [&_img.rich-notes-img-pending]:animate-pulse [&_img.rich-notes-img-pending]:object-cover [&_img.rich-notes-img-pending]:bg-[color-mix(in_srgb,var(--text-muted)_14%,transparent)]",
-        "[&_p]:m-0 [&_p+p]:mt-2",
-        "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
-        "[&_h2]:m-0 [&_h2]:mt-2.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
-        "[&_h3]:m-0 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:leading-snug",
-        "[&_h1+p]:mt-2 [&_h2+p]:mt-2 [&_h3+p]:mt-2",
-        "[&_p+h1]:mt-3 [&_p+h2]:mt-2.5 [&_p+h3]:mt-2",
-        "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5",
-        "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5",
-        "[&_li]:my-1 [&_li>p]:m-0",
-        "[&_p+ul]:mt-3 [&_p+ol]:mt-3",
-        "[&_ul+p]:mt-3 [&_ol+p]:mt-3",
-        "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
-        className,
-      )}
-      dangerouslySetInnerHTML={{ __html: displayHtml }}
-    />
+    <>
+      <span
+        className={cn(
+          "rich-notes block leading-relaxed [&_a]:pointer-events-auto",
+          "[&_img]:my-2 [&_img]:max-h-80 [&_img]:max-w-full [&_img]:cursor-zoom-in [&_img]:rounded-md",
+          "[&_img.rich-notes-img-pending]:cursor-default [&_img.rich-notes-img-pending]:min-h-32 [&_img.rich-notes-img-pending]:w-full [&_img.rich-notes-img-pending]:max-w-md [&_img.rich-notes-img-pending]:animate-pulse [&_img.rich-notes-img-pending]:object-cover [&_img.rich-notes-img-pending]:bg-[color-mix(in_srgb,var(--text-muted)_14%,transparent)]",
+          "[&_p]:m-0 [&_p+p]:mt-2",
+          "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
+          "[&_h2]:m-0 [&_h2]:mt-2.5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",
+          "[&_h3]:m-0 [&_h3]:mt-2 [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:leading-snug",
+          "[&_h1+p]:mt-2 [&_h2+p]:mt-2 [&_h3+p]:mt-2",
+          "[&_p+h1]:mt-3 [&_p+h2]:mt-2.5 [&_p+h3]:mt-2",
+          "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5",
+          "[&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5",
+          "[&_li]:my-1 [&_li>p]:m-0",
+          "[&_p+ul]:mt-3 [&_p+ol]:mt-3",
+          "[&_ul+p]:mt-3 [&_ol+p]:mt-3",
+          "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
+          className,
+        )}
+        onClickCapture={(e) => {
+          const target = imageLightboxTargetFromEvent(e.nativeEvent);
+          if (!target) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setLightbox(target);
+        }}
+        dangerouslySetInnerHTML={{ __html: displayHtml }}
+      />
+      {lightbox ? (
+        <ImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          attachmentId={lightbox.attachmentId}
+          onClose={() => setLightbox(null)}
+        />
+      ) : null}
+    </>
   );
 }
 
