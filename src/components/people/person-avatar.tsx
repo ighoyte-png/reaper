@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { personAvatarColor } from "@/lib/domain/people";
 import {
+  attachmentDisplayUrlTtlRemaining,
   invalidateAttachmentDisplayUrl,
   resolveAttachmentDisplayUrl,
+  seedAttachmentDisplayUrl,
 } from "@/lib/storage/client-upload";
 
 function personInitials(name: string): string {
@@ -38,8 +40,8 @@ const SIZE_CLASS = {
   xl: "h-24 w-24 text-base",
 } as const;
 
-/** Re-sign before typical 1h R2 URL expiry while the avatar stays mounted. */
-const REFRESH_MS = 40 * 60 * 1000;
+/** Refresh a few minutes before the client cache window ends. */
+const REFRESH_LEAD_MS = 5 * 60 * 1000;
 
 export function PersonAvatar({
   avatarUrl,
@@ -85,22 +87,51 @@ export function PersonAvatar({
     }
 
     let cancelled = false;
-    const load = async (force: boolean) => {
-      if (force) invalidateAttachmentDisplayUrl(attachmentId);
-      const url = await resolveAttachmentDisplayUrl(attachmentId);
-      if (cancelled) return;
-      setDisplayUrl(url ?? avatarUrl ?? null);
-      if (url) setImageFailed(false);
+    let timer: number | undefined;
+
+    const applyUrl = (url: string | null) => {
+      if (cancelled || !url) return;
+      setDisplayUrl(url);
+      setImageFailed(false);
     };
 
-    void load(false);
-    const timer = window.setInterval(() => {
-      void load(true);
-    }, REFRESH_MS);
+    const refreshNearExpiry = () => {
+      const remaining = attachmentDisplayUrlTtlRemaining(attachmentId);
+      // Wait until the cache window ends (with a small lead), then mint once.
+      const delay =
+        remaining > REFRESH_LEAD_MS
+          ? remaining - REFRESH_LEAD_MS
+          : Math.max(remaining + 250, 1_000);
+      timer = window.setTimeout(() => {
+        void (async () => {
+          const url = await resolveAttachmentDisplayUrl(attachmentId);
+          applyUrl(url);
+          if (!cancelled) refreshNearExpiry();
+        })();
+      }, delay);
+    };
+
+    // Prefer bootstrap / parent signed URL — do not re-sign on every mount.
+    if (avatarUrl) {
+      seedAttachmentDisplayUrl(attachmentId, avatarUrl);
+      setDisplayUrl(avatarUrl);
+      refreshNearExpiry();
+      return () => {
+        cancelled = true;
+        if (timer != null) window.clearTimeout(timer);
+      };
+    }
+
+    void (async () => {
+      const url = await resolveAttachmentDisplayUrl(attachmentId);
+      if (cancelled) return;
+      applyUrl(url);
+      if (!cancelled) refreshNearExpiry();
+    })();
 
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      if (timer != null) window.clearTimeout(timer);
     };
   }, [attachmentId, avatarUrl]);
 

@@ -138,10 +138,44 @@ export function formatAttachmentSize(bytes: number): string {
 const urlCache = new Map<string, { url: string; expiresAt: number }>();
 const urlInflight = new Map<string, Promise<string | null>>();
 
+/** Client cache window — refresh before the typical 1h R2 signed-URL TTL. */
+export const ATTACHMENT_URL_CACHE_MS = 45 * 60 * 1000;
+
 /** Drop cached signed URL so the next resolve fetches a fresh one. */
 export function invalidateAttachmentDisplayUrl(attachmentId: string) {
   urlCache.delete(attachmentId);
   urlInflight.delete(attachmentId);
+}
+
+/**
+ * Prefer an already-known signed URL (e.g. bootstrap avatar_url) so remounts
+ * and sibling avatars do not mint a new URL / trigger another R2 GetObject.
+ * Does not shorten an existing fresher cache entry.
+ */
+export function seedAttachmentDisplayUrl(
+  attachmentId: string,
+  url: string,
+  ttlMs: number = ATTACHMENT_URL_CACHE_MS,
+): void {
+  if (!attachmentId || !url) return;
+  const existing = urlCache.get(attachmentId);
+  const now = Date.now();
+  if (existing && existing.expiresAt > now && existing.url === url) return;
+  if (existing && existing.expiresAt > now + 60_000 && existing.url !== url) {
+    // Keep a still-fresh cached URL; avoid rotating to a sibling signature.
+    return;
+  }
+  urlCache.set(attachmentId, {
+    url,
+    expiresAt: now + ttlMs,
+  });
+}
+
+/** Remaining ms until the cached signed URL should be refreshed; 0 if missing/expired. */
+export function attachmentDisplayUrlTtlRemaining(attachmentId: string): number {
+  const cached = urlCache.get(attachmentId);
+  if (!cached) return 0;
+  return Math.max(0, cached.expiresAt - Date.now());
 }
 
 export async function resolveAttachmentDisplayUrl(
@@ -160,8 +194,7 @@ export async function resolveAttachmentDisplayUrl(
     if (!data.url) return null;
     urlCache.set(attachmentId, {
       url: data.url,
-      // Refresh before the typical 1h R2 signed-URL TTL.
-      expiresAt: Date.now() + 45 * 60 * 1000,
+      expiresAt: Date.now() + ATTACHMENT_URL_CACHE_MS,
     });
     return data.url;
   })().finally(() => {
