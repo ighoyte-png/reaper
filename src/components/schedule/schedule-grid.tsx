@@ -123,6 +123,7 @@ import type {
   Pod,
   PodMember,
   Project,
+  ProjectStatus,
 } from "@/lib/types";
 
 const DAY_W_DESKTOP = 48;
@@ -137,6 +138,16 @@ const TENTATIVE_HATCH_STYLE: CSSProperties = {
   backgroundImage:
     "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--assignment-tentative-hatch) 3px, var(--assignment-tentative-hatch) 6px)",
 };
+
+/** Tentative hatch: assignment is tentative, or its project is On Hold. */
+function showsTentativeHatch(
+  assignmentStatus: AssignmentStatus | string | null | undefined,
+  projectStatus: ProjectStatus | string | null | undefined,
+): boolean {
+  return (
+    assignmentStatus === "tentative" || projectStatus === "on_hold"
+  );
+}
 
 const EMPTY_PROJECTS: Project[] = [];
 const EMPTY_OCCS: AssignmentOccurrence[] = [];
@@ -3533,9 +3544,12 @@ export function ScheduleGrid() {
                                         }
                                         setGridDragging(true);
                                       }}
-                                      title={`${project.name} · ${hoursLabel}${occ.recurrence === "weekly" ? " · weekly" : ""}${occ.status === "tentative" ? " · tentative" : ""}`}
+                                      title={`${project.name} · ${hoursLabel}${occ.recurrence === "weekly" ? " · weekly" : ""}${showsTentativeHatch(occ.status, project.status) ? (project.status === "on_hold" ? " · on hold" : " · tentative") : ""}`}
                                     >
-                                      {occ.status === "tentative" ? (
+                                      {showsTentativeHatch(
+                                        occ.status,
+                                        project.status,
+                                      ) ? (
                                         <span
                                           className="pointer-events-none absolute inset-0 z-0"
                                           style={TENTATIVE_HATCH_STYLE}
@@ -3745,9 +3759,13 @@ export function ScheduleGrid() {
                                   const hasWeekly = overlapping.some(
                                     (o) => o.recurrence === "weekly",
                                   );
-                                  const tentative = overlapping.every(
-                                    (o) => o.status === "tentative",
-                                  );
+                                  const projectOnHold =
+                                    project.status === "on_hold";
+                                  const tentative =
+                                    projectOnHold ||
+                                    overlapping.every(
+                                      (o) => o.status === "tentative",
+                                    );
                                   const noteHtmls = overlapping
                                     .map((o) => o.notes)
                                     .filter((n) => notesHasContent(n));
@@ -3820,7 +3838,7 @@ export function ScheduleGrid() {
                                         }
                                         setGridDragging(true);
                                       }}
-                                      title={`${project.name} · ${hoursLabel}${overlapping.length > 1 ? ` · ${overlapping.length} blocks` : ""}${hasWeekly ? " · weekly" : ""}${tentative ? " · tentative" : ""}`}
+                                      title={`${project.name} · ${hoursLabel}${overlapping.length > 1 ? ` · ${overlapping.length} blocks` : ""}${hasWeekly ? " · weekly" : ""}${tentative ? (projectOnHold ? " · on hold" : " · tentative") : ""}`}
                                     >
                                       {tentative ? (
                                         <span
