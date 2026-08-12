@@ -11,6 +11,7 @@ import {
 } from "@/components/projects/project-manager-filter-bar";
 import { TimelineProjectCard } from "@/components/reports/timeline-project-card";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
+import { StatCountBadge } from "@/components/ui/stat-count-badge";
 import { useData } from "@/lib/data/store";
 import { projectDateProgress } from "@/lib/domain/progress";
 import { nonSandboxProjects } from "@/lib/domain/project-access";
@@ -155,6 +156,16 @@ function TimelinesReportContent() {
           onSelect={setManagerFilter}
         />
 
+        <div className="mb-8 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[var(--text)]">
+          <span className="inline-flex items-center gap-1.5">
+            <StatCountBadge
+              count={filtered.length}
+              className="bg-[var(--status-attention)]"
+            />
+            Total Project Timelines
+          </span>
+        </div>
+
         {!milestonesReady ? (
           <p className="text-sm text-[var(--text-muted)]">
             Loading project timelines…
@@ -164,9 +175,9 @@ function TimelinesReportContent() {
             No Projects with Timelines.
           </p>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-10">
             {packedRows.map((row, rowIndex) => (
-              <section key={rowIndex}>
+              <section key={rowIndex} className={rowIndex === 0 ? "pt-2" : undefined}>
                 <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                   {row.segments.map((segment, segmentIndex) => (
                     <div

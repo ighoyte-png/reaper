@@ -76,7 +76,7 @@ export function TimelineProjectCard({
         project.status === "archived" && "opacity-60",
       )}
     >
-      <div className="mb-3 flex min-w-0 items-center gap-2">
+      <div className="mb-5 flex min-w-0 items-center gap-2">
         <div className="min-w-0 flex-1 truncate text-sm font-semibold leading-tight">
           {project.name}
         </div>
@@ -112,11 +112,6 @@ export function TimelineProjectCard({
                     milestone.approval_enabled && !milestone.client_approved
                   }
                   footerStart={approvedByline(milestone)}
-                  essential={{
-                    kind: milestone.essential_kind,
-                    label: milestone.essential_label,
-                    url: milestone.essential_url,
-                  }}
                 />
               );
             })}

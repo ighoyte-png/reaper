@@ -106,7 +106,7 @@ export function MilestoneApprovalCheck({
   onClick,
   className,
 }: {
-  size?: "md" | "lg";
+  size?: "sm" | "md" | "lg";
   celebrate?: boolean;
   /** Gray until hover (client approve affordance). */
   pending?: boolean;
@@ -178,7 +178,7 @@ export function ProgressBar({
   label?: string;
   approved?: boolean;
   readyForApproval?: boolean;
-  size?: "md" | "lg";
+  size?: "sm" | "md" | "lg";
   footerStart?: string | null;
   footerEnd?: string | null;
   celebrate?: boolean;
@@ -222,7 +222,7 @@ export function ProgressBar({
         <div
           className={cn(
             "relative overflow-hidden rounded-full bg-[var(--bg-elevated)]",
-            size === "lg" ? "h-4" : "h-2.5",
+            size === "lg" ? "h-4" : size === "sm" ? "h-3.5" : "h-2.5",
           )}
         >
           <div

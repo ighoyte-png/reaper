@@ -22,7 +22,7 @@ import { Panel } from "@/components/ui/panel";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { StatCountBadge } from "@/components/ui/stat-count-badge";
 import { useData } from "@/lib/data/store";
-import { useAppHref, useBudgetHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { useViewAs } from "@/lib/view-as";
@@ -74,8 +74,8 @@ const reports: {
   },
   {
     path: "/reports/timelines",
-    title: "Project Timelines",
-    description: "Projects Progress with a Defined Start and End Date",
+    title: "All Project Timelines",
+    description: "Progress for Projects with a Defined Start and End Date",
     cta: "Overall Progress for Projects with Fixed Timelines",
     icon: CalendarRange,
   },
@@ -128,6 +128,7 @@ function ReportsPageContent() {
   const canManage = effectiveCanManage;
   const appHref = useAppHref();
   const budgetHref = useBudgetHref();
+  const projectHref = useProjectHref();
   const router = useRouter();
   const now = useMemo(() => new Date(), []);
   const todayKey = toDateKey(now);
@@ -380,6 +381,7 @@ function ReportsPageContent() {
         const client = state.clients.find((c) => c.id === p.client_id);
         return {
           id: p.id,
+          project: p,
           name: client?.name ? `${client.name} · ${p.name}` : p.name,
           pct,
         };
@@ -480,7 +482,10 @@ function ReportsPageContent() {
                   loading={tasksOverviewLoading}
                 />
               ) : report.path === "/reports/timelines" ? (
-                <TimelinesOverview data={timelines} />
+                <TimelinesOverview
+                  data={timelines}
+                  projectHref={projectHref}
+                />
               ) : (
                 <BudgetsOverview
                   data={budgets}
@@ -899,37 +904,56 @@ function BudgetsOverview({
 
 function TimelinesOverview({
   data,
+  projectHref,
 }: {
   data: {
-    rows: { id: string; name: string; pct: number }[];
+    rows: {
+      id: string;
+      project: Project;
+      name: string;
+      pct: number;
+    }[];
   };
+  projectHref: (project: Pick<Project, "client_id" | "slug">) => string;
 }) {
-  if (data.rows.length === 0) {
-    return (
-      <p className="text-xs text-[var(--text-muted)]">
-        No Projects with Timelines.
-      </p>
-    );
-  }
-
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden">
-      <div className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
-        {data.rows.map((row) => (
-          <div
-            key={row.id}
-            className="min-w-0 space-y-1 rounded-md px-0.5 py-0.5"
-          >
-            <div className="flex min-w-0 items-baseline justify-between gap-2 text-[11px]">
-              <span className="min-w-0 truncate text-[var(--text-muted)]">
-                {row.name}
-              </span>
-              <span className="shrink-0 tabular-nums">{Math.round(row.pct)}%</span>
-            </div>
-            <ProgressBar pct={row.pct} />
-          </div>
-        ))}
+      <div className="min-w-0 shrink-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-[var(--text)]">
+          <span className="inline-flex items-center gap-1.5">
+            <StatCountBadge
+              count={data.rows.length}
+              className="bg-[var(--status-attention)]"
+            />
+            Total Project Timelines
+          </span>
+        </div>
       </div>
+      {data.rows.length > 0 ? (
+        <div className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
+          {data.rows.map((row) => (
+            <Link
+              key={row.id}
+              href={projectHref(row.project)}
+              className="block min-w-0 space-y-1 rounded-md px-0.5 py-0.5 hover:bg-[var(--row-hover)]"
+            >
+              <div className="flex min-w-0 items-baseline justify-between gap-2 text-[11px]">
+                <span className="min-w-0 truncate text-[var(--text-muted)]">
+                  {row.name}
+                </span>
+                <span className="shrink-0 tabular-nums">
+                  {Math.round(row.pct)}%
+                </span>
+              </div>
+              <ProgressBar pct={row.pct} size="sm" />
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-[var(--text-muted)]">
+          No Projects with Timelines.
+        </p>
+      )}
     </div>
   );
 }
@@ -987,12 +1011,12 @@ function TasksOverview({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col justify-center">
       {openMix <= 0 ? (
         <p className="text-sm text-[var(--text-muted)]">No open tasks.</p>
       ) : (
         <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-          <div className="mx-auto aspect-square w-full max-w-[10rem] sm:max-w-none">
+          <div className="aspect-square w-full max-w-[10rem] sm:max-w-none">
             <SchedulePie
               slices={slices}
               totalHours={openMix}
@@ -1002,27 +1026,31 @@ function TasksOverview({
               className="!size-full max-w-none"
             />
           </div>
-          <ul className="min-w-0 space-y-1.5">
+          <ul className="min-w-0 space-y-1.5 self-stretch">
             {slices.map((slice) => {
               const pct =
                 openMix > 0 ? Math.round((slice.hours / openMix) * 100) : 0;
               return (
                 <li key={slice.projectId}>
-                  <span className="flex items-center gap-2 text-sm">
-                    <ProjectColorBar color={slice.color} />
-                    <span className="min-w-0 flex-1 truncate">{slice.label}</span>
-                    <span className="shrink-0 tabular-nums text-xs text-[var(--text-muted)]">
-                      {slice.hours}
-                      <span className="ml-1 opacity-70">· {pct}%</span>
+                  <div className="rounded-md px-2 py-1.5 hover:bg-[var(--row-hover)]">
+                    <span className="flex items-center gap-2 text-sm">
+                      <ProjectColorBar color={slice.color} />
+                      <span className="min-w-0 flex-1 truncate">
+                        {slice.label}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-xs text-[var(--text-muted)]">
+                        {slice.hours}
+                        <span className="ml-1 opacity-70">· {pct}%</span>
+                      </span>
                     </span>
-                  </span>
+                  </div>
                 </li>
               );
             })}
           </ul>
         </div>
       )}
-      <p className="text-[11px] text-[var(--text-muted)]">
+      <p className="mt-3 text-[11px] text-[var(--text-muted)]">
         {data.complete} completed
       </p>
     </div>
