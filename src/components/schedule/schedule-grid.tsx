@@ -2152,11 +2152,7 @@ export function ScheduleGrid() {
   }
 
   const sortedProjects = useMemo(
-    () =>
-      sortProjectsByClientThenName(
-        state.projects.filter((p) => !p.sandbox_mode),
-        state.clients,
-      ),
+    () => sortProjectsByClientThenName(state.projects, state.clients),
     [state.projects, state.clients],
   );
   const sortedClients = useMemo(
