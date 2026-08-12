@@ -113,8 +113,13 @@ export default function SettingsPage() {
   } | null>(null);
   const [newCalName, setNewCalName] = useState("");
   const [newCalRegion, setNewCalRegion] = useState("US");
+  const [calNameDraft, setCalNameDraft] = useState("");
+  const [calRegionDraft, setCalRegionDraft] = useState("");
   const [dayDate, setDayDate] = useState("");
   const [dayName, setDayName] = useState("");
+  const [editingDayId, setEditingDayId] = useState<string | null>(null);
+  const [editDayDate, setEditDayDate] = useState("");
+  const [editDayName, setEditDayName] = useState("");
   const [shareBusy, setShareBusy] = useState(false);
   const [shareEnabled, setShareEnabled] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -419,6 +424,21 @@ export default function SettingsPage() {
     push("Calendar created");
   }
 
+  function saveCalendar() {
+    if (!editingCal) return;
+    const name = calNameDraft.trim();
+    if (!name) {
+      push("Calendar name required", "warning");
+      return;
+    }
+    upsertHolidayCalendar({
+      id: editingCal.id,
+      name,
+      region: calRegionDraft.trim(),
+    });
+    push("Calendar saved");
+  }
+
   function addCalendarDay(calendarId: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dayDate)) {
       push("Use date format YYYY-MM-DD", "warning");
@@ -437,6 +457,44 @@ export default function SettingsPage() {
     setDayDate("");
     setDayName("");
     push("Holiday date added");
+  }
+
+  function beginEditDay(day: HolidayCalendarDay) {
+    setEditingDayId(day.id);
+    setEditDayDate(day.date);
+    setEditDayName(day.name);
+  }
+
+  function cancelEditDay() {
+    setEditingDayId(null);
+    setEditDayDate("");
+    setEditDayName("");
+  }
+
+  function saveCalendarDay(calendarId: string) {
+    if (!editingDayId) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(editDayDate)) {
+      push("Use date format YYYY-MM-DD", "warning");
+      return;
+    }
+    const conflict = state.holiday_calendar_days.find(
+      (d) =>
+        d.calendar_id === calendarId &&
+        d.date === editDayDate &&
+        d.id !== editingDayId,
+    );
+    if (conflict) {
+      push("That date is already on this calendar", "warning");
+      return;
+    }
+    upsertHolidayCalendarDay({
+      id: editingDayId,
+      calendar_id: calendarId,
+      date: editDayDate,
+      name: editDayName.trim() || "Holiday",
+    });
+    cancelEditDay();
+    push("Holiday date saved");
   }
 
   async function applyCalendar(calendarId: string) {
@@ -466,6 +524,25 @@ export default function SettingsPage() {
     .filter((d) => d.calendar_id === editingCalId)
     .slice()
     .sort((a, b) => a.date.localeCompare(b.date));
+
+  useEffect(() => {
+    const cal = state.holiday_calendars.find((c) => c.id === editingCalId);
+    if (!cal) {
+      setCalNameDraft("");
+      setCalRegionDraft("");
+      setEditingDayId(null);
+      setEditDayDate("");
+      setEditDayName("");
+      return;
+    }
+    setCalNameDraft(cal.name);
+    setCalRegionDraft(cal.region);
+    setEditingDayId(null);
+    setEditDayDate("");
+    setEditDayName("");
+    // Only when selecting a different calendar — don't clobber drafts on save.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingCalId]);
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -980,9 +1057,38 @@ export default function SettingsPage() {
 
               {editingCal ? (
                 <div className="mt-4 space-y-3 border-t border-[var(--border)] pt-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-medium">{editingCal.name}</h3>
-                    <div className="flex gap-2">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-[1fr_6rem_auto]">
+                      <Field label="Calendar name">
+                        <input
+                          className={inputClass}
+                          value={calNameDraft}
+                          onChange={(e) => setCalNameDraft(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="Region">
+                        <input
+                          className={inputClass}
+                          value={calRegionDraft}
+                          onChange={(e) => setCalRegionDraft(e.target.value)}
+                        />
+                      </Field>
+                      <div className="flex items-end">
+                        <Button
+                          variant="secondary"
+                          size="lg"
+                          className="w-full sm:w-auto"
+                          onClick={saveCalendar}
+                          disabled={
+                            calNameDraft.trim() === editingCal.name &&
+                            calRegionDraft.trim() === editingCal.region
+                          }
+                        >
+                          Save
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-5">
                       <Button
                         variant="primary"
                         size="sm"
@@ -1059,27 +1165,95 @@ export default function SettingsPage() {
                             </td>
                           </tr>
                         ) : (
-                          editingDays.map((day) => (
-                            <tr
-                              key={day.id}
-                              className="border-t border-[var(--border)]"
-                            >
-                              <td className="px-3 py-2">{day.date}</td>
-                              <td className="px-3 py-2">{day.name || "—"}</td>
-                              <td className="px-3 py-2 text-right">
-                                <button
-                                  type="button"
-                                  className="cursor-pointer text-xs text-[var(--text-muted)]"
-                                  onClick={() => {
-                                    deleteHolidayCalendarDay(day.id);
-                                    push("Date removed");
-                                  }}
-                                >
-                                  Remove
-                                </button>
-                              </td>
-                            </tr>
-                          ))
+                          editingDays.map((day) => {
+                            const isEditing = editingDayId === day.id;
+                            return (
+                              <tr
+                                key={day.id}
+                                className="border-t border-[var(--border)]"
+                              >
+                                {isEditing ? (
+                                  <>
+                                    <td className="px-3 py-2">
+                                      <DateInput
+                                        className={cn(inputClass, "mt-0 h-8")}
+                                        value={editDayDate}
+                                        onChange={(e) =>
+                                          setEditDayDate(e.target.value)
+                                        }
+                                      />
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <input
+                                        className={cn(inputClass, "mt-0 h-8")}
+                                        value={editDayName}
+                                        onChange={(e) =>
+                                          setEditDayName(e.target.value)
+                                        }
+                                      />
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      <div className="flex justify-end gap-2">
+                                        <button
+                                          type="button"
+                                          className="cursor-pointer text-xs font-medium text-[var(--accent)]"
+                                          onClick={() =>
+                                            saveCalendarDay(editingCal.id)
+                                          }
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="cursor-pointer text-xs text-[var(--text-muted)]"
+                                          onClick={cancelEditDay}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="px-3 py-2">{day.date}</td>
+                                    <td className="px-3 py-2">
+                                      {day.name || "—"}
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      <div className="flex justify-end gap-2">
+                                        <button
+                                          type="button"
+                                          className="inline-flex cursor-pointer items-center gap-1 text-xs text-[var(--text-muted)] hover:text-[var(--text)]"
+                                          title="Edit"
+                                          aria-label="Edit holiday date"
+                                          onClick={() => beginEditDay(day)}
+                                        >
+                                          <Pencil
+                                            size={12}
+                                            strokeWidth={1.75}
+                                          />
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="cursor-pointer text-xs text-[var(--text-muted)]"
+                                          onClick={() => {
+                                            if (editingDayId === day.id) {
+                                              cancelEditDay();
+                                            }
+                                            deleteHolidayCalendarDay(day.id);
+                                            push("Date removed");
+                                          }}
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </>
+                                )}
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>

@@ -2158,14 +2158,15 @@ export function ProjectTaskBoard({
                           ? "bg-[var(--border)]/80 text-[var(--text)]"
                           : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
                       )}
-                    title="Clear Start Dates"
-                    aria-label="Clear Start Dates"
+                      title="Clear Start Dates"
+                      aria-label="Clear Start Dates"
                       aria-pressed={bulkDraft.startDate === ""}
                       onClick={() =>
-                        setBulkDraft((prev) => ({
-                          ...prev,
-                          startDate: "",
-                        }))
+                        setBulkDraft((prev) => {
+                          const { startDate: _removed, ...rest } = prev;
+                          if (prev.startDate === "") return rest;
+                          return { ...prev, startDate: "" };
+                        })
                       }
                     >
                       <CalendarX size={14} strokeWidth={1.75} />
@@ -2202,10 +2203,11 @@ export function ProjectTaskBoard({
                     aria-label="Clear Due Dates"
                     aria-pressed={bulkDraft.dueDate === ""}
                     onClick={() =>
-                      setBulkDraft((prev) => ({
-                        ...prev,
-                        dueDate: "",
-                      }))
+                      setBulkDraft((prev) => {
+                        const { dueDate: _removed, ...rest } = prev;
+                        if (prev.dueDate === "") return rest;
+                        return { ...prev, dueDate: "" };
+                      })
                     }
                   >
                     <CalendarX size={14} strokeWidth={1.75} />
