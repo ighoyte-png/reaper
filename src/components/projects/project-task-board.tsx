@@ -2136,36 +2136,78 @@ export function ProjectTaskBoard({
                   <span className="text-[10px] font-medium text-[var(--text-muted)]">
                     Start
                   </span>
-                  <DateInput
-                    className={cn(inputClass, "mt-0 h-7 py-0 text-xs")}
-                    value={bulkDraft.startDate ?? ""}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setBulkDraft((prev) => ({
-                        ...prev,
-                        // Empty string = clear dates; undefined = leave unchanged.
-                        startDate: value,
-                      }));
-                    }}
-                  />
+                  <div className="flex items-center gap-1">
+                    <DateInput
+                      className={cn(inputClass, "mt-0 h-7 min-w-0 flex-1 py-0 text-xs")}
+                      value={bulkDraft.startDate ?? ""}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setBulkDraft((prev) => ({
+                          ...prev,
+                          // Empty string = clear dates; undefined = leave unchanged.
+                          startDate: value,
+                        }));
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={cn(
+                        "h-7 shrink-0 cursor-pointer rounded-md px-1.5 text-[10px] font-medium",
+                        bulkDraft.startDate === ""
+                          ? "bg-[var(--border)]/80 text-[var(--text)]"
+                          : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                      )}
+                      title="Clear start dates on selected tasks"
+                      aria-pressed={bulkDraft.startDate === ""}
+                      onClick={() =>
+                        setBulkDraft((prev) => ({
+                          ...prev,
+                          startDate: "",
+                        }))
+                      }
+                    >
+                      None
+                    </button>
+                  </div>
                 </label>
               ) : null}
               <label className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-medium text-[var(--text-muted)]">
                   Due
                 </span>
-                <DateInput
-                  className={cn(inputClass, "mt-0 h-7 py-0 text-xs")}
-                  value={bulkDraft.dueDate ?? ""}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setBulkDraft((prev) => ({
-                      ...prev,
-                      // Empty string = clear dates; undefined = leave unchanged.
-                      dueDate: value,
-                    }));
-                  }}
-                />
+                <div className="flex items-center gap-1">
+                  <DateInput
+                    className={cn(inputClass, "mt-0 h-7 min-w-0 flex-1 py-0 text-xs")}
+                    value={bulkDraft.dueDate ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setBulkDraft((prev) => ({
+                        ...prev,
+                        // Empty string = clear dates; undefined = leave unchanged.
+                        dueDate: value,
+                      }));
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={cn(
+                      "h-7 shrink-0 cursor-pointer rounded-md px-1.5 text-[10px] font-medium",
+                      bulkDraft.dueDate === ""
+                        ? "bg-[var(--border)]/80 text-[var(--text)]"
+                        : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                    )}
+                    title="Clear due dates on selected tasks"
+                    aria-pressed={bulkDraft.dueDate === ""}
+                    onClick={() =>
+                      setBulkDraft((prev) => ({
+                        ...prev,
+                        dueDate: "",
+                      }))
+                    }
+                  >
+                    None
+                  </button>
+                </div>
               </label>
             </>
           ) : null}

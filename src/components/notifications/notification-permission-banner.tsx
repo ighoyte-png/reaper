@@ -84,7 +84,7 @@ export function NotificationPermissionBanner() {
         aria-hidden
       />
       <p className="min-w-0 flex-1 text-sm leading-snug">
-        Don&apos;t let important updates slip by. Enable real-time notifications.
+        Stay on top of mentions and updates. Turn on real-time notifications.
       </p>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         <button
