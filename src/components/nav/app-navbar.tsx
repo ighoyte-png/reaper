@@ -188,7 +188,7 @@ export function AppNavbar() {
         </button>
         <button
           type="button"
-          className="inline-flex shrink-0 cursor-pointer items-center rounded-md py-1 hover:bg-[var(--row-hover)]"
+          className="inline-flex shrink-0 cursor-pointer items-center rounded-md py-1"
           aria-label="About Reaper"
           title="About Reaper"
           onClick={() => setAboutOpen(true)}
@@ -455,7 +455,7 @@ export function AppNavbar() {
           <div className="border-b border-[var(--border)] px-4 py-3">
             <button
               type="button"
-              className="inline-flex cursor-pointer items-center rounded-md hover:bg-[var(--row-hover)]"
+              className="inline-flex cursor-pointer items-center rounded-md"
               aria-label="About Reaper"
               title="About Reaper"
               onClick={() => {
