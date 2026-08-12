@@ -1,6 +1,6 @@
 {
   "name": "reaper",
-  "version": "0.4.204",
+  "version": "0.4.205",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -27,6 +27,7 @@
     "@tiptap/pm": "^3.27.4",
     "@tiptap/react": "^3.27.4",
     "@tiptap/starter-kit": "^3.27.4",
+    "@vercel/analytics": "^2.0.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.24.0",

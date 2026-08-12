@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { headers } from "next/headers";
 import { Geist_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { NavigationProgress } from "@/components/nav/navigation-progress";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
 import { VersionRefresh } from "@/components/pwa/version-refresh";
@@ -72,6 +73,7 @@ export default async function RootLayout({
             </ToastProvider>
           </DataProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
