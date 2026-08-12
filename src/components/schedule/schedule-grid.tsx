@@ -99,12 +99,14 @@ import {
   clientNameOf,
   projectDisplayColor,
   projectLabelWithClient,
+  projectStatusLabel,
   sortClientsByName,
   sortPeopleByName,
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import { personAvatarColor } from "@/lib/domain/people";
 import { projectTeamPersonIds } from "@/lib/domain/project-access";
+import { ProjectStatusTag } from "@/components/projects/project-status-tag";
 import {
   isFullDayLeave,
   leaveBlockLabel,
@@ -3450,7 +3452,7 @@ export function ScheduleGrid() {
                                     occ.hours_per_day * spanDays.length;
                                   const hoursLabel =
                                     spanDays.length > 1
-                                      ? `${formatHours(occ.hours_per_day)} daily / ${formatHours(totalHours)} total`
+                                      ? `${formatHours(occ.hours_per_day)} Daily / ${formatHours(totalHours)} Total`
                                       : formatHours(occ.hours_per_day);
                                   return (
                                     <div
@@ -3544,7 +3546,7 @@ export function ScheduleGrid() {
                                         }
                                         setGridDragging(true);
                                       }}
-                                      title={`${project.name} · ${hoursLabel}${occ.recurrence === "weekly" ? " · weekly" : ""}${showsTentativeHatch(occ.status, project.status) ? (project.status === "on_hold" ? " · on hold" : " · tentative") : ""}`}
+                                      title={`${project.name} · ${hoursLabel}${occ.recurrence === "weekly" ? " · Weekly" : ""}${showsTentativeHatch(occ.status, project.status) ? (project.status === "on_hold" ? ` · ${projectStatusLabel("on_hold")}` : " · Tentative") : ""}`}
                                     >
                                       {showsTentativeHatch(
                                         occ.status,
@@ -3838,7 +3840,7 @@ export function ScheduleGrid() {
                                         }
                                         setGridDragging(true);
                                       }}
-                                      title={`${project.name} · ${hoursLabel}${overlapping.length > 1 ? ` · ${overlapping.length} blocks` : ""}${hasWeekly ? " · weekly" : ""}${tentative ? (projectOnHold ? " · on hold" : " · tentative") : ""}`}
+                                      title={`${project.name} · ${hoursLabel}${overlapping.length > 1 ? ` · ${overlapping.length} Blocks` : ""}${hasWeekly ? " · Weekly" : ""}${tentative ? (projectOnHold ? ` · ${projectStatusLabel("on_hold")}` : " · Tentative") : ""}`}
                                     >
                                       {tentative ? (
                                         <span
@@ -4178,18 +4180,24 @@ export function ScheduleGrid() {
               />
             </Field>
             <Field label="Status">
-              <Select
-                value={editForm.status}
-                onChange={(v) =>
-                  patchEditForm({
-                    status: v as AssignmentStatus,
-                  })
-                }
-                options={[
-                  { value: "confirmed", label: "Confirmed" },
-                  { value: "tentative", label: "Tentative" },
-                ]}
-              />
+              {projectsById.get(editForm.project_id)?.status === "on_hold" ? (
+                <div className="mt-1">
+                  <ProjectStatusTag status="on_hold" />
+                </div>
+              ) : (
+                <Select
+                  value={editForm.status}
+                  onChange={(v) =>
+                    patchEditForm({
+                      status: v as AssignmentStatus,
+                    })
+                  }
+                  options={[
+                    { value: "confirmed", label: "Confirmed" },
+                    { value: "tentative", label: "Tentative" },
+                  ]}
+                />
+              )}
             </Field>
             <label className="flex items-start gap-2 text-sm">
               <input
@@ -5169,8 +5177,12 @@ function ReadOnlyAssignmentDetails({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <div className="text-xs text-[var(--text-muted)]">Status</div>
-          <div className="mt-0.5 capitalize text-[var(--text)]">
-            {assignment.status}
+          <div className="mt-0.5 text-[var(--text)]">
+            {project?.status === "on_hold" ? (
+              <ProjectStatusTag status="on_hold" />
+            ) : (
+              <span className="capitalize">{assignment.status}</span>
+            )}
           </div>
         </div>
         <div>
