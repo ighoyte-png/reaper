@@ -1,5 +1,12 @@
 import type { PresignedUpload, StorageHeadResult } from "@/lib/storage/types";
 
+export type StorageObjectResult = {
+  /** Web stream of object bytes (NextResponse-friendly). */
+  body: ReadableStream<Uint8Array>;
+  contentType: string;
+  contentLength?: number;
+};
+
 export interface StorageProvider {
   readonly name: "r2";
   readonly bucket: string;
@@ -17,6 +24,8 @@ export interface StorageProvider {
       downloadFilename?: string;
     },
   ): Promise<string>;
+  /** Stream object bytes (for immutable avatar proxy, etc.). */
+  getObject(key: string): Promise<StorageObjectResult>;
   head(key: string): Promise<StorageHeadResult>;
   exists(key: string): Promise<boolean>;
   deleteObject(key: string): Promise<void>;

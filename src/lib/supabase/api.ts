@@ -3,7 +3,8 @@ import { createDemoSeed } from "@/lib/demo/seed";
 import { parseAssetKind } from "@/lib/domain/milestones";
 import { orderTasksParentsFirst } from "@/lib/domain/tasks";
 import { resolveAvatarUrl } from "@/lib/supabase/avatar";
-import { isR2Configured, getStorageProvider } from "@/lib/storage";
+import { isR2Configured } from "@/lib/storage";
+import { avatarContentPath } from "@/lib/storage/avatar-url";
 import type {
   Assignment,
   Bulletin,
@@ -1780,43 +1781,15 @@ async function resolvePeopleAvatars(
   supabase: SupabaseClient,
   people: Person[],
 ): Promise<Person[]> {
-  const attachmentIds = people
-    .map((p) => p.avatar_attachment_id)
-    .filter((id): id is string => Boolean(id));
-
-  const signedByAttachmentId = new Map<string, string>();
-
-  if (attachmentIds.length > 0 && isR2Configured()) {
-    const { data: rows } = await supabase
-      .from("attachments")
-      .select("id, storage_key, ready")
-      .in("id", attachmentIds)
-      .eq("ready", true);
-
-    if (rows?.length) {
-      const storage = getStorageProvider();
-      await Promise.all(
-        rows.map(async (row) => {
-          try {
-            const url = await storage.createSignedDownloadUrl(
-              String(row.storage_key),
-            );
-            signedByAttachmentId.set(String(row.id), url);
-          } catch (err) {
-            console.warn("Failed to sign avatar attachment URL", err);
-          }
-        }),
-      );
-    }
-  }
-
+  // R2 avatars: stable same-origin path (immutable until attachment id changes).
+  // Legacy Supabase Storage paths still need short-lived signed URLs.
   return Promise.all(
     people.map(async (person) => {
-      if (person.avatar_attachment_id) {
-        const signed = signedByAttachmentId.get(person.avatar_attachment_id);
-        if (signed) {
-          return { ...person, avatar_url: signed };
-        }
+      if (person.avatar_attachment_id && isR2Configured()) {
+        return {
+          ...person,
+          avatar_url: avatarContentPath(person.avatar_attachment_id),
+        };
       }
       return {
         ...person,

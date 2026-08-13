@@ -76,6 +76,20 @@ export function createR2StorageProvider(): StorageProvider {
       return getSignedUrl(client, command, { expiresIn });
     },
 
+    async getObject(key) {
+      const out = await client.send(
+        new GetObjectCommand({ Bucket: bucket, Key: key }),
+      );
+      if (!out.Body) {
+        throw new Error(`R2 object missing body: ${key}`);
+      }
+      return {
+        body: out.Body.transformToWebStream(),
+        contentType: out.ContentType ?? "application/octet-stream",
+        contentLength: out.ContentLength,
+      };
+    },
+
     async head(key): Promise<StorageHeadResult> {
       try {
         const out = await client.send(

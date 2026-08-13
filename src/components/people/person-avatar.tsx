@@ -1,14 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 import { personAvatarColor } from "@/lib/domain/people";
-import {
-  attachmentDisplayUrlTtlRemaining,
-  invalidateAttachmentDisplayUrl,
-  resolveAttachmentDisplayUrl,
-  seedAttachmentDisplayUrl,
-} from "@/lib/storage/client-upload";
+import { avatarContentPath } from "@/lib/storage/avatar-url";
 
 function personInitials(name: string): string {
   return name
@@ -40,9 +35,6 @@ const SIZE_CLASS = {
   xl: "h-24 w-24 text-base",
 } as const;
 
-/** Refresh a few minutes before the client cache window ends. */
-const REFRESH_LEAD_MS = 5 * 60 * 1000;
-
 export function PersonAvatar({
   avatarUrl,
   avatarAttachmentId,
@@ -55,7 +47,7 @@ export function PersonAvatar({
   personId,
 }: {
   avatarUrl: string | null | undefined;
-  /** Durable R2 attachment id — preferred over expired signed avatarUrl. */
+  /** Durable R2 attachment id — preferred; maps to an immutable cached URL. */
   avatarAttachmentId?: string | null;
   name?: string;
   className?: string;
@@ -68,71 +60,22 @@ export function PersonAvatar({
   /** When set, missing/empty color falls back to a stable palette hash. */
   personId?: string | null;
 }) {
+  const attachmentId = avatarAttachmentId?.trim() || null;
+  const stableUrl = attachmentId ? avatarContentPath(attachmentId) : null;
   const [displayUrl, setDisplayUrl] = useState<string | null>(
-    avatarUrl ?? null,
+    stableUrl ?? avatarUrl ?? null,
   );
   const [imageFailed, setImageFailed] = useState(false);
-  const retryingRef = useRef(false);
   const sizeClass = SIZE_CLASS[size];
   const label = name?.trim() || "";
-  const attachmentId = avatarAttachmentId?.trim() || null;
 
   useEffect(() => {
     setImageFailed(false);
-    retryingRef.current = false;
-
-    if (!attachmentId) {
-      setDisplayUrl(avatarUrl ?? null);
+    if (attachmentId) {
+      setDisplayUrl(avatarContentPath(attachmentId));
       return;
     }
-
-    let cancelled = false;
-    let timer: number | undefined;
-
-    const applyUrl = (url: string | null) => {
-      if (cancelled || !url) return;
-      setDisplayUrl(url);
-      setImageFailed(false);
-    };
-
-    const refreshNearExpiry = () => {
-      const remaining = attachmentDisplayUrlTtlRemaining(attachmentId);
-      // Wait until the cache window ends (with a small lead), then mint once.
-      const delay =
-        remaining > REFRESH_LEAD_MS
-          ? remaining - REFRESH_LEAD_MS
-          : Math.max(remaining + 250, 1_000);
-      timer = window.setTimeout(() => {
-        void (async () => {
-          const url = await resolveAttachmentDisplayUrl(attachmentId);
-          applyUrl(url);
-          if (!cancelled) refreshNearExpiry();
-        })();
-      }, delay);
-    };
-
-    // Prefer bootstrap / parent signed URL — do not re-sign on every mount.
-    if (avatarUrl) {
-      seedAttachmentDisplayUrl(attachmentId, avatarUrl);
-      setDisplayUrl(avatarUrl);
-      refreshNearExpiry();
-      return () => {
-        cancelled = true;
-        if (timer != null) window.clearTimeout(timer);
-      };
-    }
-
-    void (async () => {
-      const url = await resolveAttachmentDisplayUrl(attachmentId);
-      if (cancelled) return;
-      applyUrl(url);
-      if (!cancelled) refreshNearExpiry();
-    })();
-
-    return () => {
-      cancelled = true;
-      if (timer != null) window.clearTimeout(timer);
-    };
+    setDisplayUrl(avatarUrl ?? null);
   }, [attachmentId, avatarUrl]);
 
   const showPhoto = Boolean(displayUrl) && !imageFailed;
@@ -144,23 +87,7 @@ export function PersonAvatar({
         src={displayUrl!}
         alt={label ? `${label} photo` : "Person photo"}
         title={title ?? (label || undefined)}
-        onError={() => {
-          if (attachmentId && !retryingRef.current) {
-            retryingRef.current = true;
-            invalidateAttachmentDisplayUrl(attachmentId);
-            void resolveAttachmentDisplayUrl(attachmentId).then((url) => {
-              if (url) {
-                setDisplayUrl(url);
-                setImageFailed(false);
-                retryingRef.current = false;
-              } else {
-                setImageFailed(true);
-              }
-            });
-            return;
-          }
-          setImageFailed(true);
-        }}
+        onError={() => setImageFailed(true)}
         className={cn(
           "shrink-0 rounded-full object-cover bg-[var(--bg-elevated)]",
           sizeClass,
@@ -179,13 +106,15 @@ export function PersonAvatar({
     <span
       title={title ?? label}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
-        !bg && "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold uppercase tracking-wide",
         sizeClass,
+        !bg && "bg-[var(--bg-elevated)] text-[var(--text-muted)]",
         className,
       )}
       style={
-        bg ? { backgroundColor: bg, color: contrastText(bg) } : undefined
+        bg
+          ? { backgroundColor: bg, color: contrastText(bg) }
+          : undefined
       }
     >
       {personInitials(label)}

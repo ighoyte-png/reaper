@@ -1,8 +1,4 @@
-import {
-  invalidateAttachmentDisplayUrl,
-  resolveAttachmentDisplayUrl,
-  seedAttachmentDisplayUrl,
-} from "@/lib/storage/client-upload";
+import { avatarContentAbsoluteUrl } from "@/lib/storage/avatar-url";
 
 /** Browser / PWA desktop notifications for @mentions. */
 
@@ -89,21 +85,19 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Prefer a durable attachment id (shared signed-URL cache) over a possibly
- * expired bootstrap `avatar_url` left in people state.
+ * Prefer a durable attachment id (immutable same-origin avatar proxy) over a
+ * possibly expired bootstrap signed `avatar_url`.
  */
 export async function resolveNotificationAvatarUrl(opts: {
   avatarUrl?: string | null;
   avatarAttachmentId?: string | null;
 }): Promise<string | null> {
   const attachmentId = opts.avatarAttachmentId?.trim() || null;
-  const seedUrl = opts.avatarUrl?.trim() || null;
   if (attachmentId) {
-    if (seedUrl) seedAttachmentDisplayUrl(attachmentId, seedUrl);
-    const resolved = await resolveAttachmentDisplayUrl(attachmentId);
-    if (resolved) return resolved;
+    return avatarContentAbsoluteUrl(attachmentId);
   }
-  return seedUrl;
+  const seedUrl = opts.avatarUrl?.trim() || null;
+  return seedUrl ? absoluteUrl(seedUrl) : null;
 }
 
 /**
@@ -158,13 +152,7 @@ export async function notificationPortraitIcon(opts: {
   };
 
   if (avatarUrl) {
-    let drawn = await tryDraw(avatarUrl);
-    // Expired bootstrap URL: bust cache and mint once more.
-    if (!drawn && attachmentId) {
-      invalidateAttachmentDisplayUrl(attachmentId);
-      avatarUrl = await resolveAttachmentDisplayUrl(attachmentId);
-      if (avatarUrl) drawn = await tryDraw(avatarUrl);
-    }
+    const drawn = await tryDraw(avatarUrl);
     if (drawn) return drawn;
   }
 
