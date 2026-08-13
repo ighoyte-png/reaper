@@ -7,11 +7,12 @@ alter table public.mention_unreads
 alter table public.mention_unreads
   add column if not exists assignment_id uuid references public.assignments(id) on delete cascade;
 
-alter table public.mention_unreads
-  alter column comment_id drop not null;
-
+-- Drop the (comment_id, person_id) PK before making comment_id nullable.
 alter table public.mention_unreads
   drop constraint if exists mention_unreads_pkey;
+
+alter table public.mention_unreads
+  alter column comment_id drop not null;
 
 alter table public.mention_unreads
   add column if not exists id uuid not null default gen_random_uuid();
