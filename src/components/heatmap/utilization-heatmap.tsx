@@ -17,18 +17,10 @@ import { utilizationVisiblePeople, personAvatarColor } from "@/lib/domain/people
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { CapacityLevel } from "@/lib/types";
-import { capacityThresholdsFromSettings } from "@/lib/domain/org-settings";
-
-const LEGEND: {
-  level: CapacityLevel;
-  range: string;
-  label: string;
-}[] = [
-  { level: "over", range: "100%+", label: "Overbooked" },
-  { level: "near", range: "85-99%", label: "Near Capacity" },
-  { level: "healthy", range: "60-84%", label: "Optimal" },
-  { level: "low", range: "<60%", label: "Underutilized" },
-];
+import {
+  capacityLegendItems,
+  capacityThresholdsFromSettings,
+} from "@/lib/domain/org-settings";
 
 function levelTone(level: CapacityLevel) {
   return {
@@ -184,7 +176,9 @@ export function UtilizationHeatmap({
     <div className="space-y-3">
       {showLegend ? (
         <div className="flex flex-wrap items-center gap-2">
-          {LEGEND.map((item) => {
+          {capacityLegendItems(
+            capacityThresholdsFromSettings(state.organization_settings),
+          ).map((item) => {
             const tone = levelTone(item.level);
             return (
               <span

@@ -123,3 +123,33 @@ export function capacityThresholdsFromSettings(
     overPct: settings.capacity_over_pct,
   };
 }
+
+/** Utilization heatmap legend ranges derived from Admin capacity thresholds. */
+export function capacityLegendItems(
+  thresholds: ReturnType<typeof capacityThresholdsFromSettings> = capacityThresholdsFromSettings(),
+): {
+  level: "over" | "near" | "healthy" | "low";
+  range: string;
+  label: string;
+}[] {
+  const lowMax = Math.round(thresholds.lowMaxPct);
+  const near = Math.round(thresholds.nearPct);
+  const over = Math.round(thresholds.overPct);
+  const healthyEnd = Math.max(lowMax, near - 1);
+  const nearEnd = Math.max(near, over - 1);
+  return [
+    { level: "over", range: `${over}%+`, label: "Overbooked" },
+    {
+      level: "near",
+      range: nearEnd > near ? `${near}-${nearEnd}%` : `${near}%`,
+      label: "Near Capacity",
+    },
+    {
+      level: "healthy",
+      range:
+        healthyEnd > lowMax ? `${lowMax}-${healthyEnd}%` : `${lowMax}%`,
+      label: "Optimal",
+    },
+    { level: "low", range: `<${lowMax}%`, label: "Underutilized" },
+  ];
+}

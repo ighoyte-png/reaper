@@ -25,37 +25,43 @@ function ThresholdPreview({
   const blueW = blueEnd;
   const orangeW = Math.max(0, orangeEnd - blueEnd);
   const redW = Math.max(0, 100 - orangeEnd);
+  const segments = [
+    { key: "healthy", width: blueW, className: "bg-[var(--accent)]", title: labels.healthy },
+    { key: "warning", width: orangeW, className: "bg-[var(--status-near)]", title: labels.warning },
+    { key: "over", width: redW, className: "bg-[var(--status-over)]", title: labels.over },
+  ].filter((s) => s.width > 0);
 
   return (
     <div className="space-y-2">
-      <div className="flex h-3 w-full overflow-hidden rounded-sm border border-[var(--border)]">
-        <div
-          className="bg-[var(--status-healthy)]"
-          style={{ width: `${blueW}%` }}
-          title={labels.healthy}
-        />
-        <div
-          className="bg-[var(--status-near)]"
-          style={{ width: `${orangeW}%` }}
-          title={labels.warning}
-        />
-        <div
-          className="bg-[var(--status-over)]"
-          style={{ width: `${redW}%` }}
-          title={labels.over}
-        />
+      <div className="flex h-3.5 w-full overflow-hidden rounded-full bg-[var(--border)]">
+        {segments.map((s, idx) => (
+          <div
+            key={s.key}
+            className={cn(
+              "h-full shrink-0",
+              s.className,
+              segments.length === 1 && "rounded-full",
+              segments.length > 1 && idx === 0 && "rounded-l-full",
+              segments.length > 1 &&
+                idx === segments.length - 1 &&
+                "rounded-r-full",
+            )}
+            style={{ width: `${s.width}%` }}
+            title={s.title}
+          />
+        ))}
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--text-muted)]">
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[var(--status-healthy)]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[var(--accent)]" />
           {labels.healthy}
         </span>
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[var(--status-near)]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[var(--status-near)]" />
           {labels.warning}
         </span>
         <span>
-          <span className="mr-1 inline-block h-2 w-2 rounded-sm bg-[var(--status-over)]" />
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-[var(--status-over)]" />
           {labels.over}
         </span>
       </div>
