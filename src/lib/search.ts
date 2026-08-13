@@ -71,6 +71,17 @@ function clip(text: string, n = 140): string {
   return `${t.slice(0, n - 1)}…`;
 }
 
+/** Task/comment search subtitle: "Client - Project" (project alone if no client). */
+export function searchProjectSubtitle(
+  clientName: string | null | undefined,
+  projectName: string | null | undefined,
+): string {
+  const project = (projectName ?? "").trim();
+  const client = (clientName ?? "").trim();
+  if (client && project) return `${client} - ${project}`;
+  return project || client;
+}
+
 /** In-memory search for demo mode (uses whatever is already in the seed/store). */
 export function searchDemoState(
   state: Pick<
@@ -187,11 +198,14 @@ export function searchDemoState(
     const notesHit = matches(notes, q);
     if (!titleHit && !notesHit) continue;
     const project = projectsById.get(t.project_id);
+    const client = project?.client_id
+      ? clientsById.get(project.client_id)
+      : null;
     tasks.push({
       kind: "task",
       id: t.id,
       title: t.title,
-      subtitle: project?.name ?? "",
+      subtitle: searchProjectSubtitle(client?.name, project?.name),
       snippet: clip(notes),
       project_id: t.project_id,
       task_id: t.id,
@@ -210,11 +224,14 @@ export function searchDemoState(
     const body = notesPlainText(c.body);
     if (!matches(body, q)) continue;
     const project = projectsById.get(task.project_id);
+    const client = project?.client_id
+      ? clientsById.get(project.client_id)
+      : null;
     comments.push({
       kind: "comment",
       id: c.id,
       title: task.title?.trim() || "Comment",
-      subtitle: project?.name ?? "",
+      subtitle: searchProjectSubtitle(client?.name, project?.name),
       snippet: clip(body),
       project_id: task.project_id,
       task_id: c.task_id,
