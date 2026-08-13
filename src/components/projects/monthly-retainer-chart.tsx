@@ -198,9 +198,10 @@ function MonthBarColumn({
   }
 
   /** justify-end: last child sits at the bottom — contractor green at bottom. */
-  function renderStackedBar(heightPct: number) {
-    const contractorPct = total > 0 ? (contractor / total) * 100 : 0;
-    const internalPct = total > 0 ? ((used + future) / total) * 100 : 0;
+  function renderStackedBar(heightPct: number, baseTotal: number) {
+    const base = baseTotal > 0 ? baseTotal : total;
+    const contractorPct = base > 0 ? (contractor / base) * 100 : 0;
+    const internalPct = base > 0 ? ((used + future) / base) * 100 : 0;
     return (
       <div
         className="relative flex w-full flex-col justify-end overflow-hidden"
@@ -210,6 +211,35 @@ function MonthBarColumn({
           <div className="min-h-0 w-full flex-1">{renderInternalBar(100)}</div>
         ) : null}
         {hasContractor ? renderContractorBar(contractorPct) : null}
+      </div>
+    );
+  }
+
+  function renderOverageBar(heightPct: number) {
+    const futureAll = future + contractorFuture;
+    const futureOver = Math.min(overCap, Math.max(0, futureAll));
+    const usedOver = Math.max(0, overCap - futureOver);
+    const futureOverPct = overCap > 0 ? (futureOver / overCap) * 100 : 0;
+    const usedOverPct = overCap > 0 ? (usedOver / overCap) * 100 : 0;
+    return (
+      <div
+        className="relative flex w-full flex-col justify-end overflow-hidden"
+        style={{ height: `${heightPct}%` }}
+      >
+        {futureOverPct > 0 ? (
+          <div
+            className="relative w-full overflow-hidden bg-[var(--status-over)]"
+            style={{ height: `${futureOverPct}%` }}
+          >
+            <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+          </div>
+        ) : null}
+        {usedOverPct > 0 ? (
+          <div
+            className="w-full bg-[var(--status-over)]"
+            style={{ height: `${usedOverPct}%` }}
+          />
+        ) : null}
       </div>
     );
   }
@@ -258,11 +288,10 @@ function MonthBarColumn({
           )}
           style={{ height: `${valuePct}%` }}
         >
-          <div
-            className="w-full bg-[var(--status-over)]"
-            style={{ height: `${(overPct / valuePct) * 100}%` }}
-          />
-          {hasContractor ? renderStackedBar((withinPct / valuePct) * 100) : renderInternalBar((withinPct / valuePct) * 100)}
+          {renderOverageBar((overPct / valuePct) * 100)}
+          {hasContractor
+            ? renderStackedBar((withinPct / valuePct) * 100, withinCap)
+            : renderInternalBar((withinPct / valuePct) * 100)}
         </div>
       ) : (
         <div
@@ -272,7 +301,7 @@ function MonthBarColumn({
           )}
           style={{ height: `${Math.max(valuePct, 4)}%` }}
         >
-          {hasContractor ? renderStackedBar(100) : renderInternalBar(100)}
+          {hasContractor ? renderStackedBar(100, total) : renderInternalBar(100)}
         </div>
       )}
     </div>

@@ -176,11 +176,36 @@ export function buildProjectMembersPayload(
       };
     }
     const terms = contractorTerms[person_id];
+    const mode = terms?.contractor_mode ?? null;
+    if (mode === "hours") {
+      return {
+        person_id,
+        contractor_mode: "hours",
+        contractor_fixed_fee: null,
+        contractor_hours: terms?.contractor_hours ?? null,
+      };
+    }
+    if (mode === "scheduled") {
+      return {
+        person_id,
+        contractor_mode: "scheduled",
+        contractor_fixed_fee: null,
+        contractor_hours: null,
+      };
+    }
+    if (mode === "fixed_fee") {
+      return {
+        person_id,
+        contractor_mode: "fixed_fee",
+        contractor_fixed_fee: terms?.contractor_fixed_fee ?? null,
+        contractor_hours: null,
+      };
+    }
     return {
       person_id,
-      contractor_mode: terms?.contractor_mode ?? null,
-      contractor_fixed_fee: terms?.contractor_fixed_fee ?? null,
-      contractor_hours: terms?.contractor_hours ?? null,
+      contractor_mode: null,
+      contractor_fixed_fee: null,
+      contractor_hours: null,
     };
   });
 }

@@ -242,12 +242,9 @@ export function ProjectForm({
         ) {
           return false;
         }
-        if (item.id === "expenses" && !isMonthlyRetainer) {
-          return false;
-        }
         return true;
       }),
-    [project.sandbox_mode, isMonthlyRetainer],
+    [project.sandbox_mode],
   );
 
   useEffect(() => {
@@ -670,161 +667,36 @@ export function ProjectForm({
                   </span>
                 </label>
               ) : null}
-              {fullTimeStyleTeamMembers.length > 0 ? (
-                <p className="text-xs leading-snug text-[var(--text-muted)]">
-                  {fullTimeStyleTeamMembers.length === 1
-                    ? `${fullTimeStyleTeamMembers[0]!.name} is a contractor on the schedule — no per-project terms needed.`
-                    : `${fullTimeStyleTeamMembers.length} contractors on the schedule use their profile rates — no per-project terms needed.`}
-                </p>
-              ) : null}
-              {!isMonthlyRetainer && projectBasisTeamMembers.length > 0 ? (
-                <div className="space-y-4 border-t border-[var(--border)] pt-3">
-                  <p className="text-xs font-medium text-[var(--text-muted)]">
-                    Contractor Terms
-                  </p>
-                  {projectBasisTeamMembers.map((person) => {
-                    const terms =
-                      contractorTerms[person.id] ??
-                      defaultContractorTermsForPerson(person);
-                    const mode = terms.contractor_mode ?? "fixed_fee";
-                    const fixedFee = terms.contractor_fixed_fee ?? 0;
-                    const hours = terms.contractor_hours ?? 0;
-                    const computedHours = contractorHoursFromFixedFee(
-                      fixedFee,
-                      person,
-                    );
-                    const computedAmount = contractorAmountFromHours(
-                      hours,
-                      person,
-                    );
-                    const termOptions = [
-                      { value: "fixed_fee", label: "Fixed Fee" },
-                      { value: "hours", label: "Hours" },
-                      {
-                        value: "scheduled",
-                        label: "Use Scheduled Time",
-                        disabled: person.hide_from_schedule,
-                      },
-                    ] as const;
-
-                    return (
-                      <div
-                        key={person.id}
-                        className="space-y-2 rounded-md border border-[var(--border)] p-3"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium">
-                            {person.name}
-                          </span>
-                          <ContractorTag />
-                        </div>
-                        <div className="flex flex-wrap gap-3 text-sm">
-                          {termOptions.map((opt) => (
-                            <label
-                              key={opt.value}
-                              className={cn(
-                                "flex cursor-pointer items-center gap-1.5",
-                                "disabled" in opt && opt.disabled
-                                  ? "cursor-not-allowed opacity-40"
-                                  : "",
-                              )}
-                            >
-                              <input
-                                type="radio"
-                                name={`contractor-mode-${person.id}`}
-                                checked={mode === opt.value}
-                                disabled={"disabled" in opt && opt.disabled}
-                                onChange={() =>
-                                  setContractorTerms(person.id, {
-                                    contractor_mode: opt.value as ContractorMode,
-                                  })
-                                }
-                              />
-                              {opt.label}
-                            </label>
-                          ))}
-                        </div>
-                        {mode === "fixed_fee" ? (
-                          <div className="space-y-1">
-                            <label className="block text-xs text-[var(--text-muted)]">
-                              Fixed Fee ($)
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              className={inputClass}
-                              value={terms.contractor_fixed_fee ?? ""}
-                              onChange={(e) =>
-                                setContractorTerms(person.id, {
-                                  contractor_fixed_fee:
-                                    e.target.value === ""
-                                      ? null
-                                      : Number(e.target.value) || 0,
-                                })
-                              }
-                            />
-                            {fixedFee > 0 ? (
-                              <p className="text-[11px] text-[var(--text-muted)]">
-                                ≈ {formatHours(computedHours)} at profile rate
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        {mode === "hours" ? (
-                          <div className="space-y-1">
-                            <label className="block text-xs text-[var(--text-muted)]">
-                              Hours
-                            </label>
-                            <input
-                              type="number"
-                              min={0}
-                              step={0.01}
-                              className={inputClass}
-                              value={terms.contractor_hours ?? ""}
-                              onChange={(e) =>
-                                setContractorTerms(person.id, {
-                                  contractor_hours:
-                                    e.target.value === ""
-                                      ? null
-                                      : Number(e.target.value) || 0,
-                                })
-                              }
-                            />
-                            {hours > 0 ? (
-                              <p className="text-[11px] text-[var(--text-muted)]">
-                                ≈ {formatMoney(computedAmount)} at profile rate
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                        {mode === "scheduled" ? (
-                          <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-                            Budget uses scheduled assignment hours for this
-                            contractor.
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
             </>
           ) : null}
 
-          {tab === "expenses" && isMonthlyRetainer ? (
-            <ContractorsPanel
-              project={project}
-              contractors={projectBasisTeamMembers}
-              expenses={state.project_contractor_expenses.filter(
-                (e) => e.project_id === project.id,
-              )}
-              contractorTerms={contractorTerms}
-              setContractorTerms={setContractorTerms}
-              newId={newId}
-              onUpsert={upsertProjectContractorExpense}
-              onDelete={deleteProjectContractorExpense}
-            />
+          {tab === "expenses" ? (
+            isMonthlyRetainer ? (
+              <ContractorsPanel
+                project={project}
+                contractors={[
+                  ...projectBasisTeamMembers,
+                  ...fullTimeStyleTeamMembers,
+                ]}
+                expenses={state.project_contractor_expenses.filter(
+                  (e) => e.project_id === project.id,
+                )}
+                contractorTerms={contractorTerms}
+                setContractorTerms={setContractorTerms}
+                newId={newId}
+                onUpsert={upsertProjectContractorExpense}
+                onDelete={deleteProjectContractorExpense}
+              />
+            ) : (
+              <ClassicContractorTermsPanel
+                contractors={[
+                  ...projectBasisTeamMembers,
+                  ...fullTimeStyleTeamMembers,
+                ]}
+                contractorTerms={contractorTerms}
+                setContractorTerms={setContractorTerms}
+              />
+            )
           ) : null}
 
           {tab === "sandbox" ? (
@@ -900,6 +772,189 @@ export function ProjectForm({
   );
 }
 
+function ClassicContractorTermsPanel({
+  contractors,
+  contractorTerms,
+  setContractorTerms,
+}: {
+  contractors: Person[];
+  contractorTerms: Record<
+    string,
+    Pick<
+      ProjectMember,
+      "contractor_mode" | "contractor_fixed_fee" | "contractor_hours"
+    >
+  >;
+  setContractorTerms: (personId: string, patch: Partial<ContractorTerms>) => void;
+}) {
+  if (contractors.length === 0) {
+    return (
+      <p className="text-sm text-[var(--text-muted)]">
+        Add a contractor on the Team tab first, then set Fixed Fee, Hours, or
+        Schedule Time here.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {contractors.map((person) => {
+        const scheduleOnly = isFullTimeStyleContractor(person);
+        const terms =
+          contractorTerms[person.id] ?? defaultContractorTermsForPerson(person);
+        const mode = scheduleOnly
+          ? "scheduled"
+          : (terms.contractor_mode ?? "fixed_fee");
+        const fixedFee = terms.contractor_fixed_fee ?? 0;
+        const hours = terms.contractor_hours ?? 0;
+        const computedHours = contractorHoursFromFixedFee(fixedFee, person);
+        const computedAmount = contractorAmountFromHours(hours, person);
+        const termOptions = [
+          {
+            value: "fixed_fee" as const,
+            label: "Fixed Fee",
+            disabled: scheduleOnly,
+          },
+          {
+            value: "hours" as const,
+            label: "Hours",
+            disabled: scheduleOnly,
+          },
+          {
+            value: "scheduled" as const,
+            label: "Use Scheduled Time",
+            disabled: !scheduleOnly && person.hide_from_schedule,
+          },
+        ];
+
+        return (
+          <div
+            key={person.id}
+            className="space-y-2 rounded-md border border-[var(--border)] p-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium">{person.name}</span>
+              <ContractorTag />
+            </div>
+            <div className="flex flex-wrap gap-3 text-sm">
+              {termOptions.map((opt) => (
+                <label
+                  key={opt.value}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-1.5",
+                    opt.disabled ? "cursor-not-allowed opacity-40" : "",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name={`contractor-mode-${person.id}`}
+                    checked={mode === opt.value}
+                    disabled={opt.disabled}
+                    onChange={() => {
+                      if (opt.value === "fixed_fee") {
+                        setContractorTerms(person.id, {
+                          contractor_mode: "fixed_fee",
+                          contractor_hours: null,
+                        });
+                      } else if (opt.value === "hours") {
+                        setContractorTerms(person.id, {
+                          contractor_mode: "hours",
+                          contractor_fixed_fee: null,
+                        });
+                      } else {
+                        setContractorTerms(person.id, {
+                          contractor_mode: "scheduled",
+                          contractor_hours: null,
+                          contractor_fixed_fee: null,
+                        });
+                      }
+                    }}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            {scheduleOnly ? (
+              <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                {person.name} is a contractor on the schedule — Dollars and Hours
+                options not available.
+              </p>
+            ) : (
+              <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                Only one selection can be used at a time. Choosing a new
+                selection clears the previous selection on save.
+              </p>
+            )}
+            {!scheduleOnly && mode === "fixed_fee" ? (
+              <div className="space-y-1">
+                <label className="block text-xs text-[var(--text-muted)]">
+                  Fixed Fee ($)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputClass}
+                  value={terms.contractor_fixed_fee ?? ""}
+                  onChange={(e) =>
+                    setContractorTerms(person.id, {
+                      contractor_mode: "fixed_fee",
+                      contractor_fixed_fee:
+                        e.target.value === ""
+                          ? null
+                          : Number(e.target.value) || 0,
+                      contractor_hours: null,
+                    })
+                  }
+                />
+                {fixedFee > 0 ? (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    ≈ {formatHours(computedHours)} at profile rate
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {!scheduleOnly && mode === "hours" ? (
+              <div className="space-y-1">
+                <label className="block text-xs text-[var(--text-muted)]">
+                  Hours
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  className={inputClass}
+                  value={terms.contractor_hours ?? ""}
+                  onChange={(e) =>
+                    setContractorTerms(person.id, {
+                      contractor_mode: "hours",
+                      contractor_hours:
+                        e.target.value === ""
+                          ? null
+                          : Number(e.target.value) || 0,
+                      contractor_fixed_fee: null,
+                    })
+                  }
+                />
+                {hours > 0 ? (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    ≈ {formatMoney(computedAmount)} at profile rate
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {mode === "scheduled" ? (
+              <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+                Budget uses scheduled assignment hours for this contractor.
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ContractorsPanel({
   project,
   contractors,
@@ -956,10 +1011,15 @@ function ContractorsPanel({
   }, [contractors, personId]);
 
   const selected = contractors.find((c) => c.id === personId) ?? null;
+  const scheduleOnly = selected
+    ? isFullTimeStyleContractor(selected)
+    : false;
   const terms = selected
     ? (contractorTerms[selected.id] ?? defaultContractorTermsForPerson(selected))
     : null;
-  const termMode = terms?.contractor_mode ?? "fixed_fee";
+  const termMode = scheduleOnly
+    ? "scheduled"
+    : (terms?.contractor_mode ?? "fixed_fee");
   const uiMode: "dollars" | "hours" | "scheduled" =
     termMode === "hours"
       ? "hours"
@@ -1038,8 +1098,8 @@ function ContractorsPanel({
   if (contractors.length === 0) {
     return (
       <p className="text-sm text-[var(--text-muted)]">
-        Add a project-basis contractor on the Team tab first, then set Dollars,
-        Hours, or Schedule Time here.
+        Add a contractor on the Team tab first, then set Dollars, Hours, or
+        Schedule Time here.
       </p>
     );
   }
@@ -1073,12 +1133,20 @@ function ContractorsPanel({
           <div className="flex flex-wrap gap-4 text-sm">
             {(
               [
-                { value: "dollars" as const, label: "Dollars" },
-                { value: "hours" as const, label: "Hours" },
+                {
+                  value: "dollars" as const,
+                  label: "Dollars",
+                  disabled: scheduleOnly,
+                },
+                {
+                  value: "hours" as const,
+                  label: "Hours",
+                  disabled: scheduleOnly,
+                },
                 {
                   value: "scheduled" as const,
                   label: "Use Schedule Time",
-                  disabled: selected.hide_from_schedule,
+                  disabled: !scheduleOnly && selected.hide_from_schedule,
                 },
               ] as const
             ).map((opt) => (
@@ -1086,30 +1154,31 @@ function ContractorsPanel({
                 key={opt.value}
                 className={cn(
                   "flex cursor-pointer items-center gap-1.5",
-                  "disabled" in opt && opt.disabled
-                    ? "cursor-not-allowed opacity-40"
-                    : "",
+                  opt.disabled ? "cursor-not-allowed opacity-40" : "",
                 )}
               >
                 <input
                   type="radio"
                   name={`contractor-ui-mode-${selected.id}`}
                   checked={uiMode === opt.value}
-                  disabled={"disabled" in opt && opt.disabled}
+                  disabled={opt.disabled}
                   onChange={() => {
                     if (opt.value === "dollars") {
                       setContractorTerms(selected.id, {
                         contractor_mode: "fixed_fee",
                         contractor_hours: null,
+                        contractor_fixed_fee: null,
                       });
                     } else if (opt.value === "hours") {
                       setContractorTerms(selected.id, {
                         contractor_mode: "hours",
+                        contractor_fixed_fee: null,
                       });
                     } else {
                       setContractorTerms(selected.id, {
                         contractor_mode: "scheduled",
                         contractor_hours: null,
+                        contractor_fixed_fee: null,
                       });
                     }
                   }}
@@ -1118,8 +1187,19 @@ function ContractorsPanel({
               </label>
             ))}
           </div>
+          {scheduleOnly ? (
+            <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+              {selected.name} is a contractor on the schedule — Dollars and Hours
+              options not available.
+            </p>
+          ) : (
+            <p className="text-[11px] leading-snug text-[var(--text-muted)]">
+              Only one selection can be used at a time. Choosing a new selection
+              clears the previous selection on save.
+            </p>
+          )}
 
-          {uiMode === "hours" ? (
+          {!scheduleOnly && uiMode === "hours" ? (
             <div className="space-y-1">
               <label className="block text-xs text-[var(--text-muted)]">
                 Hours (Per Month)
@@ -1133,6 +1213,7 @@ function ContractorsPanel({
                 onChange={(e) =>
                   setContractorTerms(selected.id, {
                     contractor_mode: "hours",
+                    contractor_fixed_fee: null,
                     contractor_hours:
                       e.target.value === ""
                         ? null
@@ -1159,7 +1240,7 @@ function ContractorsPanel({
             </p>
           ) : null}
 
-          {uiMode === "dollars" ? (
+          {!scheduleOnly && uiMode === "dollars" ? (
             <div className="space-y-4">
               <p className="text-sm text-[var(--text-muted)]">
                 Add dollar expenses for this contractor. Repeat Monthly applies

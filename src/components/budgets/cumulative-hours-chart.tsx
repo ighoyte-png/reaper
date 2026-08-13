@@ -319,6 +319,16 @@ function ProgressLineChart({
 
   const lineColor = "var(--accent)";
   const mutedLine = "var(--accent)";
+  const usedEndVal =
+    handoffIdx >= 0 ? valueAt(handoffIdx) : points.length ? valueAt(0) : 0;
+  const futureEndVal =
+    points.length > 0 ? valueAt(points.length - 1) : usedEndVal;
+  const usedOverCap =
+    hasBudget && budgetCap != null && usedEndVal > budgetCap;
+  const futureOverCap =
+    hasBudget && budgetCap != null && futureEndVal > budgetCap;
+  const usedStroke = usedOverCap ? "var(--status-over)" : lineColor;
+  const futureStroke = futureOverCap ? "var(--status-over)" : mutedLine;
   const hover = hoverIdx != null ? points[hoverIdx] : null;
   const hoverVal = hoverIdx != null ? valueAt(hoverIdx) : 0;
   const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;
@@ -507,7 +517,7 @@ function ProgressLineChart({
           <path
             d={pathSegment(handoffIdx, points.length - 1)}
             fill="none"
-            stroke={mutedLine}
+            stroke={futureStroke}
             strokeWidth={1.25}
             strokeDasharray="5 4"
             strokeLinecap="round"
@@ -519,7 +529,7 @@ function ProgressLineChart({
           <path
             d={pathSegment(0, handoffIdx)}
             fill="none"
-            stroke={lineColor}
+            stroke={usedStroke}
             strokeWidth={1.25}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -545,7 +555,7 @@ function ProgressLineChart({
                 cx={cx}
                 cy={cy}
                 r={hoverIdx === i ? 3.5 : 2}
-                fill={future ? mutedLine : lineColor}
+                fill={future ? futureStroke : usedStroke}
                 className="pointer-events-none"
               />
             </g>

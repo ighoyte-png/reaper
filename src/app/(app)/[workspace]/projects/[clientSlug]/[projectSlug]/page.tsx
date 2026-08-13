@@ -61,7 +61,7 @@ import {
   sortPeopleContractorsLast,
   type ContractorTerms,
 } from "@/lib/domain/contractor";
-import { reapplyContractorWindowsOnProjectSave } from "@/lib/domain/contractor-window-reapply";
+import { reapplyContractorWindowsOnProjectSave, deleteNonDollarContractorExpensesOnSave } from "@/lib/domain/contractor-window-reapply";
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { clientSiteOrigin, publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
@@ -126,6 +126,7 @@ export default function ProjectDetailPage() {
     setActiveRealtimeProjectIds,
     dataStatus,
     upsertProjectContractorExpense,
+    deleteProjectContractorExpense,
   } = useData();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
     useViewAs();
@@ -1290,6 +1291,12 @@ export default function ProjectDetailPage() {
                   state.people,
                 );
                 await setProjectMembers(toSave.id, memberPayload);
+                await deleteNonDollarContractorExpensesOnSave({
+                  projectId: toSave.id,
+                  members: memberPayload,
+                  expenses: state.project_contractor_expenses,
+                  deleteExpense: deleteProjectContractorExpense,
+                });
                 const applyToast = await reapplyContractorWindowsOnProjectSave({
                   project: toSave,
                   members: memberPayload,

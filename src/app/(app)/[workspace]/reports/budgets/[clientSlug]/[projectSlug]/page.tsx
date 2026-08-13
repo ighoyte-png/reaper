@@ -22,6 +22,7 @@ import {
   budgetHealth,
   calendarYearBars,
   contractorExpenseLinesInRange,
+  contractorExpenseAggregatesInRange,
   contractorExpenseTotalsInRange,
   contractorExpenseSplitInRange,
   formatHours,
@@ -411,30 +412,59 @@ export default function ProjectBudgetDetailPage() {
       const isScheduled = mode === "scheduled" || (!isFixedFee && !isFixedHours);
 
       if (monthly) {
-        const expenseLines = contractorExpenseLinesInRange(
-          project,
-          projectExpenses,
-          state.people,
-          periodRange.start,
-          periodRange.end,
-          person.id,
-        );
-        for (const line of expenseLines) {
-          contractors.push({
-            id: line.rowId,
-            personId: person.id,
-            name: person.name,
-            avatar_url: person.avatar_url,
-            avatar_attachment_id: person.avatar_attachment_id,
-            avatar_color: person.avatar_color,
-            usedHours: 0,
-            plannedHours: 0,
-            totalHours: 0,
-            moneyAmount: line.amount,
-            dashUsedPlanned: true,
-            is_contractor: true,
-            notes: line.notes || undefined,
-          });
+        if (isFixedFee) {
+          if (periodMode === "month") {
+            const expenseLines = contractorExpenseLinesInRange(
+              project,
+              projectExpenses,
+              state.people,
+              periodRange.start,
+              periodRange.end,
+              person.id,
+            );
+            for (const line of expenseLines) {
+              contractors.push({
+                id: line.rowId,
+                personId: person.id,
+                name: person.name,
+                avatar_url: person.avatar_url,
+                avatar_attachment_id: person.avatar_attachment_id,
+                avatar_color: person.avatar_color,
+                usedHours: 0,
+                plannedHours: 0,
+                totalHours: 0,
+                moneyAmount: line.amount,
+                dashUsedPlanned: true,
+                is_contractor: true,
+                notes: line.notes || undefined,
+              });
+            }
+          } else {
+            const aggregates = contractorExpenseAggregatesInRange(
+              project,
+              projectExpenses,
+              state.people,
+              periodRange.start,
+              periodRange.end,
+              person.id,
+            );
+            for (const line of aggregates) {
+              contractors.push({
+                id: line.rowId,
+                personId: person.id,
+                name: person.name,
+                avatar_url: person.avatar_url,
+                avatar_attachment_id: person.avatar_attachment_id,
+                avatar_color: person.avatar_color,
+                usedHours: 0,
+                plannedHours: 0,
+                totalHours: 0,
+                moneyAmount: line.amount,
+                dashUsedPlanned: true,
+                is_contractor: true,
+              });
+            }
+          }
         }
 
         if (isFixedHours) {
@@ -565,6 +595,7 @@ export default function ProjectBudgetDetailPage() {
     state.assignments,
     state.people,
     periodRange,
+    periodMode,
     projectExpenses,
   ]);
 

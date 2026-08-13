@@ -103,6 +103,23 @@ function feeCommitIdsForProject(
   return out;
 }
 
+/** Person ids whose contractor mode is Dollars (`fixed_fee`) for expense burns. */
+export function dollarModeContractorPersonIds(
+  people: Person[],
+  membersByPerson: Map<string, Pick<ProjectMember, "contractor_mode">>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const person of people) {
+    if (!isProjectBasisContractor(person)) continue;
+    const mode = effectiveContractorMode(
+      person,
+      membersByPerson.get(person.id),
+    );
+    if (mode === "fixed_fee") out.add(person.id);
+  }
+  return out;
+}
+
 function attributeMonthlyExpenses(
   project: Project,
   contractorExpenses: ProjectContractorExpense[],
@@ -110,6 +127,7 @@ function attributeMonthlyExpenses(
   monthKey: string,
   monthStart: string,
   asOf: Date,
+  allowedPersonIds?: Set<string> | null,
 ): {
   usedHours: number;
   usedAmount: number;
@@ -125,6 +143,7 @@ function attributeMonthlyExpenses(
     people,
     monthKey,
     project,
+    allowedPersonIds,
   );
   const todayKey = toDateKey(asOf);
   if (monthStart > todayKey) {
@@ -505,12 +524,14 @@ export function contractorExpenseTotalsForMonth(
   people: Person[],
   monthKey: string,
   project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
+  allowedPersonIds?: Set<string> | null,
 ): { usedHours: number; usedAmount: number } {
   const peopleById = new Map(people.map((p) => [p.id, p]));
   let usedHours = 0;
   let usedAmount = 0;
   for (const e of expenses) {
     if (e.project_id !== projectId) continue;
+    if (allowedPersonIds && !allowedPersonIds.has(e.person_id)) continue;
     if (project) {
       if (!contractorExpenseAppliesInMonth(project, e, monthKey)) continue;
     } else {
@@ -587,6 +608,56 @@ export function contractorExpenseLinesInRange(
     }
   }
   return out;
+}
+
+/**
+ * Aggregate per-month expense lines into one row per expenseId
+ * (amount × months in range). No notes.
+ */
+export function contractorExpenseAggregatesInRange(
+  project: Pick<Project, "id" | "start_date" | "end_date">,
+  expenses: ProjectContractorExpense[],
+  people: Person[],
+  rangeStart: string,
+  rangeEnd: string,
+  personId?: string | null,
+): Array<{
+  rowId: string;
+  expenseId: string;
+  personId: string;
+  amount: number;
+  hours: number;
+}> {
+  const lines = contractorExpenseLinesInRange(
+    project,
+    expenses,
+    people,
+    rangeStart,
+    rangeEnd,
+    personId,
+  );
+  const byExpense = new Map<
+    string,
+    { expenseId: string; personId: string; amount: number; hours: number }
+  >();
+  for (const line of lines) {
+    const existing = byExpense.get(line.expenseId);
+    if (existing) {
+      existing.amount += line.amount;
+      existing.hours += line.hours;
+    } else {
+      byExpense.set(line.expenseId, {
+        expenseId: line.expenseId,
+        personId: line.personId,
+        amount: line.amount,
+        hours: line.hours,
+      });
+    }
+  }
+  return [...byExpense.values()].map((row) => ({
+    rowId: row.expenseId,
+    ...row,
+  }));
 }
 
 /** Sum contractor expense $ (and derived hours) across an inclusive date range. */
@@ -960,12 +1031,17 @@ export function budgetBurn(
       contractorUsedHours += commitUsed.usedHours;
       contractorUsedAmount += commitUsed.usedAmount;
       if (monthly) {
+        const dollarIds = dollarModeContractorPersonIds(
+          people,
+          membersByPerson,
+        );
         const expenseUsed = contractorExpenseTotalsForMonth(
           project.id,
           contractorExpenses,
           people,
           asOfMonth,
           project,
+          dollarIds,
         );
         contractorUsedHours += expenseUsed.usedHours;
         contractorUsedAmount += expenseUsed.usedAmount;
@@ -1262,6 +1338,20 @@ function monthBurnSplit(
   const hasContractorTerms = projectMembers.some(
     (m) => m.project_id === project.id,
   );
+  const classifiedPeople = hasContractorTerms
+    ? classifyProjectPeople(
+        project.id,
+        assignments,
+        people,
+        projectMembers,
+      )
+    : null;
+  const dollarIds = classifiedPeople
+    ? dollarModeContractorPersonIds(
+        people,
+        classifiedPeople.membersByPerson,
+      )
+    : null;
   const monthExpenses = attributeMonthlyExpenses(
     project,
     contractorExpenses,
@@ -1269,8 +1359,9 @@ function monthBurnSplit(
     monthKey,
     monthStart,
     asOf,
+    dollarIds,
   );
-  if (!hasContractorTerms) {
+  if (!classifiedPeople) {
     const split = projectHoursSplitInRange(
       project.id,
       assignments,
@@ -1319,12 +1410,7 @@ function monthBurnSplit(
     contractorCommitIds,
     membersByPerson,
     peopleById,
-  } = classifyProjectPeople(
-    project.id,
-    assignments,
-    people,
-    projectMembers,
-  );
+  } = classifiedPeople;
 
   const todayKey = toDateKey(asOf);
   const tomorrow = new Date(asOf);

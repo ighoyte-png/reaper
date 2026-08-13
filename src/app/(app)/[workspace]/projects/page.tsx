@@ -35,7 +35,7 @@ import {
   writeUserViewPrefs,
 } from "@/lib/user-view-prefs";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
-import { reapplyContractorWindowsOnProjectSave } from "@/lib/domain/contractor-window-reapply";
+import { reapplyContractorWindowsOnProjectSave, deleteNonDollarContractorExpensesOnSave } from "@/lib/domain/contractor-window-reapply";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { projectIdsForPerson, projectHasSandboxWipeRisk } from "@/lib/domain/project-access";
 import {
@@ -127,6 +127,7 @@ function ProjectsPageContent() {
     isPublicShare,
     myPerson,
     upsertProjectContractorExpense,
+    deleteProjectContractorExpense,
   } = useData();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
@@ -388,6 +389,12 @@ function ProjectsPageContent() {
         state.people,
       );
       await setProjectMembers(toSave.id, memberPayload);
+      await deleteNonDollarContractorExpensesOnSave({
+        projectId: toSave.id,
+        members: memberPayload,
+        expenses: state.project_contractor_expenses,
+        deleteExpense: deleteProjectContractorExpense,
+      });
       const applyToast = await reapplyContractorWindowsOnProjectSave({
         project: toSave,
         members: memberPayload,

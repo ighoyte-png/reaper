@@ -41,7 +41,7 @@ import {
   buildProjectMembersPayload,
   type ContractorTerms,
 } from "@/lib/domain/contractor";
-import { reapplyContractorWindowsOnProjectSave } from "@/lib/domain/contractor-window-reapply";
+import { reapplyContractorWindowsOnProjectSave, deleteNonDollarContractorExpensesOnSave } from "@/lib/domain/contractor-window-reapply";
 import { cn } from "@/lib/cn";
 import {
   useLiveUserViewPrefs,
@@ -192,6 +192,7 @@ function ClientsPageContent() {
     newId,
     isPublicShare,
     upsertProjectContractorExpense,
+    deleteProjectContractorExpense,
   } = useData();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
@@ -373,6 +374,12 @@ function ClientsPageContent() {
         state.people,
       );
       await setProjectMembers(saved.id, memberPayload);
+      await deleteNonDollarContractorExpensesOnSave({
+        projectId: saved.id,
+        members: memberPayload,
+        expenses: state.project_contractor_expenses,
+        deleteExpense: deleteProjectContractorExpense,
+      });
       const applyToast = await reapplyContractorWindowsOnProjectSave({
         project: { ...project, id: saved.id },
         members: memberPayload,

@@ -7,6 +7,8 @@ const hatchStyle = {
     "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
 } as const;
 
+const contractorFillClass = "bg-[var(--status-healthy)]";
+
 export function BurnBar({
   burn,
   compact = false,
@@ -96,7 +98,7 @@ export function BurnBar({
           <div
             className={clsx(
               "h-full shrink-0",
-              fillClass,
+              contractorFillClass,
               !hasUsed && !hasFuture && "rounded-full",
               hasUsed || hasFuture ? "rounded-l-full" : "",
             )}
@@ -145,7 +147,10 @@ export function BurnBar({
         <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
           <span className="inline-flex items-center gap-1">
             <span
-              className={clsx("inline-block h-2 w-2 rounded-full", fillClass)}
+              className={clsx(
+                "inline-block h-2 w-2 rounded-full",
+                contractorFillClass,
+              )}
               aria-hidden
             />
             Contractor

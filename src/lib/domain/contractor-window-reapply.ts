@@ -62,3 +62,31 @@ export async function reapplyContractorWindowsOnProjectSave({
   }
   return null;
 }
+
+/**
+ * Delete dollar expense rows for contractors whose mode is not Dollars
+ * (`fixed_fee`). Call after setProjectMembers on save.
+ */
+export async function deleteNonDollarContractorExpensesOnSave({
+  projectId,
+  members,
+  expenses,
+  deleteExpense,
+}: {
+  projectId: string;
+  members: Array<Pick<ProjectMember, "person_id" | "contractor_mode">>;
+  expenses: ProjectContractorExpense[];
+  deleteExpense: (id: string) => Promise<void>;
+}): Promise<void> {
+  const dollarIds = new Set(
+    members
+      .filter((m) => m.contractor_mode === "fixed_fee")
+      .map((m) => m.person_id),
+  );
+  const toDelete = expenses.filter(
+    (e) => e.project_id === projectId && !dollarIds.has(e.person_id),
+  );
+  for (const row of toDelete) {
+    await deleteExpense(row.id);
+  }
+}
