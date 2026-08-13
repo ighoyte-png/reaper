@@ -343,6 +343,7 @@ function ReportsPageContent() {
     let near = 0;
     let over = 0;
     const rows = scopedProjects
+      .filter((p) => p.status === "active")
       .map((p) => {
         const burn =
           burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people);

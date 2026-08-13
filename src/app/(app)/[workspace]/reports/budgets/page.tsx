@@ -108,14 +108,15 @@ function BudgetsReportContent() {
   const query = filters.q;
   const clientFilter = filters.client as ClientFilter;
 
-  const projects = sortProjectsByClientThenName(
-    nonSandboxProjects(state.projects),
-    state.clients,
+  const activeProjects = useMemo(
+    () => nonSandboxProjects(state.projects).filter((p) => p.status === "active"),
+    [state.projects],
   );
+  const projects = sortProjectsByClientThenName(activeProjects, state.clients);
   const clients = sortClientsByName(state.clients);
 
   const { managerTabs, managerFilter, setManagerFilter } =
-    useProjectManagerFilter(nonSandboxProjects(state.projects), state.people, {
+    useProjectManagerFilter(activeProjects, state.people, {
       value: filters.pm,
       onChange: (next) => setFilter("pm", next),
     });
