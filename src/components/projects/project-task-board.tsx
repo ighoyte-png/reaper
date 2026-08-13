@@ -4448,7 +4448,7 @@ function CommentItem({
 
   return (
     <div className="group relative rounded-md border border-[var(--border)] bg-[var(--comment-bg)] p-5 text-sm">
-      <div className="mb-3 flex items-start gap-3">
+      <div className="flex items-start gap-3">
         <PersonAvatar
           avatarUrl={authorPerson?.avatar_url}
           avatarAttachmentId={authorPerson?.avatar_attachment_id}
@@ -4460,98 +4460,100 @@ function CommentItem({
           color={authorPerson ? personAvatarColor(authorPerson) : null}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold leading-snug text-[var(--text)]">
-            {displayName}
-          </p>
-          <div className="mt-0.5 space-y-0.5 text-xs tabular-nums text-[var(--text-muted)]">
-            <p>
-              {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
+          <div className="mb-3">
+            <p className="truncate text-sm font-semibold leading-snug text-[var(--text)]">
+              {displayName}
             </p>
-            {wasEdited && comment.updated_at ? (
-              <p className="italic">
-                Edited{" "}
-                {format(parseISO(comment.updated_at), "MMM d, yyyy · h:mm a")}
+            <div className="mt-0.5 space-y-0.5 text-xs tabular-nums text-[var(--text-muted)]">
+              <p>
+                {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
               </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
-      {editing ? (
-        <div className="space-y-2.5">
-          <SimpleRichTextEditor
-            ref={editorRef}
-            value={draft}
-            onChange={setDraft}
-            placeholder="Edit comment... Use @ to mention"
-            mentionPeople={ctx.mentionPeople}
-            enableAttachments={ctx.mode === "supabase"}
-            attachmentEntityType="comment"
-            attachmentEntityId={comment.id}
-            isDemo={ctx.mode === "demo"}
-            onAttachmentError={ctx.onAttachmentError}
-            onFileAttachmentsChange={(items) =>
-              setFileAttachmentCount(items.length)
-            }
-          />
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={saving}
-              onClick={() => void saveEdit()}
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
-              onClick={cancelEdit}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="leading-relaxed pr-14">
-            <RichNotesHtml html={comment.body} />
-            {ctx.mode === "supabase" ? (
-              <EntityFileAttachments
-                entityType="comment"
-                entityId={comment.id}
-                className="mt-2 border-t border-[var(--border)] px-0 pt-2"
-              />
-            ) : null}
-          </div>
-          <CommentReactions comment={comment} ctx={ctx} />
-          {showActions ? (
-            <div className="absolute bottom-3 right-3 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-              {isAuthor ? (
-                <button
-                  type="button"
-                  className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                  aria-label="Edit comment"
-                  title="Edit"
-                  onClick={startEdit}
-                >
-                  <Pencil size={13} strokeWidth={1.75} />
-                </button>
-              ) : null}
-              {canDelete ? (
-                <button
-                  type="button"
-                  className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
-                  aria-label="Delete comment"
-                  title="Delete"
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 size={13} strokeWidth={1.75} />
-                </button>
+              {wasEdited && comment.updated_at ? (
+                <p className="italic">
+                  Edited{" "}
+                  {format(parseISO(comment.updated_at), "MMM d, yyyy · h:mm a")}
+                </p>
               ) : null}
             </div>
-          ) : null}
-        </>
-      )}
+          </div>
+          {editing ? (
+            <div className="space-y-2.5">
+              <SimpleRichTextEditor
+                ref={editorRef}
+                value={draft}
+                onChange={setDraft}
+                placeholder="Edit comment... Use @ to mention"
+                mentionPeople={ctx.mentionPeople}
+                enableAttachments={ctx.mode === "supabase"}
+                attachmentEntityType="comment"
+                attachmentEntityId={comment.id}
+                isDemo={ctx.mode === "demo"}
+                onAttachmentError={ctx.onAttachmentError}
+                onFileAttachmentsChange={(items) =>
+                  setFileAttachmentCount(items.length)
+                }
+              />
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="h-7 cursor-pointer rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={saving}
+                  onClick={() => void saveEdit()}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  className="h-7 cursor-pointer rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                  onClick={cancelEdit}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="leading-relaxed pr-14">
+                <RichNotesHtml html={comment.body} />
+                {ctx.mode === "supabase" ? (
+                  <EntityFileAttachments
+                    entityType="comment"
+                    entityId={comment.id}
+                    className="mt-2 border-t border-[var(--border)] px-0 pt-2"
+                  />
+                ) : null}
+              </div>
+              <CommentReactions comment={comment} ctx={ctx} />
+              {showActions ? (
+                <div className="absolute bottom-3 right-3 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                  {isAuthor ? (
+                    <button
+                      type="button"
+                      className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                      aria-label="Edit comment"
+                      title="Edit"
+                      onClick={startEdit}
+                    >
+                      <Pencil size={13} strokeWidth={1.75} />
+                    </button>
+                  ) : null}
+                  {canDelete ? (
+                    <button
+                      type="button"
+                      className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
+                      aria-label="Delete comment"
+                      title="Delete"
+                      onClick={() => setConfirmDelete(true)}
+                    >
+                      <Trash2 size={13} strokeWidth={1.75} />
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
       {confirmDelete ? (
         <ConfirmDialog
           title="Delete comment?"

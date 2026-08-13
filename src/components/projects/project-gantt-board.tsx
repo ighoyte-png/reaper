@@ -603,7 +603,7 @@ function ReadOnlyComments({
             key={c.id}
             className="rounded-md border border-[var(--border)] bg-[var(--comment-bg)] p-3 text-sm"
           >
-            <div className="mb-3 flex items-start gap-3">
+            <div className="flex items-start gap-3">
               <PersonAvatar
                 avatarUrl={authorPerson?.avatar_url}
                 avatarAttachmentId={authorPerson?.avatar_attachment_id}
@@ -615,24 +615,26 @@ function ReadOnlyComments({
                 color={authorPerson ? personAvatarColor(authorPerson) : null}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold leading-snug text-[var(--text)]">
-                  {name}
-                </p>
-                <div className="mt-0.5 space-y-0.5 text-xs tabular-nums text-[var(--text-muted)]">
-                  <p>
-                    {format(parseISO(c.created_at), "MMM d, yyyy · h:mm a")}
+                <div className="mb-3">
+                  <p className="truncate text-sm font-semibold leading-snug text-[var(--text)]">
+                    {name}
                   </p>
-                  {wasEdited && c.updated_at ? (
-                    <p className="italic">
-                      Edited{" "}
-                      {format(parseISO(c.updated_at), "MMM d, yyyy · h:mm a")}
+                  <div className="mt-0.5 space-y-0.5 text-xs tabular-nums text-[var(--text-muted)]">
+                    <p>
+                      {format(parseISO(c.created_at), "MMM d, yyyy · h:mm a")}
                     </p>
-                  ) : null}
+                    {wasEdited && c.updated_at ? (
+                      <p className="italic">
+                        Edited{" "}
+                        {format(parseISO(c.updated_at), "MMM d, yyyy · h:mm a")}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="leading-relaxed">
+                  <RichNotesHtml html={c.body} />
                 </div>
               </div>
-            </div>
-            <div className="leading-relaxed">
-              <RichNotesHtml html={c.body} />
             </div>
           </div>
         );
