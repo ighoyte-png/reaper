@@ -71,6 +71,7 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
     budget_hours: 80,
     budget_amount: null,
     budget_mode: "hours",
+    bill_rate: 150,
     budget_monthly_reset: false,
     notes: "",
     manager_person_id: null,

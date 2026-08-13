@@ -117,7 +117,6 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
         ...p,
         email: "",
         cost_rate: 0,
-        bill_rate: 0,
         profile_id: null,
       }),
     ),

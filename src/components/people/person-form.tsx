@@ -287,7 +287,7 @@ export function PersonForm({
                   ]}
                 />
               </Field>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <Field label="Capacity Hrs/Week">
                   <input
                     type="number"
@@ -317,20 +317,11 @@ export function PersonForm({
                     }
                   />
                 </Field>
-                <Field label="Bill Rate">
-                  <input
-                    type="number"
-                    className={inputClass}
-                    value={person.bill_rate}
-                    onChange={(e) =>
-                      onChange({
-                        ...person,
-                        bill_rate: Number(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </Field>
               </div>
+              <p className="text-xs text-[var(--text-muted)]">
+                Bill rates are set on projects (hourly / T&amp;M) or via org
+                defaults in Admin settings.
+              </p>
               <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"

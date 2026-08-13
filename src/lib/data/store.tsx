@@ -17,6 +17,8 @@ import {
   DEMO_STORAGE_KEY,
   ORG_ID,
 } from "@/lib/demo/seed";
+import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
+import type { OrganizationSettings } from "@/lib/types";
 import {
   applyRealtimeTableEvent,
   isTrueLocalEcho,
@@ -113,6 +115,7 @@ import {
   updatePersonAvatarRow,
   updateOrganizationNameRow,
   updateOrganizationSlugRow,
+  upsertOrganizationSettingsRow,
   updateProfileRoleRow,
   switchOrganizationRpc,
   upsertPodRow,
@@ -303,6 +306,14 @@ function loadDemoState(): DemoState {
         share_enabled: Boolean(parsed.organization?.share_enabled),
         share_token: parsed.organization?.share_token ?? null,
       },
+      organization_settings: {
+        ...DEFAULT_ORG_BUDGET_SETTINGS,
+        ...(parsed.organization_settings ?? seed.organization_settings),
+        organization_id:
+          parsed.organization?.id ||
+          seed.organization.id ||
+          "",
+      },
       project_assets: (parsed.project_assets ?? seed.project_assets).map((a) => ({
         ...a,
         hide_from_client: Boolean(a.hide_from_client),
@@ -455,6 +466,10 @@ function loadDemoState(): DemoState {
 function emptySupabaseState(): DemoState {
   return {
     organization: { id: "", name: "", slug: "" },
+    organization_settings: {
+      ...DEFAULT_ORG_BUDGET_SETTINGS,
+      organization_id: "",
+    },
     memberships: [],
     profiles: [],
     clients: [],
@@ -548,6 +563,8 @@ interface DataContextValue {
   updateOrganizationName: (name: string) => Promise<void>;
   /** Admin-only: change the workspace URL slug (does not follow name renames). */
   updateOrganizationSlug: (slug: string) => Promise<void>;
+  /** Managers: update org-wide rates and budget/capacity thresholds. */
+  upsertOrganizationSettings: (settings: OrganizationSettings) => Promise<void>;
   /** Admin-only: change a profile's role (member / manager / admin). */
   updateProfileRole: (profileId: string, role: Role) => Promise<void>;
   /** Switch active workspace by org id or slug; reloads bootstrap and navigates. */
@@ -2593,6 +2610,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
               state.organization.id,
               next,
             ),
+          );
+        }
+      },
+      upsertOrganizationSettings: async (settings) => {
+        if (!manage) return;
+        const next = {
+          ...settings,
+          organization_id: state.organization.id || settings.organization_id,
+        };
+        patch((prev) => ({
+          ...prev,
+          organization_settings: next,
+        }));
+        if (mode === "supabase" && supabaseRef.current && next.organization_id) {
+          await runRemote(() =>
+            upsertOrganizationSettingsRow(supabaseRef.current!, next),
           );
         }
       },

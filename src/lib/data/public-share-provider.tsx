@@ -156,6 +156,7 @@ export function PublicShareProvider({
       deleteClient: () => {},
       updateOrganizationName: async () => {},
       updateOrganizationSlug: async () => {},
+      upsertOrganizationSettings: async () => {},
       updateProfileRole: async () => {},
       switchWorkspace: async () => {},
       upsertProject: async () => ({
@@ -172,6 +173,7 @@ export function PublicShareProvider({
         budget_hours: null,
         budget_amount: null,
         budget_mode: "none",
+        bill_rate: null,
         budget_monthly_reset: false,
         notes: "",
         manager_person_id: null,

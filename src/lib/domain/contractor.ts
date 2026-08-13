@@ -1,8 +1,13 @@
 import type {
   ContractorMode,
+  OrganizationSettings,
   Person,
   ProjectMember,
 } from "@/lib/types";
+import {
+  DEFAULT_ORG_BUDGET_SETTINGS,
+  effectiveCostRate,
+} from "@/lib/domain/org-settings";
 
 /** People who appear on the schedule grid. */
 export function scheduleVisiblePeople(people: Person[]): Person[] {
@@ -42,29 +47,32 @@ export function isProjectBasisContractor(person: Person): boolean {
   );
 }
 
-/** Cost rate with bill-rate fallback for Fixed Fee → hours conversion. */
+type CostSettings = Pick<OrganizationSettings, "default_cost_rate">;
+
+/** Cost rate with org default for Fixed Fee → hours conversion (no bill rate). */
 export function contractorProfileRate(
-  person: Pick<Person, "cost_rate" | "bill_rate">,
+  person: Pick<Person, "cost_rate">,
+  settings: CostSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
-  if (person.cost_rate > 0) return person.cost_rate;
-  if (person.bill_rate > 0) return person.bill_rate;
-  return 0;
+  return effectiveCostRate(person, settings);
 }
 
 export function contractorHoursFromFixedFee(
   fixedFee: number,
-  person: Pick<Person, "cost_rate" | "bill_rate">,
+  person: Pick<Person, "cost_rate">,
+  settings: CostSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
-  const rate = contractorProfileRate(person);
+  const rate = contractorProfileRate(person, settings);
   if (rate <= 0 || fixedFee <= 0) return 0;
   return fixedFee / rate;
 }
 
 export function contractorAmountFromHours(
   hours: number,
-  person: Pick<Person, "cost_rate" | "bill_rate">,
+  person: Pick<Person, "cost_rate">,
+  settings: CostSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
-  const rate = contractorProfileRate(person);
+  const rate = contractorProfileRate(person, settings);
   if (rate <= 0 || hours <= 0) return 0;
   return hours * rate;
 }
@@ -76,8 +84,13 @@ export function contractorCommitted(
     ProjectMember,
     "contractor_mode" | "contractor_fixed_fee" | "contractor_hours"
   > | null | undefined,
-  opts?: { scheduledHours?: number; scheduledAmount?: number },
+  opts?: {
+    scheduledHours?: number;
+    scheduledAmount?: number;
+    settings?: CostSettings;
+  },
 ): { mode: ContractorMode | null; hours: number; amount: number } {
+  const settings = opts?.settings ?? DEFAULT_ORG_BUDGET_SETTINGS;
   if (!isProjectBasisContractor(person)) {
     return { mode: null, hours: 0, amount: 0 };
   }
@@ -89,7 +102,7 @@ export function contractorCommitted(
     return {
       mode,
       amount,
-      hours: contractorHoursFromFixedFee(amount, person),
+      hours: contractorHoursFromFixedFee(amount, person, settings),
     };
   }
   if (mode === "hours") {
@@ -97,7 +110,7 @@ export function contractorCommitted(
     return {
       mode,
       hours,
-      amount: contractorAmountFromHours(hours, person),
+      amount: contractorAmountFromHours(hours, person, settings),
     };
   }
   // scheduled

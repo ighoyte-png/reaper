@@ -68,6 +68,7 @@ function portalChartProject(
     budget_hours: budgetHours,
     budget_amount: null,
     budget_mode: "hours",
+    bill_rate: 150,
     budget_monthly_reset: true,
     notes: "",
     manager_person_id: null,

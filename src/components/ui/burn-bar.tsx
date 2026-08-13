@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
-import type { BudgetBurn } from "@/lib/types";
+import type { BudgetBurn, OrganizationSettings } from "@/lib/types";
 import { budgetHealth, formatHours, formatMoney } from "@/lib/domain/budget";
+import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
 
 const hatchStyle = {
   backgroundImage:
@@ -10,9 +11,11 @@ const hatchStyle = {
 export function BurnBar({
   burn,
   compact = false,
+  settings = DEFAULT_ORG_BUDGET_SETTINGS,
 }: {
   burn: BudgetBurn;
   compact?: boolean;
+  settings?: OrganizationSettings;
 }) {
   if (burn.mode === "none") {
     if (compact) return null;
@@ -21,7 +24,7 @@ export function BurnBar({
     );
   }
 
-  const health = budgetHealth(burn);
+  const health = budgetHealth(burn, settings);
   const isAmount = burn.mode === "amount";
   const budget = isAmount ? (burn.totalAmount ?? 0) : burn.totalHours;
   const contractorPlanned = isAmount

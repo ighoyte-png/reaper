@@ -67,6 +67,7 @@ import {
   availableHoursInRange,
   utilizationPct,
 } from "@/lib/domain/capacity";
+import { capacityThresholdsFromSettings } from "@/lib/domain/org-settings";
 import { leaveBlockLabel } from "@/lib/domain/leave";
 import { leaveBlocksInRange } from "@/lib/domain/leave-blocks";
 import {
@@ -491,13 +492,13 @@ export default function DashboardPage() {
       .map((p) => ({
         project: p,
         burn:
-          burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people),
+          burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people, false, new Date(), [], [], state.organization_settings),
         client: p.client_id
           ? state.clients.find((c) => c.id === p.client_id)
           : undefined,
       }))
       .filter(({ burn }) => {
-        const health = budgetHealth(burn);
+        const health = budgetHealth(burn, state.organization_settings);
         return health === "over" || health === "near";
       })
       .sort((a, b) => b.burn.pct - a.burn.pct);
@@ -536,7 +537,7 @@ export default function DashboardPage() {
           person,
           booked,
           available,
-          level: capacityLevel(booked, available, available <= 0),
+          level: capacityLevel(booked, available, available <= 0, capacityThresholdsFromSettings(state.organization_settings)),
         };
       })
       .sort(
@@ -620,7 +621,8 @@ export default function DashboardPage() {
     let none = 0;
     for (const p of activeProjects) {
       const health = budgetHealth(
-        burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people),
+        burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people, false, new Date(), [], [], state.organization_settings),
+        state.organization_settings,
       );
       if (health === "healthy") healthy += 1;
       else if (health === "near") near += 1;
@@ -631,7 +633,7 @@ export default function DashboardPage() {
     const onTrackPct =
       scored <= 0 ? 100 : Math.round((healthy / scored) * 100);
     return { healthy, near, over, none, onTrackPct, total: activeProjects.length };
-  }, [activeProjects, state.assignments, state.people, burns]);
+  }, [activeProjects, state.assignments, state.people, state.organization_settings, burns]);
 
   /** Members (and managers) who are PM on ≥1 active project see this KPI. */
   const showPmHealthKpi = projectHealthStats.total > 0;
@@ -678,7 +680,7 @@ export default function DashboardPage() {
     const booked = teamUtilization.thisWeekBooked;
     const available = teamUtilization.thisWeekAvailable;
     const free = Math.max(0, available - booked);
-    const level = capacityLevel(booked, available, available <= 0);
+    const level = capacityLevel(booked, available, available <= 0, capacityThresholdsFromSettings(state.organization_settings));
     const bookedColor = capacityLevelCssVar(level);
     const slices: SchedulePieSlice[] = [];
     if (booked > 0.01) {
@@ -707,8 +709,13 @@ export default function DashboardPage() {
         teamUtilization.thisWeekBooked,
         teamUtilization.thisWeekAvailable,
         teamUtilization.thisWeekAvailable <= 0,
+        capacityThresholdsFromSettings(state.organization_settings),
       ),
-    [teamUtilization.thisWeekBooked, teamUtilization.thisWeekAvailable],
+    [
+      teamUtilization.thisWeekBooked,
+      teamUtilization.thisWeekAvailable,
+      state.organization_settings,
+    ],
   );
 
   const upcomingDueTasks = useMemo(() => {
@@ -1150,6 +1157,7 @@ export default function DashboardPage() {
                 appHref={appHref}
                 projectHref={projectHref}
                 clients={state.clients}
+                orgSettings={state.organization_settings}
               />
             ) : null}
             {showScheduleWidgets ? (
@@ -1631,6 +1639,7 @@ function ProjectHealthBudget({
   appHref,
   projectHref,
   clients,
+  orgSettings,
 }: {
   canManage: boolean;
   atRisk: {
@@ -1643,6 +1652,7 @@ function ProjectHealthBudget({
   appHref: (path: string) => string;
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   clients: { id: string; name: string; color: string }[];
+  orgSettings: import("@/lib/types").OrganizationSettings;
 }) {
   return (
     <section className={panelClass()}>
@@ -1685,15 +1695,15 @@ function ProjectHealthBudget({
                   <span
                     className={cn(
                       "shrink-0 text-xs",
-                      budgetHealth(burn) === "over"
+                      budgetHealth(burn, orgSettings) === "over"
                         ? "text-[var(--status-over)]"
                         : "text-[var(--status-near)]",
                     )}
                   >
-                    {budgetHealth(burn) === "over" ? "Over" : "Near"}
+                    {budgetHealth(burn, orgSettings) === "over" ? "Over" : "Near"}
                   </span>
                 </div>
-                <BurnBar burn={burn} compact />
+                <BurnBar burn={burn} compact settings={orgSettings} />
               </Link>
             ))}
           </div>

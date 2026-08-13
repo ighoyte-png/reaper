@@ -3,6 +3,7 @@ import type {
   Assignment,
   BudgetBurn,
   ContractorMode,
+  OrganizationSettings,
   Person,
   Project,
   ProjectContractorExpense,
@@ -12,6 +13,11 @@ import {
   contractorCommitted,
   isProjectBasisContractor,
 } from "@/lib/domain/contractor";
+import {
+  DEFAULT_ORG_BUDGET_SETTINGS,
+  effectiveCostRate,
+  effectiveProjectBillRate,
+} from "@/lib/domain/org-settings";
 import { expandAssignmentInRange } from "@/lib/domain/recurrence";
 import { assignmentHoursWithRecurrence } from "@/lib/domain/recurrence";
 import {
@@ -199,6 +205,7 @@ function projectBillableAmountInDateRangeForPeople(
   toKey: string,
   personIds: Set<string>,
   includeTentative = false,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
   if (toKey < fromKey || personIds.size === 0) return 0;
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -207,7 +214,7 @@ function projectBillableAmountInDateRangeForPeople(
     if (a.project_id !== projectId) continue;
     if (!personIds.has(a.person_id)) continue;
     if (!includeTentative && a.status !== "confirmed") continue;
-    const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+    const rate = effectiveCostRate(byId.get(a.person_id), settings);
     for (const occ of expandAssignmentInRange(a, fromKey, toKey)) {
       sum += occurrenceHoursInRange(occ, fromKey, toKey) * rate;
     }
@@ -506,14 +513,10 @@ export function contractorExpenseAppliesInMonth(
 function expenseHoursFromAmount(
   amount: number,
   person: Person | undefined,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
   if (!person || amount <= 0) return 0;
-  const rate =
-    person.cost_rate > 0
-      ? person.cost_rate
-      : person.bill_rate > 0
-        ? person.bill_rate
-        : 0;
+  const rate = effectiveCostRate(person, settings);
   return rate > 0 ? amount / rate : 0;
 }
 
@@ -525,6 +528,7 @@ export function contractorExpenseTotalsForMonth(
   monthKey: string,
   project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
   allowedPersonIds?: Set<string> | null,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): { usedHours: number; usedAmount: number } {
   const peopleById = new Map(people.map((p) => [p.id, p]));
   let usedHours = 0;
@@ -546,6 +550,7 @@ export function contractorExpenseTotalsForMonth(
     usedHours += expenseHoursFromAmount(
       e.amount,
       peopleById.get(e.person_id),
+      settings,
     );
   }
   return { usedHours, usedAmount };
@@ -572,6 +577,7 @@ export function contractorExpenseLinesInRange(
   rangeStart: string,
   rangeEnd: string,
   personId?: string | null,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): ContractorExpenseLine[] {
   if (rangeEnd < rangeStart) return [];
   const peopleById = new Map(people.map((p) => [p.id, p]));
@@ -602,7 +608,7 @@ export function contractorExpenseLinesInRange(
         personId: e.person_id,
         monthKey: `${mk}-01`,
         amount: e.amount,
-        hours: expenseHoursFromAmount(e.amount, peopleById.get(e.person_id)),
+        hours: expenseHoursFromAmount(e.amount, peopleById.get(e.person_id), settings),
         notes: e.notes ?? "",
       });
     }
@@ -750,6 +756,7 @@ function contractorCommitmentTotals(
   rangeStart: string,
   rangeEnd: string,
   includeTentative: boolean,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): {
   usedHours: number;
   futureHours: number;
@@ -778,8 +785,10 @@ function contractorCommitmentTotals(
       rangeEnd,
       new Set([personId]),
       includeTentative,
+      settings,
     );
     const committed = contractorCommitted(person, member, {
+      settings,
       scheduledHours,
       scheduledAmount,
     });
@@ -887,6 +896,7 @@ export function projectPlannedAmount(
   people: Person[],
   includeTentative = false,
   opts?: { year: number; monthIndex: number },
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
   const byId = new Map(people.map((p) => [p.id, p]));
   return assignments
@@ -897,7 +907,7 @@ export function projectPlannedAmount(
     )
     .reduce((sum, a) => {
       const person = byId.get(a.person_id);
-      const rate = person?.bill_rate ?? 0;
+      const rate = effectiveCostRate(person, settings);
       const hours = opts
         ? assignmentHoursInMonth(a, opts.year, opts.monthIndex)
         : assignmentHours(a);
@@ -909,7 +919,7 @@ export function projectPlannedAmount(
  * Budget burn uses exactly one ledger based on budget_mode:
  * - none: no tracking (pct stays 0)
  * - hours: planned hours vs budget_hours (+ optional monthly reset)
- * - amount: planned $ (hours × person bill_rate) vs budget_amount
+ * - amount: planned $ (hours × person cost_rate) vs budget_amount
  * Hourly and dollar are mutually exclusive — never both.
  */
 export function budgetBurn(
@@ -920,6 +930,7 @@ export function budgetBurn(
   asOf: Date = new Date(),
   projectMembers: ProjectMember[] = [],
   contractorExpenses: ProjectContractorExpense[] = [],
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): BudgetBurn {
   const mode = normalizeBudgetMode(
     project.budget_mode,
@@ -997,6 +1008,7 @@ export function budgetBurn(
         usedEnd,
         internalIds,
         includeTentative,
+        settings,
       );
       contractorUsedAmount = projectBillableAmountInDateRangeForPeople(
         project.id,
@@ -1006,6 +1018,7 @@ export function budgetBurn(
         usedEnd,
         contractorScheduledIds,
         includeTentative,
+        settings,
       );
       const monthly = isMonthlyRetainerBudget(project);
       const asOfMonth = format(asOf, "yyyy-MM");
@@ -1026,6 +1039,7 @@ export function budgetBurn(
             rangeStart,
             rangeEnd,
             includeTentative,
+            settings,
           )
         : { usedHours: 0, usedAmount: 0 };
       contractorUsedHours += commitUsed.usedHours;
@@ -1072,6 +1086,7 @@ export function budgetBurn(
         rangeEnd,
         internalIds,
         includeTentative,
+        settings,
       );
       contractorFutureAmount = projectBillableAmountInDateRangeForPeople(
         project.id,
@@ -1081,6 +1096,7 @@ export function budgetBurn(
         rangeEnd,
         contractorScheduledIds,
         includeTentative,
+        settings,
       );
     }
   } else {
@@ -1113,6 +1129,7 @@ export function budgetBurn(
             rangeStart,
             usedEnd,
             includeTentative,
+            settings,
           )
         : 0;
     internalFutureAmount =
@@ -1124,6 +1141,7 @@ export function budgetBurn(
             futureStart,
             rangeEnd,
             includeTentative,
+            settings,
           )
         : 0;
   }
@@ -1230,15 +1248,16 @@ export function budgetBurn(
 
 export function budgetHealth(
   burn: BudgetBurn,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): "healthy" | "near" | "over" | "none" {
   if (burn.mode === "none") return "none";
   if (burn.mode === "amount") {
-    if (burn.amountOverBy > 0) return "over";
-    if (burn.pct >= 85) return "near";
+    if (burn.amountOverBy > 0 || burn.pct >= settings.amount_over_pct) return "over";
+    if (burn.pct >= settings.amount_warning_pct) return "near";
     return "healthy";
   }
-  if (burn.overBy > 0) return "over";
-  if (burn.pct >= 85) return "near";
+  if (burn.overBy > 0 || burn.pct > settings.hours_over_pct) return "over";
+  if (burn.pct >= settings.hours_warning_pct) return "near";
   return "healthy";
 }
 
@@ -1282,7 +1301,7 @@ export interface MonthBurnBar {
   year: number;
   monthIndex: number;
   plannedHours: number;
-  /** Planned billable $ for the month (hours × bill rates). */
+  /** Planned labor cost $ for the month (hours × cost rates). */
   plannedAmount: number;
   /** Internal schedule hours through today (or full month if past). */
   usedHours: number;
@@ -1316,6 +1335,7 @@ function monthBurnSplit(
   asOf: Date,
   projectMembers: ProjectMember[],
   contractorExpenses: ProjectContractorExpense[] = [],
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): {
   usedHours: number;
   futureHours: number;
@@ -1477,6 +1497,7 @@ function monthBurnSplit(
         monthStart,
         monthEnd,
         false,
+        settings,
       );
       contractorUsedHours += commit.usedHours;
       contractorUsedAmount += commit.usedAmount;
@@ -1529,6 +1550,7 @@ function monthBurnSplit(
       monthStart,
       monthEnd,
       false,
+      settings,
     );
     if (monthStart > todayKey) {
       contractorFutureHours += commit.usedHours;
@@ -1581,6 +1603,7 @@ export function projectHoursSplitInRange(
   rangeStart: string,
   rangeEnd: string,
   asOf: Date = new Date(),
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): {
   usedHours: number;
   futureHours: number;
@@ -1621,6 +1644,8 @@ export function projectHoursSplitInRange(
           people,
           rangeStart,
           usedEnd,
+          false,
+          settings,
         )
       : 0;
   const futureAmount =
@@ -1631,6 +1656,8 @@ export function projectHoursSplitInRange(
           people,
           futureStart,
           rangeEnd,
+          false,
+          settings,
         )
       : 0;
 
@@ -1848,7 +1875,7 @@ export function projectHoursInDateRange(
     }, 0);
 }
 
-/** Billable $ for confirmed schedule hours in [fromKey, toKey]. */
+/** Labor cost $ for confirmed schedule hours in [fromKey, toKey]. */
 export function projectBillableAmountInDateRange(
   projectId: string,
   assignments: Assignment[],
@@ -1856,6 +1883,7 @@ export function projectBillableAmountInDateRange(
   fromKey: string,
   toKey: string,
   includeTentative = false,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
   if (toKey < fromKey) return 0;
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -1863,7 +1891,7 @@ export function projectBillableAmountInDateRange(
   for (const a of assignments) {
     if (a.project_id !== projectId) continue;
     if (!includeTentative && a.status !== "confirmed") continue;
-    const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+    const rate = effectiveCostRate(byId.get(a.person_id), settings);
     for (const occ of expandAssignmentInRange(a, fromKey, toKey)) {
       sum += occurrenceHoursInRange(occ, fromKey, toKey) * rate;
     }
@@ -1882,27 +1910,11 @@ export interface ProjectHoursForecast {
   mode: Project["budget_mode"];
 }
 
-function blendedBillRate(
-  projectId: string,
-  assignments: Assignment[],
-  people: Person[],
+function projectRateForHoursBudget(
+  project: Project,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): number {
-  const byId = new Map(people.map((p) => [p.id, p]));
-  let hours = 0;
-  let weighted = 0;
-  for (const a of assignments) {
-    if (a.project_id !== projectId || a.status !== "confirmed") continue;
-    const h = assignmentHours(a);
-    const rate = byId.get(a.person_id)?.bill_rate ?? 0;
-    hours += h;
-    weighted += h * rate;
-  }
-  if (hours <= 0) {
-    const rates = people.map((p) => p.bill_rate ?? 0).filter((r) => r > 0);
-    if (rates.length === 0) return 0;
-    return rates.reduce((s, r) => s + r, 0) / rates.length;
-  }
-  return weighted / hours;
+  return effectiveProjectBillRate(project, settings);
 }
 
 /** Schedule hours used (≤ today) vs future, plus remaining vs project budget. */
@@ -1911,6 +1923,7 @@ export function projectHoursForecast(
   assignments: Assignment[],
   people: Person[],
   asOf: Date = new Date(),
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): ProjectHoursForecast {
   const mode = normalizeBudgetMode(
     project.budget_mode,
@@ -1968,7 +1981,7 @@ export function projectHoursForecast(
       let sum = 0;
       for (const a of assignments) {
         if (a.project_id !== project.id || a.status !== "confirmed") continue;
-        const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+        const rate = effectiveCostRate(byId.get(a.person_id), settings);
         const from = rangeStart;
         const to = usedEnd;
         if (to < from) continue;
@@ -1983,7 +1996,7 @@ export function projectHoursForecast(
       let sum = 0;
       for (const a of assignments) {
         if (a.project_id !== project.id || a.status !== "confirmed") continue;
-        const rate = byId.get(a.person_id)?.bill_rate ?? 0;
+        const rate = effectiveCostRate(byId.get(a.person_id), settings);
         if (futureStart > rangeEnd) continue;
         for (const occ of expandAssignmentInRange(a, futureStart, rangeEnd)) {
           sum += occurrenceHoursInRange(occ, futureStart, rangeEnd) * rate;
@@ -1992,7 +2005,7 @@ export function projectHoursForecast(
       return sum;
     })();
     const remainingAmount = totalAmount - usedAmount - futureAmount;
-    const rate = blendedBillRate(project.id, assignments, people);
+    const rate = projectRateForHoursBudget(project, settings);
     hoursRemaining = rate > 0 ? remainingAmount / rate : null;
     overBudget = usedAmount + futureAmount > totalAmount && totalAmount > 0;
   }

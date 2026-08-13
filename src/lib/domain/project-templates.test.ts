@@ -32,6 +32,7 @@ const project: Project = {
   budget_mode: "none",
   budget_hours: null,
   budget_amount: null,
+  bill_rate: null,
   budget_monthly_reset: false,
   notes: "",
   manager_person_id: null,

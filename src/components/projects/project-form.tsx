@@ -266,6 +266,8 @@ export function ProjectForm({
       budget_mode: mode,
       budget_hours: mode === "hours" ? (project.budget_hours ?? 80) : null,
       budget_amount: mode === "amount" ? (project.budget_amount ?? 0) : null,
+      bill_rate:
+        mode === "hours" ? (project.bill_rate ?? 150) : null,
       budget_monthly_reset:
         mode === "hours" || mode === "amount"
           ? Boolean(project.budget_monthly_reset)
@@ -599,30 +601,53 @@ export function ProjectForm({
                     },
                     {
                       value: "hours",
-                      label: "Hourly (Total Hours Bucket)",
+                      label: "Hourly (Time & Materials)",
                     },
                     {
                       value: "amount",
-                      label: "Dollar Amount (Hours × Bill Rates)",
+                      label: "Fixed Fee (Dollar)",
                     },
                   ]}
                 />
               </Field>
               {project.budget_mode === "hours" ? (
-                <Field label="Total Budget (Hours)">
-                  <input
-                    type="number"
-                    min={1}
-                    className={inputClass}
-                    value={project.budget_hours ?? ""}
-                    onChange={(e) =>
-                      onChange({
-                        ...project,
-                        budget_hours: Number(e.target.value) || 0,
-                      })
-                    }
-                  />
-                </Field>
+                <>
+                  <Field label="Total Budget (Hours)">
+                    <input
+                      type="number"
+                      min={1}
+                      className={inputClass}
+                      value={project.budget_hours ?? ""}
+                      onChange={(e) =>
+                        onChange({
+                          ...project,
+                          budget_hours: Number(e.target.value) || 0,
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field label="Project Bill Rate">
+                    <input
+                      type="number"
+                      min={0}
+                      className={inputClass}
+                      value={project.bill_rate ?? ""}
+                      onChange={(e) =>
+                        onChange({
+                          ...project,
+                          bill_rate:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value) || 0,
+                        })
+                      }
+                    />
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Revenue for T&amp;M is planned hours × this rate. Falls
+                      back to the org default when empty.
+                    </p>
+                  </Field>
+                </>
               ) : null}
               {project.budget_mode === "amount" ? (
                 <Field label="Total Budget ($)">
@@ -641,6 +666,10 @@ export function ProjectForm({
                       })
                     }
                   />
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Fixed fee is tracked against labor cost rates (and
+                    contractor expenses), not project bill rates.
+                  </p>
                 </Field>
               ) : null}
               {project.budget_mode === "hours" ||
@@ -661,8 +690,8 @@ export function ProjectForm({
                     Monthly Reset
                     <span className="block text-xs text-[var(--text-muted)]">
                       {project.budget_mode === "amount"
-                        ? "Treat the dollar budget as a recurring monthly retainer"
-                        : "Treat the hours budget as a recurring monthly retainer"}
+                        ? "Treat the fixed fee as a recurring monthly retainer"
+                        : "Treat the hours budget as a recurring monthly retainer (bill rate still applies to planned hours)"}
                     </span>
                   </span>
                 </label>

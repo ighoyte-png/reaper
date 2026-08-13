@@ -17,6 +17,7 @@ import { utilizationVisiblePeople, personAvatarColor } from "@/lib/domain/people
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
 import type { CapacityLevel } from "@/lib/types";
+import { capacityThresholdsFromSettings } from "@/lib/domain/org-settings";
 
 const LEGEND: {
   level: CapacityLevel;
@@ -41,11 +42,18 @@ function levelTone(level: CapacityLevel) {
 function UtilizationPill({
   booked,
   available,
+  thresholds,
 }: {
   booked: number;
   available: number;
+  thresholds?: ReturnType<typeof capacityThresholdsFromSettings>;
 }) {
-  const level = capacityLevel(booked, available, available <= 0);
+  const level = capacityLevel(
+    booked,
+    available,
+    available <= 0,
+    thresholds,
+  );
   const pct = utilizationPct(booked, available);
   const tone = levelTone(level);
   const fillPct = available <= 0 ? 0 : Math.min(100, Math.max(0, pct));
@@ -260,7 +268,13 @@ export function UtilizationHeatmap({
                     key={`${person.id}-${start}`}
                     className="border-l border-t border-[var(--border)] px-2 py-2"
                   >
-                    <UtilizationPill booked={booked} available={available} />
+                    <UtilizationPill
+                      booked={booked}
+                      available={available}
+                      thresholds={capacityThresholdsFromSettings(
+                        state.organization_settings,
+                      )}
+                    />
                   </div>
                 );
               })}
@@ -304,7 +318,13 @@ export function UtilizationHeatmap({
                     key={`team-${start}`}
                     className="border-l border-t-4 border-[var(--border)] px-2 py-2"
                   >
-                    <UtilizationPill booked={booked} available={available} />
+                    <UtilizationPill
+                      booked={booked}
+                      available={available}
+                      thresholds={capacityThresholdsFromSettings(
+                        state.organization_settings,
+                      )}
+                    />
                   </div>
                 );
               })}

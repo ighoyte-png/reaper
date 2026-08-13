@@ -40,6 +40,29 @@ export interface Organization {
   share_token?: string | null;
 }
 
+/** Per-org Admin defaults for rates, budget health, and capacity colors. */
+export interface OrganizationSettings {
+  organization_id: string;
+  default_cost_rate: number;
+  default_bill_rate: number;
+  /** Hours mode: orange starts at this % of budget (default 90). */
+  hours_warning_pct: number;
+  /** Hours mode: red when planned exceeds this % (default 100). */
+  hours_over_pct: number;
+  /** Fixed fee: target gross margin % (default 25 → healthy cost burn ≤ 75%). */
+  target_profit_margin_pct: number;
+  /** Fixed fee: orange starts at this % of fee burned as cost (default 76). */
+  amount_warning_pct: number;
+  /** Fixed fee: red at this % of fee (default 100). */
+  amount_over_pct: number;
+  /** Utilization: below this % is low/underutilized. */
+  capacity_low_max_pct: number;
+  /** Utilization: near/warning starts here. */
+  capacity_near_pct: number;
+  /** Utilization: over starts here. */
+  capacity_over_pct: number;
+}
+
 export interface Profile {
   id: string;
   organization_id: string;
@@ -93,6 +116,11 @@ export interface Project {
   budget_hours: number | null;
   budget_amount: number | null;
   budget_mode: BudgetMode;
+  /**
+   * Project bill rate for hours (T&M) mode — revenue = hours × bill_rate.
+   * Null / unused for amount (fixed fee) and none.
+   */
+  bill_rate: number | null;
   /** When true, hourly budget resets each calendar month (retainer). */
   budget_monthly_reset: boolean;
   notes: string;
@@ -313,8 +341,8 @@ export interface Person {
   department: string;
   office: string;
   capacity_hours_week: number;
+  /** Internal labor cost rate ($/hr). Bill rates live on projects. */
   cost_rate: number;
-  bill_rate: number;
   timezone: string;
   /** Optional holiday calendar (statutory dates applied into leave_days). */
   holiday_calendar_id: string | null;
@@ -471,6 +499,8 @@ export type MentionUnread = {
 
 export interface DemoState {
   organization: Organization;
+  /** Admin rates / budget & capacity thresholds for this workspace. */
+  organization_settings: OrganizationSettings;
   /** Workspaces the signed-in user belongs to (supabase); demo uses the current org. */
   memberships: OrganizationMembership[];
   profiles: Profile[];

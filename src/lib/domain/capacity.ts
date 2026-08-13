@@ -219,13 +219,21 @@ export function capacityLevel(
   booked: number,
   available: number,
   onLeave: boolean,
+  thresholds?: {
+    lowMaxPct?: number;
+    nearPct?: number;
+    overPct?: number;
+  },
 ): CapacityLevel {
   if (onLeave || available <= 0) return "unavailable";
   const pct = utilizationPct(booked, available);
-  // 100%+ over · 85–99% near · 60–84% optimal · <60% underutilized
-  if (pct >= 100) return "over";
-  if (pct >= 85) return "near";
-  if (pct >= 60) return "healthy";
+  const lowMax = thresholds?.lowMaxPct ?? 60;
+  const near = thresholds?.nearPct ?? 85;
+  const over = thresholds?.overPct ?? 100;
+  // over · near · healthy · low — breakpoints from org Admin settings
+  if (pct >= over) return "over";
+  if (pct >= near) return "near";
+  if (pct >= lowMax) return "healthy";
   return "low";
 }
 

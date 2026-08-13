@@ -1,4 +1,5 @@
 import { addDays, format, startOfWeek } from "date-fns";
+import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
 import type { DemoState } from "@/lib/types";
 
 function d(offset: number, from = startOfWeek(new Date(), { weekStartsOn: 1 })): string {
@@ -23,6 +24,10 @@ export function createDemoSeed(): DemoState {
       slug: "northwind",
       share_enabled: false,
       share_token: null,
+    },
+    organization_settings: {
+      ...DEFAULT_ORG_BUDGET_SETTINGS,
+      organization_id: ORG_ID,
     },
     memberships: [
       {
@@ -113,6 +118,7 @@ export function createDemoSeed(): DemoState {
         budget_hours: 120,
         budget_amount: null,
         budget_mode: "hours",
+        bill_rate: 150,
         budget_monthly_reset: false,
         notes: "Mid-burn project",
         manager_person_id: "person-1",
@@ -135,6 +141,7 @@ export function createDemoSeed(): DemoState {
         budget_hours: 80,
         budget_amount: null,
         budget_mode: "hours",
+        bill_rate: 150,
         budget_monthly_reset: false,
         notes: "Over-planned on purpose for demo",
         manager_person_id: "person-2",
@@ -157,6 +164,7 @@ export function createDemoSeed(): DemoState {
         budget_hours: null,
         budget_amount: null,
         budget_mode: "none",
+        bill_rate: null,
         budget_monthly_reset: false,
         notes: "Internal ? no budget",
         manager_person_id: null,
@@ -179,6 +187,7 @@ export function createDemoSeed(): DemoState {
         budget_hours: null,
         budget_amount: 6000,
         budget_mode: "amount",
+        bill_rate: null,
         budget_monthly_reset: false,
         notes: "Dollar budget",
         manager_person_id: "person-2",
@@ -201,6 +210,7 @@ export function createDemoSeed(): DemoState {
         budget_hours: 40,
         budget_amount: null,
         budget_mode: "hours",
+        bill_rate: 150,
         budget_monthly_reset: true,
         notes: "Monthly hours retainer",
         manager_person_id: "person-1",
@@ -321,7 +331,6 @@ export function createDemoSeed(): DemoState {
         office: "Seattle",
         capacity_hours_week: 40,
         cost_rate: 75,
-        bill_rate: 150,
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
         avatar_url: null,
@@ -343,7 +352,6 @@ export function createDemoSeed(): DemoState {
         office: "Seattle",
         capacity_hours_week: 40,
         cost_rate: 90,
-        bill_rate: 175,
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
         avatar_url: null,
@@ -365,7 +373,6 @@ export function createDemoSeed(): DemoState {
         office: "Remote",
         capacity_hours_week: 32,
         cost_rate: 65,
-        bill_rate: 140,
         timezone: "America/Denver",
         holiday_calendar_id: "cal-us",
         avatar_url: null,
@@ -387,7 +394,6 @@ export function createDemoSeed(): DemoState {
         office: "Austin",
         capacity_hours_week: 40,
         cost_rate: 70,
-        bill_rate: 155,
         timezone: "America/Chicago",
         holiday_calendar_id: "cal-ca",
         avatar_url: null,
@@ -409,7 +415,6 @@ export function createDemoSeed(): DemoState {
         office: "Seattle",
         capacity_hours_week: 40,
         cost_rate: 80,
-        bill_rate: 160,
         timezone: "America/Los_Angeles",
         holiday_calendar_id: "cal-us",
         avatar_url: null,

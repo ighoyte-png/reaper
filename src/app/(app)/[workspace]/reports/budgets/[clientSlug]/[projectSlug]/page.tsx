@@ -46,6 +46,7 @@ import {
   contractorCommitted,
   isProjectBasisContractor,
 } from "@/lib/domain/contractor";
+import { effectiveProjectBillRate, effectiveCostRate, remainingTargetCostAllowance } from "@/lib/domain/org-settings";
 import { personAvatarColor } from "@/lib/domain/people";
 import { toDateKey } from "@/lib/domain/dates";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
@@ -129,17 +130,31 @@ export default function ProjectBudgetDetailPage() {
             new Date(),
             projectMembers,
             projectExpenses,
+            state.organization_settings,
           )
         : null,
-    [project, state.assignments, state.people, projectMembers, projectExpenses],
+    [
+      project,
+      state.assignments,
+      state.people,
+      projectMembers,
+      projectExpenses,
+      state.organization_settings,
+    ],
   );
 
   const hoursFx = useMemo(
     () =>
       project
-        ? projectHoursForecast(project, state.assignments, state.people)
+        ? projectHoursForecast(
+            project,
+            state.assignments,
+            state.people,
+            new Date(),
+            state.organization_settings,
+          )
         : null,
-    [project, state.assignments, state.people],
+    [project, state.assignments, state.people, state.organization_settings],
   );
 
   const yearBars = useMemo(
@@ -347,6 +362,10 @@ export default function ProjectBudgetDetailPage() {
       if (a.project_id !== project.id || a.status !== "confirmed") continue;
       personIds.add(a.person_id);
     }
+    const billRate = effectiveProjectBillRate(
+      project,
+      state.organization_settings,
+    );
     let revenue = 0;
     let scheduleCost = 0;
     for (const personId of personIds) {
@@ -359,8 +378,10 @@ export default function ProjectBudgetDetailPage() {
         periodRange.end,
       );
       const hours = split.usedHours + split.futureHours;
-      revenue += hours * (person?.bill_rate ?? 0);
-      scheduleCost += hours * (person?.cost_rate ?? 0);
+      revenue += hours * billRate;
+      scheduleCost +=
+        hours *
+        effectiveCostRate(person, state.organization_settings);
     }
     let expenseCost = 0;
     if (isMonthlyRetainerBudget(project)) {
@@ -379,7 +400,14 @@ export default function ProjectBudgetDetailPage() {
       expenseCost,
       cost: scheduleCost + expenseCost,
     };
-  }, [project, state.assignments, state.people, periodRange, projectExpenses]);
+  }, [
+    project,
+    state.assignments,
+    state.people,
+    state.organization_settings,
+    periodRange,
+    projectExpenses,
+  ]);
 
   const selectedMonthKey =
     periodMode === "month"
@@ -674,7 +702,7 @@ export default function ProjectBudgetDetailPage() {
     project.budget_hours,
     project.budget_amount,
   );
-  const health = budgetHealth(burn);
+  const health = budgetHealth(burn, state.organization_settings);
   const chartUnit = mode === "amount" ? "amount" : "hours";
   const contractorBaseline =
     chartUnit === "amount"
@@ -755,13 +783,28 @@ export default function ProjectBudgetDetailPage() {
       ? 0
       : (periodRateMargin / periodRevenueCost.revenue) * 100;
 
+  const targetCostLeft =
+    mode === "amount" && periodBudgetCap != null
+      ? remainingTargetCostAllowance(
+          periodBudgetCap,
+          periodPlannedAmount,
+          state.organization_settings,
+        )
+      : null;
+
   let periodMargin: number | null = null;
   let periodMarginPct: number | null = null;
   if (mode === "amount" && periodBudgetCap != null) {
-    // Budget $ minus schedule cost rates and contractor expenses.
+    // Fee minus labor cost + expenses.
     periodMargin = periodBudgetCap - periodRevenueCost.cost;
     periodMarginPct =
       periodBudgetCap <= 0 ? null : (periodMargin / periodBudgetCap) * 100;
+  } else if (
+    mode === "hours" &&
+    periodRevenueCost.revenue > 0
+  ) {
+    periodMargin = periodRateMargin;
+    periodMarginPct = periodRateMarginPct;
   } else if (
     mode === "hours" &&
     periodBudgetCap != null &&
@@ -1153,7 +1196,7 @@ export default function ProjectBudgetDetailPage() {
               {periodMargin != null ? (
                 <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2">
                   <dt className="text-[var(--text-muted)]">
-                    Margin vs Budget
+                    {mode === "hours" ? "Gross Profit" : "Margin vs Fee"}
                   </dt>
                   <dd
                     className={cn(
@@ -1168,22 +1211,40 @@ export default function ProjectBudgetDetailPage() {
                   </dd>
                 </div>
               ) : null}
+              {targetCostLeft != null ? (
+                <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2">
+                  <dt className="text-[var(--text-muted)]">
+                    Remaining Target Cost
+                  </dt>
+                  <dd
+                    className={cn(
+                      "tabular-nums font-medium",
+                      targetCostLeft < 0 && "text-[var(--status-over)]",
+                    )}
+                  >
+                    {formatMoney(targetCostLeft)}
+                  </dd>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2 text-xs">
                 <dt className="text-[var(--text-muted)]">
-                  Rate Revenue / Cost
+                  {mode === "hours" ? "Revenue / Cost" : "Fee Burn (Cost)"}
                 </dt>
                 <dd className="tabular-nums text-[var(--text-muted)]">
-                  {formatMoney(periodRevenueCost.revenue)} /{" "}
-                  {formatMoney(periodRevenueCost.cost)}
+                  {mode === "hours"
+                    ? `${formatMoney(periodRevenueCost.revenue)} / ${formatMoney(periodRevenueCost.cost)}`
+                    : formatMoney(periodRevenueCost.cost)}
                 </dd>
               </div>
-              <div className="flex justify-between gap-2 text-xs">
-                <dt className="text-[var(--text-muted)]">Rate Margin</dt>
-                <dd className="tabular-nums text-[var(--text-muted)]">
-                  {formatMoney(periodRateMargin)} ({periodRateMarginPct.toFixed(0)}
-                  %)
-                </dd>
-              </div>
+              {mode === "hours" ? (
+                <div className="flex justify-between gap-2 text-xs">
+                  <dt className="text-[var(--text-muted)]">Gross Margin</dt>
+                  <dd className="tabular-nums text-[var(--text-muted)]">
+                    {formatMoney(periodRateMargin)} (
+                    {periodRateMarginPct.toFixed(0)}%)
+                  </dd>
+                </div>
+              ) : null}
             </dl>
           </section>
 

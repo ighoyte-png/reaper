@@ -81,6 +81,7 @@ export function useProjectBurnsMap(): {
           new Date(),
           membersForProject,
           expensesForProject,
+          state.organization_settings,
         );
 
       const projectReady = dataStatus.projects[p.id] === "ready";
@@ -111,6 +112,7 @@ export function useProjectBurnsMap(): {
     state.people,
     state.project_members,
     state.project_contractor_expenses,
+    state.organization_settings,
     dataStatus.projects,
   ]);
 

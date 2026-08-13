@@ -1,10 +1,20 @@
-import type { Assignment, Person, Project } from "@/lib/types";
+import type {
+  Assignment,
+  OrganizationSettings,
+  Person,
+  Project,
+} from "@/lib/types";
 import {
   assignmentHours,
   normalizeBudgetMode,
   projectHoursForecast,
   projectPlannedAmount,
 } from "@/lib/domain/budget";
+import {
+  DEFAULT_ORG_BUDGET_SETTINGS,
+  effectiveCostRate,
+  effectiveProjectBillRate,
+} from "@/lib/domain/org-settings";
 
 export interface ProjectForecast {
   projectId: string;
@@ -28,23 +38,31 @@ export function projectForecast(
   assignments: Assignment[],
   people: Person[],
   asOf: Date = new Date(),
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): ProjectForecast {
   const byId = new Map(people.map((p) => [p.id, p]));
   let plannedHours = 0;
   let revenue = 0;
   let cost = 0;
+  const billRate = effectiveProjectBillRate(project, settings);
 
   for (const a of assignments) {
     if (a.project_id !== project.id || a.status !== "confirmed") continue;
     const hours = assignmentHours(a);
     const person = byId.get(a.person_id);
     plannedHours += hours;
-    revenue += hours * (person?.bill_rate ?? 0);
-    cost += hours * (person?.cost_rate ?? 0);
+    revenue += hours * billRate;
+    cost += hours * effectiveCostRate(person, settings);
   }
 
   const margin = revenue - cost;
-  const hoursFx = projectHoursForecast(project, assignments, people, asOf);
+  const hoursFx = projectHoursForecast(
+    project,
+    assignments,
+    people,
+    asOf,
+    settings,
+  );
   const mode = normalizeBudgetMode(
     project.budget_mode,
     project.budget_hours,
@@ -60,9 +78,7 @@ export function projectForecast(
       totalAmount <= 0 ? null : (budgetMargin / totalAmount) * 100;
   } else if (mode === "hours") {
     const totalHours = project.budget_hours ?? 0;
-    // Margin vs budget: unused budget hours valued at blended cost rate.
-    const avgCost =
-      plannedHours > 0 ? cost / plannedHours : 0;
+    const avgCost = plannedHours > 0 ? cost / plannedHours : 0;
     const unusedHours = totalHours - hoursFx.hoursTotalPlanned;
     budgetMargin = unusedHours * avgCost;
     budgetMarginPct =

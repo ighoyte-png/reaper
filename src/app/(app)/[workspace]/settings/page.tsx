@@ -23,6 +23,8 @@ import { isAdmin } from "@/lib/auth/roles";
 import { personAvatarColor } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
+import { AdminBudgetSettingsForm } from "@/components/settings/admin-budget-settings-form";
+import { normalizeOrgBudgetSettings } from "@/lib/domain/org-settings";
 import {
   CONTENT_WIDTH_OPTIONS,
   SCHEDULE_VIEW_OFFSET_OPTIONS,
@@ -40,6 +42,7 @@ type SettingsTab =
   | "preferences"
   | "sharing"
   | "holidays"
+  | "admin"
   | "advanced";
 
 export default function SettingsPage() {
@@ -63,6 +66,7 @@ export default function SettingsPage() {
     updatePersonAvatar,
     updateOrganizationName,
     updateOrganizationSlug,
+    upsertOrganizationSettings,
     createAdditionalWorkspace,
     newId,
     updateDemoShare,
@@ -254,6 +258,7 @@ export default function SettingsPage() {
       items.push(
         { id: "sharing", label: "Sharing" },
         { id: "holidays", label: "Holidays" },
+        { id: "admin", label: "Admin" },
       );
     }
     if (showAdvancedTab) {
@@ -1281,6 +1286,28 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ) : null}
+            </Panel>
+          ) : null}
+
+          {tab === "admin" && canManage ? (
+            <Panel>
+              <h2 className="text-sm font-semibold">Admin</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Workspace defaults for rates, project budget health colors, and
+                capacity utilization thresholds.
+              </p>
+              <div className="mt-4">
+                <AdminBudgetSettingsForm
+                  initial={normalizeOrgBudgetSettings(
+                    state.organization_settings,
+                    state.organization.id,
+                  )}
+                  onSave={async (next) => {
+                    await upsertOrganizationSettings(next);
+                    push("Admin settings saved", "success");
+                  }}
+                />
+              </div>
             </Panel>
           ) : null}
 

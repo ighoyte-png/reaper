@@ -67,7 +67,6 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   office: "",
   capacity_hours_week: 40,
   cost_rate: 70,
-  bill_rate: 140,
   timezone: "America/Los_Angeles",
   holiday_calendar_id: null,
   avatar_url: null,

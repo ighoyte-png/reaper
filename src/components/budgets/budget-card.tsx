@@ -159,10 +159,17 @@ export function BudgetCard({
       new Date(),
       membersForProject,
       expensesForProject,
+      state.organization_settings,
     );
-  const health = budgetHealth(burn);
+  const health = budgetHealth(burn, state.organization_settings);
   const hoursFx = projectReady
-    ? projectHoursForecast(project, state.assignments, state.people)
+    ? projectHoursForecast(
+        project,
+        state.assignments,
+        state.people,
+        new Date(),
+        state.organization_settings,
+      )
     : forecastFromBurn(project, burn);
   const showHoursMetrics = mode === "hours";
   const showAmountMetrics = mode === "amount";

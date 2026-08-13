@@ -16,6 +16,7 @@ import type {
   Milestone,
   Organization,
   OrganizationMembership,
+  OrganizationSettings,
   Person,
   Profile,
   Project,
@@ -35,6 +36,10 @@ import type {
   TemplateTaskList,
 } from "@/lib/types";
 import type { SearchHit } from "@/lib/search";
+import {
+  DEFAULT_ORG_BUDGET_SETTINGS,
+  normalizeOrgBudgetSettings,
+} from "@/lib/domain/org-settings";
 
 function num(value: unknown, fallback = 0): number {
   if (typeof value === "number") return value;
@@ -88,6 +93,12 @@ function mapProject(row: Record<string, unknown>): Project {
     budget_hours: budget_mode === "hours" ? (rawHours ?? 0) : null,
     budget_amount: budget_mode === "amount" ? rawAmount : null,
     budget_mode,
+    bill_rate:
+      budget_mode === "hours"
+        ? row.bill_rate == null || row.bill_rate === ""
+          ? null
+          : num(row.bill_rate)
+        : null,
     budget_monthly_reset: Boolean(row.budget_monthly_reset),
     notes: String(row.notes ?? ""),
     manager_person_id: row.manager_person_id
@@ -367,7 +378,6 @@ function mapPerson(row: Record<string, unknown>): Person {
     office: String(row.office ?? ""),
     capacity_hours_week: num(row.capacity_hours_week, 40),
     cost_rate: num(row.cost_rate),
-    bill_rate: num(row.bill_rate),
     timezone: String(row.timezone ?? "UTC"),
     holiday_calendar_id: row.holiday_calendar_id
       ? String(row.holiday_calendar_id)
@@ -473,6 +483,10 @@ export function mapLeaveDay(row: Record<string, unknown>): LeaveDay {
 function emptyWorkspace(): DemoState {
   return {
     organization: { id: "", name: "", slug: "" },
+    organization_settings: {
+      ...DEFAULT_ORG_BUDGET_SETTINGS,
+      organization_id: "",
+    },
     memberships: [],
     profiles: [],
     clients: [],
@@ -776,6 +790,7 @@ export async function loadOrgBootstrap(
 ): Promise<DemoState> {
   const [
     orgRes,
+    orgSettingsRes,
     membershipsRes,
     clientsRes,
     projectsRes,
@@ -797,6 +812,11 @@ export async function loadOrgBootstrap(
     templateTasksRes,
   ] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", orgId).single(),
+    supabase
+      .from("organization_settings")
+      .select("*")
+      .eq("organization_id", orgId)
+      .maybeSingle(),
     supabase
       .from("organization_memberships")
       .select("user_id, role, organization_id")
@@ -1158,6 +1178,12 @@ export async function loadOrgBootstrap(
       );
 
   const organization = orgRes.data as Organization;
+  const organization_settings = normalizeOrgBudgetSettings(
+    orgSettingsRes.error || !orgSettingsRes.data
+      ? { organization_id: orgId }
+      : (orgSettingsRes.data as Partial<OrganizationSettings>),
+    orgId,
+  );
 
   return {
     organization: {
@@ -1176,6 +1202,7 @@ export async function loadOrgBootstrap(
         (organization as { share_enabled?: boolean }).share_enabled,
       ),
     },
+    organization_settings,
     profiles: (profilesRes.data ?? []).map((row) => {
       const id = String(row.id);
       return {
@@ -1905,6 +1932,30 @@ export async function updateOrganizationNameRow(
   if (error) throw error;
 }
 
+export async function upsertOrganizationSettingsRow(
+  supabase: SupabaseClient,
+  settings: OrganizationSettings,
+) {
+  const payload = {
+    organization_id: settings.organization_id,
+    default_cost_rate: settings.default_cost_rate,
+    default_bill_rate: settings.default_bill_rate,
+    hours_warning_pct: settings.hours_warning_pct,
+    hours_over_pct: settings.hours_over_pct,
+    target_profit_margin_pct: settings.target_profit_margin_pct,
+    amount_warning_pct: settings.amount_warning_pct,
+    amount_over_pct: settings.amount_over_pct,
+    capacity_low_max_pct: settings.capacity_low_max_pct,
+    capacity_near_pct: settings.capacity_near_pct,
+    capacity_over_pct: settings.capacity_over_pct,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from("organization_settings")
+    .upsert(payload, { onConflict: "organization_id" });
+  if (error) throw error;
+}
+
 export async function updateOrganizationSlugRow(
   supabase: SupabaseClient,
   orgId: string,
@@ -2040,6 +2091,7 @@ export async function upsertProjectRow(
       mode === "hours" ? (project.budget_hours ?? 0) : null,
     budget_amount: mode === "amount" ? project.budget_amount : null,
     budget_mode: mode,
+    bill_rate: mode === "hours" ? (project.bill_rate ?? null) : null,
     budget_monthly_reset: mode === "hours" || mode === "amount"
       ? Boolean(project.budget_monthly_reset)
       : false,
@@ -2538,7 +2590,6 @@ export async function upsertPersonRow(
     office: person.office,
     capacity_hours_week: person.capacity_hours_week,
     cost_rate: person.cost_rate,
-    bill_rate: person.bill_rate,
     timezone: person.timezone,
     holiday_calendar_id: person.holiday_calendar_id,
     avatar_url: person.avatar_url,
@@ -4075,6 +4126,7 @@ export async function seedDemoWorkspace(
     budget_hours: p.budget_hours,
     budget_amount: p.budget_amount,
     budget_mode: p.budget_mode,
+    bill_rate: p.budget_mode === "hours" ? (p.bill_rate ?? null) : null,
     budget_monthly_reset: p.budget_monthly_reset,
     notes: p.notes,
     manager_person_id: p.manager_person_id
@@ -4097,7 +4149,6 @@ export async function seedDemoWorkspace(
     office: p.office,
     capacity_hours_week: p.capacity_hours_week,
     cost_rate: p.cost_rate,
-    bill_rate: p.bill_rate,
     timezone: p.timezone,
     holiday_calendar_id: p.holiday_calendar_id
       ? remapId(ids, p.holiday_calendar_id)
