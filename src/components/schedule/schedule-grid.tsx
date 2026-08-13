@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
 import { format, isWeekend, parseISO, addWeeks, subWeeks } from "date-fns";
-import { ChevronDown, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass, Modal, DateInput } from "@/components/ui/form";
@@ -215,6 +215,9 @@ export function ScheduleGrid() {
     person: "all",
     zoom: "day",
     capacity: "week",
+    assignment: "",
+    tab: "",
+    date: "",
   });
   const zoom = (
     filters.zoom === "week" || filters.zoom === "month" || filters.zoom === "day"
@@ -225,8 +228,14 @@ export function ScheduleGrid() {
     filters.capacity === "day" ? "day" : "week";
   const projectFilter = filters.project;
   const personFilter = filters.person;
+  const [halfZoom, setHalfZoom] = useState(false);
+  const dayW =
+    zoom === "day" && halfZoom
+      ? Math.max(20, Math.round(DAY_W / 2))
+      : DAY_W;
   const [podFilter, setPodFilter] = useState<PodFilter>("all");
   const skipPodFilterWrite = useRef(true);
+  const deepLinkAssignmentRef = useRef<string | null>(null);
   const [anchor, setAnchor] = useState(() =>
     scheduleAnchorForOffset(readUserViewPrefs(null).scheduleViewOffset),
   );
@@ -431,10 +440,10 @@ export function ScheduleGrid() {
         zoom,
         anchor,
         todayKey,
-        dayW: DAY_W,
+        dayW,
         isNarrow,
       }),
-    [zoom, anchor, todayKey, DAY_W, isNarrow],
+    [zoom, anchor, todayKey, dayW, isNarrow],
   );
   const startKey = columns[0]?.startKey ?? todayKey;
   const endKey = columns[columns.length - 1]?.endKey ?? todayKey;
@@ -1449,6 +1458,50 @@ export function ScheduleGrid() {
     }
   }
 
+  // One-shot deep-link: /schedule?assignment=&tab=details&date=
+  useEffect(() => {
+    const assignmentId = filters.assignment?.trim();
+    if (!assignmentId) {
+      deepLinkAssignmentRef.current = null;
+      return;
+    }
+    if (deepLinkAssignmentRef.current === assignmentId) return;
+
+    const dateKey = filters.date?.trim();
+    if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      if (dateKey < startKey || dateKey > endKey) {
+        setAnchor(parseISO(dateKey));
+        return;
+      }
+    }
+
+    const a = state.assignments.find((x) => x.id === assignmentId);
+    if (!a) return;
+
+    deepLinkAssignmentRef.current = assignmentId;
+    const tabRaw = filters.tab?.trim().toLowerCase();
+    if (!tabRaw || tabRaw === "details" || tabRaw === "edit") {
+      setSidebarPanelTab("edit");
+    } else if (tabRaw === "tasks") {
+      setSidebarPanelTab("tasks");
+    } else if (tabRaw === "assigner") {
+      setSidebarPanelTab("assigner");
+    } else {
+      setSidebarPanelTab("edit");
+    }
+    selectAssignment(a.id, { start: a.start_date, end: a.end_date });
+    setFilters({ assignment: "", tab: "", date: "" });
+  }, [
+    filters.assignment,
+    filters.tab,
+    filters.date,
+    startKey,
+    endKey,
+    state.assignments,
+    setFilters,
+    isNarrow,
+  ]);
+
   function applyRecurrenceChoice(scope: "instance" | "future") {
     const pending = recurrencePrompt;
     if (!pending) return;
@@ -2165,7 +2218,7 @@ export function ScheduleGrid() {
   ): string | null {
     const days = workingDaysBetween(occStart, occEnd);
     if (days.length === 0) return null;
-    const dayWidth = DAY_W;
+    const dayWidth = columns[0]?.width ?? DAY_W;
     const offset = Math.max(0, clientX - blockLeft);
     const index = Math.min(days.length - 1, Math.floor(offset / dayWidth));
     return days[index] ?? null;
@@ -2316,6 +2369,18 @@ export function ScheduleGrid() {
                 { value: "month", label: "By month" },
               ]}
             />
+            {zoom === "day" ? (
+              <NavBtn
+                onClick={() => setHalfZoom((z) => !z)}
+                label={
+                  halfZoom
+                    ? "Zoom in (full day width)"
+                    : "Zoom out (half day width)"
+                }
+              >
+                {halfZoom ? <ZoomIn size={16} /> : <ZoomOut size={16} />}
+              </NavBtn>
+            ) : null}
             <Select
               value={capacityGrain}
               onChange={(v) => setFilter("capacity", v)}

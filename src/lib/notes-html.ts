@@ -6,7 +6,7 @@ export function notesPlainText(html: string): string {
       .replace(/<\/p>/gi, "\n")
       .replace(/<\/h[1-6]>/gi, "\n")
       .replace(/<\/li>/gi, "\n")
-      .replace(/<\/(?:ul|ol)>/gi, "\n")
+      .replace(/<\/(?:ul|ol|pre)>/gi, "\n")
       .replace(/<[^>]+>/g, ""),
   )
     .replace(/\u00A0/g, " ")
@@ -89,7 +89,7 @@ export function notesToEditorHtml(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return "";
   if (
-    /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li|h1|h2|h3|img)\b/i.test(trimmed)
+    /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li|h1|h2|h3|img|code|pre)\b/i.test(trimmed)
   ) {
     // Re-sanitize so double-encoded entities (&amp;nbsp;) are normalized
     // before TipTap parses the document.
@@ -116,6 +116,8 @@ const ALLOWED_TAGS = new Set([
   "UL",
   "OL",
   "LI",
+  "CODE",
+  "PRE",
 ]);
 
 const UUID_RE =
@@ -275,6 +277,8 @@ function renderNodes(nodes: WalkNode[]): string {
       if (tag === "LI") return `<li>${inner}</li>`;
       if (tag === "B" || tag === "STRONG") return `<strong>${inner}</strong>`;
       if (tag === "U") return `<u>${inner}</u>`;
+      if (tag === "CODE") return `<code>${inner}</code>`;
+      if (tag === "PRE") return `<pre>${inner}</pre>`;
       if (tag === "H1" || tag === "H2" || tag === "H3") {
         return `<${tag.toLowerCase()}>${inner}</${tag.toLowerCase()}>`;
       }

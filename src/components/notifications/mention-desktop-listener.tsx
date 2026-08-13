@@ -233,6 +233,9 @@ export function MentionDesktopListener() {
             const qs = new URLSearchParams({
               project: assignment.project_id,
               person: assignment.person_id,
+              assignment: assignment.id,
+              tab: "details",
+              date: assignment.start_date,
             });
             const href = appHref(`/schedule?${qs.toString()}`);
             void showDesktopNotification(authorName, {
@@ -323,6 +326,9 @@ export function MentionDesktopListener() {
         const qs = new URLSearchParams({
           project: detail.projectId,
           person: detail.personId,
+          assignment: detail.assignmentId,
+          tab: "details",
+          date: detail.startDate,
         });
         const href = appHref(`/schedule?${qs.toString()}`);
         void showDesktopNotification(authorName, {

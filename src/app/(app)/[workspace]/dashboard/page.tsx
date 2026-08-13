@@ -992,6 +992,9 @@ export default function DashboardPage() {
         const scheduleQs = new URLSearchParams({
           project: assignment.project_id,
           person: assignment.person_id,
+          assignment: assignment.id,
+          tab: "details",
+          date: assignment.start_date,
         });
         rows.push({
           key,

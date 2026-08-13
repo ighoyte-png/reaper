@@ -10,6 +10,8 @@ import Underline from "@tiptap/extension-underline";
 import Image from "@tiptap/extension-image";
 import {
   Bold,
+  Code,
+  Code2,
   Link as LinkIcon,
   List,
   ListOrdered,
@@ -65,6 +67,9 @@ const editorContentClass = cn(
   "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
   "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
   "[&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:max-w-full [&_img]:rounded-md",
+  "[&_code]:rounded [&_code]:bg-[var(--bg-elevated)] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]",
+  "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-[var(--bg-elevated)] [&_pre]:px-2.5 [&_pre]:py-2 [&_pre]:font-mono [&_pre]:text-[0.85em] [&_pre]:leading-relaxed",
+  "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
 );
 
 /** Keep caret scroll inside the editor scroller — avoid yanking the page. */
@@ -493,8 +498,6 @@ export const SimpleRichTextEditor = forwardRef<
     const base: Extensions = [
       StarterKit.configure({
         blockquote: false,
-        code: false,
-        codeBlock: false,
         heading: { levels: [1, 2, 3] },
         horizontalRule: false,
         italic: false,
@@ -685,6 +688,8 @@ export const SimpleRichTextEditor = forwardRef<
         link: ed.isActive("link"),
         bulletList: ed.isActive("bulletList"),
         orderedList: ed.isActive("orderedList"),
+        code: ed.isActive("code"),
+        codeBlock: ed.isActive("codeBlock"),
         h1: ed.isActive("heading", { level: 1 }),
         h2: ed.isActive("heading", { level: 2 }),
         h3: ed.isActive("heading", { level: 3 }),
@@ -797,6 +802,28 @@ export const SimpleRichTextEditor = forwardRef<
           }
         >
           <ListOrdered size={14} strokeWidth={2.5} />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Inline code"
+          active={Boolean(toolbar?.code)}
+          onClick={() =>
+            ed.chain().focus(undefined, { scrollIntoView: false }).toggleCode().run()
+          }
+        >
+          <Code size={14} strokeWidth={2.5} />
+        </ToolbarButton>
+        <ToolbarButton
+          label="Code block"
+          active={Boolean(toolbar?.codeBlock)}
+          onClick={() =>
+            ed
+              .chain()
+              .focus(undefined, { scrollIntoView: false })
+              .toggleCodeBlock()
+              .run()
+          }
+        >
+          <Code2 size={14} strokeWidth={2.5} />
         </ToolbarButton>
         <ToolbarButton
           label="Link"
@@ -1086,6 +1113,9 @@ export function RichNotesHtml({
           "[&_p+ul]:mt-3 [&_p+ol]:mt-3",
           "[&_ul+p]:mt-3 [&_ol+p]:mt-3",
           "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
+          "[&_code]:rounded [&_code]:bg-[var(--bg-elevated)] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]",
+          "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-[var(--bg-elevated)] [&_pre]:px-2.5 [&_pre]:py-2 [&_pre]:font-mono [&_pre]:text-[0.85em] [&_pre]:leading-relaxed",
+          "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
           className,
         )}
         onClickCapture={(e) => {
