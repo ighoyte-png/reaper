@@ -997,17 +997,15 @@ export default function ProjectSharePage() {
                     </button>
                   </div>
                 </div>
-                <div className="w-1/2 min-w-[10rem]">
-                  <ProjectYearBurnChart
-                    bars={yearBars}
-                    unit="hours"
-                    monthlyCap={portal.hoursRetainer.budgetHours}
-                    year={chartYear}
-                    compact
-                    selectedMonthKey={selectedMonthKey}
-                    onMonthSelect={handleMonthSelect}
-                  />
-                </div>
+                <ProjectYearBurnChart
+                  bars={yearBars}
+                  unit="hours"
+                  monthlyCap={portal.hoursRetainer.budgetHours}
+                  year={chartYear}
+                  compact
+                  selectedMonthKey={selectedMonthKey}
+                  onMonthSelect={handleMonthSelect}
+                />
               </section>
 
               <ul

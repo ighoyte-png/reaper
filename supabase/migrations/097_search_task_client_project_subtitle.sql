@@ -1,4 +1,8 @@
 -- Task/comment search subtitles: "Client - Project" (project alone if no client).
+-- Must DROP first: OUT columns cannot change via CREATE OR REPLACE
+-- (e.g. when migrating from a pre-065 search_org without task_status).
+
+drop function if exists public.search_org(text, int);
 
 create or replace function public.search_org(
   p_query text,
