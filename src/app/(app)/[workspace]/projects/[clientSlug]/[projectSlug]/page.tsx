@@ -46,7 +46,11 @@ import {
 import { SandboxIcon } from "@/components/projects/sandbox-icon";
 import { isProjectFavorited } from "@/lib/domain/project-favorites";
 import { personAvatarColor } from "@/lib/domain/people";
-import { isMonthlyRetainerBudget } from "@/lib/domain/budget";
+import {
+  isMonthlyRetainerBudget,
+  projectProgressBarLabel,
+  projectProgressCardTitle,
+} from "@/lib/domain/budget";
 import {
   existingPmDailyHours,
   findPmProjectAssignments,
@@ -76,18 +80,6 @@ import type { Milestone, Project, ProjectAssetKind } from "@/lib/types";
 function formatDisplayDate(dateKey: string | null | undefined): string {
   if (!dateKey) return "No date";
   return format(parseISO(dateKey), "MMM d, yyyy");
-}
-
-function overallProgressLabel(
-  startDate: string | null,
-  endDate: string | null,
-): string {
-  if (startDate && endDate) {
-    return `Overall Progress · ${formatDisplayDate(startDate)} – ${formatDisplayDate(endDate)}`;
-  }
-  if (startDate) return `Overall Progress · from ${formatDisplayDate(startDate)}`;
-  if (endDate) return `Overall Progress · through ${formatDisplayDate(endDate)}`;
-  return "Overall Progress";
 }
 
 const portalActionClass =
@@ -629,7 +621,9 @@ export default function ProjectDetailPage() {
             ) : (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">Progress</h2>
+                <h2 className="text-sm font-semibold">
+                  {projectProgressCardTitle(isRetainer)}
+                </h2>
                 {canEdit ? (
                   <button
                     type="button"
@@ -658,9 +652,11 @@ export default function ProjectDetailPage() {
               </div>
               <ProgressBar
                 pct={overallPct}
-                label={overallProgressLabel(
+                label={projectProgressBarLabel(
                   project.start_date,
                   project.end_date,
+                  isRetainer,
+                  formatDisplayDate,
                 )}
                 size="lg"
               />
@@ -929,7 +925,9 @@ export default function ProjectDetailPage() {
             ) : (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold">Progress</h2>
+                <h2 className="text-sm font-semibold">
+                  {projectProgressCardTitle(isRetainer)}
+                </h2>
                 {canEdit ? (
                   <button
                     type="button"
@@ -958,9 +956,11 @@ export default function ProjectDetailPage() {
               </div>
               <ProgressBar
                 pct={overallPct}
-                label={overallProgressLabel(
+                label={projectProgressBarLabel(
                   project.start_date,
                   project.end_date,
+                  isRetainer,
+                  formatDisplayDate,
                 )}
                 size="lg"
               />

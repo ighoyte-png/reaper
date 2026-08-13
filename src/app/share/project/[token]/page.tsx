@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { format, parseISO } from "date-fns";
+import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
+import { PeriodChip } from "@/components/budgets/period-chip";
+import {
+  TeamHoursTable,
+  type TeamHoursRow,
+} from "@/components/budgets/team-hours-table";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   MilestoneApprovalCheck,
@@ -29,7 +34,16 @@ import {
   assetViewForApprovalTooltip,
   titleCaseWords,
 } from "@/lib/domain/assets";
-import { calendarYearBars } from "@/lib/domain/budget";
+import {
+  calendarYearBars,
+  hoursCommitmentTotalInRange,
+  personHoursSplitInRange,
+  type MonthBurnBar,
+} from "@/lib/domain/budget";
+import {
+  contractorCommitted,
+  isProjectBasisContractor,
+} from "@/lib/domain/contractor";
 import { parseAssetKind } from "@/lib/domain/milestones";
 import { compareTaskOrder } from "@/lib/domain/tasks";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
@@ -41,8 +55,10 @@ import {
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import type {
   Assignment,
+  Person,
   Project,
   ProjectAssetKind,
+  ProjectMember,
   TaskStatus,
 } from "@/lib/types";
 import { toDateKey } from "@/lib/domain/dates";
@@ -53,6 +69,8 @@ import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 function portalChartProject(
   projectId: string,
   budgetHours: number,
+  startDate: string | null,
+  endDate: string | null,
 ): Project {
   return {
     id: projectId,
@@ -63,8 +81,8 @@ function portalChartProject(
     status: "active",
     priority: 0,
     color: "",
-    start_date: null,
-    end_date: null,
+    start_date: startDate,
+    end_date: endDate,
     budget_hours: budgetHours,
     budget_amount: null,
     budget_mode: "hours",
@@ -84,7 +102,7 @@ function portalChartAssignments(
   return stubs.map((a, i) => ({
     id: `portal-${i}`,
     organization_id: "portal",
-    person_id: "portal",
+    person_id: a.person_id,
     project_id: projectId,
     start_date: a.start_date,
     end_date: a.end_date,
@@ -98,6 +116,44 @@ function portalChartAssignments(
     created_at: new Date().toISOString(),
     edited_at: null,
     edited_by_profile_id: null,
+  }));
+}
+
+function portalChartPeople(stubs: PortalHoursRetainer["people"]): Person[] {
+  return stubs.map((p) => ({
+    id: p.id,
+    organization_id: "portal",
+    profile_id: null,
+    name: p.name,
+    email: "",
+    role_title: "",
+    department: "",
+    office: "",
+    capacity_hours_week: 40,
+    cost_rate: 0,
+    timezone: "",
+    holiday_calendar_id: null,
+    avatar_url: p.avatar_url,
+    avatar_attachment_id: p.avatar_attachment_id,
+    hide_from_schedule: p.hide_from_schedule,
+    hide_from_utilization: p.hide_from_utilization,
+    is_contractor: p.is_contractor,
+    avatar_color: p.avatar_color,
+    deleted_at: null,
+  }));
+}
+
+function portalChartMembers(
+  projectId: string,
+  stubs: PortalHoursRetainer["members"],
+): ProjectMember[] {
+  return stubs.map((m) => ({
+    project_id: projectId,
+    person_id: m.person_id,
+    organization_id: "portal",
+    contractor_mode: m.contractor_mode,
+    contractor_fixed_fee: null,
+    contractor_hours: m.contractor_hours,
   }));
 }
 
@@ -186,6 +242,11 @@ export default function ProjectSharePage() {
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
   const [chartYear, setChartYear] = useState(() => new Date().getFullYear());
+  const [periodMode, setPeriodMode] = useState<"month" | "year">("month");
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), monthIndex: now.getMonth() };
+  });
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [approveName, setApproveName] = useState("");
   const [approveEmail, setApproveEmail] = useState("");
@@ -207,16 +268,153 @@ export default function ProjectSharePage() {
           portalChartProject(
             portal.project.id,
             portal.hoursRetainer.budgetHours,
+            portal.project.start_date,
+            portal.project.end_date,
           ),
           portalChartAssignments(
             portal.project.id,
             portal.hoursRetainer.assignments,
           ),
-          [],
+          portalChartPeople(portal.hoursRetainer.people),
           chartYear,
           new Date(),
+          portalChartMembers(portal.project.id, portal.hoursRetainer.members),
         )
       : [];
+
+  const selectedMonthKey =
+    periodMode === "month"
+      ? format(
+          new Date(selectedMonth.year, selectedMonth.monthIndex, 1),
+          "yyyy-MM",
+        )
+      : undefined;
+
+  function handleMonthSelect(bar: MonthBurnBar) {
+    setPeriodMode("month");
+    setSelectedMonth({ year: bar.year, monthIndex: bar.monthIndex });
+    if (bar.year !== chartYear) setChartYear(bar.year);
+  }
+
+  const periodRange = useMemo(() => {
+    if (periodMode === "year") {
+      return {
+        start: toDateKey(new Date(chartYear, 0, 1)),
+        end: toDateKey(endOfMonth(new Date(chartYear, 11, 1))),
+        label: String(chartYear),
+      };
+    }
+    const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
+    return {
+      start: toDateKey(startOfMonth(d)),
+      end: toDateKey(endOfMonth(d)),
+      label: format(d, "MMM yyyy"),
+    };
+  }, [periodMode, chartYear, selectedMonth]);
+
+  const teamHoursRows = useMemo((): TeamHoursRow[] => {
+    const retainer = portal?.hoursRetainer;
+    if (!portal || !retainer) return [];
+    const project = portalChartProject(
+      portal.project.id,
+      retainer.budgetHours,
+      portal.project.start_date,
+      portal.project.end_date,
+    );
+    const assignments = portalChartAssignments(
+      portal.project.id,
+      retainer.assignments,
+    );
+    const people = portalChartPeople(retainer.people);
+    const members = portalChartMembers(portal.project.id, retainer.members);
+    const membersByPerson = new Map(
+      members.map((m) => [m.person_id, m] as const),
+    );
+    const asOf = new Date();
+    const rows: TeamHoursRow[] = [];
+
+    for (const person of people.filter((p) => !p.is_contractor)) {
+      const split = personHoursSplitInRange(
+        person.id,
+        portal.project.id,
+        assignments,
+        periodRange.start,
+        periodRange.end,
+      );
+      rows.push({
+        id: person.id,
+        personId: person.id,
+        name: person.name,
+        avatar_url: person.avatar_url,
+        avatar_attachment_id: person.avatar_attachment_id,
+        avatar_color: person.avatar_color,
+        usedHours: split.usedHours,
+        plannedHours: split.futureHours,
+        totalHours: split.usedHours + split.futureHours,
+      });
+    }
+
+    for (const person of people.filter((p) => p.is_contractor)) {
+      const member = membersByPerson.get(person.id);
+      const mode = member?.contractor_mode ?? null;
+      const isFixedFee = mode === "fixed_fee";
+      const isFixedHours =
+        mode === "hours" || (mode == null && person.hide_from_schedule);
+      const isScheduled = mode === "scheduled" || (!isFixedFee && !isFixedHours);
+
+      if (isFixedFee) continue;
+
+      if (isFixedHours && isProjectBasisContractor(person)) {
+        const committed = contractorCommitted(person, member);
+        const totalHours = hoursCommitmentTotalInRange(
+          project,
+          committed.hours,
+          periodRange.start,
+          periodRange.end,
+          asOf,
+        );
+        if (totalHours <= 0) continue;
+        rows.push({
+          id: `${person.id}:hours`,
+          personId: person.id,
+          name: person.name,
+          avatar_url: person.avatar_url,
+          avatar_attachment_id: person.avatar_attachment_id,
+          avatar_color: person.avatar_color,
+          usedHours: 0,
+          plannedHours: 0,
+          totalHours,
+          dashUsedPlanned: true,
+        });
+        continue;
+      }
+
+      if (isScheduled) {
+        const split = personHoursSplitInRange(
+          person.id,
+          portal.project.id,
+          assignments,
+          periodRange.start,
+          periodRange.end,
+        );
+        rows.push({
+          id: person.id,
+          personId: person.id,
+          name: person.name,
+          avatar_url: person.avatar_url,
+          avatar_attachment_id: person.avatar_attachment_id,
+          avatar_color: person.avatar_color,
+          usedHours: split.usedHours,
+          plannedHours: split.futureHours,
+          totalHours: split.usedHours + split.futureHours,
+        });
+      }
+    }
+
+    return rows.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+    );
+  }, [portal, periodRange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -751,7 +949,11 @@ export default function ProjectSharePage() {
       <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
         <ProgressBar
           pct={overallPct}
-          label="Overall Project Progress"
+          label={
+            portal.monthlyRetainer
+              ? "Contract Term"
+              : "Overall Project Progress"
+          }
           size="lg"
           footerStart={
             portal.project.start_date
@@ -767,38 +969,100 @@ export default function ProjectSharePage() {
       </section>
 
       {portal.hoursRetainer ? (
-        <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">{chartYear} Calendar</h2>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
-                onClick={() => setChartYear((y) => y - 1)}
-                aria-label="Previous year"
+        <>
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+            {tasksSection}
+            <div className="space-y-4">
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">
+                    {chartYear} Calendar
+                  </h2>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                      onClick={() => setChartYear((y) => y - 1)}
+                      aria-label="Previous year"
+                    >
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                      onClick={() => setChartYear((y) => y + 1)}
+                      aria-label="Next year"
+                    >
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="w-1/2 min-w-[10rem]">
+                  <ProjectYearBurnChart
+                    bars={yearBars}
+                    unit="hours"
+                    monthlyCap={portal.hoursRetainer.budgetHours}
+                    year={chartYear}
+                    compact
+                    selectedMonthKey={selectedMonthKey}
+                    onMonthSelect={handleMonthSelect}
+                  />
+                </div>
+              </section>
+
+              <ul
+                className="flex flex-wrap gap-2"
+                role="tablist"
+                aria-label="Period"
               >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
-                onClick={() => setChartYear((y) => y + 1)}
-                aria-label="Next year"
-              >
-                <ChevronRight size={16} />
-              </button>
+                <li>
+                  <PeriodChip
+                    label="Month"
+                    selected={periodMode === "month"}
+                    onSelect={() => setPeriodMode("month")}
+                  />
+                </li>
+                <li>
+                  <PeriodChip
+                    label="Year"
+                    selected={periodMode === "year"}
+                    onSelect={() => setPeriodMode("year")}
+                  />
+                </li>
+                {periodMode === "month" ? (
+                  <li className="flex items-center text-xs text-[var(--text-muted)]">
+                    {periodRange.label}
+                  </li>
+                ) : null}
+              </ul>
+
+              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+                <h2 className="mb-3 text-sm font-semibold">
+                  Team
+                  {periodMode === "month"
+                    ? ` · ${periodRange.label}`
+                    : ` · ${chartYear}`}
+                </h2>
+                <TeamHoursTable rows={teamHoursRows} />
+              </section>
+
+              {essentialsSection}
             </div>
           </div>
-          <ProjectYearBurnChart
-            bars={yearBars}
-            unit="hours"
-            monthlyCap={portal.hoursRetainer.budgetHours}
-            year={chartYear}
-          />
-        </section>
-      ) : null}
-
-      {hasGantt ? (
+          {hasGantt ? (
+            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+              <PortalGanttProvider portal={portal}>
+                <ProjectGanttBoard
+                  projectId={portal.project.id}
+                  readOnly
+                  showAssignees={false}
+                  showDrawer={false}
+                />
+              </PortalGanttProvider>
+            </section>
+          ) : null}
+        </>
+      ) : hasGantt ? (
         <>
           <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
             {milestonesSection ?? <div aria-hidden />}

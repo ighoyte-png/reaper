@@ -1,4 +1,4 @@
-import { normalizeBudgetMode } from "@/lib/domain/budget";
+import { isMonthlyRetainerBudget, normalizeBudgetMode } from "@/lib/domain/budget";
 import {
   projectTeamPersonIds,
   showProjectManagerUi,
@@ -6,6 +6,7 @@ import {
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import type {
   AssignmentStatus,
+  ContractorMode,
   DemoState,
   Person,
   Recurrence,
@@ -123,10 +124,11 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
   };
 }
 
-/** Schedule stubs for client-facing monthly hours chart (no people/rates). */
+/** Schedule + roster stubs for client-facing monthly hours chart / Team hours. */
 export interface PortalHoursRetainer {
   budgetHours: number;
   assignments: {
+    person_id: string;
     start_date: string;
     end_date: string;
     hours_per_day: number;
@@ -134,6 +136,23 @@ export interface PortalHoursRetainer {
     recurrence_end_date: string | null;
     recurrence_exceptions: string[];
     status: AssignmentStatus;
+  }[];
+  /** People appearing on schedule/roster for this retainer (no rates/emails). */
+  people: {
+    id: string;
+    name: string;
+    avatar_url: string | null;
+    avatar_attachment_id: string | null;
+    avatar_color: string | null;
+    is_contractor: boolean;
+    hide_from_schedule: boolean;
+    hide_from_utilization: boolean;
+  }[];
+  /** Project member contractor terms — hours/mode only (no dollar fees). */
+  members: {
+    person_id: string;
+    contractor_mode: ContractorMode | null;
+    contractor_hours: number | null;
   }[];
 }
 
@@ -218,6 +237,8 @@ export interface ProjectPortalPayload {
    * Null for non-retainer / non-hours projects.
    */
   hoursRetainer: PortalHoursRetainer | null;
+  /** Hours or amount budget with monthly reset — drives Contract Term label. */
+  monthlyRetainer: boolean;
   /**
    * Statutory holidays relevant to the project team (for portal Gantt columns).
    * Dates/names only — no calendar ownership PII beyond what's needed to paint.
@@ -284,13 +305,43 @@ export function sanitizeProjectPortal(
     project.budget_hours,
     project.budget_amount,
   );
+  const monthlyRetainer = isMonthlyRetainerBudget(project);
   const hoursRetainer: PortalHoursRetainer | null =
     budgetMode === "hours" && project.budget_monthly_reset
-      ? {
-          budgetHours: project.budget_hours ?? 0,
-          assignments: state.assignments
-            .filter((a) => a.project_id === projectId)
-            .map((a) => ({
+      ? (() => {
+          const projectAssignments = state.assignments.filter(
+            (a) => a.project_id === projectId,
+          );
+          const projectMembers = state.project_members.filter(
+            (m) => m.project_id === projectId,
+          );
+          const rosterIds = new Set<string>();
+          for (const a of projectAssignments) rosterIds.add(a.person_id);
+          for (const m of projectMembers) rosterIds.add(m.person_id);
+          for (const t of state.tasks) {
+            if (t.project_id === projectId && t.assignee_person_id) {
+              rosterIds.add(t.assignee_person_id);
+            }
+          }
+          const people = state.people
+            .filter((p) => rosterIds.has(p.id))
+            .map((p) => ({
+              id: p.id,
+              name: p.name,
+              avatar_url: p.avatar_url ?? null,
+              avatar_attachment_id: p.avatar_attachment_id ?? null,
+              avatar_color: p.avatar_color ?? null,
+              is_contractor: Boolean(p.is_contractor),
+              hide_from_schedule: Boolean(p.hide_from_schedule),
+              hide_from_utilization: Boolean(p.hide_from_utilization),
+            }))
+            .sort((a, b) =>
+              a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+            );
+          return {
+            budgetHours: project.budget_hours ?? 0,
+            assignments: projectAssignments.map((a) => ({
+              person_id: a.person_id,
               start_date: a.start_date,
               end_date: a.end_date,
               hours_per_day: a.hours_per_day,
@@ -299,7 +350,14 @@ export function sanitizeProjectPortal(
               recurrence_exceptions: a.recurrence_exceptions ?? [],
               status: a.status,
             })),
-        }
+            people,
+            members: projectMembers.map((m) => ({
+              person_id: m.person_id,
+              contractor_mode: m.contractor_mode,
+              contractor_hours: m.contractor_hours,
+            })),
+          };
+        })()
       : null;
 
   const visibleLists = state.task_lists.filter(
@@ -429,6 +487,7 @@ export function sanitizeProjectPortal(
         sort_order: a.sort_order,
       })),
     hoursRetainer,
+    monthlyRetainer,
     holidayCalendarDays: [...holidayByDate.values()].sort((a, b) =>
       a.date.localeCompare(b.date),
     ),

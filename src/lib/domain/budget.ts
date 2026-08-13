@@ -845,6 +845,30 @@ export function isMonthlyRetainerBudget(
   return mode === "hours" || mode === "amount";
 }
 
+/** Sidebar / Progress card heading for retainers vs standard projects. */
+export function projectProgressCardTitle(monthlyRetainer: boolean): string {
+  return monthlyRetainer ? "Contract" : "Progress";
+}
+
+/**
+ * ProgressBar label. Retainers use "Contract Term"; others "Overall Progress".
+ * `formatDate` defaults to the raw date key when omitted.
+ */
+export function projectProgressBarLabel(
+  startDate: string | null,
+  endDate: string | null,
+  monthlyRetainer: boolean,
+  formatDate: (dateKey: string) => string = (d) => d,
+): string {
+  const head = monthlyRetainer ? "Contract Term" : "Overall Progress";
+  if (startDate && endDate) {
+    return `${head} · ${formatDate(startDate)} – ${formatDate(endDate)}`;
+  }
+  if (startDate) return `${head} · from ${formatDate(startDate)}`;
+  if (endDate) return `${head} · through ${formatDate(endDate)}`;
+  return head;
+}
+
 export function assignmentHours(assignment: Assignment): number {
   return assignmentHoursWithRecurrence(assignment);
 }
