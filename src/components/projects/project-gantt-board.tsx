@@ -10,7 +10,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { startOfDay } from "date-fns";
+import { format, parseISO, startOfDay } from "date-fns";
 import {
   ChevronDown,
   ChevronLeft,
@@ -595,13 +595,43 @@ function ReadOnlyComments({
           ? people.find((p) => p.profile_id === c.author_profile_id)
           : undefined;
         const name = resolveAuthorLabel(author, authorPerson);
+        const wasEdited = Boolean(
+          c.updated_at && c.updated_at !== c.created_at,
+        );
         return (
           <div
             key={c.id}
             className="rounded-md border border-[var(--border)] bg-[var(--comment-bg)] p-3 text-sm"
           >
-            <p className="mb-1 text-xs font-semibold">{name}</p>
-            <div className="text-sm leading-relaxed">
+            <div className="mb-3 flex items-start gap-3">
+              <PersonAvatar
+                avatarUrl={authorPerson?.avatar_url}
+                avatarAttachmentId={authorPerson?.avatar_attachment_id}
+                name={name}
+                size="row"
+                fallback="initials"
+                className="shrink-0"
+                personId={authorPerson?.id}
+                color={authorPerson ? personAvatarColor(authorPerson) : null}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold leading-snug text-[var(--text)]">
+                  {name}
+                </p>
+                <div className="mt-0.5 space-y-0.5 text-xs tabular-nums text-[var(--text-muted)]">
+                  <p>
+                    {format(parseISO(c.created_at), "MMM d, yyyy · h:mm a")}
+                  </p>
+                  {wasEdited && c.updated_at ? (
+                    <p className="italic">
+                      Edited{" "}
+                      {format(parseISO(c.updated_at), "MMM d, yyyy · h:mm a")}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <div className="leading-relaxed">
               <RichNotesHtml html={c.body} />
             </div>
           </div>

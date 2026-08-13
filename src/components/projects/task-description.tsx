@@ -233,9 +233,6 @@ export function TaskDescriptionView({
 
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-[var(--text-muted)]">
-        Task Description
-      </p>
       <div className="relative w-full">
         <div
           ref={measureRef}
@@ -355,45 +352,40 @@ export const TaskDescriptionEditor = forwardRef<
     : TASK_DESCRIPTION_COLLAPSED_MAX_PX;
 
   return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium text-[var(--text-muted)]">
-        Task Description
-      </p>
-      <div className="relative w-full">
-        <div
-          ref={measureRef}
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 opacity-0"
-          aria-hidden
-        >
-          <RichNotesHtml
-            html={value}
-            className="px-2 py-2 text-sm leading-relaxed text-[var(--text)]"
-          />
-        </div>
-        <SimpleRichTextEditor
-          ref={ref}
-          value={value}
-          onChange={onChange}
-          placeholder="Add a task description… Use @ to mention"
-          mentionPeople={mentionPeople}
-          className="mt-0 w-full"
-          editorMaxHeight={editorMaxHeight}
-          editorOverflowY={expanded ? undefined : "auto"}
-          autoGrow={expanded}
-          enableAttachments={enableAttachments}
-          attachmentEntityType="task_note"
-          attachmentEntityId={taskId ?? null}
-          isDemo={isDemo}
-          onAttachmentError={onAttachmentError}
+    <div className="relative w-full">
+      <div
+        ref={measureRef}
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 opacity-0"
+        aria-hidden
+      >
+        <RichNotesHtml
+          html={value}
+          className="px-2 py-2 text-sm leading-relaxed text-[var(--text)]"
         />
-        {exceeds ? (
-          <ExpandToggle
-            expanded={expanded}
-            onToggle={() => setExpanded((v) => !v)}
-            className="absolute bottom-0.5 right-1 z-10"
-          />
-        ) : null}
       </div>
+      <SimpleRichTextEditor
+        ref={ref}
+        value={value}
+        onChange={onChange}
+        placeholder="Add a task description… Use @ to mention"
+        mentionPeople={mentionPeople}
+        className="mt-0 w-full"
+        editorMaxHeight={editorMaxHeight}
+        editorOverflowY={expanded ? undefined : "auto"}
+        autoGrow={expanded}
+        enableAttachments={enableAttachments}
+        attachmentEntityType="task_note"
+        attachmentEntityId={taskId ?? null}
+        isDemo={isDemo}
+        onAttachmentError={onAttachmentError}
+      />
+      {exceeds ? (
+        <ExpandToggle
+          expanded={expanded}
+          onToggle={() => setExpanded((v) => !v)}
+          className="absolute bottom-0.5 right-1 z-10"
+        />
+      ) : null}
     </div>
   );
 });
@@ -422,25 +414,20 @@ export const TaskDescriptionCreateField = forwardRef<
   ref,
 ) {
   return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium text-[var(--text-muted)]">
-        Task Description
-      </p>
-      <SimpleRichTextEditor
-        ref={ref}
-        value={value}
-        onChange={onChange}
-        placeholder="Add a task description… Use @ to mention"
-        mentionPeople={mentionPeople}
-        className="mt-0 w-full"
-        autoGrow
-        enableAttachments={enableAttachments}
-        attachmentEntityType="task_note"
-        attachmentEntityId={taskId ?? null}
-        isDemo={isDemo}
-        onAttachmentError={onAttachmentError}
-      />
-    </div>
+    <SimpleRichTextEditor
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      placeholder="Add a task description… Use @ to mention"
+      mentionPeople={mentionPeople}
+      className="mt-0 w-full"
+      autoGrow
+      enableAttachments={enableAttachments}
+      attachmentEntityType="task_note"
+      attachmentEntityId={taskId ?? null}
+      isDemo={isDemo}
+      onAttachmentError={onAttachmentError}
+    />
   );
 });
 
