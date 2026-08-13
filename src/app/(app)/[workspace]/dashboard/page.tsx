@@ -90,19 +90,23 @@ import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { isFullyHiddenFromPlanning } from "@/lib/domain/contractor";
 import { utilizationVisiblePeople, personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import { taskUrgency, dueDateToneClass, type TaskUrgency } from "@/lib/domain/tasks";
+import {
+  mentionTargetFromUnread,
+  mentionUnreadKey,
+} from "@/lib/mentions";
 import { cn } from "@/lib/cn";
 import type {
   Bulletin,
   Client,
   LeaveDay,
   LeaveKind,
+  MentionTarget,
   Person,
   Pod,
   PodMember,
   Profile,
   Project,
   Task,
-  TaskComment,
 } from "@/lib/types";
 
 const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
@@ -738,12 +742,16 @@ export default function DashboardPage() {
   const unreadMentionIds = useMemo(
     () =>
       new Set(
-        mentionInbox.filter((r) => !r.read_at).map((r) => r.comment_id),
+        mentionInbox
+          .filter((r) => !r.read_at)
+          .map((r) => mentionUnreadKey(r))
+          .filter(Boolean),
       ),
     [mentionInbox],
   );
-  const inboxMentionIds = useMemo(
-    () => new Set(mentionInbox.map((r) => r.comment_id)),
+  const inboxMentionKeys = useMemo(
+    () =>
+      new Set(mentionInbox.map((r) => mentionUnreadKey(r)).filter(Boolean)),
     [mentionInbox],
   );
   const unreadBulletins = useMemo(
@@ -866,51 +874,164 @@ export default function DashboardPage() {
     unreadBulletins,
   ]);
 
-  const taggedComments = useMemo(() => {
+  const taggedMentions = useMemo(() => {
     const personId = mentionPersonId;
     if (!personId) return [];
     const taskById = new Map(state.tasks.map((t) => [t.id, t]));
-    return state.task_comments
-      .filter((c) => (c.mentioned_person_ids ?? []).includes(personId))
-      .filter((c) => inboxMentionIds.has(c.id))
-      .map((c) => {
-        const task = taskById.get(c.task_id);
+    const commentById = new Map(state.task_comments.map((c) => [c.id, c]));
+    const assignmentById = new Map(state.assignments.map((a) => [a.id, a]));
+    const rows: {
+      key: string;
+      target: MentionTarget;
+      kind: "comment" | "task" | "assignment";
+      title: string;
+      bodyHtml: string;
+      href: string;
+      dateKey: string;
+      project: Project;
+      client: Client | undefined;
+      author: Profile | undefined;
+      authorPerson: Person | undefined;
+      unread: boolean;
+    }[] = [];
+
+    for (const unread of mentionInbox) {
+      const key = mentionUnreadKey(unread);
+      const target = mentionTargetFromUnread(unread);
+      if (!key || !target || !inboxMentionKeys.has(key)) continue;
+
+      if (unread.comment_id) {
+        const comment = commentById.get(unread.comment_id);
+        if (!comment) continue;
+        if (!(comment.mentioned_person_ids ?? []).includes(personId)) continue;
+        const task = taskById.get(comment.task_id);
         const project = task ? projectById.get(task.project_id) : undefined;
+        if (!task || !project) continue;
         const client =
-          project?.client_id != null
+          project.client_id != null
             ? clientById.get(project.client_id)
             : undefined;
-        const author = c.author_profile_id
-          ? state.profiles.find((p) => p.id === c.author_profile_id)
+        const author = comment.author_profile_id
+          ? state.profiles.find((p) => p.id === comment.author_profile_id)
           : undefined;
-        const authorPerson = c.author_profile_id
-          ? state.people.find((p) => p.profile_id === c.author_profile_id)
+        const authorPerson = comment.author_profile_id
+          ? state.people.find((p) => p.profile_id === comment.author_profile_id)
           : undefined;
-        return {
-          comment: c,
-          task,
+        rows.push({
+          key,
+          target,
+          kind: "comment",
+          title: task.title,
+          bodyHtml: comment.body,
+          href: projectHref(project, `task=${task.id}`),
+          dateKey: (comment.created_at || unread.created_at || "").slice(0, 10),
           project,
           client,
           author,
           authorPerson,
-          unread: unreadMentionIds.has(c.id),
-        };
-      })
-      .filter((row) => row.task && row.project)
-      .sort((a, b) =>
-        b.comment.created_at.localeCompare(a.comment.created_at),
-      )
+          unread: unreadMentionIds.has(key),
+        });
+        continue;
+      }
+
+      if (unread.task_id) {
+        const task = taskById.get(unread.task_id);
+        const project = task ? projectById.get(task.project_id) : undefined;
+        if (!task || !project) continue;
+        const client =
+          project.client_id != null
+            ? clientById.get(project.client_id)
+            : undefined;
+        const authorProfileId =
+          task.edited_by_profile_id ?? task.created_by_profile_id ?? null;
+        const author = authorProfileId
+          ? state.profiles.find((p) => p.id === authorProfileId)
+          : undefined;
+        const authorPerson = authorProfileId
+          ? state.people.find((p) => p.profile_id === authorProfileId)
+          : undefined;
+        rows.push({
+          key,
+          target,
+          kind: "task",
+          title: task.title,
+          bodyHtml: task.notes ?? "",
+          href: projectHref(project, `task=${task.id}`),
+          dateKey: (
+            unread.created_at ||
+            task.edited_at ||
+            task.created_at ||
+            ""
+          ).slice(0, 10),
+          project,
+          client,
+          author,
+          authorPerson,
+          unread: unreadMentionIds.has(key),
+        });
+        continue;
+      }
+
+      if (unread.assignment_id) {
+        const assignment = assignmentById.get(unread.assignment_id);
+        const project = assignment
+          ? projectById.get(assignment.project_id)
+          : undefined;
+        if (!assignment || !project) continue;
+        const client =
+          project.client_id != null
+            ? clientById.get(project.client_id)
+            : undefined;
+        const authorProfileId = assignment.edited_by_profile_id;
+        const author = authorProfileId
+          ? state.profiles.find((p) => p.id === authorProfileId)
+          : undefined;
+        const authorPerson = authorProfileId
+          ? state.people.find((p) => p.profile_id === authorProfileId)
+          : undefined;
+        const scheduleQs = new URLSearchParams({
+          project: assignment.project_id,
+          person: assignment.person_id,
+        });
+        rows.push({
+          key,
+          target,
+          kind: "assignment",
+          title: project.name,
+          bodyHtml: assignment.notes ?? "",
+          href: appHref(`/schedule?${scheduleQs.toString()}`),
+          dateKey: (
+            unread.created_at ||
+            assignment.edited_at ||
+            assignment.created_at ||
+            ""
+          ).slice(0, 10),
+          project,
+          client,
+          author,
+          authorPerson,
+          unread: unreadMentionIds.has(key),
+        });
+      }
+    }
+
+    return rows
+      .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
       .slice(0, 20);
   }, [
     mentionPersonId,
+    mentionInbox,
     state.task_comments,
     state.tasks,
+    state.assignments,
     state.profiles,
     state.people,
     projectById,
     clientById,
-    inboxMentionIds,
+    inboxMentionKeys,
     unreadMentionIds,
+    projectHref,
+    appHref,
   ]);
 
   const viewAsControl =
@@ -1054,16 +1175,15 @@ export default function DashboardPage() {
                 "min-h-0 flex-1 items-stretch lg:grid-rows-1",
             )}
           >
-            <TaggedCommentsPanel
-              taggedComments={taggedComments}
-              projectHref={projectHref}
-              onOpen={(commentId) => {
+            <TaggedMentionsPanel
+              mentions={taggedMentions}
+              onOpen={(target) => {
                 if (!mentionPersonId) return;
-                markMentionRead(commentId, mentionPersonId);
+                markMentionRead(target, mentionPersonId);
               }}
-              onDismiss={(commentId) => {
+              onDismiss={(target) => {
                 if (!mentionPersonId) return;
-                dismissMention(commentId, mentionPersonId);
+                dismissMention(target, mentionPersonId);
               }}
               compact
               stretch={viewerFullyHidden}
@@ -1130,7 +1250,7 @@ export default function DashboardPage() {
               ) : null}
 
               <KpiCard
-                title="New Tagged Comments"
+                title="New Mentions"
                 icon={MessageSquare}
                 className={
                   unreadMentionIds.size > 0
@@ -1147,7 +1267,7 @@ export default function DashboardPage() {
                 >
                   {unreadMentionIds.size > 0
                     ? `${unreadMentionIds.size} to review`
-                    : `${taggedComments.length} tagged`}
+                    : `${taggedMentions.length} mentioned`}
                 </div>
               </KpiCard>
 
@@ -1362,31 +1482,34 @@ function SegmentBar({
   );
 }
 
-function TaggedCommentsPanel({
-  taggedComments,
-  projectHref,
+function TaggedMentionsPanel({
+  mentions,
   onOpen,
   onDismiss,
   compact = false,
   stretch = false,
 }: {
-  taggedComments: {
-    comment: TaskComment;
-    task: Task | undefined;
-    project: Project | undefined;
+  mentions: {
+    key: string;
+    target: MentionTarget;
+    kind: "comment" | "task" | "assignment";
+    title: string;
+    bodyHtml: string;
+    href: string;
+    dateKey: string;
+    project: Project;
     client: Client | undefined;
     author: Profile | undefined;
     authorPerson: Person | undefined;
     unread: boolean;
   }[];
-  projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
-  onOpen: (commentId: string) => void;
-  onDismiss: (commentId: string) => void;
+  onOpen: (target: MentionTarget) => void;
+  onDismiss: (target: MentionTarget) => void;
   compact?: boolean;
   stretch?: boolean;
 }) {
-  const total = taggedComments.length;
-  const unreadCount = taggedComments.filter((r) => r.unread).length;
+  const total = mentions.length;
+  const unreadCount = mentions.filter((r) => r.unread).length;
   return (
     <section
       className={cn(
@@ -1398,7 +1521,7 @@ function TaggedCommentsPanel({
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
           <MessageSquare size={16} strokeWidth={1.75} aria-hidden />
         </div>
-        <h2 className="text-sm font-semibold">New Tagged Comments</h2>
+        <h2 className="text-sm font-semibold">New Mentions</h2>
         {unreadCount > 0 ? (
           <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
             {unreadCount}
@@ -1411,7 +1534,7 @@ function TaggedCommentsPanel({
       </div>
       {total === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
-          No comments tagging you yet.
+          No mentions yet.
         </p>
       ) : (
         <ul
@@ -1422,21 +1545,39 @@ function TaggedCommentsPanel({
               : cn("max-h-72 overflow-y-auto", !compact && "max-h-96"),
           )}
         >
-          {taggedComments.map(
-            ({ comment, task, project, client, author, authorPerson, unread }) => {
+          {mentions.map(
+            ({
+              key,
+              target,
+              kind,
+              title,
+              bodyHtml,
+              href,
+              dateKey,
+              project,
+              client,
+              author,
+              authorPerson,
+              unread,
+            }) => {
             const location = [
               resolveAuthorLabel(author, authorPerson),
               client?.name,
-              project!.name,
+              project.name,
+              kind === "assignment"
+                ? "Schedule note"
+                : kind === "task"
+                  ? "Task description"
+                  : null,
             ]
               .filter(Boolean)
               .join(" · ");
             return (
-              <li key={comment.id} className="relative">
+              <li key={key} className="relative">
                 <Link
-                  href={projectHref(project!, `task=${task!.id}`)}
+                  href={href}
                   className="block rounded-md border border-[var(--border)] px-3 py-2 pl-3 pr-9 hover:bg-[var(--row-hover)]"
-                  onClick={() => onOpen(comment.id)}
+                  onClick={() => onOpen(target)}
                 >
                   <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
                     <span className="flex min-w-0 items-center gap-1.5 truncate">
@@ -1448,26 +1589,24 @@ function TaggedCommentsPanel({
                       ) : null}
                       <span className="truncate">{location}</span>
                     </span>
-                    <span className="shrink-0">
-                      {comment.created_at.slice(0, 10)}
-                    </span>
+                    <span className="shrink-0">{dateKey}</span>
                   </div>
                   <div className="truncate text-xs font-medium">
-                    {task!.title}
+                    {title}
                   </div>
                   <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
-                    <RichNotesHtml html={comment.body} />
+                    <RichNotesHtml html={bodyHtml} />
                   </div>
                 </Link>
                 <button
                   type="button"
                   className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                  aria-label="Dismiss tagged comment"
+                  aria-label="Dismiss mention"
                   title="Dismiss"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    onDismiss(comment.id);
+                    onDismiss(target);
                   }}
                 >
                   <X size={14} strokeWidth={2} />

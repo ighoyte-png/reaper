@@ -6,18 +6,21 @@ import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { isUnreadBulletin } from "@/lib/domain/bulletins";
 import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
+import { mentionUnreadKey } from "@/lib/mentions";
 import { notesPlainText } from "@/lib/notes-html";
 import {
+  ASSIGNMENT_NOTE_MENTION_EVENT,
   TASK_NOTE_MENTION_EVENT,
   notificationPortraitIcon,
   reaperNotificationBadgeUrl,
   showDesktopNotification,
+  type AssignmentNoteMentionBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 
 /**
- * Shows OS desktop notifications for @mentions (comments / task notes)
- * and new bulletin board posts (via unread_bulletin_ids).
+ * Shows OS desktop notifications for @mentions (comments / task notes /
+ * assignment notes) and new bulletin board posts (via unread_bulletin_ids).
  */
 export function MentionDesktopListener() {
   const {
@@ -31,37 +34,42 @@ export function MentionDesktopListener() {
   const router = useRouter();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
-  const seenCommentIdsRef = useRef<Set<string> | null>(null);
+  const seenMentionKeysRef = useRef<Set<string> | null>(null);
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
   useEffect(() => {
     if (isPublicShare || !myPerson) {
-      seenCommentIdsRef.current = null;
+      seenMentionKeysRef.current = null;
       return;
     }
     const mine = state.unread_mentions
       .filter((r) => r.person_id === myPerson.id && !r.read_at)
-      .map((r) => r.comment_id);
+      .map((r) => mentionUnreadKey(r))
+      .filter(Boolean);
 
-    if (seenCommentIdsRef.current === null) {
-      seenCommentIdsRef.current = new Set(mine);
+    if (seenMentionKeysRef.current === null) {
+      seenMentionKeysRef.current = new Set(mine);
       return;
     }
 
-    const seen = seenCommentIdsRef.current;
+    const seen = seenMentionKeysRef.current;
     const fresh = mine.filter((id) => !seen.has(id));
     if (fresh.length === 0) return;
     for (const id of fresh) seen.add(id);
 
-    const personId = myPerson.id;
     const myProfileId = profile?.id ?? null;
     const orgName = state.organization?.name?.trim() || "Reaper";
+    const freshCommentIds = fresh
+      .filter((k) => k.startsWith("comment:"))
+      .map((k) => k.slice("comment:".length));
 
     void (async () => {
       try {
-        const bundle = await ensureMentionComments(fresh);
+        const bundle = await ensureMentionComments(
+          freshCommentIds.length > 0 ? freshCommentIds : undefined,
+        );
         const snap = stateRef.current;
         const commentsById = new Map(
           snap.task_comments.map((c) => [c.id, c] as const),
@@ -69,75 +77,183 @@ export function MentionDesktopListener() {
         for (const c of bundle.task_comments) commentsById.set(c.id, c);
         const tasksById = new Map(snap.tasks.map((t) => [t.id, t] as const));
         for (const t of bundle.tasks) tasksById.set(t.id, t);
+        const assignmentsById = new Map(
+          snap.assignments.map((a) => [a.id, a] as const),
+        );
+        for (const a of bundle.assignments ?? []) {
+          assignmentsById.set(a.id, a);
+        }
 
-        for (const commentId of fresh) {
-          const comment = commentsById.get(commentId) ?? null;
-          if (!comment) {
-            // Keep unseen so a later fetch/realtime update can retry.
-            seen.delete(commentId);
+        for (const key of fresh) {
+          if (key.startsWith("comment:")) {
+            const commentId = key.slice("comment:".length);
+            const comment = commentsById.get(commentId) ?? null;
+            if (!comment) {
+              seen.delete(key);
+              continue;
+            }
+            if (
+              comment.author_profile_id &&
+              myProfileId &&
+              comment.author_profile_id === myProfileId
+            ) {
+              continue;
+            }
+            const task = tasksById.get(comment.task_id) ?? null;
+            const project = task
+              ? (snap.projects.find((p) => p.id === task.project_id) ?? null)
+              : null;
+            const authorPerson = comment.author_profile_id
+              ? (snap.people.find(
+                  (p) => p.profile_id === comment.author_profile_id,
+                ) ?? null)
+              : null;
+            const authorProfile = comment.author_profile_id
+              ? (snap.profiles.find((p) => p.id === comment.author_profile_id) ??
+                null)
+              : null;
+            const authorName = resolveAuthorLabel(authorProfile, authorPerson);
+            const snippet = notesPlainText(comment.body)
+              .replace(/\s+/g, " ")
+              .trim();
+            const snippetShort = snippet.slice(0, 140);
+            const bodyParts = [orgName];
+            if (task?.title?.trim()) {
+              bodyParts.push(task.title.trim());
+            }
+            if (snippetShort) {
+              bodyParts.push(snippetShort);
+            } else if (!task?.title?.trim()) {
+              bodyParts.push("New mention in a comment");
+            }
+
+            const icon = await notificationPortraitIcon({
+              name: authorName,
+              avatarUrl: authorPerson?.avatar_url,
+              avatarAttachmentId: authorPerson?.avatar_attachment_id,
+              color: authorPerson ? personAvatarColor(authorPerson) : null,
+            });
+
+            const href =
+              project && task
+                ? projectHref(project, `task=${task.id}`)
+                : appHref("/dashboard");
+
+            void showDesktopNotification(authorName, {
+              body: bodyParts.join("\n"),
+              tag: `mention-comment-${commentId}`,
+              icon,
+              href,
+              onClick: () => {
+                router.push(href);
+              },
+            });
             continue;
           }
-          if (
-            comment.author_profile_id &&
-            myProfileId &&
-            comment.author_profile_id === myProfileId
-          ) {
-            continue;
-          }
-          const task = tasksById.get(comment.task_id) ?? null;
-          const project = task
-            ? (snap.projects.find((p) => p.id === task.project_id) ?? null)
-            : null;
-          const authorPerson = comment.author_profile_id
-            ? (snap.people.find(
-                (p) => p.profile_id === comment.author_profile_id,
-              ) ?? null)
-            : null;
-          const authorProfile = comment.author_profile_id
-            ? (snap.profiles.find((p) => p.id === comment.author_profile_id) ??
-              null)
-            : null;
-          const authorName = resolveAuthorLabel(authorProfile, authorPerson);
-          const snippet = notesPlainText(comment.body)
-            .replace(/\s+/g, " ")
-            .trim();
-          const snippetShort = snippet.slice(0, 140);
-          const bodyParts = [orgName];
-          if (task?.title?.trim()) {
-            bodyParts.push(task.title.trim());
-          }
-          if (snippetShort) {
-            bodyParts.push(snippetShort);
-          } else if (!task?.title?.trim()) {
-            bodyParts.push("New mention in a comment");
-          }
 
-          const icon = await notificationPortraitIcon({
-            name: authorName,
-            avatarUrl: authorPerson?.avatar_url,
-            avatarAttachmentId: authorPerson?.avatar_attachment_id,
-            color: authorPerson ? personAvatarColor(authorPerson) : null,
-          });
-
-          const href =
-            project && task
+          if (key.startsWith("task:")) {
+            const taskId = key.slice("task:".length);
+            const task = tasksById.get(taskId) ?? null;
+            if (!task) {
+              seen.delete(key);
+              continue;
+            }
+            const project =
+              snap.projects.find((p) => p.id === task.project_id) ?? null;
+            const authorProfileId =
+              task.edited_by_profile_id ?? task.created_by_profile_id ?? null;
+            if (authorProfileId && myProfileId && authorProfileId === myProfileId) {
+              continue;
+            }
+            const authorPerson = authorProfileId
+              ? (snap.people.find((p) => p.profile_id === authorProfileId) ??
+                null)
+              : null;
+            const authorProfile = authorProfileId
+              ? (snap.profiles.find((p) => p.id === authorProfileId) ?? null)
+              : null;
+            const authorName = resolveAuthorLabel(authorProfile, authorPerson);
+            const icon = await notificationPortraitIcon({
+              name: authorName,
+              avatarUrl: authorPerson?.avatar_url,
+              avatarAttachmentId: authorPerson?.avatar_attachment_id,
+              color: authorPerson ? personAvatarColor(authorPerson) : null,
+            });
+            const href = project
               ? projectHref(project, `task=${task.id}`)
               : appHref("/dashboard");
+            void showDesktopNotification(authorName, {
+              body: [
+                orgName,
+                task.title
+                  ? `Mentioned in task “${task.title}”`
+                  : "Mentioned in a task description",
+              ].join("\n"),
+              tag: `mention-task-${taskId}`,
+              icon,
+              href,
+              onClick: () => {
+                router.push(href);
+              },
+            });
+            continue;
+          }
 
-          void showDesktopNotification(authorName, {
-            body: bodyParts.join("\n"),
-            tag: `mention-comment-${commentId}`,
-            icon,
-            href,
-            onClick: () => {
-              router.push(href);
-            },
-          });
+          if (key.startsWith("assignment:")) {
+            const assignmentId = key.slice("assignment:".length);
+            const assignment = assignmentsById.get(assignmentId) ?? null;
+            if (!assignment) {
+              seen.delete(key);
+              continue;
+            }
+            const project =
+              snap.projects.find((p) => p.id === assignment.project_id) ?? null;
+            const authorProfileId = assignment.edited_by_profile_id;
+            if (
+              authorProfileId &&
+              myProfileId &&
+              authorProfileId === myProfileId
+            ) {
+              continue;
+            }
+            const authorPerson = authorProfileId
+              ? (snap.people.find((p) => p.profile_id === authorProfileId) ??
+                null)
+              : null;
+            const authorProfile = authorProfileId
+              ? (snap.profiles.find((p) => p.id === authorProfileId) ?? null)
+              : null;
+            const authorName = resolveAuthorLabel(authorProfile, authorPerson);
+            const icon = await notificationPortraitIcon({
+              name: authorName,
+              avatarUrl: authorPerson?.avatar_url,
+              avatarAttachmentId: authorPerson?.avatar_attachment_id,
+              color: authorPerson ? personAvatarColor(authorPerson) : null,
+            });
+            const qs = new URLSearchParams({
+              project: assignment.project_id,
+              person: assignment.person_id,
+            });
+            const href = appHref(`/schedule?${qs.toString()}`);
+            void showDesktopNotification(authorName, {
+              body: [
+                orgName,
+                project?.name
+                  ? `Mentioned in schedule note · ${project.name}`
+                  : "Mentioned in a schedule note",
+              ].join("\n"),
+              tag: `mention-assignment-${assignmentId}`,
+              icon,
+              href,
+              onClick: () => {
+                router.push(href);
+              },
+            });
+          }
         }
       } catch {
         for (const id of fresh) seen.delete(id);
       }
-      void personId;
     })();
   }, [
     state.unread_mentions,
@@ -192,9 +308,52 @@ export function MentionDesktopListener() {
       })();
     }
 
+    function onAssignmentNoteMention(ev: Event) {
+      const detail = (ev as CustomEvent<AssignmentNoteMentionBroadcast>).detail;
+      if (!detail?.personIds?.includes(personId)) return;
+
+      const authorName = detail.authorName?.trim() || "Someone";
+      void (async () => {
+        const icon = await notificationPortraitIcon({
+          name: authorName,
+          avatarUrl: detail.authorAvatarUrl,
+          avatarAttachmentId: detail.authorAvatarAttachmentId,
+          color: detail.authorColor,
+        });
+        const qs = new URLSearchParams({
+          project: detail.projectId,
+          person: detail.personId,
+        });
+        const href = appHref(`/schedule?${qs.toString()}`);
+        void showDesktopNotification(authorName, {
+          body: [
+            orgName,
+            detail.projectName
+              ? `In schedule note · ${detail.projectName}`
+              : "In a schedule note",
+          ].join("\n"),
+          tag: `mention-assignment-${detail.assignmentId}`,
+          icon,
+          href,
+          onClick: () => {
+            router.push(href);
+          },
+        });
+      })();
+    }
+
     window.addEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
-    return () =>
+    window.addEventListener(
+      ASSIGNMENT_NOTE_MENTION_EVENT,
+      onAssignmentNoteMention,
+    );
+    return () => {
       window.removeEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
+      window.removeEventListener(
+        ASSIGNMENT_NOTE_MENTION_EVENT,
+        onAssignmentNoteMention,
+      );
+    };
   }, [
     isPublicShare,
     myPerson,

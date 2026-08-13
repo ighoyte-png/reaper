@@ -453,6 +453,22 @@ export interface LeaveDay {
   notes: string;
 }
 
+/** Target for dismiss / mark-read on the mention inbox. */
+export type MentionTarget = {
+  kind: "comment" | "task" | "assignment";
+  id: string;
+};
+
+/** One inbox row — exactly one of comment_id / task_id / assignment_id. */
+export type MentionUnread = {
+  comment_id: string | null;
+  task_id: string | null;
+  assignment_id: string | null;
+  person_id: string;
+  read_at?: string | null;
+  created_at?: string;
+};
+
 export interface DemoState {
   organization: Organization;
   /** Workspaces the signed-in user belongs to (supabase); demo uses the current org. */
@@ -477,12 +493,8 @@ export interface DemoState {
   unread_bulletin_ids: string[];
   /** System bulletin ids hidden from this profile's board. */
   dismissed_bulletin_ids: string[];
-  /** Mention inbox rows (comment_id + person). Orange unread when read_at is null. */
-  unread_mentions: {
-    comment_id: string;
-    person_id: string;
-    read_at?: string | null;
-  }[];
+  /** Mention inbox rows. Orange unread when read_at is null. Exactly one source id. */
+  unread_mentions: MentionUnread[];
   /** Tasks with unread assigner ↔ assignee comment thread for a person. */
   unread_task_threads: { task_id: string; person_id: string }[];
   /** Current profile's starred projects (sort_order = nav tab order). */

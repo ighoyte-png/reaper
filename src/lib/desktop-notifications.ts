@@ -277,6 +277,30 @@ export function dispatchTaskNoteMention(detail: TaskNoteMentionBroadcast) {
   );
 }
 
+export type AssignmentNoteMentionBroadcast = {
+  personIds: string[];
+  assignmentId: string;
+  projectId: string;
+  personId: string;
+  startDate: string;
+  projectName: string;
+  authorName: string;
+  authorAvatarUrl?: string | null;
+  authorAvatarAttachmentId?: string | null;
+  authorColor?: string | null;
+};
+
+export const ASSIGNMENT_NOTE_MENTION_EVENT = "reaper:assignment-note-mention";
+
+export function dispatchAssignmentNoteMention(
+  detail: AssignmentNoteMentionBroadcast,
+) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(ASSIGNMENT_NOTE_MENTION_EVENT, { detail }),
+  );
+}
+
 const PROMPT_SNOOZE_KEY = "reaper.notification-prompt.snooze-until";
 const PROMPT_DISMISS_KEY = "reaper.notification-prompt.dismissed";
 const PROMPT_SNOOZE_MS = 24 * 60 * 60 * 1000;

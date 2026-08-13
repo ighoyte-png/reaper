@@ -333,6 +333,7 @@ function buildPortalGanttContext(
     ensureMentionComments: async () => ({
       tasks: [],
       task_comments: [],
+      assignments: [],
     }),
     ensureProjectData: async () => {},
     ensureScheduleRange: async () => {},

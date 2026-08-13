@@ -412,28 +412,39 @@ export function applyRealtimeTableEvent(
       };
     }
     case "mention_unreads": {
-      const commentId = String(source.comment_id ?? "");
+      const commentId =
+        source.comment_id != null && source.comment_id !== ""
+          ? String(source.comment_id)
+          : null;
+      const taskId =
+        source.task_id != null && source.task_id !== ""
+          ? String(source.task_id)
+          : null;
+      const assignmentId =
+        source.assignment_id != null && source.assignment_id !== ""
+          ? String(source.assignment_id)
+          : null;
       const personId = String(source.person_id ?? "");
-      if (!commentId || !personId) return state;
+      if (!personId) return state;
+      if (!commentId && !taskId && !assignmentId) return state;
+
+      const sameRow = (r: (typeof state.unread_mentions)[number]) =>
+        r.person_id === personId &&
+        r.comment_id === commentId &&
+        r.task_id === taskId &&
+        r.assignment_id === assignmentId;
+
       if (isDelete) {
-        const next = state.unread_mentions.filter(
-          (r) => !(r.comment_id === commentId && r.person_id === personId),
-        );
+        const next = state.unread_mentions.filter((r) => !sameRow(r));
         return next.length === state.unread_mentions.length
           ? state
           : { ...state, unread_mentions: next };
       }
-      if (
-        state.unread_mentions.some(
-          (r) => r.comment_id === commentId && r.person_id === personId,
-        )
-      ) {
+      if (state.unread_mentions.some(sameRow)) {
         return {
           ...state,
           unread_mentions: state.unread_mentions.map((r) => {
-            if (r.comment_id !== commentId || r.person_id !== personId) {
-              return r;
-            }
+            if (!sameRow(r)) return r;
             const readAt =
               source.read_at != null ? String(source.read_at) : null;
             return { ...r, read_at: readAt };
@@ -446,9 +457,15 @@ export function applyRealtimeTableEvent(
           ...state.unread_mentions,
           {
             comment_id: commentId,
+            task_id: taskId,
+            assignment_id: assignmentId,
             person_id: personId,
             read_at:
               source.read_at != null ? String(source.read_at) : null,
+            created_at:
+              source.created_at != null
+                ? String(source.created_at)
+                : undefined,
           },
         ],
       };

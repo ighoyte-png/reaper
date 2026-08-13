@@ -36,9 +36,14 @@ import {
   taskThreadMentionNotifyPersonIds,
   taskThreadNotifyPersonIds,
 } from "@/lib/domain/tasks";
-import { extractMentionPersonIds } from "@/lib/mentions";
 import {
+  extractMentionPersonIds,
+  mentionUnreadMatchesTarget,
+} from "@/lib/mentions";
+import {
+  dispatchAssignmentNoteMention,
   dispatchTaskNoteMention,
+  type AssignmentNoteMentionBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -72,7 +77,9 @@ import {
   fetchWorkspace,
   loadAssignmentsForRange,
   loadLeaveForRange,
+  loadMentionAssignments,
   loadMentionComments,
+  loadMentionTasks,
   loadOrgTasks,
   loadOrgMilestones,
   loadOrgBootstrap,
@@ -93,6 +100,8 @@ import {
   deleteMentionUnreadRow,
   deleteMentionUnreadRows,
   markMentionReadRow,
+  syncAssignmentNoteMentionUnreads,
+  syncTaskNoteMentionUnreads,
   deleteTaskThreadUnreadRow,
   seedBulletinUnreadRows,
   upsertClientRow,
@@ -162,6 +171,7 @@ import type {
   HolidayCalendarDay,
   LeaveDay,
   LeaveKind,
+  MentionTarget,
   Milestone,
   Person,
   Profile,
@@ -366,27 +376,43 @@ function loadDemoState(): DemoState {
           )
         : (seed.dismissed_bulletin_ids ?? []),
       unread_mentions: Array.isArray(parsed.unread_mentions)
-        ? parsed.unread_mentions
+        ? (
+            parsed.unread_mentions as unknown[]
+          )
             .filter(
-              (r): r is {
-                comment_id: string;
-                person_id: string;
-                read_at?: string | null;
-              } =>
+              (r): r is Record<string, unknown> =>
                 Boolean(r) &&
                 typeof r === "object" &&
-                typeof (r as { comment_id?: unknown }).comment_id ===
-                  "string" &&
                 typeof (r as { person_id?: unknown }).person_id === "string",
             )
-            .map((r) => ({
-              comment_id: r.comment_id,
-              person_id: r.person_id,
-              read_at:
-                r.read_at != null && typeof r.read_at === "string"
-                  ? r.read_at
-                  : null,
-            }))
+            .map((r) => {
+              const comment_id =
+                typeof r.comment_id === "string" ? r.comment_id : null;
+              const task_id = typeof r.task_id === "string" ? r.task_id : null;
+              const assignment_id =
+                typeof r.assignment_id === "string" ? r.assignment_id : null;
+              return {
+                comment_id,
+                task_id,
+                assignment_id,
+                person_id: String(r.person_id),
+                read_at:
+                  r.read_at != null && typeof r.read_at === "string"
+                    ? r.read_at
+                    : null,
+                created_at:
+                  r.created_at != null && typeof r.created_at === "string"
+                    ? r.created_at
+                    : undefined,
+              };
+            })
+            .filter(
+              (r) =>
+                ((r.comment_id ? 1 : 0) +
+                  (r.task_id ? 1 : 0) +
+                  (r.assignment_id ? 1 : 0)) ===
+                1,
+            )
         : (seed.unread_mentions ?? []),
       unread_task_threads: Array.isArray(parsed.unread_task_threads)
         ? parsed.unread_task_threads.filter(
@@ -679,10 +705,10 @@ interface DataContextValue {
   dismissBulletin: (id: string) => void;
   /** Hide system bulletin from this user's board (also clears unread). */
   dismissBulletinFromBoard: (id: string) => void;
-  /** Mark a tagged comment as seen for a person (removes from unread inbox). */
-  dismissMention: (commentId: string, personId: string) => void;
+  /** Mark a tagged mention as seen for a person (removes from unread inbox). */
+  dismissMention: (target: MentionTarget, personId: string) => void;
   /** Clear orange unread on a mention; card stays until dismissMention. */
-  markMentionRead: (commentId: string, personId: string) => void;
+  markMentionRead: (target: MentionTarget, personId: string) => void;
   /** Mark assigner ↔ assignee task thread as read (opening the task). */
   dismissTaskThreadUnread: (taskId: string, personId: string) => void;
   upsertProjectTemplate: (
@@ -742,7 +768,11 @@ interface DataContextValue {
   ensureOrgMilestones: () => Promise<void>;
   ensureMentionComments: (
     commentIds?: string[],
-  ) => Promise<import("@/lib/supabase/api").MentionCommentsBundle>;
+  ) => Promise<{
+    tasks: import("@/lib/types").Task[];
+    task_comments: import("@/lib/types").TaskComment[];
+    assignments: import("@/lib/types").Assignment[];
+  }>;
   ensureProjectData: (projectId: string) => Promise<void>;
   ensureScheduleRange: (
     startKey: string,
@@ -843,6 +873,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const mentionCommentsInflight = useRef<Promise<{
     tasks: import("@/lib/types").Task[];
     task_comments: import("@/lib/types").TaskComment[];
+    assignments: import("@/lib/types").Assignment[];
   }> | null>(null);
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
   const scheduleRangeInflight = useRef<Promise<{
@@ -926,7 +957,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ...next,
               unread_mentions: next.unread_mentions.filter(
                 (r) =>
-                  !(r.person_id === personId && drop.has(r.comment_id)),
+                  !(
+                    r.person_id === personId &&
+                    r.comment_id != null &&
+                    drop.has(r.comment_id)
+                  ),
               ),
             };
             clearLegacyDismissedMentionIds(personId);
@@ -1409,6 +1444,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           dispatchTaskNoteMention(detail);
         },
       )
+      .on(
+        "broadcast",
+        { event: "assignment-note-mention" },
+        ({ payload }) => {
+          const detail = payload as AssignmentNoteMentionBroadcast;
+          if (!detail?.personIds?.length || !detail.assignmentId) return;
+          dispatchAssignmentNoteMention(detail);
+        },
+      )
       .subscribe();
 
     orgChannelRef.current = orgChannel;
@@ -1699,11 +1743,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const ensureMentionComments = useCallback(
     async (commentIds?: string[]) => {
-      const empty = { tasks: [] as Task[], task_comments: [] as TaskComment[] };
+      const empty = {
+        tasks: [] as Task[],
+        task_comments: [] as TaskComment[],
+        assignments: [] as Assignment[],
+      };
 
       const remember = (bundle: {
         tasks: Task[];
         task_comments: TaskComment[];
+        assignments?: Assignment[];
       }) => {
         for (const c of bundle.task_comments) {
           mentionCommentByIdRef.current.set(c.id, c);
@@ -1714,7 +1763,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       };
 
-      const collect = (ids: string[]) => {
+      const collectComments = (ids: string[]) => {
         const task_comments: TaskComment[] = [];
         for (const id of ids) {
           const cached = mentionCommentByIdRef.current.get(id);
@@ -1745,79 +1794,128 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return { tasks, task_comments };
       };
 
-      if (mode !== "supabase") {
-        setMentionCommentsStatus("ready");
-        const ids = [
-          ...new Set(
-            (commentIds ?? state.unread_mentions.map((m) => m.comment_id)).filter(
-              Boolean,
-            ),
-          ),
-        ];
-        const bundle = collect(ids);
-        remember(bundle);
-        return bundle;
-      }
-
-      const ids = [
+      const inboxCommentIds = [
         ...new Set(
-          (commentIds ?? state.unread_mentions.map((m) => m.comment_id)).filter(
-            Boolean,
-          ),
+          (commentIds ??
+            state.unread_mentions
+              .map((m) => m.comment_id)
+              .filter((id): id is string => Boolean(id))
+          ).filter(Boolean),
         ),
       ];
-      if (ids.length === 0) {
-        setMentionCommentsStatus("ready");
-        return empty;
-      }
+      const inboxTaskIds = [
+        ...new Set(
+          state.unread_mentions
+            .map((m) => m.task_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const inboxAssignmentIds = [
+        ...new Set(
+          state.unread_mentions
+            .map((m) => m.assignment_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
 
-      const missing = ids.filter(
-        (id) => !mentionCommentByIdRef.current.has(id),
-      );
-      if (missing.length === 0) {
+      if (mode !== "supabase") {
         setMentionCommentsStatus("ready");
-        return collect(ids);
-      }
-
-      if (mentionCommentsInflight.current) {
-        await mentionCommentsInflight.current;
-        const stillMissing = missing.filter(
-          (id) => !mentionCommentByIdRef.current.has(id),
-        );
-        if (stillMissing.length === 0) {
-          setMentionCommentsStatus("ready");
-          return collect(ids);
-        }
+        const bundle = collectComments(inboxCommentIds);
+        remember(bundle);
+        return { ...bundle, assignments: [] as Assignment[] };
       }
 
       const client = supabaseRef.current ?? createClient();
       const organizationId = state.organization.id;
       if (!organizationId) return empty;
 
-      const toFetch = ids.filter((id) => !mentionCommentByIdRef.current.has(id));
+      const missingComments = inboxCommentIds.filter(
+        (id) => !mentionCommentByIdRef.current.has(id),
+      );
+      const missingTasks = inboxTaskIds.filter(
+        (id) =>
+          !mentionTaskByIdRef.current.has(id) &&
+          !state.tasks.some((t) => t.id === id),
+      );
+      const missingAssignments = inboxAssignmentIds.filter(
+        (id) => !state.assignments.some((a) => a.id === id),
+      );
+
+      if (
+        missingComments.length === 0 &&
+        missingTasks.length === 0 &&
+        missingAssignments.length === 0
+      ) {
+        setMentionCommentsStatus("ready");
+        const bundle = collectComments(inboxCommentIds);
+        remember(bundle);
+        return {
+          ...bundle,
+          assignments: state.assignments.filter((a) =>
+            inboxAssignmentIds.includes(a.id),
+          ),
+        };
+      }
+
+      if (mentionCommentsInflight.current) {
+        await mentionCommentsInflight.current;
+      }
+
       const run = (async () => {
         setMentionCommentsStatus("loading");
         try {
-          const fetched =
-            toFetch.length > 0
-              ? await loadMentionComments(client, organizationId, toFetch)
-              : empty;
-          remember(fetched);
+          const [fetchedComments, fetchedTasks, fetchedAssignments] =
+            await Promise.all([
+              missingComments.length > 0
+                ? loadMentionComments(client, organizationId, missingComments)
+                : Promise.resolve({
+                    tasks: [] as Task[],
+                    task_comments: [] as TaskComment[],
+                  }),
+              missingTasks.length > 0
+                ? loadMentionTasks(client, organizationId, missingTasks)
+                : Promise.resolve([] as Task[]),
+              missingAssignments.length > 0
+                ? loadMentionAssignments(
+                    client,
+                    organizationId,
+                    missingAssignments,
+                  )
+                : Promise.resolve([] as Assignment[]),
+            ]);
+
+          remember({
+            tasks: [...fetchedComments.tasks, ...fetchedTasks],
+            task_comments: fetchedComments.task_comments,
+          });
+
           setState((prev) => {
             const tasksById = new Map(prev.tasks.map((t) => [t.id, t]));
-            for (const t of fetched.tasks) tasksById.set(t.id, t);
+            for (const t of fetchedComments.tasks) tasksById.set(t.id, t);
+            for (const t of fetchedTasks) tasksById.set(t.id, t);
             const commentsById = new Map(
               prev.task_comments.map((c) => [c.id, c]),
             );
-            for (const c of fetched.task_comments) commentsById.set(c.id, c);
+            for (const c of fetchedComments.task_comments) {
+              commentsById.set(c.id, c);
+            }
+            const assignmentsById = new Map(
+              prev.assignments.map((a) => [a.id, a]),
+            );
+            for (const a of fetchedAssignments) assignmentsById.set(a.id, a);
             return {
               ...prev,
               tasks: [...tasksById.values()],
               task_comments: [...commentsById.values()],
+              assignments: [...assignmentsById.values()],
             };
           });
           setMentionCommentsStatus("ready");
-          return collect(ids);
+          const bundle = collectComments(inboxCommentIds);
+          return {
+            ...bundle,
+            assignments: fetchedAssignments,
+          };
         } catch (err) {
           console.error(err);
           setMentionCommentsStatus("error");
@@ -1835,6 +1933,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       state.unread_mentions,
       state.task_comments,
       state.tasks,
+      state.assignments,
     ],
   );
 
@@ -3275,43 +3374,107 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       upsertAssignment: (assignment) => {
         const now = new Date().toISOString();
+        const existing = state.assignments.find((a) => a.id === assignment.id);
+        const row = {
+          ...withOrg(assignment),
+          recurrence: assignment.recurrence ?? "none",
+          recurrence_exceptions: assignment.recurrence_exceptions ?? [],
+          created_at:
+            assignment.created_at || existing?.created_at || now,
+          edited_at: now,
+          edited_by_profile_id: profile?.id ?? null,
+        } as Assignment;
+
+        const prevMentionIds = new Set(
+          extractMentionPersonIds(existing?.notes ?? ""),
+        );
+        const nextMentionIds = extractMentionPersonIds(row.notes ?? "");
+        const newlyMentioned = [...nextMentionIds].filter(
+          (id) => !prevMentionIds.has(id) && id !== myPerson?.id,
+        );
+
         patch((prev) => {
-          const existing = prev.assignments.find((a) => a.id === assignment.id);
-          const row = {
-            ...withOrg(assignment),
-            recurrence: assignment.recurrence ?? "none",
-            recurrence_exceptions: assignment.recurrence_exceptions ?? [],
-            created_at:
-              assignment.created_at || existing?.created_at || now,
-            edited_at: now,
-            edited_by_profile_id: profile?.id ?? null,
-          } as Assignment;
+          const exists = prev.assignments.some((a) => a.id === row.id);
+          let unread_mentions = prev.unread_mentions.filter(
+            (r) =>
+              r.assignment_id !== row.id || nextMentionIds.includes(r.person_id),
+          );
+          for (const person_id of newlyMentioned) {
+            if (
+              unread_mentions.some(
+                (r) =>
+                  r.assignment_id === row.id && r.person_id === person_id,
+              )
+            ) {
+              continue;
+            }
+            unread_mentions = [
+              ...unread_mentions,
+              {
+                comment_id: null,
+                task_id: null,
+                assignment_id: row.id,
+                person_id,
+                read_at: null,
+                created_at: now,
+              },
+            ];
+          }
           return {
             ...prev,
-            assignments: existing
+            assignments: exists
               ? prev.assignments.map((a) => (a.id === row.id ? row : a))
               : [...prev.assignments, row],
+            unread_mentions,
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("assignments", assignment.id);
-          const existing = state.assignments.find((a) => a.id === assignment.id);
-          const row = {
-            ...withOrg(assignment),
-            recurrence: assignment.recurrence ?? "none",
-            recurrence_exceptions: assignment.recurrence_exceptions ?? [],
-            created_at:
-              assignment.created_at || existing?.created_at || now,
-            edited_at: now,
-            edited_by_profile_id: profile?.id ?? null,
-          } as Assignment;
-          runRemoteSoft(() => upsertAssignmentRow(supabaseRef.current!, row));
+          noteLocalWrite("mention_unreads", `assignment:${row.id}`);
+          runRemoteSoft(async () => {
+            await upsertAssignmentRow(supabaseRef.current!, row);
+            await syncAssignmentNoteMentionUnreads(supabaseRef.current!, {
+              assignment_id: row.id,
+              organization_id: row.organization_id,
+              person_ids: nextMentionIds,
+            });
+          });
+        }
+        if (newlyMentioned.length > 0) {
+          const project =
+            state.projects.find((p) => p.id === row.project_id) ?? null;
+          const payload: AssignmentNoteMentionBroadcast = {
+            personIds: newlyMentioned,
+            assignmentId: row.id,
+            projectId: row.project_id,
+            personId: row.person_id,
+            startDate: row.start_date,
+            projectName: project?.name ?? "Schedule",
+            authorName:
+              myPerson?.name?.trim() ||
+              profile?.full_name?.trim() ||
+              profile?.email?.trim() ||
+              "Someone",
+            authorAvatarUrl: myPerson?.avatar_url ?? null,
+            authorAvatarAttachmentId: myPerson?.avatar_attachment_id ?? null,
+            authorColor: myPerson ? personAvatarColor(myPerson) : null,
+          };
+          if (orgChannelRef.current) {
+            void orgChannelRef.current.send({
+              type: "broadcast",
+              event: "assignment-note-mention",
+              payload,
+            });
+          }
         }
       },
       deleteAssignment: (id) => {
         patch((prev) => ({
           ...prev,
           assignments: prev.assignments.filter((a) => a.id !== id),
+          unread_mentions: prev.unread_mentions.filter(
+            (r) => r.assignment_id !== id,
+          ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("assignments", id);
@@ -4024,16 +4187,59 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         patch((prev) => {
           const exists = prev.tasks.some((t) => t.id === row.id);
+          const prevMentionIds = new Set(
+            extractMentionPersonIds(existing?.notes ?? ""),
+          );
+          const nextMentionIds = extractMentionPersonIds(row.notes ?? "");
+          const newlyMentionedLocal = [...nextMentionIds].filter(
+            (id) => !prevMentionIds.has(id) && id !== myPerson?.id,
+          );
+          let unread_mentions = prev.unread_mentions.filter(
+            (r) =>
+              r.task_id !== row.id || nextMentionIds.includes(r.person_id),
+          );
+          for (const person_id of newlyMentionedLocal) {
+            if (
+              unread_mentions.some(
+                (r) => r.task_id === row.id && r.person_id === person_id,
+              )
+            ) {
+              continue;
+            }
+            unread_mentions = [
+              ...unread_mentions,
+              {
+                comment_id: null,
+                task_id: row.id,
+                assignment_id: null,
+                person_id,
+                read_at: null,
+                created_at: now,
+              },
+            ];
+          }
           return {
             ...prev,
             tasks: exists
               ? prev.tasks.map((t) => (t.id === row.id ? row : t))
               : [...prev.tasks, row],
+            unread_mentions,
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", row.id);
-          runRemoteSoft(() => upsertTaskRow(supabaseRef.current!, row));
+          noteLocalWrite("mention_unreads", `task:${row.id}`);
+          const nextMentionIdsForSync = extractMentionPersonIds(
+            row.notes ?? "",
+          );
+          runRemoteSoft(async () => {
+            await upsertTaskRow(supabaseRef.current!, row);
+            await syncTaskNoteMentionUnreads(supabaseRef.current!, {
+              task_id: row.id,
+              organization_id: row.organization_id,
+              person_ids: nextMentionIdsForSync,
+            });
+          });
         }
         // Demo: notify assigner when assignee moves Active → In Review (supabase uses DB trigger).
         if (
@@ -4144,6 +4350,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
             unread_task_threads: prev.unread_task_threads.filter((r) =>
               remainingTaskIds.has(r.task_id),
             ),
+            unread_mentions: prev.unread_mentions.filter((r) => {
+              if (r.task_id != null) return remainingTaskIds.has(r.task_id);
+              if (r.comment_id != null) {
+                const comment = prev.task_comments.find(
+                  (c) => c.id === r.comment_id,
+                );
+                return comment
+                  ? remainingTaskIds.has(comment.task_id)
+                  : true;
+              }
+              return true;
+            }),
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
@@ -4214,7 +4432,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
             }
             unread_mentions = [
               ...unread_mentions,
-              { comment_id: next.id, person_id, read_at: null },
+              {
+                comment_id: next.id,
+                task_id: null,
+                assignment_id: null,
+                person_id,
+                read_at: null,
+              },
             ];
           }
           let unread_task_threads = prev.unread_task_threads;
@@ -4490,33 +4714,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
           });
         }
       },
-      dismissMention: (commentId, personId) => {
-        if (!commentId || !personId) return;
+      dismissMention: (target, personId) => {
+        if (!target?.id || !personId) return;
         patch((prev) => {
           const next = prev.unread_mentions.filter(
-            (r) =>
-              !(r.comment_id === commentId && r.person_id === personId),
+            (r) => !mentionUnreadMatchesTarget(r, target, personId),
           );
           if (next.length === prev.unread_mentions.length) return prev;
           return { ...prev, unread_mentions: next };
         });
         if (mode === "supabase" && supabaseRef.current) {
-          noteLocalWrite("mention_unreads", `${commentId}:${personId}`);
+          noteLocalWrite(
+            "mention_unreads",
+            `${target.kind}:${target.id}:${personId}`,
+          );
           runRemoteSoft(async () => {
             await deleteMentionUnreadRow(supabaseRef.current!, {
-              comment_id: commentId,
+              target,
               person_id: personId,
             });
           });
         }
       },
-      markMentionRead: (commentId, personId) => {
-        if (!commentId || !personId) return;
+      markMentionRead: (target, personId) => {
+        if (!target?.id || !personId) return;
         const readAt = new Date().toISOString();
         patch((prev) => {
           let changed = false;
           const next = prev.unread_mentions.map((r) => {
-            if (r.comment_id !== commentId || r.person_id !== personId) {
+            if (!mentionUnreadMatchesTarget(r, target, personId)) {
               return r;
             }
             if (r.read_at) return r;
@@ -4527,10 +4753,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return { ...prev, unread_mentions: next };
         });
         if (mode === "supabase" && supabaseRef.current) {
-          noteLocalWrite("mention_unreads", `${commentId}:${personId}`);
+          noteLocalWrite(
+            "mention_unreads",
+            `${target.kind}:${target.id}:${personId}`,
+          );
           runRemoteSoft(async () => {
             await markMentionReadRow(supabaseRef.current!, {
-              comment_id: commentId,
+              target,
               person_id: personId,
             });
           });

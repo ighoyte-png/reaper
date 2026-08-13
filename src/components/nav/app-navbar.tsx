@@ -77,7 +77,13 @@ export function AppNavbar() {
     return new Set(
       (state.unread_mentions ?? [])
         .filter((r) => r.person_id === mentionPersonId && !r.read_at)
-        .map((r) => r.comment_id),
+        .map((r) => {
+          if (r.comment_id) return `comment:${r.comment_id}`;
+          if (r.task_id) return `task:${r.task_id}`;
+          if (r.assignment_id) return `assignment:${r.assignment_id}`;
+          return "";
+        })
+        .filter(Boolean),
     );
   }, [mentionPersonId, state.unread_mentions]);
   const unreadBulletins = useMemo(
@@ -133,14 +139,7 @@ export function AppNavbar() {
   }, [accountOpen]);
 
   const hasDashboardDot = useMemo(() => {
-    if (mentionPersonId) {
-      const hasMention = state.task_comments.some(
-        (c) =>
-          (c.mentioned_person_ids ?? []).includes(mentionPersonId) &&
-          unreadMentions.has(c.id),
-      );
-      if (hasMention) return true;
-    }
+    if (mentionPersonId && unreadMentions.size > 0) return true;
     if (!mentionPersonId && !manageWithoutPerson) return false;
     return state.bulletins.some((b) =>
       isUnreadBulletin(
@@ -158,7 +157,6 @@ export function AppNavbar() {
   }, [
     mentionPersonId,
     manageWithoutPerson,
-    state.task_comments,
     state.bulletins,
     state.pods,
     state.pod_members,

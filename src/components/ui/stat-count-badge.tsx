@@ -1,6 +1,6 @@
 import { cn } from "@/lib/cn";
 
-/** Dashboard-style count pill (Tagged Comments / Task Pulse). */
+/** Dashboard-style count pill (New Mentions / Task Pulse). */
 export function StatCountBadge({
   count,
   className,
