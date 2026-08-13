@@ -1,6 +1,6 @@
 {
   "name": "reaper",
-  "version": "0.4.223",
+  "version": "0.4.224",
   "private": true,
   "scripts": {
     "dev": "next dev",

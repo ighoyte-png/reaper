@@ -1048,7 +1048,6 @@ export default function DashboardPage() {
           ? state.people.find((p) => p.profile_id === authorProfileId)
           : undefined;
         const scheduleQs = new URLSearchParams({
-          project: assignment.project_id,
           person: assignment.person_id,
           assignment: assignment.id,
           tab: "details",
