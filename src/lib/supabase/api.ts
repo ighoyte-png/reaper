@@ -613,6 +613,11 @@ export type ProjectDataBundle = {
 export type LoadOrgTasksOptions = {
   /** When set, only tasks assigned to this person. */
   assigneePersonId?: string | null;
+  /**
+   * When set with assigneePersonId, also include In Review tasks created by
+   * this profile (assigner overdue / review plate).
+   */
+  assignerProfileId?: string | null;
   /** When true, exclude completed tasks. */
   openOnly?: boolean;
 };
@@ -1255,8 +1260,15 @@ export async function loadOrgTasks(
   options: LoadOrgTasksOptions = {},
 ): Promise<Task[]> {
   let query = supabase.from("tasks").select("*").eq("organization_id", orgId);
-  if (options.assigneePersonId) {
-    query = query.eq("assignee_person_id", options.assigneePersonId);
+  const assigneeId = options.assigneePersonId ?? null;
+  const assignerProfileId = options.assignerProfileId ?? null;
+  if (assigneeId && assignerProfileId) {
+    // Assignee plate + In Review tasks waiting on this creator.
+    query = query.or(
+      `assignee_person_id.eq.${assigneeId},and(status.eq.active,created_by_profile_id.eq.${assignerProfileId})`,
+    );
+  } else if (assigneeId) {
+    query = query.eq("assignee_person_id", assigneeId);
   }
   if (options.openOnly) {
     query = query.neq("status", "complete");

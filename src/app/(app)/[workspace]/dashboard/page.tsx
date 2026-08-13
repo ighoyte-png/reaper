@@ -90,7 +90,12 @@ import {
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { isFullyHiddenFromPlanning } from "@/lib/domain/contractor";
 import { utilizationVisiblePeople, personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
-import { taskUrgency, dueDateToneClass, type TaskUrgency } from "@/lib/domain/tasks";
+import {
+  collectPersonOverdueTasks,
+  dueDateToneClass,
+  taskUrgency,
+  type TaskUrgency,
+} from "@/lib/domain/tasks";
 import {
   mentionTargetFromUnread,
   mentionUnreadKey,
@@ -193,7 +198,12 @@ export default function DashboardPage() {
     if (showingAsManager && (canManage || isPublicShare)) {
       void ensureOrgTasks();
     } else if (personalPersonId) {
-      void ensureOrgTasks({ assigneePersonId: personalPersonId });
+      const assignerProfileId =
+        viewAsPerson?.profile_id ?? profile?.id ?? myPerson?.profile_id ?? null;
+      void ensureOrgTasks({
+        assigneePersonId: personalPersonId,
+        assignerProfileId,
+      });
     }
   }, [
     mode,
@@ -202,6 +212,9 @@ export default function DashboardPage() {
     canManage,
     isPublicShare,
     personalPersonId,
+    viewAsPerson?.profile_id,
+    profile?.id,
+    myPerson?.profile_id,
   ]);
 
   /** Members / View As: capacity + leave widgets scoped to one person. */
@@ -342,27 +355,65 @@ export default function DashboardPage() {
     return state.tasks.filter((t) => t.assignee_person_id === personalPersonId);
   }, [state.tasks, isPublicShare, showingAsManager, personalPersonId]);
 
-  const overdueTasks = useMemo(
-    () =>
-      scopedTasks
-        .filter(
-          (t) =>
-            t.status !== "complete" && t.due_date && t.due_date < todayKey,
-        )
-        .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
-    [scopedTasks, todayKey],
-  );
+  /** Org-wide overdue, or person-scoped: Active→assignee, In Review→assigner. */
+  const overdueTasks = useMemo(() => {
+    if (showingAllTasks) {
+      return collectPersonOverdueTasks(
+        scopedTasks,
+        null,
+        state.people,
+        projectById,
+        todayKey,
+      );
+    }
+    return collectPersonOverdueTasks(
+      state.tasks,
+      viewedPersonId,
+      state.people,
+      projectById,
+      todayKey,
+    );
+  }, [
+    showingAllTasks,
+    scopedTasks,
+    state.tasks,
+    state.people,
+    viewedPersonId,
+    projectById,
+    todayKey,
+  ]);
 
-  const pulseOverdueTasks = useMemo(
-    () =>
-      pulseTasks
-        .filter(
-          (t) =>
-            t.status !== "complete" && t.due_date && t.due_date < todayKey,
-        )
-        .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
-    [pulseTasks, todayKey],
-  );
+  /**
+   * Task Pulse overdue: personal responsibility.
+   * In Review past-due goes to the assigner, not the assignee.
+   */
+  const pulseOverdueTasks = useMemo(() => {
+    if (isPublicShare && showingAsManager) {
+      return collectPersonOverdueTasks(
+        pulseTasks,
+        null,
+        state.people,
+        projectById,
+        todayKey,
+      );
+    }
+    return collectPersonOverdueTasks(
+      state.tasks,
+      personalPersonId,
+      state.people,
+      projectById,
+      todayKey,
+    );
+  }, [
+    isPublicShare,
+    showingAsManager,
+    pulseTasks,
+    state.tasks,
+    state.people,
+    personalPersonId,
+    projectById,
+    todayKey,
+  ]);
 
   const urgentByGroup = useMemo(() => {
     const map = new Map<TaskUrgency, Task[]>();
@@ -420,24 +471,24 @@ export default function DashboardPage() {
     () =>
       scopedTasks.filter((t) => {
         if (t.status === "complete") return false;
+        if (t.due_date && t.due_date < todayKey) return false;
         if (urgentTaskIds.has(t.id)) return false;
-        if (overdueTasks.some((o) => o.id === t.id)) return false;
         const project = projectById.get(t.project_id);
         return Boolean(project && project.priority <= 2);
       }),
-    [scopedTasks, urgentTaskIds, overdueTasks, projectById],
+    [scopedTasks, urgentTaskIds, projectById, todayKey],
   );
 
   const pulseHighPriorityTasks = useMemo(
     () =>
       pulseTasks.filter((t) => {
         if (t.status === "complete") return false;
+        if (t.due_date && t.due_date < todayKey) return false;
         if (pulseUrgentTaskIds.has(t.id)) return false;
-        if (pulseOverdueTasks.some((o) => o.id === t.id)) return false;
         const project = projectById.get(t.project_id);
         return Boolean(project && project.priority <= 2);
       }),
-    [pulseTasks, pulseUrgentTaskIds, pulseOverdueTasks, projectById],
+    [pulseTasks, pulseUrgentTaskIds, projectById, todayKey],
   );
 
   const pinnedTotal =

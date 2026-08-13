@@ -30,7 +30,11 @@ import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { toDateKey } from "@/lib/domain/dates";
-import { dueDateToneClass, taskAssignerPersonId } from "@/lib/domain/tasks";
+import {
+  collectPersonOverdueTasks,
+  dueDateToneClass,
+  taskAssignerPersonId,
+} from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import { useViewAs } from "@/lib/view-as";
@@ -884,13 +888,26 @@ function TasksReportContent() {
     allArchivedTasks.length,
   );
 
-  const overdueTasks = useMemo(
-    () =>
-      bucketTasks.filter(
-        (t) => t.status !== "complete" && t.due_date && t.due_date < todayKey,
-      ),
-    [bucketTasks, todayKey],
-  );
+  const overdueTasks = useMemo(() => {
+    // My Tasks: Active overdue → assignee; In Review overdue → assigner.
+    // Org-wide: all past-due open tasks (including In Review).
+    const personId =
+      myTasksMode && assigneePersonId ? assigneePersonId : null;
+    return collectPersonOverdueTasks(
+      bucketTasks,
+      personId,
+      state.people,
+      projectById,
+      todayKey,
+    );
+  }, [
+    bucketTasks,
+    myTasksMode,
+    assigneePersonId,
+    state.people,
+    projectById,
+    todayKey,
+  ]);
 
   const dueTodayTasks = useMemo(
     () =>

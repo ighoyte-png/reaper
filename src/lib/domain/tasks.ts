@@ -136,6 +136,66 @@ export function taskStatusLabel(status: TaskStatus): string {
   }
 }
 
+/** DB `active` — UI label "In Review". Ball is with the assigner. */
+export function isTaskInReview(task: Pick<Task, "status">): boolean {
+  return task.status === "active";
+}
+
+/** Past-due and not complete (dividers never count). */
+export function isTaskPastDueOpen(
+  task: Pick<Task, "status" | "due_date" | "is_divider">,
+  todayKey: string,
+): boolean {
+  if (task.is_divider || task.status === "complete") return false;
+  return Boolean(task.due_date && task.due_date < todayKey);
+}
+
+/**
+ * Whether a past-due open task belongs on this person's overdue list.
+ * Active (`upcoming`) → assignee; In Review (`active`) → assigner.
+ * Pass `personId: null` for org-wide overdue (all past-due open tasks).
+ */
+export function taskOnPersonOverdueList(
+  task: Pick<
+    Task,
+    | "status"
+    | "assignee_person_id"
+    | "created_by_profile_id"
+    | "is_divider"
+  >,
+  personId: string | null,
+  people: Pick<Person, "id" | "profile_id">[],
+  project: Pick<Project, "manager_person_id"> | null,
+): boolean {
+  if (task.is_divider || task.status === "complete") return false;
+  if (personId === null) return true;
+  if (isTaskInReview(task)) {
+    return taskAssignerPersonId(task, people, project) === personId;
+  }
+  return task.assignee_person_id === personId;
+}
+
+export function collectPersonOverdueTasks<T extends Task>(
+  tasks: T[],
+  personId: string | null,
+  people: Pick<Person, "id" | "profile_id">[],
+  projectById: Map<string, Pick<Project, "manager_person_id">>,
+  todayKey: string,
+): T[] {
+  return tasks
+    .filter(
+      (t) =>
+        isTaskPastDueOpen(t, todayKey) &&
+        taskOnPersonOverdueList(
+          t,
+          personId,
+          people,
+          projectById.get(t.project_id) ?? null,
+        ),
+    )
+    .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+}
+
 export function nextTaskStatus(status: TaskStatus): TaskStatus {
   if (status === "upcoming") return "active";
   if (status === "active") return "complete";

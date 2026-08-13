@@ -780,6 +780,7 @@ interface DataContextValue {
   };
   ensureOrgTasks: (options?: {
     assigneePersonId?: string | null;
+    assignerProfileId?: string | null;
     openOnly?: boolean;
   }) => Promise<void>;
   ensureOrgMilestones: () => Promise<void>;
@@ -1666,6 +1667,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const ensureOrgTasks = useCallback(
     async (options?: {
       assigneePersonId?: string | null;
+      assignerProfileId?: string | null;
       openOnly?: boolean;
     }) => {
       if (mode !== "supabase") {
@@ -1674,13 +1676,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return;
       }
       const assigneeId = options?.assigneePersonId ?? null;
+      const assignerProfileId = options?.assignerProfileId ?? null;
       const openOnly = Boolean(options?.openOnly);
+      const personScopeKey = assigneeId
+        ? assignerProfileId
+          ? `${assigneeId}:assigner`
+          : assigneeId
+        : null;
       const scope = orgTasksScopeRef.current;
       if (scope.all) {
         setOrgTasksStatus("ready");
         return;
       }
-      if (assigneeId && scope.personIds.has(assigneeId) && !openOnly) {
+      if (personScopeKey && scope.personIds.has(personScopeKey) && !openOnly) {
         setOrgTasksStatus("ready");
         return;
       }
@@ -1694,6 +1702,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         try {
           const tasks = await loadOrgTasks(client, organizationId, {
             assigneePersonId: assigneeId,
+            assignerProfileId,
             openOnly,
           });
           setState((prev) => {
@@ -1706,8 +1715,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           });
           if (!assigneeId && !openOnly) {
             orgTasksScopeRef.current = { all: true, personIds: new Set() };
-          } else if (assigneeId) {
-            orgTasksScopeRef.current.personIds.add(assigneeId);
+          } else if (personScopeKey) {
+            orgTasksScopeRef.current.personIds.add(personScopeKey);
           }
           setOrgTasksStatus("ready");
         } catch (err) {
