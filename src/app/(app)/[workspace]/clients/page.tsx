@@ -41,6 +41,7 @@ import {
   buildProjectMembersPayload,
   type ContractorTerms,
 } from "@/lib/domain/contractor";
+import { reapplyContractorWindowsOnProjectSave } from "@/lib/domain/contractor-window-reapply";
 import { cn } from "@/lib/cn";
 import {
   useLiveUserViewPrefs,
@@ -190,6 +191,7 @@ function ClientsPageContent() {
     ensureScheduleRange,
     newId,
     isPublicShare,
+    upsertProjectContractorExpense,
   } = useData();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
@@ -365,10 +367,19 @@ function ClientsPageContent() {
             ? project.budget_monthly_reset
             : false,
       });
-      await setProjectMembers(
-        saved.id,
-        buildProjectMembersPayload(members, terms, state.people),
+      const memberPayload = buildProjectMembersPayload(
+        members,
+        terms,
+        state.people,
       );
+      await setProjectMembers(saved.id, memberPayload);
+      const applyToast = await reapplyContractorWindowsOnProjectSave({
+        project: { ...project, id: saved.id },
+        members: memberPayload,
+        expenses: state.project_contractor_expenses,
+        newId,
+        upsertExpense: upsertProjectContractorExpense,
+      });
       if (templateToApply && templateOptions) {
         await applyProjectTemplate(
           saved.id,
@@ -405,6 +416,7 @@ function ClientsPageContent() {
           "Set start and completion dates to book project manager schedule time",
           "warning",
         );
+        if (applyToast) push(applyToast);
       } else if (intent.kind === "overwrite" || intent.kind === "align") {
         finish();
         setPmPrompt({
@@ -415,6 +427,7 @@ function ClientsPageContent() {
         push(
           templateToApply ? "Project created from template" : "Project saved",
         );
+        if (applyToast) push(applyToast);
         router.push(projectHref(saved));
         return;
       } else if (intent.kind === "create") {
@@ -425,6 +438,7 @@ function ClientsPageContent() {
       push(
         templateToApply ? "Project created from template" : "Project saved",
       );
+      if (applyToast) push(applyToast);
       router.push(projectHref(saved));
     } catch (err) {
       push(

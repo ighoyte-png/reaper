@@ -7,8 +7,6 @@ const hatchStyle = {
     "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
 } as const;
 
-const contractorColor = "var(--status-healthy)";
-
 export function BurnBar({
   burn,
   compact = false,
@@ -98,13 +96,11 @@ export function BurnBar({
           <div
             className={clsx(
               "h-full shrink-0",
+              fillClass,
               !hasUsed && !hasFuture && "rounded-full",
               hasUsed || hasFuture ? "rounded-l-full" : "",
             )}
-            style={{
-              width: `${contractorPct}%`,
-              backgroundColor: contractorColor,
-            }}
+            style={{ width: `${contractorPct}%` }}
           />
         ) : null}
         {hasUsed ? (
@@ -149,15 +145,14 @@ export function BurnBar({
         <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
           <span className="inline-flex items-center gap-1">
             <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ backgroundColor: contractorColor }}
+              className={clsx("inline-block h-2 w-2 rounded-full", fillClass)}
               aria-hidden
             />
             Contractor
           </span>
           <span className="inline-flex items-center gap-1">
             <span
-              className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]"
+              className={clsx("inline-block h-2 w-2 rounded-full", fillClass)}
               aria-hidden
             />
             Internal

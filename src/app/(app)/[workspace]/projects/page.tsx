@@ -35,6 +35,7 @@ import {
   writeUserViewPrefs,
 } from "@/lib/user-view-prefs";
 import { budgetBurn, budgetHealth } from "@/lib/domain/budget";
+import { reapplyContractorWindowsOnProjectSave } from "@/lib/domain/contractor-window-reapply";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { projectIdsForPerson, projectHasSandboxWipeRisk } from "@/lib/domain/project-access";
 import {
@@ -125,6 +126,7 @@ function ProjectsPageContent() {
     newId,
     isPublicShare,
     myPerson,
+    upsertProjectContractorExpense,
   } = useData();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
@@ -380,10 +382,19 @@ function ProjectsPageContent() {
             ? toSave.budget_monthly_reset
             : false,
       });
-      await setProjectMembers(
-        toSave.id,
-        buildProjectMembersPayload(members, terms, state.people),
+      const memberPayload = buildProjectMembersPayload(
+        members,
+        terms,
+        state.people,
       );
+      await setProjectMembers(toSave.id, memberPayload);
+      const applyToast = await reapplyContractorWindowsOnProjectSave({
+        project: toSave,
+        members: memberPayload,
+        expenses: state.project_contractor_expenses,
+        newId,
+        upsertExpense: upsertProjectContractorExpense,
+      });
       if (templateToApply && templateOptions) {
         await applyProjectTemplate(
           toSave.id,
@@ -397,6 +408,7 @@ function ProjectsPageContent() {
         push(
           templateToApply ? "Project created from template" : "Project saved",
         );
+        if (applyToast) push(applyToast);
         return;
       }
 
@@ -429,6 +441,7 @@ function ProjectsPageContent() {
           "Set start and completion dates to book project manager schedule time",
           "warning",
         );
+        if (applyToast) push(applyToast);
       } else if (intent.kind === "overwrite" || intent.kind === "align") {
         setPmPrompt({
           kind: intent.kind,
@@ -441,6 +454,7 @@ function ProjectsPageContent() {
         push(
           templateToApply ? "Project created from template" : "Project saved",
         );
+        if (applyToast) push(applyToast);
         return;
       } else if (intent.kind === "create") {
         await applyPmSchedule(toSave, intent.hours);
@@ -450,6 +464,7 @@ function ProjectsPageContent() {
       push(
         templateToApply ? "Project created from template" : "Project saved",
       );
+      if (applyToast) push(applyToast);
     } catch (err) {
       push(
         err instanceof Error ? err.message : "Could not save project",

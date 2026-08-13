@@ -124,6 +124,7 @@ function attributeMonthlyExpenses(
     contractorExpenses,
     people,
     monthKey,
+    project,
   );
   const todayKey = toDateKey(asOf);
   if (monthStart > todayKey) {
@@ -195,35 +196,397 @@ function projectBillableAmountInDateRangeForPeople(
   return sum;
 }
 
+/** Compare yyyy-MM (or yyyy-MM-dd) month keys. */
+export function monthKeyCompare(a: string, b: string): number {
+  return a.slice(0, 7).localeCompare(b.slice(0, 7));
+}
+
+/** Whether a calendar month falls inside the project start/end (if set). */
+export function monthWithinProjectDates(
+  project: Pick<Project, "start_date" | "end_date">,
+  monthKey: string,
+): boolean {
+  const m = monthKey.slice(0, 7);
+  if (project.start_date && m < project.start_date.slice(0, 7)) return false;
+  if (project.end_date && m > project.end_date.slice(0, 7)) return false;
+  return true;
+}
+
+/**
+ * End month for a contractor apply window starting at `startMonthKey` (yyyy-MM):
+ * min(project end, December of that calendar year).
+ */
+export function contractorApplyEndMonthKey(
+  project: Pick<Project, "start_date" | "end_date">,
+  startMonthKey: string,
+): string {
+  const y = Number(startMonthKey.slice(0, 4));
+  let end = `${y}-12`;
+  if (project.end_date) {
+    const projectEnd = project.end_date.slice(0, 7);
+    if (projectEnd < end) end = projectEnd;
+  }
+  return end;
+}
+
+/**
+ * Hours-per-month commitments on retainers apply from max(project start, Jan of
+ * year / current month when in asOf's year) through min(project end, Dec of year).
+ * Future calendar years beyond asOf do not get hours until that year is active.
+ */
+export function hoursCommitmentAppliesInMonth(
+  project: Pick<
+    Project,
+    | "start_date"
+    | "end_date"
+    | "budget_mode"
+    | "budget_hours"
+    | "budget_amount"
+    | "budget_monthly_reset"
+  >,
+  monthKey: string,
+  asOf: Date = new Date(),
+): boolean {
+  if (!monthWithinProjectDates(project, monthKey)) return false;
+  if (!isMonthlyRetainerBudget(project)) return true;
+
+  const m = monthKey.slice(0, 7);
+  const y = Number(m.slice(0, 4));
+  const asOfY = asOf.getFullYear();
+  if (y > asOfY) return false;
+
+  let windowStart = `${y}-01`;
+  if (project.start_date && project.start_date.slice(0, 7) > windowStart) {
+    windowStart = project.start_date.slice(0, 7);
+  }
+  if (y === asOfY) {
+    const cur = format(asOf, "yyyy-MM");
+    if (cur > windowStart) windowStart = cur;
+  }
+  const windowEnd = contractorApplyEndMonthKey(project, windowStart);
+  return m >= windowStart && m <= windowEnd;
+}
+
+/** yyyy-MM keys from rangeStart through rangeEnd (inclusive), by calendar month. */
+export function eachMonthKeyInRange(
+  rangeStart: string,
+  rangeEnd: string,
+): string[] {
+  if (rangeEnd < rangeStart) return [];
+  const start = new Date(
+    Number(rangeStart.slice(0, 4)),
+    Number(rangeStart.slice(5, 7)) - 1,
+    1,
+  );
+  const end = new Date(
+    Number(rangeEnd.slice(0, 4)),
+    Number(rangeEnd.slice(5, 7)) - 1,
+    1,
+  );
+  const out: string[] = [];
+  for (
+    let d = start;
+    d <= end;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+  ) {
+    out.push(format(d, "yyyy-MM"));
+  }
+  return out;
+}
+
+/** Sum hours-per-month commitments across months in range that fall in the apply window. */
+export function hoursCommitmentTotalInRange(
+  project: Pick<
+    Project,
+    | "start_date"
+    | "end_date"
+    | "budget_mode"
+    | "budget_hours"
+    | "budget_amount"
+    | "budget_monthly_reset"
+  >,
+  hoursPerMonth: number,
+  rangeStart: string,
+  rangeEnd: string,
+  asOf: Date = new Date(),
+): number {
+  if (hoursPerMonth <= 0) return 0;
+  let total = 0;
+  for (const mk of eachMonthKeyInRange(rangeStart, rangeEnd)) {
+    if (hoursCommitmentAppliesInMonth(project, mk, asOf)) {
+      total += hoursPerMonth;
+    }
+  }
+  return total;
+}
+
+/** Clamp end month for “from now” contractor apply (current month → year/project end). */
+export function contractorApplyThroughMonthKey(
+  project: Pick<Project, "start_date" | "end_date">,
+  asOf: Date = new Date(),
+): string {
+  let start = format(asOf, "yyyy-MM");
+  if (project.start_date && project.start_date.slice(0, 7) > start) {
+    start = project.start_date.slice(0, 7);
+  }
+  return contractorApplyEndMonthKey(project, start);
+}
+
+export function contractorApplyThroughLabel(
+  project: Pick<Project, "start_date" | "end_date">,
+  asOf: Date = new Date(),
+): string {
+  const end = contractorApplyThroughMonthKey(project, asOf);
+  return format(
+    new Date(Number(end.slice(0, 4)), Number(end.slice(5, 7)) - 1, 1),
+    "MMMM yyyy",
+  );
+}
+
+export function contractorApplyWindowToastMessage(
+  project: Pick<Project, "start_date" | "end_date">,
+  asOf: Date = new Date(),
+): string {
+  return `Contractor hours/expenses applied through ${contractorApplyThroughLabel(project, asOf)}.`;
+}
+
+/**
+ * When a prior-year Repeat Monthly row no longer covers Jan of `asOf`'s year,
+ * build a continuation row starting that January (same amount/notes).
+ */
+export function buildNewYearRepeatExpenseContinuations(
+  project: Pick<Project, "id" | "start_date" | "end_date">,
+  expenses: ProjectContractorExpense[],
+  newId: () => string,
+  asOf: Date = new Date(),
+): Array<
+  Omit<ProjectContractorExpense, "organization_id"> & {
+    organization_id?: string;
+  }
+> {
+  const year = asOf.getFullYear();
+  const janKey = `${year}-01`;
+  const janMonthKey = `${janKey}-01`;
+  if (!monthWithinProjectDates(project, janKey)) return [];
+
+  const byPerson = new Map<string, ProjectContractorExpense[]>();
+  for (const e of expenses) {
+    if (e.project_id !== project.id) continue;
+    const list = byPerson.get(e.person_id) ?? [];
+    list.push(e);
+    byPerson.set(e.person_id, list);
+  }
+
+  const out: Array<
+    Omit<ProjectContractorExpense, "organization_id"> & {
+      organization_id?: string;
+    }
+  > = [];
+  const nowIso = asOf.toISOString();
+
+  for (const [personId, list] of byPerson) {
+    const coversJan = list.some((e) =>
+      contractorExpenseAppliesInMonth(project, e, janKey),
+    );
+    if (coversJan) continue;
+
+    const priorRepeats = list
+      .filter(
+        (e) =>
+          e.repeat_monthly &&
+          Number(e.month_key.slice(0, 4)) < year &&
+          e.amount > 0,
+      )
+      .sort((a, b) => monthKeyCompare(b.month_key, a.month_key));
+    const prior = priorRepeats[0];
+    if (!prior) continue;
+
+    out.push({
+      id: newId(),
+      project_id: project.id,
+      person_id: personId,
+      month_key: janMonthKey,
+      amount: prior.amount,
+      notes: prior.notes ?? "",
+      repeat_monthly: true,
+      created_at: nowIso,
+      updated_at: nowIso,
+      created_by_profile_id: null,
+    });
+  }
+  return out;
+}
+
+/** Whether Hours / Repeat Monthly settings warrant a through-date toast on save. */
+export function shouldToastContractorApplyWindow(
+  project: Pick<
+    Project,
+    | "id"
+    | "start_date"
+    | "end_date"
+    | "budget_mode"
+    | "budget_hours"
+    | "budget_amount"
+    | "budget_monthly_reset"
+  >,
+  members: Array<
+    Pick<
+      ProjectMember,
+      "contractor_mode" | "contractor_hours" | "person_id"
+    >
+  >,
+  expenses: Array<
+    Pick<
+      ProjectContractorExpense,
+      "project_id" | "repeat_monthly" | "month_key" | "amount"
+    >
+  >,
+  asOf: Date = new Date(),
+): boolean {
+  if (!isMonthlyRetainerBudget(project)) return false;
+  const cur = format(asOf, "yyyy-MM");
+  if (hoursCommitmentAppliesInMonth(project, cur, asOf)) {
+    for (const m of members) {
+      if (
+        m.contractor_mode === "hours" &&
+        (m.contractor_hours ?? 0) > 0
+      ) {
+        return true;
+      }
+    }
+  }
+  for (const e of expenses) {
+    if (e.project_id !== project.id) continue;
+    if (e.repeat_monthly && contractorExpenseAppliesInMonth(project, e, cur)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether a stored expense line attributes cost to the given calendar month. */
+export function contractorExpenseAppliesInMonth(
+  project: Pick<Project, "start_date" | "end_date">,
+  expense: Pick<
+    ProjectContractorExpense,
+    "month_key" | "repeat_monthly"
+  >,
+  monthKey: string,
+): boolean {
+  if (!monthWithinProjectDates(project, monthKey)) return false;
+  const prefix = monthKey.slice(0, 7);
+  const expenseMonth = expense.month_key.slice(0, 7);
+  if (expense.repeat_monthly) {
+    if (expenseMonth > prefix) return false;
+    const end = contractorApplyEndMonthKey(project, expenseMonth);
+    return prefix <= end;
+  }
+  return expenseMonth === prefix;
+}
+
+function expenseHoursFromAmount(
+  amount: number,
+  person: Person | undefined,
+): number {
+  if (!person || amount <= 0) return 0;
+  const rate =
+    person.cost_rate > 0
+      ? person.cost_rate
+      : person.bill_rate > 0
+        ? person.bill_rate
+        : 0;
+  return rate > 0 ? amount / rate : 0;
+}
+
 /** Sum contractor expenses for a project in a given yyyy-MM month. */
 export function contractorExpenseTotalsForMonth(
   projectId: string,
   expenses: ProjectContractorExpense[],
   people: Person[],
   monthKey: string,
+  project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
 ): { usedHours: number; usedAmount: number } {
   const peopleById = new Map(people.map((p) => [p.id, p]));
   let usedHours = 0;
   let usedAmount = 0;
-  const prefix = monthKey.slice(0, 7);
   for (const e of expenses) {
     if (e.project_id !== projectId) continue;
-    const expenseMonth = e.month_key.slice(0, 7);
-    const applies = e.repeat_monthly
-      ? expenseMonth <= prefix
-      : expenseMonth === prefix;
-    if (!applies) continue;
+    if (project) {
+      if (!contractorExpenseAppliesInMonth(project, e, monthKey)) continue;
+    } else {
+      const prefix = monthKey.slice(0, 7);
+      const expenseMonth = e.month_key.slice(0, 7);
+      const applies = e.repeat_monthly
+        ? expenseMonth <= prefix
+        : expenseMonth === prefix;
+      if (!applies) continue;
+    }
     usedAmount += e.amount;
-    const person = peopleById.get(e.person_id);
-    const rate =
-      person && (person.cost_rate > 0 || person.bill_rate > 0)
-        ? person.cost_rate > 0
-          ? person.cost_rate
-          : person.bill_rate
-        : 0;
-    if (rate > 0) usedHours += e.amount / rate;
+    usedHours += expenseHoursFromAmount(
+      e.amount,
+      peopleById.get(e.person_id),
+    );
   }
   return { usedHours, usedAmount };
+}
+
+export type ContractorExpenseLine = {
+  rowId: string;
+  expenseId: string;
+  personId: string;
+  monthKey: string;
+  amount: number;
+  hours: number;
+  notes: string;
+};
+
+/**
+ * Expand expense rows into per-month lines inside [rangeStart, rangeEnd]
+ * (inclusive), respecting repeat_monthly and project/year clamps.
+ */
+export function contractorExpenseLinesInRange(
+  project: Pick<Project, "id" | "start_date" | "end_date">,
+  expenses: ProjectContractorExpense[],
+  people: Person[],
+  rangeStart: string,
+  rangeEnd: string,
+  personId?: string | null,
+): ContractorExpenseLine[] {
+  if (rangeEnd < rangeStart) return [];
+  const peopleById = new Map(people.map((p) => [p.id, p]));
+  const start = new Date(
+    Number(rangeStart.slice(0, 4)),
+    Number(rangeStart.slice(5, 7)) - 1,
+    1,
+  );
+  const end = new Date(
+    Number(rangeEnd.slice(0, 4)),
+    Number(rangeEnd.slice(5, 7)) - 1,
+    1,
+  );
+  const out: ContractorExpenseLine[] = [];
+  for (
+    let d = start;
+    d <= end;
+    d = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+  ) {
+    const mk = format(d, "yyyy-MM");
+    for (const e of expenses) {
+      if (e.project_id !== project.id) continue;
+      if (personId && e.person_id !== personId) continue;
+      if (!contractorExpenseAppliesInMonth(project, e, mk)) continue;
+      out.push({
+        rowId: `${e.id}:${mk}`,
+        expenseId: e.id,
+        personId: e.person_id,
+        monthKey: `${mk}-01`,
+        amount: e.amount,
+        hours: expenseHoursFromAmount(e.amount, peopleById.get(e.person_id)),
+        notes: e.notes ?? "",
+      });
+    }
+  }
+  return out;
 }
 
 /** Sum contractor expense $ (and derived hours) across an inclusive date range. */
@@ -233,6 +596,7 @@ export function contractorExpenseTotalsInRange(
   people: Person[],
   rangeStart: string,
   rangeEnd: string,
+  project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
 ): { hours: number; amount: number } {
   const split = contractorExpenseSplitInRange(
     projectId,
@@ -240,6 +604,8 @@ export function contractorExpenseTotalsInRange(
     people,
     rangeStart,
     rangeEnd,
+    new Date(),
+    project,
   );
   return {
     hours: split.usedHours + split.futureHours,
@@ -255,6 +621,7 @@ export function contractorExpenseSplitInRange(
   rangeStart: string,
   rangeEnd: string,
   asOf: Date = new Date(),
+  project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
 ): {
   usedHours: number;
   futureHours: number;
@@ -290,6 +657,7 @@ export function contractorExpenseSplitInRange(
       expenses,
       people,
       format(d, "yyyy-MM"),
+      project ?? null,
     );
     if (monthStart > todayKey) {
       futureHours += totals.usedHours;
@@ -569,21 +937,26 @@ export function budgetBurn(
         includeTentative,
       );
       const monthly = isMonthlyRetainerBudget(project);
-      const commitUsed = contractorCommitmentTotals(
-        project.id,
-        feeCommitIdsForProject(
-          contractorCommitIds,
-          membersByPerson,
-          peopleById,
-          monthly,
-        ),
-        membersByPerson,
-        peopleById,
-        assignments,
-        rangeStart,
-        rangeEnd,
-        includeTentative,
-      );
+      const asOfMonth = format(asOf, "yyyy-MM");
+      const hoursInWindow =
+        !monthly || hoursCommitmentAppliesInMonth(project, asOfMonth, asOf);
+      const commitUsed = hoursInWindow
+        ? contractorCommitmentTotals(
+            project.id,
+            feeCommitIdsForProject(
+              contractorCommitIds,
+              membersByPerson,
+              peopleById,
+              monthly,
+            ),
+            membersByPerson,
+            peopleById,
+            assignments,
+            rangeStart,
+            rangeEnd,
+            includeTentative,
+          )
+        : { usedHours: 0, usedAmount: 0 };
       contractorUsedHours += commitUsed.usedHours;
       contractorUsedAmount += commitUsed.usedAmount;
       if (monthly) {
@@ -591,7 +964,8 @@ export function budgetBurn(
           project.id,
           contractorExpenses,
           people,
-          format(asOf, "yyyy-MM"),
+          asOfMonth,
+          project,
         );
         contractorUsedHours += expenseUsed.usedHours;
         contractorUsedAmount += expenseUsed.usedAmount;
@@ -687,6 +1061,7 @@ export function budgetBurn(
         contractorExpenses,
         people,
         format(asOf, "yyyy-MM"),
+        project,
       );
       contractorUsedHours += expenseUsed.usedHours;
       contractorUsedAmount += expenseUsed.usedAmount;
@@ -1054,7 +1429,11 @@ function monthBurnSplit(
     );
   }
 
-  if (monthly && feeCommitIds.size > 0) {
+  if (
+    monthly &&
+    feeCommitIds.size > 0 &&
+    hoursCommitmentAppliesInMonth(project, monthKey, asOf)
+  ) {
     const commit = contractorCommitmentTotals(
       project.id,
       feeCommitIds,

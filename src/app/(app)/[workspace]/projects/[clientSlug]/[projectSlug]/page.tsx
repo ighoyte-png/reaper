@@ -61,6 +61,7 @@ import {
   sortPeopleContractorsLast,
   type ContractorTerms,
 } from "@/lib/domain/contractor";
+import { reapplyContractorWindowsOnProjectSave } from "@/lib/domain/contractor-window-reapply";
 import { useAppHref, resolveProjectBySlugs, useBudgetHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { clientSiteOrigin, publicProjectShareUrl } from "@/lib/share/token";
 import { cn } from "@/lib/cn";
@@ -124,6 +125,7 @@ export default function ProjectDetailPage() {
     ensureProjectData,
     setActiveRealtimeProjectIds,
     dataStatus,
+    upsertProjectContractorExpense,
   } = useData();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
     useViewAs();
@@ -1282,14 +1284,19 @@ export default function ProjectDetailPage() {
                       ? Boolean(toSave.budget_monthly_reset)
                       : false,
                 });
-                await setProjectMembers(
-                  toSave.id,
-                  buildProjectMembersPayload(
-                    memberIds,
-                    contractorTerms,
-                    state.people,
-                  ),
+                const memberPayload = buildProjectMembersPayload(
+                  memberIds,
+                  contractorTerms,
+                  state.people,
                 );
+                await setProjectMembers(toSave.id, memberPayload);
+                const applyToast = await reapplyContractorWindowsOnProjectSave({
+                  project: toSave,
+                  members: memberPayload,
+                  expenses: state.project_contractor_expenses,
+                  newId,
+                  upsertExpense: upsertProjectContractorExpense,
+                });
 
                 const closeEdit = () => {
                   setEditing(false);
@@ -1303,6 +1310,7 @@ export default function ProjectDetailPage() {
                 if (toSave.sandbox_mode) {
                   closeEdit();
                   push("Project saved");
+                  if (applyToast) push(applyToast);
                   router.replace(projectHref(saved));
                   return;
                 }
@@ -1370,6 +1378,7 @@ export default function ProjectDetailPage() {
                   );
                   closeEdit();
                   push("Project saved");
+                  if (applyToast) push(applyToast);
                   router.replace(projectHref(saved));
                   return;
                 }
@@ -1381,6 +1390,7 @@ export default function ProjectDetailPage() {
                     project: toSave,
                   });
                   push("Project saved");
+                  if (applyToast) push(applyToast);
                   router.replace(projectHref(saved));
                   return;
                 }
@@ -1389,6 +1399,7 @@ export default function ProjectDetailPage() {
                 }
                 closeEdit();
                 push("Project saved");
+                if (applyToast) push(applyToast);
                 router.replace(projectHref(saved));
               } catch (err) {
                 push(

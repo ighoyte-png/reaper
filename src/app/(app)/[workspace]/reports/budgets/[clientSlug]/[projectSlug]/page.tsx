@@ -21,10 +21,12 @@ import {
   budgetBurn,
   budgetHealth,
   calendarYearBars,
+  contractorExpenseLinesInRange,
   contractorExpenseTotalsInRange,
   contractorExpenseSplitInRange,
   formatHours,
   formatMoney,
+  hoursCommitmentTotalInRange,
   isMonthlyRetainerBudget,
   normalizeBudgetMode,
   personHoursSplitInRange,
@@ -281,6 +283,8 @@ export default function ProjectBudgetDetailPage() {
       state.people,
       periodRange.start,
       periodRange.end,
+      new Date(),
+      project,
     );
     return {
       usedHours: split.usedHours + expenses.usedHours,
@@ -329,6 +333,7 @@ export default function ProjectBudgetDetailPage() {
         state.people,
         periodRange.start,
         periodRange.end,
+        project,
       ).amount;
     }
     return {
@@ -355,6 +360,21 @@ export default function ProjectBudgetDetailPage() {
 
   const teamPeriod = useMemo(() => {
     if (!project) return { staff: [], contractors: [] };
+    type TeamPeriodRow = {
+      id: string;
+      personId: string;
+      name: string;
+      avatar_url: string | null;
+      avatar_attachment_id?: string | null;
+      avatar_color?: string | null;
+      usedHours: number;
+      plannedHours: number;
+      totalHours: number;
+      moneyAmount: number | null;
+      dashUsedPlanned: boolean;
+      is_contractor: boolean;
+      notes?: string;
+    };
     const staff = staffTeam.map((person) => {
       const split = personHoursSplitInRange(
         person.id,
@@ -365,6 +385,7 @@ export default function ProjectBudgetDetailPage() {
       );
       return {
         id: person.id,
+        personId: person.id,
         name: person.name,
         avatar_url: person.avatar_url,
         avatar_attachment_id: person.avatar_attachment_id,
@@ -375,19 +396,106 @@ export default function ProjectBudgetDetailPage() {
         moneyAmount: null as number | null,
         dashUsedPlanned: false,
         is_contractor: person.is_contractor,
-      };
+      } satisfies TeamPeriodRow;
     });
-    const contractors = contractorRoster.map((person) => {
+    const contractors: TeamPeriodRow[] = [];
+    const monthly = isMonthlyRetainerBudget(project);
+    const asOf = new Date();
+
+    for (const person of contractorRoster) {
       const member = membersByPerson.get(person.id);
       const mode = member?.contractor_mode ?? null;
       const isFixedFee = mode === "fixed_fee";
       const isFixedHours =
         mode === "hours" || (mode == null && person.hide_from_schedule);
+      const isScheduled = mode === "scheduled" || (!isFixedFee && !isFixedHours);
+
+      if (monthly) {
+        const expenseLines = contractorExpenseLinesInRange(
+          project,
+          projectExpenses,
+          state.people,
+          periodRange.start,
+          periodRange.end,
+          person.id,
+        );
+        for (const line of expenseLines) {
+          contractors.push({
+            id: line.rowId,
+            personId: person.id,
+            name: person.name,
+            avatar_url: person.avatar_url,
+            avatar_attachment_id: person.avatar_attachment_id,
+            avatar_color: person.avatar_color,
+            usedHours: 0,
+            plannedHours: 0,
+            totalHours: 0,
+            moneyAmount: line.amount,
+            dashUsedPlanned: true,
+            is_contractor: true,
+            notes: line.notes || undefined,
+          });
+        }
+
+        if (isFixedHours) {
+          const committed = contractorCommitted(person, member);
+          const totalHours = hoursCommitmentTotalInRange(
+            project,
+            committed.hours,
+            periodRange.start,
+            periodRange.end,
+            asOf,
+          );
+          if (totalHours > 0) {
+            contractors.push({
+              id: `${person.id}:hours`,
+              personId: person.id,
+              name: person.name,
+              avatar_url: person.avatar_url,
+              avatar_attachment_id: person.avatar_attachment_id,
+              avatar_color: person.avatar_color,
+              usedHours: 0,
+              plannedHours: 0,
+              totalHours,
+              moneyAmount: null,
+              dashUsedPlanned: true,
+              is_contractor: true,
+            });
+          }
+        }
+
+        if (isScheduled) {
+          const split = personHoursSplitInRange(
+            person.id,
+            project.id,
+            state.assignments,
+            periodRange.start,
+            periodRange.end,
+          );
+          contractors.push({
+            id: person.id,
+            personId: person.id,
+            name: person.name,
+            avatar_url: person.avatar_url,
+            avatar_attachment_id: person.avatar_attachment_id,
+            avatar_color: person.avatar_color,
+            usedHours: split.usedHours,
+            plannedHours: split.futureHours,
+            totalHours: split.usedHours + split.futureHours,
+            moneyAmount: null,
+            dashUsedPlanned: false,
+            is_contractor: true,
+          });
+        }
+        continue;
+      }
+
       if (isFixedFee || isFixedHours) {
         const committed = contractorCommitted(person, member);
         if (isFixedFee) {
-          return {
+          contractors.push({
             id: person.id,
+            personId: person.id,
             name: person.name,
             avatar_url: person.avatar_url,
             avatar_attachment_id: person.avatar_attachment_id,
@@ -398,22 +506,26 @@ export default function ProjectBudgetDetailPage() {
             moneyAmount: committed.amount,
             dashUsedPlanned: true,
             is_contractor: true,
-          };
+          });
+        } else {
+          contractors.push({
+            id: person.id,
+            personId: person.id,
+            name: person.name,
+            avatar_url: person.avatar_url,
+            avatar_attachment_id: person.avatar_attachment_id,
+            avatar_color: person.avatar_color,
+            usedHours: 0,
+            plannedHours: 0,
+            totalHours: committed.hours,
+            moneyAmount: null,
+            dashUsedPlanned: true,
+            is_contractor: true,
+          });
         }
-        return {
-          id: person.id,
-          name: person.name,
-          avatar_url: person.avatar_url,
-          avatar_attachment_id: person.avatar_attachment_id,
-          avatar_color: person.avatar_color,
-          usedHours: 0,
-          plannedHours: 0,
-          totalHours: committed.hours,
-          moneyAmount: null as number | null,
-          dashUsedPlanned: true,
-          is_contractor: true,
-        };
+        continue;
       }
+
       const split = personHoursSplitInRange(
         person.id,
         project.id,
@@ -421,8 +533,9 @@ export default function ProjectBudgetDetailPage() {
         periodRange.start,
         periodRange.end,
       );
-      return {
+      contractors.push({
         id: person.id,
+        personId: person.id,
         name: person.name,
         avatar_url: person.avatar_url,
         avatar_attachment_id: person.avatar_attachment_id,
@@ -430,11 +543,12 @@ export default function ProjectBudgetDetailPage() {
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
-        moneyAmount: null as number | null,
+        moneyAmount: null,
         dashUsedPlanned: false,
         is_contractor: true,
-      };
-    });
+      });
+    }
+
     return {
       staff: staff.sort((a, b) => b.totalHours - a.totalHours),
       contractors: contractors.sort((a, b) => {
@@ -449,7 +563,9 @@ export default function ProjectBudgetDetailPage() {
     contractorRoster,
     membersByPerson,
     state.assignments,
+    state.people,
     periodRange,
+    projectExpenses,
   ]);
 
   function goBack() {
@@ -1053,6 +1169,7 @@ function TeamRow({
 }: {
   row: {
     id: string;
+    personId?: string;
     name: string;
     avatar_url: string | null;
     avatar_attachment_id?: string | null;
@@ -1063,10 +1180,12 @@ function TeamRow({
     moneyAmount: number | null;
     dashUsedPlanned?: boolean;
     is_contractor: boolean;
+    notes?: string;
   };
 }) {
   const money = row.moneyAmount != null;
   const dashPartial = Boolean(row.dashUsedPlanned) || money;
+  const avatarPersonId = row.personId ?? row.id;
   return (
     <tr className="border-b border-[var(--border)]/60">
       <td className="py-2 pr-2">
@@ -1077,14 +1196,23 @@ function TeamRow({
             name={row.name}
             size="xs"
             fallback="initials"
-            personId={row.id}
+            personId={avatarPersonId}
             color={personAvatarColor({
-              id: row.id,
+              id: avatarPersonId,
               avatar_color: row.avatar_color ?? null,
             })}
           />
-          <span className="min-w-0 truncate">{row.name}</span>
-          {row.is_contractor ? <ContractorTag /> : null}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 truncate">{row.name}</span>
+              {row.is_contractor ? <ContractorTag /> : null}
+            </div>
+            {row.notes ? (
+              <p className="truncate text-[11px] text-[var(--text-muted)]">
+                {row.notes}
+              </p>
+            ) : null}
+          </div>
         </div>
       </td>
       <td className="py-2 text-right tabular-nums">
