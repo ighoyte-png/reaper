@@ -50,7 +50,7 @@ import {
 } from "@/components/ui/image-lightbox";
 
 const editorContentClass = cn(
-  "min-h-[4.5rem] px-2 py-2 text-sm leading-relaxed text-[var(--text)] outline-none",
+  "min-h-[4.5rem] p-[15px] text-sm leading-relaxed text-[var(--text)] outline-none",
   "[&_p]:m-0 [&_p+p]:mt-2",
   "[&_h1]:m-0 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",
   "[&_h2]:m-0 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:leading-snug",

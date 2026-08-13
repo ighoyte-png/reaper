@@ -3520,7 +3520,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
             !isExiting &&
             "bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25",
         )}
-        style={{ paddingLeft: 8 }}
+        style={{ paddingLeft: ctx.manageLists ? 8 : 16 }}
         onAnimationEnd={(e) => {
           if (!isExiting) return;
           if (e.target !== e.currentTarget) return;
@@ -3741,7 +3741,7 @@ function TaskRow({
   const nestIndent = depth * 16;
   const nestLineLeft =
     depth > 0
-      ? 8 +
+      ? (ctx.manageLists ? 8 : 16) +
         (depth - 1) * 16 +
         (ctx.manageLists ? 16 + 6 + 5 - 2 + 3 - 2 : 5 - 2 + 3 - 2) -
         nestIndent
@@ -3857,7 +3857,7 @@ function TaskRow({
             ? "cursor-grab touch-none active:cursor-grabbing"
             : !ctx.readOnly && "cursor-pointer",
         )}
-        style={{ paddingLeft: 8 }}
+        style={{ paddingLeft: listManage ? 8 : 16 }}
         title={
           multiSelectDrag ? "Drag to move all selected tasks" : undefined
         }
@@ -4101,7 +4101,10 @@ function TaskRow({
       </div>
       {!ctx.readOnly ? (
         <ExpandPanel open={isExpanded}>
-          <div className="pb-3 pr-2 pt-3" style={{ paddingLeft: 8 }}>
+          <div
+            className="pb-3 pr-2 pt-3"
+            style={{ paddingLeft: listManage ? 8 : 16 }}
+          >
             <div className="flex gap-1.5">
               <span className="w-4 shrink-0" aria-hidden />
               <span className="w-2.5 shrink-0" aria-hidden />
