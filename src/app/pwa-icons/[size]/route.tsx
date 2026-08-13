@@ -1,12 +1,12 @@
 import { ImageResponse } from "next/og";
+import { reaperLogoDataUri } from "@/lib/brand/reaper-logo-svg";
 
 type Params = { params: Promise<{ size: string }> };
 
 export async function GET(request: Request, { params }: Params) {
   const { size: raw } = await params;
   const size = raw === "512" ? 512 : 192;
-  const origin = new URL(request.url).origin;
-  const logo = `${origin}/reaper_logo.svg`;
+  const logo = reaperLogoDataUri();
   // Maskable (Android adaptive) icons need an opaque safe-zone background.
   const maskable = new URL(request.url).searchParams.get("maskable") === "1";
   const logoScale = maskable ? 0.72 : 0.88;
