@@ -7,8 +7,6 @@ const hatchStyle = {
     "repeating-linear-gradient(-45deg, transparent, transparent 3px, var(--progress-approved-hatch) 3px, var(--progress-approved-hatch) 5px)",
 } as const;
 
-const contractorFillClass = "bg-[var(--status-healthy)]";
-
 export function BurnBar({
   burn,
   compact = false,
@@ -45,6 +43,13 @@ export function BurnBar({
     health === "over" && "bg-[var(--status-over)]",
     health === "near" && "bg-[var(--status-near)]",
     (health === "healthy" || health === "none") && "bg-[var(--accent)]",
+  );
+
+  const contractorFillClass = clsx(
+    health === "over" && "bg-[var(--status-over)]",
+    health === "near" && "bg-[var(--status-near)]",
+    (health === "healthy" || health === "none") &&
+      "bg-[var(--status-healthy)]",
   );
 
   const hasContractorSeg = contractorPct > 0;

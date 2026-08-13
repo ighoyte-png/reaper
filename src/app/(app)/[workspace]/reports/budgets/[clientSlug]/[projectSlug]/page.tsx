@@ -25,8 +25,10 @@ import {
   contractorExpenseAggregatesInRange,
   contractorExpenseTotalsInRange,
   contractorExpenseSplitInRange,
+  eachMonthKeyInRange,
   formatHours,
   formatMoney,
+  hoursCommitmentAppliesInMonth,
   hoursCommitmentTotalInRange,
   isMonthlyRetainerBudget,
   normalizeBudgetMode,
@@ -42,6 +44,7 @@ import {
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   contractorCommitted,
+  isProjectBasisContractor,
 } from "@/lib/domain/contractor";
 import { personAvatarColor } from "@/lib/domain/people";
 import { toDateKey } from "@/lib/domain/dates";
@@ -278,27 +281,60 @@ export default function ProjectBudgetDetailPage() {
       periodRange.end,
     );
     if (!isMonthlyRetainerBudget(project)) return split;
+
+    const asOf = new Date();
+    const todayKey = toDateKey(asOf);
     const expenses = contractorExpenseSplitInRange(
       project.id,
       projectExpenses,
       state.people,
       periodRange.start,
       periodRange.end,
-      new Date(),
+      asOf,
       project,
     );
-    return {
-      usedHours: split.usedHours + expenses.usedHours,
-      futureHours: split.futureHours + expenses.futureHours,
-      usedAmount: split.usedAmount + expenses.usedAmount,
-      futureAmount: split.futureAmount + expenses.futureAmount,
-    };
+
+    let usedHours = split.usedHours + expenses.usedHours;
+    let futureHours = split.futureHours + expenses.futureHours;
+    let usedAmount = split.usedAmount + expenses.usedAmount;
+    let futureAmount = split.futureAmount + expenses.futureAmount;
+
+    const peopleById = new Map(state.people.map((p) => [p.id, p]));
+    for (const member of projectMembers) {
+      const person = peopleById.get(member.person_id);
+      if (!person || !isProjectBasisContractor(person)) continue;
+      if (member.contractor_mode !== "hours") continue;
+      const committed = contractorCommitted(person, member);
+      if (committed.hours <= 0) continue;
+
+      for (const mk of eachMonthKeyInRange(
+        periodRange.start,
+        periodRange.end,
+      )) {
+        if (!hoursCommitmentAppliesInMonth(project, mk, asOf)) continue;
+        const monthStart = toDateKey(
+          startOfMonth(
+            new Date(Number(mk.slice(0, 4)), Number(mk.slice(5, 7)) - 1, 1),
+          ),
+        );
+        if (monthStart > todayKey) {
+          futureHours += committed.hours;
+          futureAmount += committed.amount;
+        } else {
+          usedHours += committed.hours;
+          usedAmount += committed.amount;
+        }
+      }
+    }
+
+    return { usedHours, futureHours, usedAmount, futureAmount };
   }, [
     project,
     state.assignments,
     state.people,
     periodRange,
     projectExpenses,
+    projectMembers,
   ]);
 
   const periodRevenueCost = useMemo(() => {
@@ -856,7 +892,9 @@ export default function ProjectBudgetDetailPage() {
               </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
                 {showHoursMetrics
-                  ? formatHours(hoursFx.hoursUsedToDate)
+                  ? formatHours(
+                      isRetainer ? burn.usedHours : hoursFx.hoursUsedToDate,
+                    )
                   : showAmountMetrics
                     ? formatMoney(burn.usedAmount)
                     : formatHours(hoursFx.hoursUsedToDate)}
@@ -870,7 +908,11 @@ export default function ProjectBudgetDetailPage() {
               </dt>
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
                 {showHoursMetrics
-                  ? formatHours(hoursFx.hoursFuturePlanned)
+                  ? formatHours(
+                      isRetainer
+                        ? burn.futureHours
+                        : hoursFx.hoursFuturePlanned,
+                    )
                   : showAmountMetrics
                     ? formatMoney(burn.futureAmount)
                     : formatHours(hoursFx.hoursFuturePlanned)}
@@ -883,13 +925,17 @@ export default function ProjectBudgetDetailPage() {
               <dd
                 className={cn(
                   "mt-0.5 text-sm font-medium tabular-nums",
-                  hoursFx.overBudget && "text-[var(--status-over)]",
+                  (isRetainer
+                    ? burn.overBy > 0
+                    : hoursFx.overBudget) && "text-[var(--status-over)]",
                 )}
               >
                 {showHoursMetrics
-                  ? hoursFx.hoursRemaining == null
-                    ? "—"
-                    : formatHours(hoursFx.hoursRemaining)
+                  ? isRetainer
+                    ? formatHours(burn.remainingHours)
+                    : hoursFx.hoursRemaining == null
+                      ? "—"
+                      : formatHours(hoursFx.hoursRemaining)
                   : showAmountMetrics
                     ? burn.remainingAmount == null
                       ? "—"

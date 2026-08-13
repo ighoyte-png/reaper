@@ -282,6 +282,75 @@ function ProgressLineChart({
     return parts.join(" ");
   }
 
+  /** Split a range into subpaths at the linear intersection with budgetCap. */
+  function pathPiecesAtCap(
+    from: number,
+    to: number,
+  ): { d: string; over: boolean }[] {
+    if (to < from) return [];
+    if (!hasBudget || budgetCap == null) {
+      return [{ d: pathSegment(from, to), over: false }];
+    }
+    if (from === to) {
+      return [
+        {
+          d: `M ${xAt(from).toFixed(1)} ${yAt(valueAt(from)).toFixed(1)}`,
+          over: valueAt(from) > budgetCap,
+        },
+      ];
+    }
+
+    const pieces: { d: string; over: boolean }[] = [];
+    let currentOver = valueAt(from) > budgetCap;
+    let parts: string[] = [
+      `M ${xAt(from).toFixed(1)} ${yAt(valueAt(from)).toFixed(1)}`,
+    ];
+
+    const flush = () => {
+      if (parts.length > 0) {
+        pieces.push({ d: parts.join(" "), over: currentOver });
+        parts = [];
+      }
+    };
+
+    for (let i = from; i < to; i++) {
+      const v0 = valueAt(i);
+      const v1 = valueAt(i + 1);
+      const x0 = xAt(i);
+      const x1 = xAt(i + 1);
+      const over0 = v0 > budgetCap;
+      const over1 = v1 > budgetCap;
+
+      if (over0 === over1) {
+        if (parts.length === 0) {
+          parts.push(`M ${x0.toFixed(1)} ${yAt(v0).toFixed(1)}`);
+          currentOver = over0;
+        }
+        parts.push(`L ${x1.toFixed(1)} ${yAt(v1).toFixed(1)}`);
+        continue;
+      }
+
+      const denom = v1 - v0;
+      const t = Math.abs(denom) < 1e-9 ? 0 : (budgetCap - v0) / denom;
+      const xc = x0 + t * (x1 - x0);
+      const yc = yAt(budgetCap);
+
+      if (parts.length === 0) {
+        parts.push(`M ${x0.toFixed(1)} ${yAt(v0).toFixed(1)}`);
+        currentOver = over0;
+      }
+      parts.push(`L ${xc.toFixed(1)} ${yc.toFixed(1)}`);
+      flush();
+
+      currentOver = over1;
+      parts.push(`M ${xc.toFixed(1)} ${yc.toFixed(1)}`);
+      parts.push(`L ${x1.toFixed(1)} ${yAt(v1).toFixed(1)}`);
+    }
+
+    flush();
+    return pieces;
+  }
+
   const monthLabels = useMemo(() => {
     const groups: { key: string; label: string; start: number; end: number }[] =
       [];
@@ -318,17 +387,13 @@ function ProgressLineChart({
       : null;
 
   const lineColor = "var(--accent)";
-  const mutedLine = "var(--accent)";
-  const usedEndVal =
-    handoffIdx >= 0 ? valueAt(handoffIdx) : points.length ? valueAt(0) : 0;
-  const futureEndVal =
-    points.length > 0 ? valueAt(points.length - 1) : usedEndVal;
-  const usedOverCap =
-    hasBudget && budgetCap != null && usedEndVal > budgetCap;
-  const futureOverCap =
-    hasBudget && budgetCap != null && futureEndVal > budgetCap;
-  const usedStroke = usedOverCap ? "var(--status-over)" : lineColor;
-  const futureStroke = futureOverCap ? "var(--status-over)" : mutedLine;
+  const overStroke = "var(--status-over)";
+  const usedPieces =
+    handoffIdx >= 0 ? pathPiecesAtCap(0, handoffIdx) : [];
+  const futurePieces =
+    handoffIdx < points.length - 1
+      ? pathPiecesAtCap(handoffIdx, points.length - 1)
+      : [];
   const hover = hoverIdx != null ? points[hoverIdx] : null;
   const hoverVal = hoverIdx != null ? valueAt(hoverIdx) : 0;
   const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;
@@ -513,33 +578,36 @@ function ProgressLineChart({
           />
         ) : null}
 
-        {handoffIdx < points.length - 1 ? (
+        {futurePieces.map((piece, i) => (
           <path
-            d={pathSegment(handoffIdx, points.length - 1)}
+            key={`future-${i}`}
+            d={piece.d}
             fill="none"
-            stroke={futureStroke}
+            stroke={piece.over ? overStroke : lineColor}
             strokeWidth={1.25}
             strokeDasharray="5 4"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-        ) : null}
+        ))}
 
-        {handoffIdx >= 0 ? (
+        {usedPieces.map((piece, i) => (
           <path
-            d={pathSegment(0, handoffIdx)}
+            key={`used-${i}`}
+            d={piece.d}
             fill="none"
-            stroke={usedStroke}
+            stroke={piece.over ? overStroke : lineColor}
             strokeWidth={1.25}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-        ) : null}
+        ))}
 
         {points.map((p, i) => {
-          const future = i > handoffIdx;
           const cx = xAt(i);
           const cy = yAt(valueAt(i));
+          const over =
+            hasBudget && budgetCap != null && valueAt(i) > budgetCap;
           return (
             <g key={p.key}>
               <rect
@@ -555,7 +623,7 @@ function ProgressLineChart({
                 cx={cx}
                 cy={cy}
                 r={hoverIdx === i ? 3.5 : 2}
-                fill={future ? futureStroke : usedStroke}
+                fill={over ? overStroke : lineColor}
                 className="pointer-events-none"
               />
             </g>
