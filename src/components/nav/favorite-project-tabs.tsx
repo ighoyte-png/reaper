@@ -7,7 +7,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type MutableRefObject,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   DndContext,
@@ -65,43 +67,53 @@ function FavoriteTab({
     ? `${clientName} - ${project.name}`
     : project.name;
 
+  function blockNavIfSuppressed(
+    e: ReactMouseEvent | ReactPointerEvent,
+  ) {
+    if (!suppressClickRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
   return (
-    <Link
+    <div
       ref={setNodeRef}
-      href={href}
-      title={fullLabel}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
       }}
       className={cn(
-        "flex max-w-[11rem] shrink-0 touch-manipulation cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors",
-        active
-          ? "bg-[var(--bg-elevated)] text-[var(--text)]"
-          : "text-[var(--text)] hover:bg-[var(--row-hover)]",
+        "shrink-0 touch-manipulation",
         isDragging && "z-10 opacity-70",
       )}
-      onClick={(e) => {
-        // Pointer release after a drag still fires a click on the <a> — block it.
-        if (suppressClickRef.current) {
-          e.preventDefault();
-          e.stopPropagation();
-          suppressClickRef.current = false;
-        }
-      }}
       {...attributes}
       {...listeners}
     >
-      <ProjectColorBar color={color} size="sm" className="self-center" />
-      <span className="min-w-0 text-left leading-tight">
-        <span className="block truncate text-[12px] font-medium">
-          {clientName || "No client"}
+      <Link
+        href={href}
+        title={fullLabel}
+        draggable={false}
+        className={cn(
+          "flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors",
+          active
+            ? "bg-[var(--bg-elevated)] text-[var(--text)]"
+            : "text-[var(--text)] hover:bg-[var(--row-hover)]",
+        )}
+        onClickCapture={blockNavIfSuppressed}
+        onClick={blockNavIfSuppressed}
+        onAuxClick={blockNavIfSuppressed}
+      >
+        <ProjectColorBar color={color} size="sm" className="self-center" />
+        <span className="min-w-0 text-left leading-tight">
+          <span className="block truncate text-[12px] font-medium">
+            {clientName || "No client"}
+          </span>
+          <span className="mt-0.5 block truncate text-[10px] font-normal text-[var(--text-muted)]">
+            {project.name}
+          </span>
         </span>
-        <span className="mt-0.5 block truncate text-[10px] font-normal text-[var(--text-muted)]">
-          {project.name}
-        </span>
-      </span>
-    </Link>
+      </Link>
+    </div>
   );
 }
 
@@ -150,7 +162,9 @@ function FavoritesBottomNavInner() {
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
   const suppressClickRef = useRef(false);
+  const suppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const blockClickRef = useRef<((e: MouseEvent) => void) | null>(null);
 
   const favorites = useMemo(
     () =>
@@ -163,7 +177,7 @@ function FavoritesBottomNavInner() {
   );
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 10 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
 
   const overflow = canScrollPrev || canScrollNext;
@@ -192,18 +206,49 @@ function FavoritesBottomNavInner() {
     };
   }, [favorites]);
 
+  useEffect(() => {
+    return () => {
+      if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
+      if (blockClickRef.current) {
+        document.removeEventListener("click", blockClickRef.current, true);
+        blockClickRef.current = null;
+      }
+    };
+  }, []);
+
   if (isPublicShare || !profile || favorites.length === 0) return null;
 
-  function clearSuppressClickSoon() {
-    // Click from pointer-up after a drag arrives shortly after drag end.
-    window.setTimeout(() => {
+  function armClickSuppression() {
+    suppressClickRef.current = true;
+    if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
+    if (blockClickRef.current) {
+      document.removeEventListener("click", blockClickRef.current, true);
+    }
+    const blockClick = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    };
+    blockClickRef.current = blockClick;
+    // Capture on document so Next Link / nav-progress never see the ghost click.
+    document.addEventListener("click", blockClick, true);
+  }
+
+  function clearClickSuppressionSoon() {
+    if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
+    suppressTimerRef.current = setTimeout(() => {
       suppressClickRef.current = false;
-    }, 150);
+      if (blockClickRef.current) {
+        document.removeEventListener("click", blockClickRef.current, true);
+        blockClickRef.current = null;
+      }
+      suppressTimerRef.current = null;
+    }, 400);
   }
 
   function onDragEnd(event: DragEndEvent) {
     setDragging(false);
-    clearSuppressClickSoon();
+    clearClickSuppressionSoon();
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = favorites.findIndex((p) => p.id === active.id);
@@ -246,14 +291,14 @@ function FavoritesBottomNavInner() {
           collisionDetection={closestCenter}
           autoScroll={false}
           onDragStart={() => {
-            suppressClickRef.current = true;
+            armClickSuppression();
             setDragging(true);
           }}
           onDragEnd={onDragEnd}
           onDragCancel={() => {
             setDragging(false);
-            suppressClickRef.current = true;
-            clearSuppressClickSoon();
+            armClickSuppression();
+            clearClickSuppressionSoon();
           }}
         >
           <SortableContext

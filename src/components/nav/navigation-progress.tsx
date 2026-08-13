@@ -152,7 +152,12 @@ export function NavigationProgress() {
       ) {
         return;
       }
-      start();
+      // Defer so link onClick handlers (e.g. post-DnD suppress) can preventDefault
+      // before we show the route progress bar.
+      queueMicrotask(() => {
+        if (e.defaultPrevented) return;
+        start();
+      });
     }
 
     document.addEventListener("click", onClick, true);

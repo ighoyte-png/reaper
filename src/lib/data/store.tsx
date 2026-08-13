@@ -3026,9 +3026,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ],
         }));
         if (mode === "supabase" && supabaseRef.current) {
-          runRemoteSoft(() =>
-            reorderProjectFavoriteRows(supabaseRef.current!, nextRows),
-          );
+          // Soft persist: do not refreshSupabase on failure (avoids full app reload
+          // after DnD). Optimistic order already applied locally.
+          const client = supabaseRef.current;
+          void reorderProjectFavoriteRows(client, nextRows).catch((err) => {
+            console.error(err);
+          });
         }
       },
       upsertPerson: async (person) => {
