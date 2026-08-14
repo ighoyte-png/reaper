@@ -726,6 +726,11 @@ interface DataContextValue {
   dismissMention: (target: MentionTarget, personId: string) => void;
   /** Clear orange unread on a mention; card stays until dismissMention. */
   markMentionRead: (target: MentionTarget, personId: string) => void;
+  /**
+   * Mark all New Mentions for this task as read (task notes + comments),
+   * e.g. when the user opens the task on the project board.
+   */
+  markMentionsReadForTask: (taskId: string, personId: string) => void;
   /** Mark assigner ↔ assignee task thread as read (opening the task). */
   dismissTaskThreadUnread: (taskId: string, personId: string) => void;
   upsertProjectTemplate: (
@@ -4812,6 +4817,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
               person_id: personId,
             });
           });
+        }
+      },
+      markMentionsReadForTask: (taskId, personId) => {
+        if (!taskId || !personId) return;
+        const readAt = new Date().toISOString();
+        const remoteByKey = new Map<string, MentionTarget>();
+        patch((prev) => {
+          const commentIdsOnTask = new Set(
+            prev.task_comments
+              .filter((c) => c.task_id === taskId)
+              .map((c) => c.id),
+          );
+          let changed = false;
+          const next = prev.unread_mentions.map((r) => {
+            if (r.person_id !== personId || r.read_at) return r;
+            let target: MentionTarget | null = null;
+            if (r.task_id === taskId) {
+              target = { kind: "task", id: taskId };
+            } else if (r.comment_id && commentIdsOnTask.has(r.comment_id)) {
+              target = { kind: "comment", id: r.comment_id };
+            }
+            if (!target) return r;
+            changed = true;
+            remoteByKey.set(`${target.kind}:${target.id}`, target);
+            return { ...r, read_at: readAt };
+          });
+          if (!changed) return prev;
+          return { ...prev, unread_mentions: next };
+        });
+        if (mode === "supabase" && supabaseRef.current && remoteByKey.size > 0) {
+          for (const target of remoteByKey.values()) {
+            noteLocalWrite(
+              "mention_unreads",
+              `${target.kind}:${target.id}:${personId}`,
+            );
+            runRemoteSoft(async () => {
+              await markMentionReadRow(supabaseRef.current!, {
+                target,
+                person_id: personId,
+              });
+            });
+          }
         }
       },
       dismissTaskThreadUnread: (taskId, personId) => {

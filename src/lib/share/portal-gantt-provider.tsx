@@ -307,6 +307,7 @@ function buildPortalGanttContext(
     dismissBulletinFromBoard: () => {},
     dismissMention: () => {},
     markMentionRead: () => {},
+    markMentionsReadForTask: () => {},
     dismissTaskThreadUnread: () => {},
     toggleProjectFavorite: () => {},
     reorderProjectFavorites: () => {},

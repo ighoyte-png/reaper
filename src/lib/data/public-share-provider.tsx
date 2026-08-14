@@ -228,6 +228,7 @@ export function PublicShareProvider({
       dismissBulletinFromBoard: () => {},
       dismissMention: () => {},
       markMentionRead: () => {},
+      markMentionsReadForTask: () => {},
       dismissTaskThreadUnread: () => {},
       toggleProjectFavorite: () => {},
       reorderProjectFavorites: () => {},

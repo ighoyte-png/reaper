@@ -389,6 +389,7 @@ export function ProjectTaskBoard({
     ensureProjectData,
     dataStatus,
     dismissTaskThreadUnread,
+    markMentionsReadForTask,
     mode,
   } = useData();
   const { push: toast } = useToast();
@@ -686,16 +687,20 @@ export function ProjectTaskBoard({
   }
 
   function toggleExpand(id: string) {
+    let opening = false;
     setExpanded((prev) => {
       const next = new Set(prev);
-      const opening = !next.has(id);
+      opening = !next.has(id);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      if (opening && viewerPersonId && unreadTaskThreadIds.has(id)) {
-        dismissTaskThreadUnread(id, viewerPersonId);
-      }
       return next;
     });
+    if (opening && viewerPersonId) {
+      if (unreadTaskThreadIds.has(id)) {
+        dismissTaskThreadUnread(id, viewerPersonId);
+      }
+      markMentionsReadForTask(id, viewerPersonId);
+    }
   }
 
   function collapseExpanded(ids: string[]) {
@@ -1434,8 +1439,11 @@ export function ProjectTaskBoard({
       next.add(focusTaskId);
       return next;
     });
-    if (viewerPersonId && unreadTaskThreadIds.has(focusTaskId)) {
-      dismissTaskThreadUnread(focusTaskId, viewerPersonId);
+    if (viewerPersonId) {
+      if (unreadTaskThreadIds.has(focusTaskId)) {
+        dismissTaskThreadUnread(focusTaskId, viewerPersonId);
+      }
+      markMentionsReadForTask(focusTaskId, viewerPersonId);
     }
     const t = window.setTimeout(() => {
       document
@@ -1443,7 +1451,7 @@ export function ProjectTaskBoard({
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 150);
     return () => window.clearTimeout(t);
-  }, [focusTaskId, visibleTasks, state.tasks, projectId, viewerPersonId, unreadTaskThreadIds, dismissTaskThreadUnread]);
+  }, [focusTaskId, visibleTasks, state.tasks, projectId, viewerPersonId, unreadTaskThreadIds, dismissTaskThreadUnread, markMentionsReadForTask]);
 
   // Re-open comment panels that have an unfinished local reply draft.
   useEffect(() => {
