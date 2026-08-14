@@ -426,8 +426,12 @@ export function mapProjectContractorExpense(
     person_id: String(row.person_id),
     month_key: rawMonth.length >= 7 ? `${rawMonth.slice(0, 7)}-01` : rawMonth,
     amount: num(row.amount),
+    hours: num(row.hours),
     notes: String(row.notes ?? ""),
     repeat_monthly: Boolean(row.repeat_monthly),
+    repeat_end_month: row.repeat_end_month
+      ? String(row.repeat_end_month).slice(0, 10)
+      : null,
     created_at: String(row.created_at ?? ""),
     updated_at: String(row.updated_at ?? ""),
     created_by_profile_id: row.created_by_profile_id
@@ -2432,8 +2436,12 @@ export async function upsertProjectContractorExpenseRow(
     person_id: row.person_id,
     month_key: row.month_key.slice(0, 10),
     amount: row.amount,
+    hours: row.hours ?? 0,
     notes: row.notes ?? "",
     repeat_monthly: Boolean(row.repeat_monthly),
+    repeat_end_month: row.repeat_end_month
+      ? row.repeat_end_month.slice(0, 10)
+      : null,
     created_at: row.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
     created_by_profile_id: row.created_by_profile_id,

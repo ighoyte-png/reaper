@@ -38,6 +38,7 @@ import {
 import { filterPeopleByPod } from "@/lib/domain/pods";
 import {
   contractorExpenseAppliesInMonth,
+  defaultContractorRepeatEndMonth,
   formatHours,
   formatMoney,
   isMonthlyRetainerBudget,
@@ -1055,26 +1056,31 @@ function ContractorsPanel({
       : termMode === "scheduled"
         ? "scheduled"
         : "dollars";
-  const hours = terms?.contractor_hours ?? 0;
-  const computedAmount = selected
-    ? contractorAmountFromHours(hours, selected)
-    : 0;
-
   const monthRows = useMemo(() => {
     if (!selected) return [];
     return expenses
-      .filter(
-        (e) =>
-          e.person_id === selected.id &&
-          contractorExpenseAppliesInMonth(project, e, viewedPrefix),
-      )
+      .filter((e) => {
+        if (e.person_id !== selected.id) return false;
+        if (!contractorExpenseAppliesInMonth(project, e, viewedPrefix)) {
+          return false;
+        }
+        if (uiMode === "hours") return (e.hours ?? 0) > 0;
+        if (uiMode === "dollars") return (e.amount ?? 0) > 0;
+        return false;
+      })
       .sort((a, b) => a.month_key.localeCompare(b.month_key));
-  }, [expenses, selected, viewedPrefix, project]);
+  }, [expenses, selected, viewedPrefix, project, uiMode]);
+
+  const entryPreview =
+    selected && uiMode === "hours" && Number(amount) > 0
+      ? contractorAmountFromHours(Number(amount), selected)
+      : 0;
 
   async function addExpense() {
     if (!selected || !project.id) return;
     const value = Number(amount);
-    if (!Number.isFinite(value) || value < 0) return;
+    if (!Number.isFinite(value) || value <= 0) return;
+    const isHours = uiMode === "hours";
     setSaving(true);
     try {
       const nowIso = new Date().toISOString();
@@ -1083,9 +1089,11 @@ function ContractorsPanel({
         project_id: project.id,
         person_id: selected.id,
         month_key: viewedMonthKey,
-        amount: value,
+        amount: isHours ? 0 : value,
+        hours: isHours ? value : 0,
         notes: notes.trim(),
         repeat_monthly: repeatMonthly,
+        repeat_end_month: null,
         created_at: nowIso,
         updated_at: nowIso,
         created_by_profile_id: null,
@@ -1100,17 +1108,34 @@ function ContractorsPanel({
 
   async function saveEdit(row: ProjectContractorExpense) {
     const value = Number(editAmount);
-    if (!Number.isFinite(value) || value < 0) return;
+    if (!Number.isFinite(value) || value <= 0) return;
+    const isHours = uiMode === "hours";
     setSaving(true);
     try {
       await onUpsert({
         ...row,
-        amount: value,
+        amount: isHours ? 0 : value,
+        hours: isHours ? value : 0,
         notes: editNotes.trim(),
         repeat_monthly: editRepeat,
+        repeat_end_month: editRepeat ? row.repeat_end_month : null,
         updated_at: new Date().toISOString(),
       });
       setEditingId(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function endRepeating(row: ProjectContractorExpense) {
+    setSaving(true);
+    try {
+      await onUpsert({
+        ...row,
+        repeat_monthly: true,
+        repeat_end_month: defaultContractorRepeatEndMonth(row.month_key),
+        updated_at: new Date().toISOString(),
+      });
     } finally {
       setSaving(false);
     }
@@ -1202,6 +1227,7 @@ function ContractorsPanel({
                       setContractorTerms(selected.id, {
                         contractor_mode: "hours",
                         contractor_fixed_fee: null,
+                        contractor_hours: null,
                       });
                     } else {
                       setContractorTerms(selected.id, {
@@ -1228,58 +1254,23 @@ function ContractorsPanel({
             </p>
           )}
 
-          {!scheduleOnly && uiMode === "hours" ? (
-            <div className="space-y-1">
-              <label className="block text-xs text-[var(--text-muted)]">
-                Hours (Per Month)
-              </label>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                className={inputClass}
-                value={terms?.contractor_hours ?? ""}
-                onChange={(e) =>
-                  setContractorTerms(selected.id, {
-                    contractor_mode: "hours",
-                    contractor_fixed_fee: null,
-                    contractor_hours:
-                      e.target.value === ""
-                        ? null
-                        : Number(e.target.value) || 0,
-                  })
-                }
-              />
-              <p className="text-[11px] leading-snug text-[var(--text-muted)]">
-                Counts from the current month through the end of the project
-                timeline or this calendar year, whichever comes first. Does not
-                create schedule assignments.
-              </p>
-              {hours > 0 ? (
-                <p className="text-[11px] text-[var(--text-muted)]">
-                  ≈ {formatMoney(computedAmount)} at profile rate
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
           {uiMode === "scheduled" ? (
             <p className="text-sm text-[var(--text-muted)]">
               Budget uses this contractor&apos;s scheduled assignment hours.
             </p>
           ) : null}
 
-          {!scheduleOnly && uiMode === "dollars" ? (
+          {!scheduleOnly && (uiMode === "dollars" || uiMode === "hours") ? (
             <div className="space-y-4">
               <p className="text-sm text-[var(--text-muted)]">
-                Add dollar expenses for this contractor. Repeat Monthly applies
-                the same amount from the selected month through the end of the
-                project timeline or the calendar year, whichever comes first.
+                {uiMode === "hours"
+                  ? "Add hours for this contractor. Repeat Monthly applies the same hours from the selected month through the end of the project timeline or the calendar year, whichever comes first. Does not create schedule assignments."
+                  : "Add dollar expenses for this contractor. Repeat Monthly applies the same amount from the selected month through the end of the project timeline or the calendar year, whichever comes first."}
               </p>
 
               <div className="space-y-3 rounded-md border border-[var(--border)] p-3">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Field label="Amount ($)">
+                  <Field label={uiMode === "hours" ? "Hours" : "Amount ($)"}>
                     <input
                       type="number"
                       min={0}
@@ -1309,6 +1300,11 @@ function ContractorsPanel({
                     apply window.
                   </p>
                 )}
+                {uiMode === "hours" && entryPreview > 0 ? (
+                  <p className="text-[11px] text-[var(--text-muted)]">
+                    ≈ {formatMoney(entryPreview)} at profile rate
+                  </p>
+                ) : null}
                 <Field label="Notes">
                   <input
                     className={inputClass}
@@ -1323,7 +1319,7 @@ function ContractorsPanel({
                   disabled={saving || amount === ""}
                   onClick={() => void addExpense()}
                 >
-                  Add Expense
+                  {uiMode === "hours" ? "Add Hours" : "Add Expense"}
                 </Button>
               </div>
 
@@ -1384,13 +1380,20 @@ function ContractorsPanel({
                 <div className="min-h-[8rem] rounded-md border border-[var(--border)] p-3">
                   {monthRows.length === 0 ? (
                     <p className="text-sm text-[var(--text-muted)]">
-                      No expenses for {selected.name} in{" "}
-                      {format(month, "MMMM yyyy")}.
+                      No {uiMode === "hours" ? "hours" : "expenses"} for{" "}
+                      {selected.name} in {format(month, "MMMM yyyy")}.
                     </p>
                   ) : (
                     <ul className="space-y-2">
                       {monthRows.map((row) => {
                         const editing = editingId === row.id;
+                        const ended = Boolean(row.repeat_end_month);
+                        const canEndRepeat =
+                          row.repeat_monthly && !ended;
+                        const displayValue =
+                          uiMode === "hours"
+                            ? formatHours(row.hours ?? 0)
+                            : formatMoney(row.amount);
                         return (
                           <li
                             key={row.id}
@@ -1405,13 +1408,16 @@ function ContractorsPanel({
                                       {row.month_key.slice(0, 7) !== viewedPrefix
                                         ? ` · from ${monthLabel(row.month_key)}`
                                         : ""}
+                                      {ended
+                                        ? ` · ended ${monthLabel(row.repeat_end_month!)}`
+                                        : ""}
                                     </span>
                                   ) : null}
                                 </div>
                                 {!editing ? (
                                   <>
                                     <p className="text-sm tabular-nums">
-                                      {formatMoney(row.amount)}
+                                      {displayValue}
                                     </p>
                                     {row.notes ? (
                                       <p className="text-xs text-[var(--text-muted)]">
@@ -1422,13 +1428,29 @@ function ContractorsPanel({
                                 ) : null}
                               </div>
                               {!editing ? (
-                                <div className="flex shrink-0 gap-2">
+                                <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                                  {canEndRepeat ? (
+                                    <button
+                                      type="button"
+                                      className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--accent)]"
+                                      disabled={saving}
+                                      onClick={() => void endRepeating(row)}
+                                    >
+                                      End repeating
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className="cursor-pointer text-xs text-[var(--text-muted)] hover:text-[var(--accent)]"
                                     onClick={() => {
                                       setEditingId(row.id);
-                                      setEditAmount(String(row.amount));
+                                      setEditAmount(
+                                        String(
+                                          uiMode === "hours"
+                                            ? row.hours
+                                            : row.amount,
+                                        ),
+                                      );
                                       setEditNotes(row.notes ?? "");
                                       setEditRepeat(Boolean(row.repeat_monthly));
                                     }}
@@ -1447,21 +1469,29 @@ function ContractorsPanel({
                             </div>
                             {editing ? (
                               <div className="mt-2 space-y-2">
-                                <Field label="Amount ($)">
+                                <Field
+                                  label={
+                                    uiMode === "hours" ? "Hours" : "Amount ($)"
+                                  }
+                                >
                                   <input
                                     type="number"
                                     min={0}
                                     step={0.01}
                                     className={inputClass}
                                     value={editAmount}
-                                    onChange={(e) => setEditAmount(e.target.value)}
+                                    onChange={(e) =>
+                                      setEditAmount(e.target.value)
+                                    }
                                   />
                                 </Field>
                                 <Field label="Notes">
                                   <input
                                     className={inputClass}
                                     value={editNotes}
-                                    onChange={(e) => setEditNotes(e.target.value)}
+                                    onChange={(e) =>
+                                      setEditNotes(e.target.value)
+                                    }
                                     placeholder="Optional"
                                   />
                                 </Field>

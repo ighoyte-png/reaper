@@ -15,18 +15,26 @@ type ChartTab = "progress" | "weekly";
 
 const contractorColor = "var(--status-healthy)";
 
-function ChartLegend({ show }: { show: boolean }) {
-  if (!show) return null;
+function ChartLegend({
+  showContractor,
+  showProfit,
+}: {
+  showContractor: boolean;
+  showProfit: boolean;
+}) {
+  if (!showContractor && !showProfit) return null;
   return (
-    <p className="mt-2 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
-      <span className="inline-flex items-center gap-1">
-        <span
-          className="inline-block h-2 w-2 rounded-full"
-          style={{ backgroundColor: contractorColor }}
-          aria-hidden
-        />
-        Contractor
-      </span>
+    <p className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-[var(--text-muted)]">
+      {showContractor ? (
+        <span className="inline-flex items-center gap-1">
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ backgroundColor: contractorColor }}
+            aria-hidden
+          />
+          Contractor
+        </span>
+      ) : null}
       <span className="inline-flex items-center gap-1">
         <span
           className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]"
@@ -34,6 +42,15 @@ function ChartLegend({ show }: { show: boolean }) {
         />
         Internal
       </span>
+      {showProfit ? (
+        <span className="inline-flex items-center gap-1">
+          <span
+            className="inline-block h-0 w-3 border-t border-dashed border-[var(--status-near)]"
+            aria-hidden
+          />
+          Target cost
+        </span>
+      ) : null}
     </p>
   );
 }
@@ -45,6 +62,7 @@ export function ProjectProgressCharts({
   budgetAmount,
   unit = "hours",
   contractorBaseline = 0,
+  profitLine = null,
   className,
 }: {
   points: WeeklyProgressPoint[];
@@ -53,6 +71,8 @@ export function ProjectProgressCharts({
   unit?: "hours" | "amount";
   /** Flat contractor commitment shown as a green baseline on the progress chart. */
   contractorBaseline?: number;
+  /** Fixed-fee target-cost line (e.g. 75% of fee). */
+  profitLine?: number | null;
   className?: string;
 }) {
   const [tab, setTab] = useState<ChartTab>("progress");
@@ -74,13 +94,13 @@ export function ProjectProgressCharts({
           active={tab === "progress"}
           onClick={() => setTab("progress")}
           icon={<ChartLine size={14} strokeWidth={2} />}
-          label="Project progress"
+          label="Project Progress"
         />
         <ChartTabButton
           active={tab === "weekly"}
           onClick={() => setTab("weekly")}
           icon={<ChartColumn size={14} strokeWidth={2} />}
-          label={isAmount ? "Spend per week" : "Hours per week"}
+          label={isAmount ? "Spend Per Week" : "Hours Per Week"}
         />
       </div>
       {tab === "progress" ? (
@@ -90,8 +110,12 @@ export function ProjectProgressCharts({
             unit={unit}
             budgetCap={budgetCap ?? null}
             contractorBaseline={contractorBaseline}
+            profitLine={profitLine}
           />
-          <ChartLegend show={contractorBaseline > 0} />
+          <ChartLegend
+            showContractor={contractorBaseline > 0}
+            showProfit={Boolean(profitLine && profitLine > 0)}
+          />
         </>
       ) : (
         <HoursPerWeekChart points={points} unit={unit} />
@@ -199,11 +223,13 @@ function ProgressLineChart({
   unit,
   budgetCap,
   contractorBaseline = 0,
+  profitLine = null,
 }: {
   points: WeeklyProgressPoint[];
   unit: "hours" | "amount";
   budgetCap: number | null;
   contractorBaseline?: number;
+  profitLine?: number | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const hatchId = useId().replace(/:/g, "");
@@ -217,6 +243,7 @@ function ProgressLineChart({
   const plotH = h - padT - padB;
 
   const hasBudget = budgetCap != null && budgetCap > 0;
+  const hasProfit = profitLine != null && profitLine > 0;
   const hasContractorBaseline = contractorBaseline > 0;
   const dataMax = Math.max(
     ...points.map((p) => {
@@ -230,17 +257,14 @@ function ProgressLineChart({
     hasContractorBaseline ? contractorBaseline : 0,
     1,
   );
-  const { maxY, ticks: yTicks } = useMemo(
-    () =>
-      unit === "amount"
-        ? niceAmountAxis(
-            Math.max(dataMax, hasBudget ? budgetCap! : 0) * 1.08,
-          )
-        : niceHourAxis(
-            Math.max(dataMax, hasBudget ? budgetCap! : 0) * 1.08,
-          ),
-    [dataMax, hasBudget, budgetCap, unit],
-  );
+  const { maxY, ticks: yTicks } = useMemo(() => {
+    const cap = hasBudget ? budgetCap! : 0;
+    const profit = hasProfit ? profitLine! : 0;
+    const scalePeak = Math.max(dataMax, cap, profit);
+    const padded =
+      hasBudget && dataMax >= cap ? dataMax * 1.04 : scalePeak * 1.04;
+    return unit === "amount" ? niceAmountAxis(padded) : niceHourAxis(padded);
+  }, [dataMax, hasBudget, budgetCap, hasProfit, profitLine, unit]);
 
   const currentIdx = points.findIndex((p) => p.isCurrentWeek);
   const handoffIdx =
@@ -271,44 +295,50 @@ function ProgressLineChart({
     return contractorBaseline + internalValueAt(i);
   }
 
-  function pathSegment(from: number, to: number) {
-    if (to < from) return "";
-    const parts: string[] = [];
-    for (let i = from; i <= to; i++) {
-      parts.push(
-        `${i === from ? "M" : "L"} ${xAt(i).toFixed(1)} ${yAt(valueAt(i)).toFixed(1)}`,
-      );
-    }
-    return parts.join(" ");
+  type StrokeBand = "ok" | "near" | "over";
+  const lineColor = "var(--accent)";
+  const nearStroke = "var(--status-near)";
+  const overStroke = "var(--status-over)";
+
+  function bandAt(v: number): StrokeBand {
+    if (hasBudget && budgetCap != null && v > budgetCap) return "over";
+    if (hasProfit && profitLine != null && v > profitLine) return "near";
+    return "ok";
   }
 
-  /** Split a range into subpaths at the linear intersection with budgetCap. */
+  function strokeFor(band: StrokeBand): string {
+    if (band === "over") return overStroke;
+    if (band === "near") return nearStroke;
+    return lineColor;
+  }
+
   function pathPiecesAtCap(
     from: number,
     to: number,
-  ): { d: string; over: boolean }[] {
+  ): { d: string; band: StrokeBand }[] {
     if (to < from) return [];
-    if (!hasBudget || budgetCap == null) {
-      return [{ d: pathSegment(from, to), over: false }];
-    }
     if (from === to) {
       return [
         {
           d: `M ${xAt(from).toFixed(1)} ${yAt(valueAt(from)).toFixed(1)}`,
-          over: valueAt(from) > budgetCap,
+          band: bandAt(valueAt(from)),
         },
       ];
     }
 
-    const pieces: { d: string; over: boolean }[] = [];
-    let currentOver = valueAt(from) > budgetCap;
+    const thresholds: { v: number }[] = [];
+    if (hasProfit && profitLine != null) thresholds.push({ v: profitLine });
+    if (hasBudget && budgetCap != null) thresholds.push({ v: budgetCap });
+
+    const pieces: { d: string; band: StrokeBand }[] = [];
+    let currentBand = bandAt(valueAt(from));
     let parts: string[] = [
       `M ${xAt(from).toFixed(1)} ${yAt(valueAt(from)).toFixed(1)}`,
     ];
 
     const flush = () => {
       if (parts.length > 0) {
-        pieces.push({ d: parts.join(" "), over: currentOver });
+        pieces.push({ d: parts.join(" "), band: currentBand });
         parts = [];
       }
     };
@@ -318,32 +348,41 @@ function ProgressLineChart({
       const v1 = valueAt(i + 1);
       const x0 = xAt(i);
       const x1 = xAt(i + 1);
-      const over0 = v0 > budgetCap;
-      const over1 = v1 > budgetCap;
+      const hits = thresholds
+        .map((th) => {
+          const straddles =
+            (v0 <= th.v && v1 > th.v) || (v0 > th.v && v1 <= th.v);
+          if (!straddles) return null;
+          const denom = v1 - v0;
+          const t = Math.abs(denom) < 1e-9 ? 0 : (th.v - v0) / denom;
+          return { t: Math.min(1, Math.max(0, t)), v: th.v };
+        })
+        .filter((h): h is { t: number; v: number } => h != null)
+        .sort((a, b) => a.t - b.t);
 
-      if (over0 === over1) {
+      if (hits.length === 0) {
         if (parts.length === 0) {
           parts.push(`M ${x0.toFixed(1)} ${yAt(v0).toFixed(1)}`);
-          currentOver = over0;
+          currentBand = bandAt(v0);
         }
         parts.push(`L ${x1.toFixed(1)} ${yAt(v1).toFixed(1)}`);
         continue;
       }
 
-      const denom = v1 - v0;
-      const t = Math.abs(denom) < 1e-9 ? 0 : (budgetCap - v0) / denom;
-      const xc = x0 + t * (x1 - x0);
-      const yc = yAt(budgetCap);
-
+      let lastV = v0;
       if (parts.length === 0) {
         parts.push(`M ${x0.toFixed(1)} ${yAt(v0).toFixed(1)}`);
-        currentOver = over0;
+        currentBand = bandAt(v0);
       }
-      parts.push(`L ${xc.toFixed(1)} ${yc.toFixed(1)}`);
-      flush();
-
-      currentOver = over1;
-      parts.push(`M ${xc.toFixed(1)} ${yc.toFixed(1)}`);
+      for (const hit of hits) {
+        const xc = x0 + hit.t * (x1 - x0);
+        const yc = yAt(hit.v);
+        parts.push(`L ${xc.toFixed(1)} ${yc.toFixed(1)}`);
+        flush();
+        currentBand = bandAt(lastV + (v1 - v0) * hit.t + (v1 >= v0 ? 1e-6 : -1e-6));
+        parts.push(`M ${xc.toFixed(1)} ${yc.toFixed(1)}`);
+        lastV = hit.v;
+      }
       parts.push(`L ${x1.toFixed(1)} ${yAt(v1).toFixed(1)}`);
     }
 
@@ -376,6 +415,7 @@ function ProgressLineChart({
   }, [points]);
 
   const budgetY = hasBudget ? yAt(budgetCap!) : null;
+  const profitY = hasProfit ? yAt(profitLine!) : null;
   const contractorY = hasContractorBaseline ? yAt(contractorBaseline) : null;
   const firstX = xAt(0);
   const lastX = xAt(points.length - 1);
@@ -386,8 +426,6 @@ function ProgressLineChart({
       ? xAt(handoffIdx)
       : null;
 
-  const lineColor = "var(--accent)";
-  const overStroke = "var(--status-over)";
   const usedPieces =
     handoffIdx >= 0 ? pathPiecesAtCap(0, handoffIdx) : [];
   const futurePieces =
@@ -399,7 +437,10 @@ function ProgressLineChart({
   const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;
 
   return (
-    <div className="relative overflow-visible">
+    <div
+      className="relative overflow-visible"
+      onMouseLeave={() => setHoverIdx(null)}
+    >
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="h-auto w-full overflow-hidden"
@@ -565,6 +606,19 @@ function ProgressLineChart({
           </g>
         ) : null}
 
+        {profitY != null ? (
+          <line
+            x1={padL}
+            x2={w - padR}
+            y1={profitY}
+            y2={profitY}
+            stroke="var(--status-near)"
+            strokeWidth={1.25}
+            strokeDasharray="4 3"
+            strokeLinecap="round"
+          />
+        ) : null}
+
         {budgetY != null ? (
           <line
             x1={padL}
@@ -583,7 +637,7 @@ function ProgressLineChart({
             key={`future-${i}`}
             d={piece.d}
             fill="none"
-            stroke={piece.over ? overStroke : lineColor}
+            stroke={strokeFor(piece.band)}
             strokeWidth={1.25}
             strokeDasharray="5 4"
             strokeLinecap="round"
@@ -596,7 +650,7 @@ function ProgressLineChart({
             key={`used-${i}`}
             d={piece.d}
             fill="none"
-            stroke={piece.over ? overStroke : lineColor}
+            stroke={strokeFor(piece.band)}
             strokeWidth={1.25}
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -606,8 +660,7 @@ function ProgressLineChart({
         {points.map((p, i) => {
           const cx = xAt(i);
           const cy = yAt(valueAt(i));
-          const over =
-            hasBudget && budgetCap != null && valueAt(i) > budgetCap;
+          const band = bandAt(valueAt(i));
           return (
             <g key={p.key}>
               <rect
@@ -623,7 +676,7 @@ function ProgressLineChart({
                 cx={cx}
                 cy={cy}
                 r={hoverIdx === i ? 3.5 : 2}
-                fill={over ? overStroke : lineColor}
+                fill={strokeFor(band)}
                 className="pointer-events-none"
               />
             </g>
@@ -636,8 +689,8 @@ function ProgressLineChart({
           className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)] -translate-x-1/2 -translate-y-full"
           style={{
             left: `${(xAt(hoverIdx) / w) * 100}%`,
-            top: `${(yAt(hoverVal) / h) * 100}%`,
-            marginTop: -10,
+            top: 0,
+            marginTop: -8,
           }}
         >
           <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
@@ -705,91 +758,192 @@ export function HoursPerWeekChart({
   points: WeeklyProgressPoint[];
   unit?: "hours" | "amount";
 }) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const values = points.map((p) => weekValue(p, unit));
   const maxV = Math.max(...values, 1);
+  const w = 720;
+  const h = 174;
+  const padL = unit === "amount" ? 52 : 44;
+  const padR = 16;
+  const padT = 22;
+  const padB = 28;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
   const { maxY, ticks: yTicks } = useMemo(
     () =>
       unit === "amount"
-        ? niceAmountAxis(maxV * 1.08)
-        : niceHourAxis(maxV * 1.08),
+        ? niceAmountAxis(maxV * 1.04)
+        : niceHourAxis(maxV * 1.04),
     [maxV, unit],
   );
   const monthLabels = useMemo(() => {
-    const seen = new Map<string, number>();
+    const groups: { key: string; label: string; start: number; end: number }[] =
+      [];
     points.forEach((p, i) => {
       const key = p.weekStartKey.slice(0, 7);
-      if (!seen.has(key)) seen.set(key, i);
+      const last = groups[groups.length - 1];
+      if (last && last.key === key) {
+        last.end = i;
+      } else {
+        const d = new Date(`${p.weekStartKey}T12:00:00`);
+        groups.push({
+          key,
+          label: d.toLocaleString("en-US", {
+            month: "short",
+            year: "numeric",
+          }),
+          start: i,
+          end: i,
+        });
+      }
     });
-    return [...seen.entries()].map(([key, index]) => {
-      const d = new Date(`${points[index]!.weekStartKey}T12:00:00`);
-      return {
-        key,
-        index,
-        label: d.toLocaleString("en-US", { month: "short", year: "numeric" }),
-      };
-    });
+    return groups;
   }, [points]);
 
+  const slotW = points.length <= 0 ? plotW : plotW / points.length;
+  const barW = Math.max(2, Math.min(18, slotW * 0.62));
+  const currentIdx = points.findIndex((p) => p.isCurrentWeek);
+
+  function xCenter(i: number) {
+    return padL + slotW * i + slotW / 2;
+  }
+  function yAt(v: number) {
+    return padT + plotH - (v / maxY) * plotH;
+  }
+
+  const hover = hoverIdx != null ? points[hoverIdx] : null;
+  const hoverVal = hoverIdx != null ? values[hoverIdx]! : 0;
+
   return (
-    <div className="flex gap-2 pt-1">
-      <div className="relative h-44 w-10 shrink-0">
-        {[...yTicks].reverse().map((v, i) => (
-          <span
-            key={`y-${i}`}
-            className="absolute right-0 -translate-y-1/2 text-[7px] tabular-nums text-[var(--text-muted)]"
-            style={{ top: `${(1 - v / maxY) * 100}%` }}
-          >
-            {formatAxisValue(v, unit)}
-          </span>
-        ))}
-      </div>
-      <div className="min-w-0 flex-1">
-      <div className="flex h-44 items-end gap-px sm:gap-0.5">
-        {points.map((p) => {
-          const v = weekValue(p, unit);
-          const pct = Math.max(v > 0 ? 4 : 0, (v / maxY) * 100);
+    <div
+      className="relative overflow-visible"
+      onMouseLeave={() => setHoverIdx(null)}
+    >
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        className="block h-auto w-full"
+        role="img"
+        aria-label={unit === "amount" ? "Spend per week" : "Hours per week"}
+      >
+        {yTicks.map((v, i) => {
+          const y = yAt(v);
           return (
-            <div
-              key={p.key}
-              className="relative flex min-w-0 flex-1 flex-col items-center justify-end"
-              style={{ height: "100%" }}
-              title={`${p.label}: ${formatDetailValue(v, unit)}`}
-            >
-              {p.isCurrentWeek ? (
-                <div
-                  className="absolute inset-x-0 bottom-0 top-0 bg-[var(--accent)]/10"
-                  aria-hidden
-                />
-              ) : null}
-              <div
-                className={cn(
-                  "relative z-[1] w-full max-w-[18px] rounded-t-sm",
-                  p.isCurrentWeek
-                    ? "bg-[var(--accent)]"
-                    : p.isFuture
-                      ? "bg-[var(--text-muted)]/35"
-                      : "bg-[var(--text-muted)]/70",
-                )}
-                style={{ height: `${pct}%` }}
+            <g key={`y-${i}`}>
+              <line
+                x1={padL}
+                x2={w - padR}
+                y1={y}
+                y2={y}
+                stroke="var(--border)"
+                strokeWidth={1}
               />
-            </div>
+              <text
+                x={padL - 8}
+                y={y + 3}
+                textAnchor="end"
+                className="fill-[var(--text-muted)]"
+                style={{ fontSize: 7 }}
+              >
+                {formatAxisValue(v, unit)}
+              </text>
+            </g>
           );
         })}
-      </div>
-      <div className="relative mt-2 h-4">
-        {monthLabels.map((m) => (
-          <span
-            key={m.key}
-            className="absolute top-0 -translate-x-1/2 text-[7px] text-[var(--text-muted)]"
-            style={{
-              left: `${((m.index + 0.5) / points.length) * 100}%`,
-            }}
-          >
-            {m.label}
-          </span>
-        ))}
-      </div>
-      </div>
+        {monthLabels.map((m) => {
+          const x0 = padL + slotW * m.start;
+          const x1 = padL + slotW * (m.end + 1);
+          const mid = (x0 + x1) / 2;
+          return (
+            <g key={m.key}>
+              {m.start > 0 ? (
+                <line
+                  x1={x0}
+                  x2={x0}
+                  y1={padT}
+                  y2={padT + plotH}
+                  stroke="var(--border)"
+                  strokeWidth={1}
+                />
+              ) : null}
+              <text
+                x={mid}
+                y={h - 8}
+                textAnchor="middle"
+                className="fill-[var(--text-muted)]"
+                style={{ fontSize: 7 }}
+              >
+                {m.label}
+              </text>
+            </g>
+          );
+        })}
+        {currentIdx >= 0 ? (
+          <rect
+            x={padL + slotW * currentIdx}
+            y={padT}
+            width={slotW}
+            height={plotH}
+            fill="var(--accent)"
+            fillOpacity={0.1}
+          />
+        ) : null}
+        {points.map((p, i) => {
+          const v = values[i]!;
+          const barH = maxY <= 0 ? 0 : (v / maxY) * plotH;
+          const x = xCenter(i) - barW / 2;
+          const y = padT + plotH - barH;
+          const fill = p.isCurrentWeek
+            ? "var(--accent)"
+            : p.isFuture
+              ? "color-mix(in srgb, var(--text-muted) 35%, transparent)"
+              : "color-mix(in srgb, var(--text-muted) 70%, transparent)";
+          return (
+            <g key={p.key}>
+              <rect
+                x={padL + slotW * i}
+                y={padT}
+                width={slotW}
+                height={plotH}
+                fill="transparent"
+                className="cursor-pointer"
+                onMouseEnter={() => setHoverIdx(i)}
+              />
+              <rect
+                x={x}
+                y={y}
+                width={barW}
+                height={Math.max(v > 0 ? 2 : 0, barH)}
+                rx={2}
+                fill={fill}
+                className="pointer-events-none"
+              />
+            </g>
+          );
+        })}
+      </svg>
+      {hover && hoverIdx != null ? (
+        <div
+          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)] -translate-x-1/2 -translate-y-full"
+          style={{
+            left: `${(xCenter(hoverIdx) / w) * 100}%`,
+            top: 0,
+            marginTop: -8,
+          }}
+        >
+          <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
+            <div className="text-xs font-semibold leading-snug text-[var(--text)]">
+              {hover.label}
+            </div>
+            <div className="my-2 border-t border-[var(--border)]" />
+            <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+              {unit === "amount" ? "Spend this week" : "Hours this week"}
+            </div>
+            <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+              {formatDetailValue(hoverVal, unit)}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

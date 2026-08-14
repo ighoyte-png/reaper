@@ -1,4 +1,4 @@
-import { addWeeks, endOfMonth, format, startOfMonth } from "date-fns";
+import { addMonths, addWeeks, endOfMonth, format, startOfMonth } from "date-fns";
 import type {
   Assignment,
   BudgetBurn,
@@ -109,7 +109,7 @@ function feeCommitIdsForProject(
   return out;
 }
 
-/** Person ids whose contractor mode is Dollars (`fixed_fee`) for expense burns. */
+/** Person ids whose contractor mode is Dollars (`fixed_fee`) or Hours for expense burns. */
 export function dollarModeContractorPersonIds(
   people: Person[],
   membersByPerson: Map<string, Pick<ProjectMember, "contractor_mode">>,
@@ -121,7 +121,7 @@ export function dollarModeContractorPersonIds(
       person,
       membersByPerson.get(person.id),
     );
-    if (mode === "fixed_fee") out.add(person.id);
+    if (mode === "fixed_fee" || mode === "hours") out.add(person.id);
   }
   return out;
 }
@@ -256,9 +256,9 @@ export function contractorApplyEndMonthKey(
 }
 
 /**
- * Hours-per-month commitments on retainers apply from max(project start, Jan of
- * year / current month when in asOf's year) through min(project end, Dec of year).
- * Future calendar years beyond asOf do not get hours until that year is active.
+ * Hours-per-month commitments on retainers apply from the current month
+ * through min(project end, Dec of asOf's year). Past and future calendar
+ * years do not receive invented hours (use stored expense rows instead).
  */
 export function hoursCommitmentAppliesInMonth(
   project: Pick<
@@ -280,6 +280,7 @@ export function hoursCommitmentAppliesInMonth(
   const y = Number(m.slice(0, 4));
   const asOfY = asOf.getFullYear();
   if (y > asOfY) return false;
+  if (y < asOfY) return false;
 
   let windowStart = `${y}-01`;
   if (project.start_date && project.start_date.slice(0, 7) > windowStart) {
@@ -421,7 +422,8 @@ export function buildNewYearRepeatExpenseContinuations(
         (e) =>
           e.repeat_monthly &&
           Number(e.month_key.slice(0, 4)) < year &&
-          e.amount > 0,
+          ((e.amount ?? 0) > 0 || (e.hours ?? 0) > 0) &&
+          (!e.repeat_end_month || e.repeat_end_month.slice(0, 7) >= janKey),
       )
       .sort((a, b) => monthKeyCompare(b.month_key, a.month_key));
     const prior = priorRepeats[0];
@@ -433,8 +435,10 @@ export function buildNewYearRepeatExpenseContinuations(
       person_id: personId,
       month_key: janMonthKey,
       amount: prior.amount,
+      hours: prior.hours ?? 0,
       notes: prior.notes ?? "",
       repeat_monthly: true,
+      repeat_end_month: prior.repeat_end_month,
       created_at: nowIso,
       updated_at: nowIso,
       created_by_profile_id: null,
@@ -464,7 +468,7 @@ export function shouldToastContractorApplyWindow(
   expenses: Array<
     Pick<
       ProjectContractorExpense,
-      "project_id" | "repeat_monthly" | "month_key" | "amount"
+      "project_id" | "repeat_monthly" | "month_key" | "amount" | "hours" | "repeat_end_month"
     >
   >,
   asOf: Date = new Date(),
@@ -495,7 +499,7 @@ export function contractorExpenseAppliesInMonth(
   project: Pick<Project, "start_date" | "end_date">,
   expense: Pick<
     ProjectContractorExpense,
-    "month_key" | "repeat_monthly"
+    "month_key" | "repeat_monthly" | "repeat_end_month"
   >,
   monthKey: string,
 ): boolean {
@@ -504,10 +508,26 @@ export function contractorExpenseAppliesInMonth(
   const expenseMonth = expense.month_key.slice(0, 7);
   if (expense.repeat_monthly) {
     if (expenseMonth > prefix) return false;
-    const end = contractorApplyEndMonthKey(project, expenseMonth);
+    let end = contractorApplyEndMonthKey(project, expenseMonth);
+    if (expense.repeat_end_month) {
+      const bound = expense.repeat_end_month.slice(0, 7);
+      if (bound < end) end = bound;
+    }
     return prefix <= end;
   }
   return expenseMonth === prefix;
+}
+
+/** Inclusive last month when ending a repeating contractor row (keeps history). */
+export function defaultContractorRepeatEndMonth(
+  startMonthKey: string,
+  asOf: Date = new Date(),
+): string {
+  const start = `${startMonthKey.slice(0, 7)}-01`;
+  const current = format(startOfMonth(asOf), "yyyy-MM-dd");
+  const previous = format(startOfMonth(addMonths(asOf, -1)), "yyyy-MM-dd");
+  if (previous.slice(0, 7) >= start.slice(0, 7)) return previous;
+  return current < start ? start : current;
 }
 
 function expenseHoursFromAmount(
@@ -518,6 +538,28 @@ function expenseHoursFromAmount(
   if (!person || amount <= 0) return 0;
   const rate = effectiveCostRate(person, settings);
   return rate > 0 ? amount / rate : 0;
+}
+
+/** Hours attributed by an expense row (stored hours, or $ / cost_rate). */
+export function contractorExpenseEntryHours(
+  expense: Pick<ProjectContractorExpense, "amount" | "hours">,
+  person: Person | undefined,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+): number {
+  if ((expense.hours ?? 0) > 0) return expense.hours;
+  return expenseHoursFromAmount(expense.amount, person, settings);
+}
+
+/** Cost $ attributed by an expense row (stored amount, or hours × cost_rate). */
+export function contractorExpenseEntryAmount(
+  expense: Pick<ProjectContractorExpense, "amount" | "hours">,
+  person: Person | undefined,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+): number {
+  if ((expense.amount ?? 0) > 0) return expense.amount;
+  const hours = expense.hours ?? 0;
+  if (!person || hours <= 0) return 0;
+  return hours * effectiveCostRate(person, settings);
 }
 
 /** Sum contractor expenses for a project in a given yyyy-MM month. */
@@ -541,17 +583,22 @@ export function contractorExpenseTotalsForMonth(
     } else {
       const prefix = monthKey.slice(0, 7);
       const expenseMonth = e.month_key.slice(0, 7);
-      const applies = e.repeat_monthly
+      let applies = e.repeat_monthly
         ? expenseMonth <= prefix
         : expenseMonth === prefix;
+      if (
+        applies &&
+        e.repeat_monthly &&
+        e.repeat_end_month &&
+        prefix > e.repeat_end_month.slice(0, 7)
+      ) {
+        applies = false;
+      }
       if (!applies) continue;
     }
-    usedAmount += e.amount;
-    usedHours += expenseHoursFromAmount(
-      e.amount,
-      peopleById.get(e.person_id),
-      settings,
-    );
+    const person = peopleById.get(e.person_id);
+    usedAmount += contractorExpenseEntryAmount(e, person, settings);
+    usedHours += contractorExpenseEntryHours(e, person, settings);
   }
   return { usedHours, usedAmount };
 }
@@ -607,8 +654,16 @@ export function contractorExpenseLinesInRange(
         expenseId: e.id,
         personId: e.person_id,
         monthKey: `${mk}-01`,
-        amount: e.amount,
-        hours: expenseHoursFromAmount(e.amount, peopleById.get(e.person_id), settings),
+        amount: contractorExpenseEntryAmount(
+          e,
+          peopleById.get(e.person_id),
+          settings,
+        ),
+        hours: contractorExpenseEntryHours(
+          e,
+          peopleById.get(e.person_id),
+          settings,
+        ),
         notes: e.notes ?? "",
       });
     }
@@ -1282,6 +1337,26 @@ export function budgetHealth(
   }
   if (burn.overBy > 0 || burn.pct > settings.hours_over_pct) return "over";
   if (burn.pct >= settings.hours_warning_pct) return "near";
+  return "healthy";
+}
+
+/** Health from planned spend vs cap (hours or fee), using Admin thresholds. */
+export function spendHealth(
+  mode: "hours" | "amount",
+  planned: number,
+  cap: number,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+): "healthy" | "near" | "over" | "none" {
+  if (cap <= 0) return "none";
+  const pct = (planned / cap) * 100;
+  const overBy = Math.max(0, planned - cap);
+  if (mode === "amount") {
+    if (overBy > 0 || pct >= settings.amount_over_pct) return "over";
+    if (pct >= settings.amount_warning_pct) return "near";
+    return "healthy";
+  }
+  if (overBy > 0 || pct > settings.hours_over_pct) return "over";
+  if (pct >= settings.hours_warning_pct) return "near";
   return "healthy";
 }
 

@@ -64,8 +64,8 @@ export async function reapplyContractorWindowsOnProjectSave({
 }
 
 /**
- * Delete dollar expense rows for contractors whose mode is not Dollars
- * (`fixed_fee`). Call after setProjectMembers on save.
+ * Delete expense rows that don't match the contractor's saved mode.
+ * Dollars keep amount rows; Hours keep hours rows; Schedule clears all.
  */
 export async function deleteNonDollarContractorExpensesOnSave({
   projectId,
@@ -78,14 +78,18 @@ export async function deleteNonDollarContractorExpensesOnSave({
   expenses: ProjectContractorExpense[];
   deleteExpense: (id: string) => Promise<void>;
 }): Promise<void> {
-  const dollarIds = new Set(
-    members
-      .filter((m) => m.contractor_mode === "fixed_fee")
-      .map((m) => m.person_id),
+  const modeByPerson = new Map(
+    members.map((m) => [m.person_id, m.contractor_mode] as const),
   );
-  const toDelete = expenses.filter(
-    (e) => e.project_id === projectId && !dollarIds.has(e.person_id),
-  );
+  const toDelete = expenses.filter((e) => {
+    if (e.project_id !== projectId) return false;
+    const mode = modeByPerson.get(e.person_id);
+    const isHoursRow = (e.hours ?? 0) > 0;
+    const isAmountRow = (e.amount ?? 0) > 0;
+    if (mode === "fixed_fee") return isHoursRow;
+    if (mode === "hours") return isAmountRow;
+    return true;
+  });
   for (const row of toDelete) {
     await deleteExpense(row.id);
   }

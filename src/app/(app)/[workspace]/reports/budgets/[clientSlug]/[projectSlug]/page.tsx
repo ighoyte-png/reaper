@@ -23,7 +23,6 @@ import {
   calendarYearBars,
   contractorExpenseLinesInRange,
   contractorExpenseAggregatesInRange,
-  contractorExpenseTotalsInRange,
   contractorExpenseSplitInRange,
   eachMonthKeyInRange,
   formatHours,
@@ -38,6 +37,7 @@ import {
   projectHoursSplitInRange,
   projectPlannedAmount,
   projectPlannedHours,
+  spendHealth,
   weeklyProgressSeries,
   type MonthBurnBar,
 } from "@/lib/domain/budget";
@@ -46,7 +46,8 @@ import {
   contractorCommitted,
   isProjectBasisContractor,
 } from "@/lib/domain/contractor";
-import { effectiveProjectBillRate, effectiveCostRate, remainingTargetCostAllowance } from "@/lib/domain/org-settings";
+import { remainingTargetCostAllowance, targetCostPct } from "@/lib/domain/org-settings";
+import { projectPeriodEconomics } from "@/lib/domain/forecast";
 import { personAvatarColor } from "@/lib/domain/people";
 import { toDateKey } from "@/lib/domain/dates";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
@@ -354,52 +355,27 @@ export default function ProjectBudgetDetailPage() {
 
   const periodRevenueCost = useMemo(() => {
     if (!project) {
-      return { revenue: 0, cost: 0, scheduleCost: 0, expenseCost: 0 };
+      return {
+        revenue: 0,
+        cost: 0,
+        scheduleCost: 0,
+        expenseCost: 0,
+        contractorCost: 0,
+        contractorHours: 0,
+        contractorRevenue: 0,
+        scheduleHours: 0,
+      };
     }
-    const byId = new Map(state.people.map((p) => [p.id, p]));
-    const personIds = new Set<string>();
-    for (const a of state.assignments) {
-      if (a.project_id !== project.id || a.status !== "confirmed") continue;
-      personIds.add(a.person_id);
-    }
-    const billRate = effectiveProjectBillRate(
+    return projectPeriodEconomics(
       project,
+      state.assignments,
+      state.people,
+      projectMembers,
+      projectExpenses,
+      periodRange.start,
+      periodRange.end,
       state.organization_settings,
     );
-    let revenue = 0;
-    let scheduleCost = 0;
-    for (const personId of personIds) {
-      const person = byId.get(personId);
-      const split = personHoursSplitInRange(
-        personId,
-        project.id,
-        state.assignments,
-        periodRange.start,
-        periodRange.end,
-      );
-      const hours = split.usedHours + split.futureHours;
-      revenue += hours * billRate;
-      scheduleCost +=
-        hours *
-        effectiveCostRate(person, state.organization_settings);
-    }
-    let expenseCost = 0;
-    if (isMonthlyRetainerBudget(project)) {
-      expenseCost = contractorExpenseTotalsInRange(
-        project.id,
-        projectExpenses,
-        state.people,
-        periodRange.start,
-        periodRange.end,
-        project,
-      ).amount;
-    }
-    return {
-      revenue,
-      scheduleCost,
-      expenseCost,
-      cost: scheduleCost + expenseCost,
-    };
   }, [
     project,
     state.assignments,
@@ -407,6 +383,7 @@ export default function ProjectBudgetDetailPage() {
     state.organization_settings,
     periodRange,
     projectExpenses,
+    projectMembers,
   ]);
 
   const selectedMonthKey =
@@ -532,29 +509,70 @@ export default function ProjectBudgetDetailPage() {
         }
 
         if (isFixedHours) {
-          const committed = contractorCommitted(person, member);
-          const totalHours = hoursCommitmentTotalInRange(
-            project,
-            committed.hours,
-            periodRange.start,
-            periodRange.end,
-            asOf,
-          );
-          if (totalHours > 0) {
-            contractors.push({
-              id: `${person.id}:hours`,
-              personId: person.id,
-              name: person.name,
-              avatar_url: person.avatar_url,
-              avatar_attachment_id: person.avatar_attachment_id,
-              avatar_color: person.avatar_color,
-              usedHours: 0,
-              plannedHours: 0,
-              totalHours,
-              moneyAmount: null,
-              dashUsedPlanned: true,
-              is_contractor: true,
-            });
+          const hourLines =
+            periodMode === "month"
+              ? contractorExpenseLinesInRange(
+                  project,
+                  projectExpenses,
+                  state.people,
+                  periodRange.start,
+                  periodRange.end,
+                  person.id,
+                ).filter((line) => line.hours > 0)
+              : contractorExpenseAggregatesInRange(
+                  project,
+                  projectExpenses,
+                  state.people,
+                  periodRange.start,
+                  periodRange.end,
+                  person.id,
+                ).filter((line) => line.hours > 0);
+          if (hourLines.length > 0) {
+            for (const line of hourLines) {
+              contractors.push({
+                id: line.rowId,
+                personId: person.id,
+                name: person.name,
+                avatar_url: person.avatar_url,
+                avatar_attachment_id: person.avatar_attachment_id,
+                avatar_color: person.avatar_color,
+                usedHours: 0,
+                plannedHours: 0,
+                totalHours: line.hours,
+                moneyAmount: null,
+                dashUsedPlanned: true,
+                is_contractor: true,
+                notes:
+                  "notes" in line
+                    ? String(line.notes ?? "") || undefined
+                    : undefined,
+              });
+            }
+          } else {
+            const committed = contractorCommitted(person, member);
+            const totalHours = hoursCommitmentTotalInRange(
+              project,
+              committed.hours,
+              periodRange.start,
+              periodRange.end,
+              asOf,
+            );
+            if (totalHours > 0) {
+              contractors.push({
+                id: `${person.id}:hours`,
+                personId: person.id,
+                name: person.name,
+                avatar_url: person.avatar_url,
+                avatar_attachment_id: person.avatar_attachment_id,
+                avatar_color: person.avatar_color,
+                usedHours: 0,
+                plannedHours: 0,
+                totalHours,
+                moneyAmount: null,
+                dashUsedPlanned: true,
+                is_contractor: true,
+              });
+            }
           }
         }
 
@@ -765,6 +783,30 @@ export default function ProjectBudgetDetailPage() {
       ? periodRemainingAmount != null && periodRemainingAmount < 0
       : periodRemainingHours != null && periodRemainingHours < 0;
 
+  const periodSpendHealth =
+    periodBudgetCap != null && (mode === "hours" || mode === "amount")
+      ? spendHealth(
+          mode,
+          mode === "amount" ? periodRevenueCost.cost : periodPlannedHours,
+          periodBudgetCap,
+          state.organization_settings,
+        )
+      : "none";
+  const marginToneClass =
+    periodSpendHealth === "over"
+      ? "text-[var(--status-over)]"
+      : periodSpendHealth === "near"
+        ? "text-[var(--status-near)]"
+        : periodSpendHealth === "healthy"
+          ? "text-[var(--accent)]"
+          : undefined;
+
+  const profitLine =
+    mode === "amount" && (project.budget_amount ?? 0) > 0
+      ? (project.budget_amount ?? 0) *
+        (targetCostPct(state.organization_settings) / 100)
+      : null;
+
   const periodRemainingLabel =
     mode === "none"
       ? "—"
@@ -777,7 +819,7 @@ export default function ProjectBudgetDetailPage() {
           : formatHours(periodRemainingHours);
 
   const periodRateMargin =
-    periodRevenueCost.revenue - periodRevenueCost.scheduleCost;
+    periodRevenueCost.revenue - periodRevenueCost.cost;
   const periodRateMarginPct =
     periodRevenueCost.revenue <= 0
       ? 0
@@ -787,7 +829,7 @@ export default function ProjectBudgetDetailPage() {
     mode === "amount" && periodBudgetCap != null
       ? remainingTargetCostAllowance(
           periodBudgetCap,
-          periodPlannedAmount,
+          periodRevenueCost.cost,
           state.organization_settings,
         )
       : null;
@@ -795,44 +837,12 @@ export default function ProjectBudgetDetailPage() {
   let periodMargin: number | null = null;
   let periodMarginPct: number | null = null;
   if (mode === "amount" && periodBudgetCap != null) {
-    // Fee minus labor cost + expenses.
     periodMargin = periodBudgetCap - periodRevenueCost.cost;
     periodMarginPct =
       periodBudgetCap <= 0 ? null : (periodMargin / periodBudgetCap) * 100;
-  } else if (
-    mode === "hours" &&
-    periodRevenueCost.revenue > 0
-  ) {
+  } else if (mode === "hours" && periodRevenueCost.revenue > 0) {
     periodMargin = periodRateMargin;
     periodMarginPct = periodRateMarginPct;
-  } else if (
-    mode === "hours" &&
-    periodBudgetCap != null &&
-    periodPlannedHours > 0
-  ) {
-    const scheduleHours = Math.max(
-      0,
-      periodPlannedHours -
-        (isMonthlyRetainerBudget(project)
-          ? contractorExpenseTotalsInRange(
-              project.id,
-              projectExpenses,
-              state.people,
-              periodRange.start,
-              periodRange.end,
-            ).hours
-          : 0),
-    );
-    const avgCost =
-      scheduleHours > 0
-        ? periodRevenueCost.scheduleCost / scheduleHours
-        : 0;
-    const unusedHours = periodBudgetCap - periodPlannedHours;
-    periodMargin = unusedHours * avgCost;
-    periodMarginPct =
-      periodBudgetCap <= 0
-        ? null
-        : ((periodBudgetCap - periodPlannedHours) / periodBudgetCap) * 100;
   }
 
   return (
@@ -1058,7 +1068,7 @@ export default function ProjectBudgetDetailPage() {
                     )}
                   >
                     <ChartColumn size={14} strokeWidth={2} />
-                    {chartUnit === "amount" ? "Spend per week" : "Hours per week"}
+                    {chartUnit === "amount" ? "Spend Per Week" : "Hours Per Week"}
                   </button>
                 </div>
                 {retainerTab === "calendar" ? (
@@ -1106,6 +1116,7 @@ export default function ProjectBudgetDetailPage() {
               budgetHours={mode === "hours" ? project.budget_hours : null}
               budgetAmount={mode === "amount" ? project.budget_amount : null}
               contractorBaseline={contractorBaseline}
+              profitLine={profitLine}
             />
           )}
         </section>
@@ -1152,10 +1163,10 @@ export default function ProjectBudgetDetailPage() {
                   ? `Lifetime · `
                   : `${year} · `}
               {showHoursMetrics
-                ? "Schedule Hours and Margin Against the Project Budget."
+                ? "Hours, contractor markup, and margin against the project budget."
                 : showAmountMetrics
-                  ? "Schedule Spend and Margin Against the Project Budget."
-                  : "Schedule and Margin Against the Project."}
+                  ? "Spend, contractor expense, and margin against the project fee."
+                  : "Schedule and margin against the project."}
             </p>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
@@ -1180,6 +1191,25 @@ export default function ProjectBudgetDetailPage() {
                       : formatHours(periodSplit?.futureHours ?? 0)}
                 </dd>
               </div>
+              {periodRevenueCost.contractorCost > 0 ||
+              periodRevenueCost.contractorHours > 0 ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-[var(--text-muted)]">Contractor</dt>
+                  <dd className="text-right tabular-nums font-medium">
+                    {showHoursMetrics ? (
+                      <>
+                        {formatHours(periodRevenueCost.contractorHours)}
+                        <span className="block text-[11px] font-normal text-[var(--text-muted)]">
+                          billed {formatMoney(periodRevenueCost.contractorRevenue)}{" "}
+                          · cost {formatMoney(periodRevenueCost.contractorCost)}
+                        </span>
+                      </>
+                    ) : (
+                      formatMoney(periodRevenueCost.contractorCost)
+                    )}
+                  </dd>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-2">
                 <dt className="text-[var(--text-muted)]">
                   {showAmountMetrics ? "Budget Remaining" : "Remaining Hours"}
@@ -1195,13 +1225,13 @@ export default function ProjectBudgetDetailPage() {
               </div>
               {periodMargin != null ? (
                 <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2">
-                  <dt className="text-[var(--text-muted)]">
+                  <dt className={cn(marginToneClass ?? "text-[var(--text-muted)]")}>
                     {mode === "hours" ? "Gross Profit" : "Margin vs Fee"}
                   </dt>
                   <dd
                     className={cn(
                       "tabular-nums font-medium",
-                      periodMargin < 0 && "text-[var(--status-over)]",
+                      marginToneClass,
                     )}
                   >
                     {formatMoney(periodMargin)}

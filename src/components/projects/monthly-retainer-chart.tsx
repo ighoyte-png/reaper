@@ -318,6 +318,7 @@ export function ProjectYearBurnChart({
   compact = false,
   selectedMonthKey,
   onMonthSelect,
+  blendContractors = false,
 }: {
   bars: MonthBurnBar[];
   unit?: "hours" | "amount";
@@ -330,6 +331,8 @@ export function ProjectYearBurnChart({
   /** Highlight a month bar (yyyy-MM). */
   selectedMonthKey?: string;
   onMonthSelect?: (bar: MonthBurnBar) => void;
+  /** Paint contractor hours as internal (blue) — client portal only. */
+  blendContractors?: boolean;
 }) {
   const labelYear = year ?? bars[0]?.year;
   const cap = monthlyCap ?? 0;
@@ -340,9 +343,24 @@ export function ProjectYearBurnChart({
   );
   const capPct = maxValue <= 0 ? 0 : (cap / maxValue) * 100;
   const showCapLine = cap > 0;
-  const hasContractor = bars.some((b) =>
-    unit === "amount" ? b.contractorAmount > 0 : b.contractorHours > 0,
-  );
+  const hasContractor =
+    !blendContractors &&
+    bars.some((b) =>
+      unit === "amount" ? b.contractorAmount > 0 : b.contractorHours > 0,
+    );
+
+  function displaySplit(bar: MonthBurnBar) {
+    const split = barSplit(bar, unit);
+    if (!blendContractors) return split;
+    return {
+      used: split.used + split.contractorUsed,
+      future: split.future + split.contractorFuture,
+      contractorUsed: 0,
+      contractorFuture: 0,
+      contractor: 0,
+      total: split.total,
+    };
+  }
 
   function formatValue(n: number): string {
     if (unit === "amount") return formatMoney(n);
@@ -365,7 +383,7 @@ export function ProjectYearBurnChart({
         )}
       >
         {bars.map((bar) => {
-          const { total } = barSplit(bar, unit);
+          const { total } = displaySplit(bar);
           return (
             <div
               key={`v-${bar.key}`}
@@ -407,7 +425,7 @@ export function ProjectYearBurnChart({
             contractorFuture,
             contractor,
             total,
-          } = barSplit(bar, unit);
+          } = displaySplit(bar);
           return (
             <MonthBarColumn
               key={bar.key}

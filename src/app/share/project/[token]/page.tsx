@@ -36,6 +36,7 @@ import {
 } from "@/lib/domain/assets";
 import {
   calendarYearBars,
+  contractorExpenseTotalsInRange,
   hoursCommitmentTotalInRange,
   personHoursSplitInRange,
   type MonthBurnBar,
@@ -58,6 +59,7 @@ import type {
   Person,
   Project,
   ProjectAssetKind,
+  ProjectContractorExpense,
   ProjectMember,
   TaskStatus,
 } from "@/lib/types";
@@ -154,6 +156,27 @@ function portalChartMembers(
     contractor_mode: m.contractor_mode,
     contractor_fixed_fee: null,
     contractor_hours: m.contractor_hours,
+  }));
+}
+
+function portalChartExpenses(
+  projectId: string,
+  stubs: PortalHoursRetainer["expenses"] | undefined,
+): ProjectContractorExpense[] {
+  return (stubs ?? []).map((e, i) => ({
+    id: `portal-exp-${i}`,
+    organization_id: "portal",
+    project_id: projectId,
+    person_id: e.person_id,
+    month_key: e.month_key,
+    amount: 0,
+    hours: e.hours,
+    notes: e.notes ?? "",
+    repeat_monthly: Boolean(e.repeat_monthly),
+    repeat_end_month: e.repeat_end_month,
+    created_at: "",
+    updated_at: "",
+    created_by_profile_id: null,
   }));
 }
 
@@ -279,6 +302,7 @@ export default function ProjectSharePage() {
           chartYear,
           new Date(),
           portalChartMembers(portal.project.id, portal.hoursRetainer.members),
+          portalChartExpenses(portal.project.id, portal.hoursRetainer.expenses),
         )
       : [];
 
@@ -365,14 +389,26 @@ export default function ProjectSharePage() {
       if (isFixedFee) continue;
 
       if (isFixedHours && isProjectBasisContractor(person)) {
-        const committed = contractorCommitted(person, member);
-        const totalHours = hoursCommitmentTotalInRange(
+        const expenses = portalChartExpenses(
+          portal.project.id,
+          retainer.expenses,
+        );
+        const fromExpenses = contractorExpenseTotalsInRange(
+          portal.project.id,
+          expenses.filter((e) => e.person_id === person.id),
+          people,
+          periodRange.start,
+          periodRange.end,
           project,
-          committed.hours,
+        ).hours;
+        const leftover = hoursCommitmentTotalInRange(
+          project,
+          contractorCommitted(person, member).hours,
           periodRange.start,
           periodRange.end,
           asOf,
         );
+        const totalHours = fromExpenses > 0 ? fromExpenses : leftover;
         if (totalHours <= 0) continue;
         rows.push({
           id: `${person.id}:hours`,
@@ -381,10 +417,9 @@ export default function ProjectSharePage() {
           avatar_url: person.avatar_url,
           avatar_attachment_id: person.avatar_attachment_id,
           avatar_color: person.avatar_color,
-          usedHours: 0,
-          plannedHours: 0,
+          usedHours: totalHours,
+          plannedHours: totalHours,
           totalHours,
-          dashUsedPlanned: true,
         });
         continue;
       }
@@ -1003,6 +1038,7 @@ export default function ProjectSharePage() {
                   monthlyCap={portal.hoursRetainer.budgetHours}
                   year={chartYear}
                   compact
+                  blendContractors
                   selectedMonthKey={selectedMonthKey}
                   onMonthSelect={handleMonthSelect}
                 />

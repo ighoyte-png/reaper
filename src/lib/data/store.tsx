@@ -2943,8 +2943,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const row = {
           ...withOrg(expense),
           month_key: expense.month_key.slice(0, 10),
+          hours: expense.hours ?? 0,
           notes: expense.notes ?? "",
           repeat_monthly: Boolean(expense.repeat_monthly),
+          repeat_end_month: expense.repeat_end_month
+            ? expense.repeat_end_month.slice(0, 10)
+            : null,
           updated_at: new Date().toISOString(),
           created_at: expense.created_at || new Date().toISOString(),
         } as ProjectContractorExpense;

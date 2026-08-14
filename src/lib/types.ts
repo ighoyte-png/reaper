@@ -433,9 +433,13 @@ export interface ProjectContractorExpense {
   /** First day of month as yyyy-MM-dd. Start month when repeat_monthly. */
   month_key: string;
   amount: number;
+  /** Hours for this month (or start month when repeating). Exclusive with amount. */
+  hours: number;
   notes: string;
-  /** When true, amount applies to month_key and every later month. */
+  /** When true, amount/hours apply from month_key through the apply window. */
   repeat_monthly: boolean;
+  /** Inclusive last month a repeating row applies; null = through year/project end. */
+  repeat_end_month: string | null;
   created_at: string;
   updated_at: string;
   created_by_profile_id: string | null;

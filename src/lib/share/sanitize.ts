@@ -1,4 +1,8 @@
-import { isMonthlyRetainerBudget, normalizeBudgetMode } from "@/lib/domain/budget";
+import {
+  contractorExpenseEntryHours,
+  isMonthlyRetainerBudget,
+  normalizeBudgetMode,
+} from "@/lib/domain/budget";
 import {
   projectTeamPersonIds,
   showProjectManagerUi,
@@ -153,6 +157,16 @@ export interface PortalHoursRetainer {
     person_id: string;
     contractor_mode: ContractorMode | null;
     contractor_hours: number | null;
+  }[];
+  /** Hours entries for retainers (amounts stripped / converted to hours). */
+  expenses?: {
+    person_id: string;
+    month_key: string;
+    hours: number;
+    amount: number;
+    notes: string;
+    repeat_monthly: boolean;
+    repeat_end_month: string | null;
   }[];
 }
 
@@ -356,6 +370,22 @@ export function sanitizeProjectPortal(
               contractor_mode: m.contractor_mode,
               contractor_hours: m.contractor_hours,
             })),
+            expenses: (state.project_contractor_expenses ?? [])
+              .filter((e) => e.project_id === projectId)
+              .map((e) => {
+                const person = state.people.find((p) => p.id === e.person_id);
+                const hours = contractorExpenseEntryHours(e, person);
+                return {
+                  person_id: e.person_id,
+                  month_key: e.month_key,
+                  hours,
+                  amount: 0,
+                  notes: "",
+                  repeat_monthly: Boolean(e.repeat_monthly),
+                  repeat_end_month: e.repeat_end_month,
+                };
+              })
+              .filter((e) => e.hours > 0),
           };
         })()
       : null;
