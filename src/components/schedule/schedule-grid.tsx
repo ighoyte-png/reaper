@@ -41,8 +41,10 @@ import {
   budgetHealth,
   formatHours,
   formatMoney,
+  normalizeBudgetMode,
   roundAssignmentHours,
 } from "@/lib/domain/budget";
+import { ProductionHoursPanel } from "@/components/budgets/production-hours-panel";
 import {
   availableHoursInRange,
   buildBookedHoursByPersonDay,
@@ -337,7 +339,7 @@ export function ScheduleGrid() {
   const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(true);
   const [sidebarMinimized, setSidebarMinimized] = useState(true);
   const [sidebarPanelTab, setSidebarPanelTab] = useState<
-    "edit" | "tasks" | "assigner"
+    "edit" | "tasks" | "hours" | "assigner"
   >("edit");
   const sidebarPreferMinimizedRef = useRef(true);
   const hoursInputRef = useRef<HTMLInputElement>(null);
@@ -782,6 +784,20 @@ export function ScheduleGrid() {
   const sidebarAssigner = sidebarAssignerId
     ? (state.people.find((p) => p.id === sidebarAssignerId) ?? null)
     : null;
+  const showProductionHoursTab =
+    canManage &&
+    sidebarProject != null &&
+    normalizeBudgetMode(
+      sidebarProject.budget_mode,
+      sidebarProject.budget_hours,
+      sidebarProject.budget_amount,
+    ) === "amount";
+
+  useEffect(() => {
+    if (sidebarPanelTab === "hours" && !showProductionHoursTab) {
+      setSidebarPanelTab("edit");
+    }
+  }, [sidebarPanelTab, showProductionHoursTab]);
 
   const assignmentMentionPeople = useMemo(() => {
     const projectId = editForm?.project_id ?? selected?.project_id ?? null;
@@ -1484,6 +1500,8 @@ export function ScheduleGrid() {
       setSidebarPanelTab("edit");
     } else if (tabRaw === "tasks") {
       setSidebarPanelTab("tasks");
+    } else if (tabRaw === "hours") {
+      setSidebarPanelTab("hours");
     } else if (tabRaw === "assigner") {
       setSidebarPanelTab("assigner");
     } else {
@@ -4194,6 +4212,20 @@ export function ScheduleGrid() {
                 >
                   Tasks
                 </button>
+                {showProductionHoursTab ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      "cursor-pointer border-b-2 px-3 py-2 text-xs font-medium",
+                      sidebarPanelTab === "hours"
+                        ? "border-[var(--accent)] text-[var(--text)]"
+                        : "border-transparent text-[var(--text-muted)]",
+                    )}
+                    onClick={() => setSidebarPanelTab("hours")}
+                  >
+                    Hours
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className={cn(
@@ -4232,6 +4264,22 @@ export function ScheduleGrid() {
                       ? null
                       : (viewAs?.effectivePersonId ?? myPerson?.id ?? null)
                   }
+                />
+              </div>
+            ) : sidebarPanelTab === "hours" && sidebarProject ? (
+              <div className="p-4">
+                <ProductionHoursPanel
+                  project={sidebarProject}
+                  assignments={state.assignments}
+                  people={state.people}
+                  members={state.project_members.filter(
+                    (m) => m.project_id === sidebarProject.id,
+                  )}
+                  expenses={state.project_contractor_expenses.filter(
+                    (e) => e.project_id === sidebarProject.id,
+                  )}
+                  settings={state.organization_settings}
+                  compact
                 />
               </div>
             ) : sidebarPanelTab === "assigner" ? (

@@ -985,6 +985,7 @@ function ClientsPageContent() {
             contractorTerms={contractorTerms}
             onContractorTermsChange={setContractorTerms}
             onChange={setProjectDraft}
+            canManage={canManage}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
             showTemplateSelect

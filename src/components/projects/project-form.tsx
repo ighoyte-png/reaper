@@ -27,6 +27,16 @@ import { ContractorTag } from "@/components/projects/project-manager-person";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import {
+  contractorExpenseAppliesInMonth,
+  defaultContractorRepeatEndMonth,
+  formatHours,
+  formatMoney,
+  isMonthlyRetainerBudget,
+  normalizeBudgetMode,
+  roundAssignmentHours,
+} from "@/lib/domain/budget";
+import { ProductionHoursPanel } from "@/components/budgets/production-hours-panel";
+import {
   contractorAmountFromHours,
   contractorHoursFromFixedFee,
   defaultContractorTermsForPerson,
@@ -36,14 +46,6 @@ import {
   type ContractorTerms,
 } from "@/lib/domain/contractor";
 import { filterPeopleByPod } from "@/lib/domain/pods";
-import {
-  contractorExpenseAppliesInMonth,
-  defaultContractorRepeatEndMonth,
-  formatHours,
-  formatMoney,
-  isMonthlyRetainerBudget,
-  roundAssignmentHours,
-} from "@/lib/domain/budget";
 import type {
   BudgetMode,
   ContractorMode,
@@ -71,6 +73,7 @@ const TABS = [
   { id: "timeline", label: "Timeline" },
   { id: "budget", label: "Budget" },
   { id: "expenses", label: "Contractors" },
+  { id: "hours", label: "Hours" },
   { id: "sandbox", label: "Sandbox Mode" },
 ] as const;
 
@@ -109,6 +112,7 @@ export function ProjectForm({
   pmDailyHours,
   onPmDailyHoursChange,
   sandboxWipeRisk = false,
+  canManage = false,
 }: {
   project: Omit<Project, "organization_id">;
   clients: { id: string; name: string; color?: string }[];
@@ -141,6 +145,8 @@ export function ProjectForm({
   onPmDailyHoursChange?: (hours: number | null) => void;
   /** When true, enabling sandbox prompts a wipe warning. */
   sandboxWipeRisk?: boolean;
+  /** Manager+ only: Production Hours tab for fixed fee projects. */
+  canManage?: boolean;
 }) {
   const {
     state,
@@ -231,6 +237,32 @@ export function ProjectForm({
   );
 
   const isMonthlyRetainer = isMonthlyRetainerBudget(project);
+  const isAmountBudget =
+    normalizeBudgetMode(
+      project.budget_mode,
+      project.budget_hours,
+      project.budget_amount,
+    ) === "amount";
+
+  const hoursEstimateMembers = useMemo((): ProjectMember[] => {
+    const byId = new Map(people.map((p) => [p.id, p]));
+    return memberIds.flatMap((personId) => {
+      const person = byId.get(personId);
+      if (!person) return [];
+      const terms =
+        contractorTerms[personId] ?? defaultContractorTermsForPerson(person);
+      return [
+        {
+          project_id: project.id,
+          person_id: personId,
+          organization_id: "local",
+          contractor_mode: terms.contractor_mode,
+          contractor_fixed_fee: terms.contractor_fixed_fee,
+          contractor_hours: terms.contractor_hours,
+        },
+      ];
+    });
+  }, [memberIds, contractorTerms, people, project.id]);
 
   const visibleTabs = useMemo(
     () =>
@@ -239,13 +271,17 @@ export function ProjectForm({
           project.sandbox_mode &&
           (item.id === "timeline" ||
             item.id === "budget" ||
-            item.id === "expenses")
+            item.id === "expenses" ||
+            item.id === "hours")
         ) {
+          return false;
+        }
+        if (item.id === "hours" && (!canManage || !isAmountBudget)) {
           return false;
         }
         return true;
       }),
-    [project.sandbox_mode],
+    [project.sandbox_mode, canManage, isAmountBudget],
   );
 
   useEffect(() => {
@@ -727,6 +763,19 @@ export function ProjectForm({
                 setContractorTerms={setContractorTerms}
               />
             )
+          ) : null}
+
+          {tab === "hours" ? (
+            <ProductionHoursPanel
+              project={project}
+              assignments={state.assignments}
+              people={people}
+              members={hoursEstimateMembers}
+              expenses={state.project_contractor_expenses.filter(
+                (e) => e.project_id === project.id,
+              )}
+              settings={state.organization_settings}
+            />
           ) : null}
 
           {tab === "sandbox" ? (

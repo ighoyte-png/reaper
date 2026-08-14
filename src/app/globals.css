@@ -29,6 +29,8 @@
   --section-rule: #d1d5db;
   --accent: #2563eb;
   --accent-fg: #ffffff;
+  /* Production hours guide: unused target-margin capacity */
+  --hours-available: #7c3aed;
   --status-healthy: #16a34a;
   --status-near: #d97706;
   --status-over: #dc2626;
@@ -75,6 +77,7 @@
   --section-rule: rgba(255, 255, 255, 0.12);
   --accent: #3b82f6;
   --accent-fg: #ffffff;
+  --hours-available: #a78bfa;
   --status-healthy: #22c55e;
   --status-near: #f59e0b;
   --status-over: #ef4444;

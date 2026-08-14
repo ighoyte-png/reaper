@@ -1240,6 +1240,7 @@ export default function ProjectDetailPage() {
             contractorTerms={contractorTerms}
             onContractorTermsChange={setContractorTerms}
             onChange={setDraft}
+            canManage={canManage}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
             sandboxWipeRisk={

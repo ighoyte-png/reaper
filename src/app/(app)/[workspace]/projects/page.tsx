@@ -744,6 +744,7 @@ function ProjectsPageContent() {
             contractorTerms={contractorTerms}
             onContractorTermsChange={setContractorTerms}
             onChange={setEditing}
+            canManage={canManage}
             pmDailyHours={pmDailyHours}
             onPmDailyHoursChange={setPmDailyHours}
             sandboxWipeRisk={
