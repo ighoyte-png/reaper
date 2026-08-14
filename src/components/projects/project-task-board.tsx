@@ -201,6 +201,8 @@ type BoardCtx = {
   focusTaskId: string | null;
   /** Remove deep-link highlight (clears ?task= from the URL). */
   clearFocusTask: () => void;
+  /** Clear deep-link highlight when interacting with a different task. */
+  clearFocusIfOtherTask: (taskId: string) => void;
   selected: Set<string>;
   toggleSelect: (id: string, shiftKey?: boolean) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
@@ -401,6 +403,11 @@ export function ProjectTaskBoard({
     params.delete("task");
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  /** Drop deep-link highlight when the user works on a different task. */
+  function clearFocusIfOtherTask(taskId: string) {
+    if (focusTaskId && focusTaskId !== taskId) clearFocusTask();
   }
   const project = state.projects.find((p) => p.id === projectId);
   const viewAs = useViewAsOptional();
@@ -1837,6 +1844,7 @@ export function ProjectTaskBoard({
         : null,
     focusTaskId,
     clearFocusTask,
+    clearFocusIfOtherTask,
     selected,
     toggleSelect,
     setParentsSelected,
@@ -3510,6 +3518,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
         opacity: isDragging ? 0.35 : undefined,
       }}
       className={cn("relative my-0.5 py-0.5", isExiting && "pointer-events-none")}
+      onPointerDownCapture={() => ctx.clearFocusIfOtherTask(task.id)}
     >
       <div
         ref={setNodeRef}
@@ -3816,6 +3825,7 @@ function TaskRow({
         depth > 0 && "group/subtask",
         isExiting && "pointer-events-none",
       )}
+      onPointerDownCapture={() => ctx.clearFocusIfOtherTask(task.id)}
     >
       {depth > 0 ? (
         <span
