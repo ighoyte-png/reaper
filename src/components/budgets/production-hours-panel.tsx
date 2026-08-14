@@ -224,8 +224,8 @@ export function ProductionHoursPanel({
         </div>
         <div className="flex justify-between gap-2">
           <dt className="text-[var(--text-muted)]">Remaining Available</dt>
-          <dd className={clsx("tabular-nums font-medium", remainingClass)}>
-            {formatHours(estimate.remainingTargetHours)}
+          <dd className="tabular-nums font-medium text-[var(--hours-available)]">
+            ~{formatHours(estimate.remainingTargetHours)}
           </dd>
         </div>
         {estimate.contractorAmount > 0 ? (
@@ -256,7 +256,7 @@ export function ProductionHoursPanel({
         <div className="flex justify-between gap-2 text-xs">
           <dt className="text-[var(--text-muted)]">Avg Team Cost Rate</dt>
           <dd className="tabular-nums text-[var(--text-muted)]">
-            {formatMoney(estimate.avgCostRate)}/hr
+            ~{formatMoney(estimate.avgCostRate)}/hr
           </dd>
         </div>
       </dl>
