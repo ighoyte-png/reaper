@@ -265,7 +265,9 @@ export default function ProjectSharePage() {
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
   const [chartYear, setChartYear] = useState(() => new Date().getFullYear());
-  const [periodMode, setPeriodMode] = useState<"month" | "year">("month");
+  const [periodMode, setPeriodMode] = useState<"month" | "year" | "term">(
+    "month",
+  );
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), monthIndex: now.getMonth() };
@@ -321,6 +323,15 @@ export default function ProjectSharePage() {
   }
 
   const periodRange = useMemo(() => {
+    const startDate = portal?.project.start_date ?? null;
+    const endDate = portal?.project.end_date ?? null;
+    if (periodMode === "term" && startDate && endDate) {
+      return {
+        start: startDate,
+        end: endDate,
+        label: "Contract Term",
+      };
+    }
     if (periodMode === "year") {
       return {
         start: toDateKey(new Date(chartYear, 0, 1)),
@@ -334,7 +345,13 @@ export default function ProjectSharePage() {
       end: toDateKey(endOfMonth(d)),
       label: format(d, "MMM yyyy"),
     };
-  }, [periodMode, chartYear, selectedMonth]);
+  }, [
+    periodMode,
+    chartYear,
+    selectedMonth,
+    portal?.project.start_date,
+    portal?.project.end_date,
+  ]);
 
   const teamHoursRows = useMemo((): TeamHoursRow[] => {
     const retainer = portal?.hoursRetainer;
@@ -1063,19 +1080,38 @@ export default function ProjectSharePage() {
                     onSelect={() => setPeriodMode("year")}
                   />
                 </li>
+                {portal.project.start_date && portal.project.end_date ? (
+                  <li>
+                    <PeriodChip
+                      label="Contract Term"
+                      selected={periodMode === "term"}
+                      onSelect={() => setPeriodMode("term")}
+                    />
+                  </li>
+                ) : null}
                 {periodMode === "month" ? (
                   <li className="flex items-center text-xs text-[var(--text-muted)]">
                     {periodRange.label}
+                  </li>
+                ) : null}
+                {periodMode === "term" &&
+                portal.project.start_date &&
+                portal.project.end_date ? (
+                  <li className="flex items-center text-xs text-[var(--text-muted)]">
+                    {format(parseISO(portal.project.start_date), "MMM d, yyyy")} –{" "}
+                    {format(parseISO(portal.project.end_date), "MMM d, yyyy")}
                   </li>
                 ) : null}
               </ul>
 
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <h2 className="mb-3 text-sm font-semibold">
-                  Team
+                  Team ·{" "}
                   {periodMode === "month"
-                    ? ` · ${periodRange.label}`
-                    : ` · ${chartYear}`}
+                    ? periodRange.label
+                    : periodMode === "term"
+                      ? "Contract Term"
+                      : String(chartYear)}
                 </h2>
                 <TeamHoursTable rows={teamHoursRows} />
               </section>
