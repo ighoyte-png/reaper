@@ -692,7 +692,7 @@ export function ProjectForm({
                     <span className="block text-xs text-[var(--text-muted)]">
                       {project.budget_mode === "amount"
                         ? "Treat the fixed fee as a recurring monthly retainer"
-                        : "Treat the hours budget as a recurring monthly retainer (bill rate still applies to planned hours)"}
+                        : "Treat the hours budget as a recurring monthly retainer (fixed hour bucket billed at the project bill rate each month)"}
                     </span>
                   </span>
                 </label>

@@ -9,6 +9,7 @@ import type {
 import {
   assignmentHours,
   contractorExpenseTotalsInRange,
+  eachMonthKeyInRange,
   hoursCommitmentTotalInRange,
   isMonthlyRetainerBudget,
   normalizeBudgetMode,
@@ -18,7 +19,7 @@ import {
 } from "@/lib/domain/budget";
 import {
   contractorCommitted,
-  isProjectBasisContractor,
+  isCommitContractor,
 } from "@/lib/domain/contractor";
 import {
   DEFAULT_ORG_BUDGET_SETTINGS,
@@ -54,20 +55,11 @@ export interface PeriodEconomics {
   scheduleHours: number;
 }
 
-function isCommitContractor(
-  person: Person,
-  member: Pick<ProjectMember, "contractor_mode"> | null | undefined,
-): boolean {
-  if (!isProjectBasisContractor(person)) return false;
-  const mode =
-    member?.contractor_mode ??
-    (person.hide_from_schedule ? "fixed_fee" : "scheduled");
-  return mode === "fixed_fee" || mode === "hours";
-}
-
 /**
- * Revenue / cost for a date window. Hours mode marks contractor time up to
- * the project bill rate; amount mode treats contractors as cost only.
+ * Revenue / cost for a date window. Monthly hours retainers use a fixed
+ * bucket (months × hours cap × bill rate). Other hours projects are T&M
+ * (actual hours × bill rate, including contractor markup). Amount mode
+ * treats contractors as cost only.
  */
 export function projectPeriodEconomics(
   project: Project,
@@ -163,12 +155,23 @@ export function projectPeriodEconomics(
     }
   }
 
+  const hoursBucketRevenue =
+    monthly && mode === "hours"
+      ? eachMonthKeyInRange(rangeStart, rangeEnd).length *
+        (project.budget_hours ?? 0) *
+        billRate
+      : null;
   const contractorRevenue =
-    mode === "hours" ? contractorHours * billRate : 0;
-  const scheduleRevenue = mode === "hours" ? scheduleHours * billRate : 0;
+    hoursBucketRevenue == null && mode === "hours"
+      ? contractorHours * billRate
+      : 0;
+  const scheduleRevenue =
+    hoursBucketRevenue == null && mode === "hours"
+      ? scheduleHours * billRate
+      : 0;
 
   return {
-    revenue: scheduleRevenue + contractorRevenue,
+    revenue: hoursBucketRevenue ?? scheduleRevenue + contractorRevenue,
     cost: scheduleCost + contractorCost,
     scheduleCost,
     expenseCost: monthly ? contractorCost : 0,

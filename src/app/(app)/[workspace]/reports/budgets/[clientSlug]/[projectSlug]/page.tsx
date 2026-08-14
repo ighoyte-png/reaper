@@ -44,6 +44,7 @@ import {
 import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   contractorCommitted,
+  isCommitContractor,
   isProjectBasisContractor,
 } from "@/lib/domain/contractor";
 import { remainingTargetCostAllowance, targetCostPct } from "@/lib/domain/org-settings";
@@ -87,9 +88,9 @@ export default function ProjectBudgetDetailPage() {
     dataStatus.projects[project.id] !== "error";
 
   const [year, setYear] = useState(() => new Date().getFullYear());
-  const [periodMode, setPeriodMode] = useState<"month" | "year" | "lifetime">(
-    "month",
-  );
+  const [periodMode, setPeriodMode] = useState<
+    "month" | "year" | "lifetime" | "term"
+  >("month");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), monthIndex: now.getMonth() };
@@ -102,6 +103,7 @@ export default function ProjectBudgetDetailPage() {
     : undefined;
 
   const isRetainer = project ? isMonthlyRetainerBudget(project) : false;
+  const hasContractTerm = Boolean(project?.start_date && project?.end_date);
 
   const projectMembers = useMemo(
     () =>
@@ -272,6 +274,13 @@ export default function ProjectBudgetDetailPage() {
         label: "Lifetime",
       };
     }
+    if (periodMode === "term" && project?.start_date && project?.end_date) {
+      return {
+        start: project.start_date,
+        end: project.end_date,
+        label: "Contract Term",
+      };
+    }
     if (periodMode === "year") {
       return {
         start: toDateKey(new Date(year, 0, 1)),
@@ -289,16 +298,71 @@ export default function ProjectBudgetDetailPage() {
 
   const periodSplit = useMemo(() => {
     if (!project) return null;
+    const asOf = new Date();
+    const peopleById = new Map(state.people.map((p) => [p.id, p]));
+
+    if (!isMonthlyRetainerBudget(project)) {
+      const personIds = new Set<string>();
+      for (const a of state.assignments) {
+        if (a.project_id !== project.id || a.status !== "confirmed") continue;
+        personIds.add(a.person_id);
+      }
+      for (const m of projectMembers) personIds.add(m.person_id);
+
+      const commitIds = new Set<string>();
+      for (const personId of personIds) {
+        const person = peopleById.get(personId);
+        if (!person) continue;
+        if (isCommitContractor(person, membersByPerson.get(personId))) {
+          commitIds.add(personId);
+        }
+      }
+
+      const scheduleAssignments =
+        commitIds.size > 0
+          ? state.assignments.filter(
+              (a) =>
+                a.project_id !== project.id || !commitIds.has(a.person_id),
+            )
+          : state.assignments;
+      const split = projectHoursSplitInRange(
+        project.id,
+        scheduleAssignments,
+        state.people,
+        periodRange.start,
+        periodRange.end,
+        asOf,
+        state.organization_settings,
+      );
+
+      let usedHours = split.usedHours;
+      let futureHours = split.futureHours;
+      let usedAmount = split.usedAmount;
+      let futureAmount = split.futureAmount;
+      for (const personId of commitIds) {
+        const person = peopleById.get(personId);
+        if (!person) continue;
+        const committed = contractorCommitted(
+          person,
+          membersByPerson.get(personId),
+          { settings: state.organization_settings },
+        );
+        usedHours += committed.hours;
+        usedAmount += committed.amount;
+      }
+      return { usedHours, futureHours, usedAmount, futureAmount };
+    }
+
     const split = projectHoursSplitInRange(
       project.id,
       state.assignments,
       state.people,
       periodRange.start,
       periodRange.end,
+      asOf,
+      state.organization_settings,
     );
-    if (!isMonthlyRetainerBudget(project)) return split;
 
-    const asOf = new Date();
     const todayKey = toDateKey(asOf);
     const expenses = contractorExpenseSplitInRange(
       project.id,
@@ -315,12 +379,13 @@ export default function ProjectBudgetDetailPage() {
     let usedAmount = split.usedAmount + expenses.usedAmount;
     let futureAmount = split.futureAmount + expenses.futureAmount;
 
-    const peopleById = new Map(state.people.map((p) => [p.id, p]));
     for (const member of projectMembers) {
       const person = peopleById.get(member.person_id);
       if (!person || !isProjectBasisContractor(person)) continue;
       if (member.contractor_mode !== "hours") continue;
-      const committed = contractorCommitted(person, member);
+      const committed = contractorCommitted(person, member, {
+        settings: state.organization_settings,
+      });
       if (committed.hours <= 0) continue;
 
       for (const mk of eachMonthKeyInRange(
@@ -348,9 +413,11 @@ export default function ProjectBudgetDetailPage() {
     project,
     state.assignments,
     state.people,
+    state.organization_settings,
     periodRange,
     projectExpenses,
     projectMembers,
+    membersByPerson,
   ]);
 
   const periodRevenueCost = useMemo(() => {
@@ -755,6 +822,10 @@ export default function ProjectBudgetDetailPage() {
       periodBudgetCap = monthly;
     } else if (periodMode === "year" && isRetainer) {
       periodBudgetCap = monthly * 12;
+    } else if (periodMode === "term" && isRetainer) {
+      periodBudgetCap =
+        monthly *
+        eachMonthKeyInRange(periodRange.start, periodRange.end).length;
     } else {
       periodBudgetCap = project.budget_hours ?? 0;
     }
@@ -764,6 +835,10 @@ export default function ProjectBudgetDetailPage() {
       periodBudgetCap = monthly;
     } else if (periodMode === "year" && isRetainer) {
       periodBudgetCap = monthly * 12;
+    } else if (periodMode === "term" && isRetainer) {
+      periodBudgetCap =
+        monthly *
+        eachMonthKeyInRange(periodRange.start, periodRange.end).length;
     } else {
       periodBudgetCap = project.budget_amount ?? 0;
     }
@@ -783,6 +858,8 @@ export default function ProjectBudgetDetailPage() {
       ? periodRemainingAmount != null && periodRemainingAmount < 0
       : periodRemainingHours != null && periodRemainingHours < 0;
 
+  // Hours (incl. monthly hours retainers): Gross Profit color tracks hours_* vs the hour cap.
+  // Amount: amount_* on cost vs fee.
   const periodSpendHealth =
     periodBudgetCap != null && (mode === "hours" || mode === "amount")
       ? spendHealth(
@@ -818,12 +895,20 @@ export default function ProjectBudgetDetailPage() {
           ? "—"
           : formatHours(periodRemainingHours);
 
-  const periodRateMargin =
-    periodRevenueCost.revenue - periodRevenueCost.cost;
-  const periodRateMarginPct =
-    periodRevenueCost.revenue <= 0
-      ? 0
-      : (periodRateMargin / periodRevenueCost.revenue) * 100;
+  const periodRevenue =
+    mode === "amount" && periodBudgetCap != null
+      ? periodBudgetCap
+      : periodRevenueCost.revenue;
+  const periodMargin =
+    mode === "amount" && periodBudgetCap != null
+      ? periodRevenue - periodRevenueCost.cost
+      : mode === "hours" && periodRevenue > 0
+        ? periodRevenue - periodRevenueCost.cost
+        : null;
+  const periodMarginPct =
+    periodMargin == null || periodRevenue <= 0
+      ? null
+      : (periodMargin / periodRevenue) * 100;
 
   const targetCostLeft =
     mode === "amount" && periodBudgetCap != null
@@ -834,16 +919,14 @@ export default function ProjectBudgetDetailPage() {
         )
       : null;
 
-  let periodMargin: number | null = null;
-  let periodMarginPct: number | null = null;
-  if (mode === "amount" && periodBudgetCap != null) {
-    periodMargin = periodBudgetCap - periodRevenueCost.cost;
-    periodMarginPct =
-      periodBudgetCap <= 0 ? null : (periodMargin / periodBudgetCap) * 100;
-  } else if (mode === "hours" && periodRevenueCost.revenue > 0) {
-    periodMargin = periodRateMargin;
-    periodMarginPct = periodRateMarginPct;
-  }
+  const periodHeading =
+    periodMode === "month"
+      ? periodRange.label
+      : periodMode === "lifetime"
+        ? "Lifetime"
+        : periodMode === "term"
+          ? "Contract Term"
+          : String(year);
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -1137,6 +1220,15 @@ export default function ProjectBudgetDetailPage() {
                 onSelect={() => setPeriodMode("year")}
               />
             </li>
+            {isRetainer && hasContractTerm ? (
+              <li>
+                <PeriodChip
+                  label="Contract Term"
+                  selected={periodMode === "term"}
+                  onSelect={() => setPeriodMode("term")}
+                />
+              </li>
+            ) : null}
             {!isRetainer ? (
               <li>
                 <PeriodChip
@@ -1151,21 +1243,25 @@ export default function ProjectBudgetDetailPage() {
                 {periodRange.label}
               </li>
             ) : null}
+            {periodMode === "term" && project.start_date && project.end_date ? (
+              <li className="flex items-center text-xs text-[var(--text-muted)]">
+                {format(parseISO(project.start_date), "MMM d, yyyy")} –{" "}
+                {format(parseISO(project.end_date), "MMM d, yyyy")}
+              </li>
+            ) : null}
           </ul>
 
           <div className="grid gap-4 lg:grid-cols-2">
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Forecast vs Budget</h2>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
-              {periodMode === "month"
-                ? `${periodRange.label} · `
-                : periodMode === "lifetime"
-                  ? `Lifetime · `
-                  : `${year} · `}
+              {periodHeading} ·{" "}
               {showHoursMetrics
-                ? "Hours, contractor markup, and margin against the project budget."
+                ? isRetainer
+                  ? "Hour bucket vs planned time, and profit from contracted revenue minus cost."
+                  : "Hours, contractor markup, and profit against billed time."
                 : showAmountMetrics
-                  ? "Spend, contractor expense, and margin against the project fee."
+                  ? "Spend, contractor expense, and profit against the project fee."
                   : "Schedule and margin against the project."}
             </p>
             <dl className="space-y-2 text-sm">
@@ -1200,8 +1296,9 @@ export default function ProjectBudgetDetailPage() {
                       <>
                         {formatHours(periodRevenueCost.contractorHours)}
                         <span className="block text-[11px] font-normal text-[var(--text-muted)]">
-                          billed {formatMoney(periodRevenueCost.contractorRevenue)}{" "}
-                          · cost {formatMoney(periodRevenueCost.contractorCost)}
+                          {isRetainer
+                            ? `cost ${formatMoney(periodRevenueCost.contractorCost)}`
+                            : `billed ${formatMoney(periodRevenueCost.contractorRevenue)} · cost ${formatMoney(periodRevenueCost.contractorCost)}`}
                         </span>
                       </>
                     ) : (
@@ -1226,7 +1323,7 @@ export default function ProjectBudgetDetailPage() {
               {periodMargin != null ? (
                 <div className="flex justify-between gap-2 border-t border-[var(--border)] pt-2">
                   <dt className={cn(marginToneClass ?? "text-[var(--text-muted)]")}>
-                    {mode === "hours" ? "Gross Profit" : "Margin vs Fee"}
+                    Gross Profit
                   </dt>
                   <dd
                     className={cn(
@@ -1262,30 +1359,16 @@ export default function ProjectBudgetDetailPage() {
                 </dt>
                 <dd className="tabular-nums text-[var(--text-muted)]">
                   {mode === "hours"
-                    ? `${formatMoney(periodRevenueCost.revenue)} / ${formatMoney(periodRevenueCost.cost)}`
+                    ? `${formatMoney(periodRevenue)} / ${formatMoney(periodRevenueCost.cost)}`
                     : formatMoney(periodRevenueCost.cost)}
                 </dd>
               </div>
-              {mode === "hours" ? (
-                <div className="flex justify-between gap-2 text-xs">
-                  <dt className="text-[var(--text-muted)]">Gross Margin</dt>
-                  <dd className="tabular-nums text-[var(--text-muted)]">
-                    {formatMoney(periodRateMargin)} (
-                    {periodRateMarginPct.toFixed(0)}%)
-                  </dd>
-                </div>
-              ) : null}
             </dl>
           </section>
 
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">
-              Team
-              {periodMode === "month"
-                ? ` · ${periodRange.label}`
-                : periodMode === "lifetime"
-                  ? " · Lifetime"
-                  : ` · ${year}`}
+              Team · {periodHeading}
             </h2>
             {teamPeriod.staff.length === 0 &&
             teamPeriod.contractors.length === 0 ? (

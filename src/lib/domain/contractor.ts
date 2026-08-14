@@ -47,6 +47,18 @@ export function isProjectBasisContractor(person: Person): boolean {
   );
 }
 
+/** Fixed-fee or hours commitment (excluded from schedule burn; counted as a commit). */
+export function isCommitContractor(
+  person: Person,
+  member: Pick<ProjectMember, "contractor_mode"> | null | undefined,
+): boolean {
+  if (!isProjectBasisContractor(person)) return false;
+  const mode =
+    member?.contractor_mode ??
+    (person.hide_from_schedule ? "fixed_fee" : "scheduled");
+  return mode === "fixed_fee" || mode === "hours";
+}
+
 type CostSettings = Pick<OrganizationSettings, "default_cost_rate">;
 
 /** Cost rate with org default for Fixed Fee → hours conversion (no bill rate). */
