@@ -7,6 +7,7 @@ import { format, parseISO, endOfMonth, startOfMonth } from "date-fns";
 import { ChartColumn, ChartLine, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   HoursPerWeekChart,
+  OutsideDatesChartNote,
   ProjectProgressCharts,
 } from "@/components/budgets/cumulative-hours-chart";
 import { PageContainer } from "@/components/nav/page-container";
@@ -20,6 +21,7 @@ import { useAppHref, resolveProjectBySlugs, useProjectHref } from "@/lib/hooks/u
 import {
   budgetBurn,
   budgetHealth,
+  calendarRangeBars,
   calendarYearBars,
   contractorExpenseLinesInRange,
   contractorExpenseAggregatesInRange,
@@ -33,12 +35,14 @@ import {
   normalizeBudgetMode,
   personHoursSplitInRange,
   projectDateSpan,
+  projectToDateSpan,
   projectHoursForecast,
   projectHoursSplitInRange,
   projectPlannedAmount,
   projectPlannedHours,
   spendHealth,
   weeklyProgressSeries,
+  scheduleOutsideProjectDates,
   type MonthBurnBar,
 } from "@/lib/domain/budget";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -88,8 +92,9 @@ export default function ProjectBudgetDetailPage() {
     dataStatus.projects[project.id] !== "error";
 
   const [year, setYear] = useState(() => new Date().getFullYear());
+  const [periodProjectId, setPeriodProjectId] = useState<string | null>(null);
   const [periodMode, setPeriodMode] = useState<
-    "month" | "year" | "lifetime" | "term"
+    "month" | "year" | "lifetime" | "term" | "todate"
   >("month");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -104,6 +109,11 @@ export default function ProjectBudgetDetailPage() {
 
   const isRetainer = project ? isMonthlyRetainerBudget(project) : false;
   const hasContractTerm = Boolean(project?.start_date && project?.end_date);
+
+  if (project?.id && project.id !== periodProjectId) {
+    setPeriodProjectId(project.id);
+    setPeriodMode(isMonthlyRetainerBudget(project) ? "month" : "todate");
+  }
 
   const projectMembers = useMemo(
     () =>
@@ -183,6 +193,37 @@ export default function ProjectBudgetDetailPage() {
     ],
   );
 
+  const termBars = useMemo(
+    () =>
+      project?.start_date && project.end_date
+        ? calendarRangeBars(
+            project,
+            state.assignments,
+            state.people,
+            project.start_date,
+            project.end_date,
+            new Date(),
+            projectMembers,
+            projectExpenses,
+          )
+        : [],
+    [
+      project,
+      state.assignments,
+      state.people,
+      projectMembers,
+      projectExpenses,
+    ],
+  );
+
+  const scheduleOutsideDates = useMemo(
+    () =>
+      project
+        ? scheduleOutsideProjectDates(project, state.assignments)
+        : false,
+    [project, state.assignments],
+  );
+
   const weeklyPoints = useMemo(
     () =>
       project
@@ -257,6 +298,18 @@ export default function ProjectBudgetDetailPage() {
   }, [project, projectMembers, state.assignments, state.tasks, state.people]);
 
   const periodRange = useMemo(() => {
+    if (periodMode === "todate" && project) {
+      const span = projectToDateSpan(project, state.assignments);
+      if (span) {
+        return {
+          start: span.startKey,
+          end: span.endKey,
+          label: "Project to Date",
+        };
+      }
+      const today = toDateKey(new Date());
+      return { start: today, end: today, label: "Project to Date" };
+    }
     if (periodMode === "lifetime" && project) {
       const span = projectDateSpan(project, state.assignments);
       if (span) {
@@ -336,9 +389,9 @@ export default function ProjectBudgetDetailPage() {
       );
 
       let usedHours = split.usedHours;
-      let futureHours = split.futureHours;
+      const futureHours = split.futureHours;
       let usedAmount = split.usedAmount;
-      let futureAmount = split.futureAmount;
+      const futureAmount = split.futureAmount;
       for (const personId of commitIds) {
         const person = peopleById.get(personId);
         if (!person) continue;
@@ -922,11 +975,13 @@ export default function ProjectBudgetDetailPage() {
   const periodHeading =
     periodMode === "month"
       ? periodRange.label
-      : periodMode === "lifetime"
-        ? "Lifetime"
-        : periodMode === "term"
-          ? "Contract Term"
-          : String(year);
+      : periodMode === "todate"
+        ? "Project to Date"
+        : periodMode === "lifetime"
+          ? "Lifetime"
+          : periodMode === "term"
+            ? "Contract Term"
+            : String(year);
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -1020,7 +1075,7 @@ export default function ProjectBudgetDetailPage() {
             {burnSummary}
             {project.budget_monthly_reset ? " · this month" : ""}
           </p>
-          <BurnBar burn={burn} />
+          <BurnBar burn={burn} settings={state.organization_settings} />
           <dl className="mt-4 grid gap-3 sm:grid-cols-3">
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
@@ -1126,7 +1181,7 @@ export default function ProjectBudgetDetailPage() {
           {isRetainer ? (
             <>
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap gap-2">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setRetainerTab("calendar")}
@@ -1138,7 +1193,7 @@ export default function ProjectBudgetDetailPage() {
                     )}
                   >
                     <ChartLine size={14} strokeWidth={2} />
-                    {year} Calendar
+                    {periodMode === "term" ? "Calendar" : `${year} Calendar`}
                   </button>
                   <button
                     type="button"
@@ -1153,8 +1208,11 @@ export default function ProjectBudgetDetailPage() {
                     <ChartColumn size={14} strokeWidth={2} />
                     {chartUnit === "amount" ? "Spend Per Week" : "Hours Per Week"}
                   </button>
+                  {scheduleOutsideDates ? (
+                    <OutsideDatesChartNote className="min-w-[12rem] flex-1 text-right" />
+                  ) : null}
                 </div>
-                {retainerTab === "calendar" ? (
+                {retainerTab === "calendar" && periodMode !== "term" ? (
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
@@ -1177,10 +1235,10 @@ export default function ProjectBudgetDetailPage() {
               </div>
               {retainerTab === "calendar" ? (
                 <ProjectYearBurnChart
-                  bars={yearBars}
+                  bars={periodMode === "term" ? termBars : yearBars}
                   unit={chartUnit}
                   monthlyCap={monthlyCap}
-                  year={year}
+                  year={periodMode === "term" ? undefined : year}
                   selectedMonthKey={selectedMonthKey}
                   onMonthSelect={handleMonthSelect}
                 />
@@ -1200,19 +1258,30 @@ export default function ProjectBudgetDetailPage() {
               budgetAmount={mode === "amount" ? project.budget_amount : null}
               contractorBaseline={contractorBaseline}
               profitLine={profitLine}
+              outsideDatesNote={scheduleOutsideDates}
             />
           )}
         </section>
 
         <div className="space-y-4">
           <ul className="flex flex-wrap gap-2" role="tablist" aria-label="Period">
-            <li>
-              <PeriodChip
-                label="Month"
-                selected={periodMode === "month"}
-                onSelect={() => setPeriodMode("month")}
-              />
-            </li>
+            {isRetainer ? (
+              <li>
+                <PeriodChip
+                  label="Month"
+                  selected={periodMode === "month"}
+                  onSelect={() => setPeriodMode("month")}
+                />
+              </li>
+            ) : (
+              <li>
+                <PeriodChip
+                  label="Project to Date"
+                  selected={periodMode === "todate"}
+                  onSelect={() => setPeriodMode("todate")}
+                />
+              </li>
+            )}
             <li>
               <PeriodChip
                 label="Year"

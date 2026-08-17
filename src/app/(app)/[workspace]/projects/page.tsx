@@ -972,7 +972,7 @@ function ProjectCard({
   const isSandbox = Boolean(project.sandbox_mode);
   const burn =
     burnProp ?? budgetBurn(project, state.assignments, state.people);
-  const health = budgetHealth(burn);
+  const health = budgetHealth(burn, state.organization_settings);
   const today = format(startOfDay(new Date()), "yyyy-MM-dd");
   const overallPct = projectDateProgress(project, today);
   const manager =
@@ -1035,7 +1035,11 @@ function ProjectCard({
               >
                 Total {burn.totalHours}h
               </div>
-              <BurnBar burn={burn} compact />
+              <BurnBar
+                burn={burn}
+                compact
+                settings={state.organization_settings}
+              />
             </div>
           </>
         )}

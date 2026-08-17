@@ -187,7 +187,7 @@ function BudgetsReportContent() {
         const burn = burns.get(project.id);
         if (!burn || burn.mode === "none") continue;
         tracked += 1;
-        const health = budgetHealth(burn);
+        const health = budgetHealth(burn, state.organization_settings);
         if (health === "healthy") healthy += 1;
         else if (health === "near") near += 1;
         else if (health === "over") over += 1;
@@ -200,7 +200,7 @@ function BudgetsReportContent() {
       near,
       over,
     };
-  }, [filtered, burns, burnsReady]);
+  }, [filtered, burns, burnsReady, state.organization_settings]);
 
   const displayProjects = useMemo(() => {
     if (healthFilter === "all") return filtered;
@@ -210,9 +210,9 @@ function BudgetsReportContent() {
       if (!burn) return false;
       if (healthFilter === "tracked") return burn.mode !== "none";
       if (burn.mode === "none") return false;
-      return budgetHealth(burn) === healthFilter;
+      return budgetHealth(burn, state.organization_settings) === healthFilter;
     });
-  }, [filtered, healthFilter, burns, burnsReady]);
+  }, [filtered, healthFilter, burns, burnsReady, state.organization_settings]);
 
   const groups = useMemo(() => {
     const byClient = new Map<string | null, Project[]>();

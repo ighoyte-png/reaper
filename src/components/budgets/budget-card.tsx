@@ -249,7 +249,11 @@ export function BudgetCard({
               compact
             />
           ) : (
-            <BurnBar burn={burn} compact />
+            <BurnBar
+              burn={burn}
+              compact
+              settings={state.organization_settings}
+            />
           )}
         </div>
         <div className="border-t border-[var(--border)] pt-3">

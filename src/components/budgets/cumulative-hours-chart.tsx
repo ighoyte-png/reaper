@@ -55,7 +55,22 @@ function ChartLegend({
   );
 }
 
-/** Project progress / hours-per-week charts matching budget detail layout. */
+export const OUTSIDE_DATES_CHART_NOTE =
+  "*Time has been booked on the schedule that is outside the start and end dates of this project and is not reflected in this chart.";
+
+export function OutsideDatesChartNote({ className }: { className?: string }) {
+  return (
+    <p
+      className={cn(
+        "min-w-0 text-[10px] leading-snug text-[var(--status-near)]",
+        className,
+      )}
+    >
+      {OUTSIDE_DATES_CHART_NOTE}
+    </p>
+  );
+}
+
 export function ProjectProgressCharts({
   points,
   budgetHours,
@@ -63,6 +78,7 @@ export function ProjectProgressCharts({
   unit = "hours",
   contractorBaseline = 0,
   profitLine = null,
+  outsideDatesNote = false,
   className,
 }: {
   points: WeeklyProgressPoint[];
@@ -73,6 +89,8 @@ export function ProjectProgressCharts({
   contractorBaseline?: number;
   /** Fixed-fee target-cost line (e.g. 75% of fee). */
   profitLine?: number | null;
+  /** Confirmed schedule hours sit outside project start/end. */
+  outsideDatesNote?: boolean;
   className?: string;
 }) {
   const [tab, setTab] = useState<ChartTab>("progress");
@@ -81,15 +99,22 @@ export function ProjectProgressCharts({
 
   if (points.length === 0) {
     return (
-      <p className={cn("text-sm text-[var(--text-muted)]", className)}>
-        No schedule dates to chart yet.
-      </p>
+      <div className={cn(className)}>
+        {outsideDatesNote ? (
+          <div className="mb-3">
+            <OutsideDatesChartNote />
+          </div>
+        ) : null}
+        <p className="text-sm text-[var(--text-muted)]">
+          No schedule dates to chart yet.
+        </p>
+      </div>
     );
   }
 
   return (
     <div className={cn(className)}>
-      <div className="mb-3 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <ChartTabButton
           active={tab === "progress"}
           onClick={() => setTab("progress")}
@@ -102,6 +127,9 @@ export function ProjectProgressCharts({
           icon={<ChartColumn size={14} strokeWidth={2} />}
           label={isAmount ? "Spend Per Week" : "Hours Per Week"}
         />
+        {outsideDatesNote ? (
+          <OutsideDatesChartNote className="flex-1 text-right sm:ml-auto" />
+        ) : null}
       </div>
       {tab === "progress" ? (
         <>

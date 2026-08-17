@@ -1,6 +1,6 @@
 import type { OrganizationSettings, Project } from "@/lib/types";
 
-/** Spec defaults — keep in sync with organization_settings table defaults. */
+/** Spec defaults. Amount warning matches target cost % (25% margin → 75). Existing DB rows may still store 76 until Target Profit Margin is re-saved. */
 export const DEFAULT_ORG_BUDGET_SETTINGS: OrganizationSettings = {
   organization_id: "",
   default_cost_rate: 50,
@@ -8,7 +8,7 @@ export const DEFAULT_ORG_BUDGET_SETTINGS: OrganizationSettings = {
   hours_warning_pct: 90,
   hours_over_pct: 100,
   target_profit_margin_pct: 25,
-  amount_warning_pct: 76,
+  amount_warning_pct: 75,
   amount_over_pct: 100,
   capacity_low_max_pct: 60,
   capacity_near_pct: 85,
@@ -106,8 +106,8 @@ export function syncAmountWarningFromMargin(
   const healthyMax = targetCostPct({
     target_profit_margin_pct: targetProfitMarginPct,
   });
-  // Warning band starts at the first integer above healthy max (e.g. 76 after 75).
-  return Math.min(99, Math.floor(healthyMax) + 1);
+  // Orange starts at the target cost % (exact ≥ warning). 25% margin → 75.
+  return Math.min(99, Math.max(0, healthyMax));
 }
 
 /** Breakpoints for capacityLevel() from org Admin settings. */

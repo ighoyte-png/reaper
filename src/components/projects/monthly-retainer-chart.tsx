@@ -334,7 +334,16 @@ export function ProjectYearBurnChart({
   /** Paint contractor hours as internal (blue) — client portal only. */
   blendContractors?: boolean;
 }) {
-  const labelYear = year ?? bars[0]?.year;
+  const uniqueYears = new Set(bars.map((b) => b.year));
+  const labelYear =
+    year !== undefined
+      ? year
+      : uniqueYears.size === 1
+        ? bars[0]?.year
+        : undefined;
+  const overflow = bars.length > 12;
+  const barMinPx = compact ? 28 : 36;
+  const multiYear = uniqueYears.size > 1;
   const cap = monthlyCap ?? 0;
   const maxValue = Math.max(
     cap,
@@ -376,93 +385,103 @@ export function ProjectYearBurnChart({
             : `Monthly ${unit === "amount" ? "spend" : "usage"}`}
         </p>
       ) : null}
-      <div
-        className={cn(
-          "flex items-end gap-1.5 sm:gap-2",
-          compact ? "mb-0.5 h-4" : "mb-1",
-        )}
-      >
-        {bars.map((bar) => {
-          const { total } = displaySplit(bar);
-          return (
-            <div
-              key={`v-${bar.key}`}
-              className="min-w-0 flex-1 text-center"
-              title={`${bar.label}: ${formatValue(total)}${
-                cap > 0 ? ` / ${formatValue(cap)}` : ""
-              }`}
-            >
-              <span
-                className={cn(
-                  "block max-w-full truncate tabular-nums text-[var(--text-muted)]",
-                  compact ? "text-[8px]" : "text-[9px] sm:text-[10px]",
-                )}
-              >
-                {total > 0 ? formatValue(total) : "·"}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div
-        className={cn(
-          "relative flex gap-1.5 sm:gap-2",
-          compact ? "h-16" : "h-44",
-        )}
-      >
-        {showCapLine ? (
+      <div className={cn(overflow && "overflow-x-auto")}>
+        <div
+          style={
+            overflow ? { minWidth: bars.length * barMinPx } : undefined
+          }
+        >
           <div
-            className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-[#ef4444]"
-            style={{ bottom: `${capPct}%` }}
-            aria-hidden
-          />
-        ) : null}
-        {bars.map((bar) => {
-          const {
-            used,
-            future,
-            contractorUsed,
-            contractorFuture,
-            contractor,
-            total,
-          } = displaySplit(bar);
-          return (
-            <MonthBarColumn
-              key={bar.key}
-              bar={bar}
-              unit={unit}
-              total={total}
-              used={used}
-              future={future}
-              contractorUsed={contractorUsed}
-              contractorFuture={contractorFuture}
-              contractor={contractor}
-              maxValue={maxValue}
-              cap={cap}
-              showCapLine={showCapLine}
-              compact={compact}
-              selected={selectedMonthKey === bar.key}
-              onMonthSelect={onMonthSelect}
-            />
-          );
-        })}
-      </div>
-      <div className="mt-1 flex gap-1.5 sm:gap-2">
-        {bars.map((bar) => (
-          <div key={`l-${bar.key}`} className="min-w-0 flex-1 text-center">
-            <span
-              className={cn(
-                "block truncate text-[var(--text-muted)]",
-                compact ? "text-[8px]" : "text-[8px] sm:text-[10px]",
-                isFutureMonth(bar.year, bar.monthIndex) && "italic",
-                selectedMonthKey === bar.key &&
-                  "font-semibold text-[var(--text)]",
-              )}
-            >
-              {bar.label.split(" ")[0]}
-            </span>
+            className={cn(
+              "flex items-end gap-1.5 sm:gap-2",
+              compact ? "mb-0.5 h-4" : "mb-1",
+            )}
+          >
+            {bars.map((bar) => {
+              const { total } = displaySplit(bar);
+              return (
+                <div
+                  key={`v-${bar.key}`}
+                  className="min-w-0 flex-1 text-center"
+                  title={`${bar.label}: ${formatValue(total)}${
+                    cap > 0 ? ` / ${formatValue(cap)}` : ""
+                  }`}
+                >
+                  <span
+                    className={cn(
+                      "block max-w-full truncate tabular-nums text-[var(--text-muted)]",
+                      compact ? "text-[8px]" : "text-[9px] sm:text-[10px]",
+                    )}
+                  >
+                    {total > 0 ? formatValue(total) : "·"}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ))}
+          <div
+            className={cn(
+              "relative flex gap-1.5 sm:gap-2",
+              compact ? "h-16" : "h-44",
+            )}
+          >
+            {showCapLine ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-[#ef4444]"
+                style={{ bottom: `${capPct}%` }}
+                aria-hidden
+              />
+            ) : null}
+            {bars.map((bar) => {
+              const {
+                used,
+                future,
+                contractorUsed,
+                contractorFuture,
+                contractor,
+                total,
+              } = displaySplit(bar);
+              return (
+                <MonthBarColumn
+                  key={bar.key}
+                  bar={bar}
+                  unit={unit}
+                  total={total}
+                  used={used}
+                  future={future}
+                  contractorUsed={contractorUsed}
+                  contractorFuture={contractorFuture}
+                  contractor={contractor}
+                  maxValue={maxValue}
+                  cap={cap}
+                  showCapLine={showCapLine}
+                  compact={compact}
+                  selected={selectedMonthKey === bar.key}
+                  onMonthSelect={onMonthSelect}
+                />
+              );
+            })}
+          </div>
+          <div className="mt-1 flex gap-1.5 sm:gap-2">
+            {bars.map((bar) => (
+              <div key={`l-${bar.key}`} className="min-w-0 flex-1 text-center">
+                <span
+                  className={cn(
+                    "block truncate text-[var(--text-muted)]",
+                    compact ? "text-[8px]" : "text-[8px] sm:text-[10px]",
+                    isFutureMonth(bar.year, bar.monthIndex) && "italic",
+                    selectedMonthKey === bar.key &&
+                      "font-semibold text-[var(--text)]",
+                  )}
+                >
+                  {multiYear
+                    ? `${bar.label.split(" ")[0]} ${String(bar.year).slice(2)}`
+                    : bar.label.split(" ")[0]}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
       {!compact ? (
         showCapLine ? (

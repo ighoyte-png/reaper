@@ -1,4 +1,11 @@
-import { addMonths, addWeeks, endOfMonth, format, startOfMonth } from "date-fns";
+import {
+  addDays,
+  addMonths,
+  addWeeks,
+  endOfMonth,
+  format,
+  startOfMonth,
+} from "date-fns";
 import type {
   Assignment,
   BudgetBurn,
@@ -1855,16 +1862,18 @@ export function monthlyHourBars(
   return out;
 }
 
-/** Jan–Dec bars for the given calendar year (hours or $ by budget mode). */
-export function calendarYearBars(
+/** Inclusive month bars from rangeStart through rangeEnd (any year span). */
+export function calendarRangeBars(
   project: Project,
   assignments: Assignment[],
   people: Person[],
-  year: number,
+  rangeStart: string,
+  rangeEnd: string,
   asOf: Date = new Date(),
   projectMembers: ProjectMember[] = [],
   contractorExpenses: ProjectContractorExpense[] = [],
 ): MonthBurnBar[] {
+  if (rangeEnd < rangeStart) return [];
   const mode = normalizeBudgetMode(
     project.budget_mode,
     project.budget_hours,
@@ -1876,7 +1885,20 @@ export function calendarYearBars(
       : project.budget_hours ?? 0
     : 0;
   const out: MonthBurnBar[] = [];
-  for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+  const start = new Date(
+    Number(rangeStart.slice(0, 4)),
+    Number(rangeStart.slice(5, 7)) - 1,
+    1,
+  );
+  const end = new Date(
+    Number(rangeEnd.slice(0, 4)),
+    Number(rangeEnd.slice(5, 7)) - 1,
+    1,
+  );
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    const year = cursor.getFullYear();
+    const monthIndex = cursor.getMonth();
     const d = new Date(year, monthIndex, 1);
     const split = monthBurnSplit(
       project,
@@ -1889,7 +1911,6 @@ export function calendarYearBars(
       contractorExpenses,
     );
     const value = mode === "amount" ? split.plannedAmount : split.plannedHours;
-    const cap = monthlyCap;
     out.push({
       key: format(d, "yyyy-MM"),
       label: format(d, "MMM yyyy"),
@@ -1908,12 +1929,35 @@ export function calendarYearBars(
       contractorUsedAmount: split.contractorUsedAmount,
       contractorFutureAmount: split.contractorFutureAmount,
       value,
-      cap,
+      cap: monthlyCap,
       budgetHours: mode === "hours" ? monthlyCap : 0,
-      pct: cap <= 0 ? 0 : Math.min(999, (value / cap) * 100),
+      pct: monthlyCap <= 0 ? 0 : Math.min(999, (value / monthlyCap) * 100),
     });
+    cursor = new Date(year, monthIndex + 1, 1);
   }
   return out;
+}
+
+/** Jan–Dec bars for the given calendar year (hours or $ by budget mode). */
+export function calendarYearBars(
+  project: Project,
+  assignments: Assignment[],
+  people: Person[],
+  year: number,
+  asOf: Date = new Date(),
+  projectMembers: ProjectMember[] = [],
+  contractorExpenses: ProjectContractorExpense[] = [],
+): MonthBurnBar[] {
+  return calendarRangeBars(
+    project,
+    assignments,
+    people,
+    toDateKey(new Date(year, 0, 1)),
+    toDateKey(endOfMonth(new Date(year, 11, 1))),
+    asOf,
+    projectMembers,
+    contractorExpenses,
+  );
 }
 
 /** @deprecated Prefer calendarYearBars — kept for callers expecting hours-only. */
@@ -2186,6 +2230,59 @@ export function projectDateSpan(
     startKey: project.start_date ?? min,
     endKey: project.end_date ?? max,
   };
+}
+
+/** Start date (or earliest confirmed assignment) through today. */
+export function projectToDateSpan(
+  project: Project,
+  assignments: Assignment[],
+  asOf: Date = new Date(),
+): { startKey: string; endKey: string } | null {
+  let startKey = project.start_date;
+  if (!startKey) {
+    for (const a of assignments) {
+      if (a.project_id !== project.id || a.status !== "confirmed") continue;
+      if (!startKey || a.start_date < startKey) startKey = a.start_date;
+    }
+  }
+  if (!startKey) return null;
+  return { startKey, endKey: toDateKey(asOf) };
+}
+
+/**
+ * True when confirmed hours fall strictly before start_date or after end_date.
+ * False when neither project date is set.
+ */
+export function scheduleOutsideProjectDates(
+  project: Pick<Project, "id" | "start_date" | "end_date">,
+  assignments: Assignment[],
+): boolean {
+  const start = project.start_date;
+  const end = project.end_date;
+  if (!start && !end) return false;
+  if (start) {
+    const beforeEnd = toDateKey(addDays(parseISOSafe(start), -1));
+    if (
+      projectHoursInDateRange(project.id, assignments, "1970-01-01", beforeEnd) >
+      0
+    ) {
+      return true;
+    }
+  }
+  if (end) {
+    const afterStart = toDateKey(addDays(parseISOSafe(end), 1));
+    if (
+      projectHoursInDateRange(
+        project.id,
+        assignments,
+        afterStart,
+        "2099-12-31",
+      ) > 0
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function parseISOSafe(key: string): Date {

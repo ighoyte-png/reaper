@@ -2511,7 +2511,7 @@ export function ScheduleGrid() {
 
         {canManage && selectedBurn && selectedProject && (
           <div className="border-b border-[var(--border)] px-3 py-2 sm:px-5">
-            <BurnBar burn={selectedBurn} />
+            <BurnBar burn={selectedBurn} settings={state.organization_settings} />
           </div>
         )}
 
@@ -4442,7 +4442,7 @@ export function ScheduleGrid() {
                     </Link>
                     <span
                       className={cn(
-                        budgetHealth(burn) === "over" &&
+                        budgetHealth(burn, state.organization_settings) === "over" &&
                           "text-[var(--status-over)]",
                       )}
                     >
@@ -4453,7 +4453,7 @@ export function ScheduleGrid() {
                           : `${formatHours(Math.max(0, burn.remainingHours))} left`}
                     </span>
                   </div>
-                  <BurnBar burn={burn} />
+                  <BurnBar burn={burn} settings={state.organization_settings} />
                 </div>
               );
             })()}
@@ -4623,7 +4623,7 @@ export function ScheduleGrid() {
                           </div>
                         </div>
                       </div>
-                      <BurnBar burn={burn} />
+                      <BurnBar burn={burn} settings={state.organization_settings} />
                     </button>
                   );
                 })

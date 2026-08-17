@@ -228,14 +228,14 @@ export function AdminBudgetSettingsForm({
         <p className="text-xs text-[var(--text-muted)]">
           Burn is labor cost (hours × cost rate) + expenses vs the fixed fee.
           Target profit margin {draft.target_profit_margin_pct}% means healthy
-          cost burn stays at or below {healthyCost}%.
+          cost burn stays below {healthyCost}%.
         </p>
         <ThresholdPreview
           warningPct={draft.amount_warning_pct}
           overPct={draft.amount_over_pct}
           labels={{
-            healthy: `On target 0–${healthyCost}%`,
-            warning: `Eroding ${draft.amount_warning_pct}–${Math.max(0, draft.amount_over_pct - 0.01).toFixed(0)}%`,
+            healthy: `On target below ${draft.amount_warning_pct}%`,
+            warning: `Eroding from ${draft.amount_warning_pct}%`,
             over: `Over ≥${draft.amount_over_pct}%`,
           }}
         />

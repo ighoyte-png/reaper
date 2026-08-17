@@ -39,7 +39,7 @@ import {
   podsForPerson,
   podsManagedBy,
 } from "@/lib/domain/pods";
-import type { BudgetBurn, Project } from "@/lib/types";
+import type { BudgetBurn, OrganizationSettings, Project } from "@/lib/types";
 import {
   availableHoursInRange,
   capacityLevel,
@@ -348,7 +348,7 @@ function ReportsPageContent() {
         const burn =
           burns.get(p.id) ?? budgetBurn(p, state.assignments, state.people);
         if (burn.mode === "none") return null;
-        const health = budgetHealth(burn);
+        const health = budgetHealth(burn, state.organization_settings);
         if (health === "healthy") healthy += 1;
         else if (health === "near") near += 1;
         else if (health === "over") over += 1;
@@ -371,7 +371,7 @@ function ReportsPageContent() {
       over,
       rows,
     };
-  }, [scopedProjects, state.assignments, state.people, state.clients, burns]);
+  }, [scopedProjects, state.assignments, state.people, state.clients, state.organization_settings, burns]);
 
   const timelines = useMemo(() => {
     const rows = scopedProjects
@@ -494,6 +494,7 @@ function ReportsPageContent() {
                   data={budgets}
                   plannedHours={plannedHoursAcrossSchedule}
                   budgetHref={budgetHref}
+                  settings={state.organization_settings}
                   loading={!burnsReady}
                 />
               )
@@ -801,6 +802,7 @@ function BudgetsOverview({
   data,
   plannedHours,
   budgetHref,
+  settings,
   loading = false,
 }: {
   data: {
@@ -819,6 +821,7 @@ function BudgetsOverview({
   };
   plannedHours: number;
   budgetHref: (project: Pick<Project, "client_id" | "slug">) => string;
+  settings: OrganizationSettings;
   loading?: boolean;
 }) {
   if (loading) {
@@ -884,7 +887,11 @@ function BudgetsOverview({
                   {Math.round(row.pct)}%
                 </span>
               </div>
-              <BurnBar burn={row.burn} compact />
+              <BurnBar
+                burn={row.burn}
+                compact
+                settings={settings}
+              />
             </Link>
           ))}
         </div>

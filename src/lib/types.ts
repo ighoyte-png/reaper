@@ -49,9 +49,9 @@ export interface OrganizationSettings {
   hours_warning_pct: number;
   /** Hours mode: red when planned exceeds this % (default 100). */
   hours_over_pct: number;
-  /** Fixed fee: target gross margin % (default 25 → healthy cost burn ≤ 75%). */
+  /** Fixed fee: target gross margin % (default 25 → healthy cost burn < 75%). */
   target_profit_margin_pct: number;
-  /** Fixed fee: orange starts at this % of fee burned as cost (default 76). */
+  /** Fixed fee: orange starts at this % of fee burned as cost (default 75). */
   amount_warning_pct: number;
   /** Fixed fee: red at this % of fee (default 100). */
   amount_over_pct: number;
