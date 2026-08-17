@@ -886,18 +886,16 @@ export default function ProjectBudgetDetailPage() {
   const settings = state.organization_settings;
   const projectCur = projectCurrency(project, settings.currency_enabled);
   const activeView = viewCurrency ?? projectCur;
-  const money = (n: number) =>
-    formatMoney(
-      convertAmount(
-        n,
-        projectCur,
-        activeView,
-        settings.usd_to_cad_rate,
-        settings.currency_enabled,
-      ),
+  const fx = (n: number) =>
+    convertAmount(
+      n,
+      projectCur,
       activeView,
+      settings.usd_to_cad_rate,
       settings.currency_enabled,
     );
+  const money = (n: number) =>
+    formatMoney(fx(n), activeView, settings.currency_enabled);
   const displayBurn = convertBurnToCurrency(
     burn,
     projectCur,
@@ -914,36 +912,32 @@ export default function ProjectBudgetDetailPage() {
   const showAmountMetrics = mode === "amount";
   const monthlyCap = isMonthlyRetainerBudget(project)
     ? mode === "amount"
-      ? convertAmount(
-          project.budget_amount ?? 0,
-          projectCur,
-          activeView,
-          settings.usd_to_cad_rate,
-          settings.currency_enabled,
-        )
+      ? fx(project.budget_amount ?? 0)
       : project.budget_hours ?? 0
     : undefined;
 
   const viewBars = (bars: MonthBurnBar[]) => {
     if (chartUnit !== "amount" || !settings.currency_enabled) return bars;
-    const c = (n: number) =>
-      convertAmount(
-        n,
-        projectCur,
-        activeView,
-        settings.usd_to_cad_rate,
-        true,
-      );
     return bars.map((bar) => ({
       ...bar,
-      plannedAmount: c(bar.plannedAmount),
-      usedAmount: c(bar.usedAmount),
-      futureAmount: c(bar.futureAmount),
-      contractorAmount: c(bar.contractorAmount),
-      contractorUsedAmount: c(bar.contractorUsedAmount),
-      contractorFutureAmount: c(bar.contractorFutureAmount),
-      value: c(bar.value),
-      cap: c(bar.cap),
+      plannedAmount: fx(bar.plannedAmount),
+      usedAmount: fx(bar.usedAmount),
+      futureAmount: fx(bar.futureAmount),
+      contractorAmount: fx(bar.contractorAmount),
+      contractorUsedAmount: fx(bar.contractorUsedAmount),
+      contractorFutureAmount: fx(bar.contractorFutureAmount),
+      value: fx(bar.value),
+      cap: fx(bar.cap),
+    }));
+  };
+
+  const viewWeeklyPoints = (points: typeof weeklyPoints) => {
+    if (chartUnit !== "amount" || !settings.currency_enabled) return points;
+    return points.map((p) => ({
+      ...p,
+      weekAmount: fx(p.weekAmount),
+      cumulativeUsedAmount: fx(p.cumulativeUsedAmount),
+      cumulativePlannedAmount: fx(p.cumulativePlannedAmount),
     }));
   };
 
@@ -1026,8 +1020,10 @@ export default function ProjectBudgetDetailPage() {
 
   const profitLine =
     mode === "amount" && (project.budget_amount ?? 0) > 0
-      ? (project.budget_amount ?? 0) *
-        (targetCostPct(state.organization_settings) / 100)
+      ? fx(
+          (project.budget_amount ?? 0) *
+            (targetCostPct(state.organization_settings) / 100),
+        )
       : null;
 
   const periodRemainingLabel =
@@ -1353,15 +1349,17 @@ export default function ProjectBudgetDetailPage() {
                   No schedule dates to chart yet.
                 </p>
               ) : (
-                <HoursPerWeekChart points={weeklyPoints} unit={chartUnit} />
+                <HoursPerWeekChart points={viewWeeklyPoints(weeklyPoints)} unit={chartUnit} />
               )}
             </>
           ) : (
             <ProjectProgressCharts
-              points={weeklyPoints}
+              points={viewWeeklyPoints(weeklyPoints)}
               unit={chartUnit}
               budgetHours={mode === "hours" ? project.budget_hours : null}
-              budgetAmount={mode === "amount" ? project.budget_amount : null}
+              budgetAmount={
+                mode === "amount" ? fx(project.budget_amount ?? 0) : null
+              }
               contractorBaseline={contractorBaseline}
               profitLine={profitLine}
               outsideDatesNote={scheduleOutsideDates}
