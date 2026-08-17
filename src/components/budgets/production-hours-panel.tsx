@@ -6,6 +6,8 @@ import {
   formatHours,
   formatMoney,
 } from "@/lib/domain/budget";
+import { projectCurrency } from "@/lib/domain/currency";
+import { CurrencyChip } from "@/components/ui/currency-chip";
 import {
   productionHoursEstimate,
   type ProductionHoursEstimate,
@@ -204,6 +206,8 @@ export function ProductionHoursPanel({
   }
 
   const remainingClass = healthTextClass(estimate.health);
+  const moneyCur = projectCurrency(fullProject, settings.currency_enabled);
+  const showCurrencyChip = Boolean(settings.currency_enabled);
 
   return (
     <div className="space-y-3">
@@ -255,8 +259,9 @@ export function ProductionHoursPanel({
         </div>
         <div className="flex justify-between gap-2 text-xs">
           <dt className="text-[var(--text-muted)]">Avg Team Cost Rate</dt>
-          <dd className="tabular-nums text-[var(--text-muted)]">
+          <dd className="inline-flex items-center gap-1.5 tabular-nums text-[var(--text-muted)]">
             ~{formatMoney(estimate.avgCostRate)}/hr
+            {showCurrencyChip ? <CurrencyChip currency={moneyCur} /> : null}
           </dd>
         </div>
       </dl>

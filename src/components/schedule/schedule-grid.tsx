@@ -4464,29 +4464,42 @@ export function ScheduleGrid() {
                   (e) => e.project_id === project.id,
                 ),
               );
+              const settings = state.organization_settings;
+              const moneyCur = projectCurrency(
+                project,
+                settings.currency_enabled,
+              );
+              const showCurrencyChip =
+                settings.currency_enabled &&
+                (burn.mode === "amount" || burn.mode === "hours");
               return (
                 <div>
-                  <div className="mb-1 flex justify-between text-xs">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-xs">
                     <Link
                       href={projectHref(project)}
-                      className="font-medium hover:text-[var(--accent)] hover:underline"
+                      className="min-w-0 truncate font-medium hover:text-[var(--accent)] hover:underline"
                     >
                       {project.name}
                     </Link>
-                    <span
-                      className={cn(
-                        budgetHealth(burn, state.organization_settings) === "over" &&
-                          "text-[var(--status-over)]",
-                      )}
-                    >
-                      {burn.mode === "none"
-                        ? "No budget"
-                        : burn.mode === "amount"
-                          ? `${formatMoney(Math.max(0, burn.remainingAmount ?? 0))} left`
-                          : `${formatHours(Math.max(0, burn.remainingHours))} left`}
+                    <span className="inline-flex shrink-0 items-center gap-1.5">
+                      {showCurrencyChip ? (
+                        <CurrencyChip currency={moneyCur} />
+                      ) : null}
+                      <span
+                        className={cn(
+                          budgetHealth(burn, settings) === "over" &&
+                            "text-[var(--status-over)]",
+                        )}
+                      >
+                        {burn.mode === "none"
+                          ? "No budget"
+                          : burn.mode === "amount"
+                            ? `${formatMoney(Math.max(0, burn.remainingAmount ?? 0))} left`
+                            : `${formatHours(Math.max(0, burn.remainingHours))} left`}
+                      </span>
                     </span>
                   </div>
-                  <BurnBar burn={burn} settings={state.organization_settings} />
+                  <BurnBar burn={burn} settings={settings} />
                 </div>
               );
             })()}
