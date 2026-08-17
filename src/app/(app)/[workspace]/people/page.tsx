@@ -14,6 +14,7 @@ import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
+import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
