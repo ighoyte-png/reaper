@@ -4103,7 +4103,7 @@ function TaskRow({
         ) : null}
         {!ctx.compact ? (
           <>
-            {hasDeepLink ? (
+            {isFocused ? (
               <button
                 type="button"
                 className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--accent)] hover:bg-[var(--accent)]/15 hover:text-[var(--accent)]"
@@ -4454,6 +4454,7 @@ function CommentItem({
     comment.updated_at && comment.updated_at !== comment.created_at,
   );
   const showActions = isAuthor || canDelete;
+  const isFocusedComment = ctx.focusCommentId === comment.id;
 
   function startEdit() {
     setDraft(comment.body);
@@ -4497,7 +4498,7 @@ function CommentItem({
       id={`task-comment-${comment.id}`}
       className={cn(
         "group relative rounded-md border p-5 text-sm",
-        ctx.focusCommentId === comment.id
+        isFocusedComment
           ? "border-[var(--accent)]/25 bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25"
           : "border-[var(--border)] bg-[var(--comment-bg)]",
       )}
@@ -4514,21 +4515,37 @@ function CommentItem({
           color={authorPerson ? personAvatarColor(authorPerson) : null}
         />
         <div className="min-w-0 flex-1">
-          <div className="mb-3">
-            <p className="truncate text-sm font-semibold leading-snug text-[var(--text)]">
-              {displayName}
-            </p>
-            <div className="mt-0.5 space-y-0.5 text-xs tabular-nums text-[var(--text-muted)]">
-              <p>
-                {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold leading-snug text-[var(--text)]">
+                {displayName}
               </p>
-              {wasEdited && comment.updated_at ? (
-                <p className="italic">
-                  Edited{" "}
-                  {format(parseISO(comment.updated_at), "MMM d, yyyy · h:mm a")}
+              <div className="mt-0.5 space-y-0.5 text-xs tabular-nums text-[var(--text-muted)]">
+                <p>
+                  {format(parseISO(comment.created_at), "MMM d, yyyy · h:mm a")}
                 </p>
-              ) : null}
+                {wasEdited && comment.updated_at ? (
+                  <p className="italic">
+                    Edited{" "}
+                    {format(
+                      parseISO(comment.updated_at),
+                      "MMM d, yyyy · h:mm a",
+                    )}
+                  </p>
+                ) : null}
+              </div>
             </div>
+            {isFocusedComment && !ctx.compact ? (
+              <button
+                type="button"
+                className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--accent)] hover:bg-[var(--accent)]/15 hover:text-[var(--accent)]"
+                onClick={() => ctx.clearFocusTask()}
+                aria-label="Clear highlight"
+                title="Clear highlight"
+              >
+                <Eye size={14} />
+              </button>
+            ) : null}
           </div>
           {editing ? (
             <div className="space-y-2.5">
