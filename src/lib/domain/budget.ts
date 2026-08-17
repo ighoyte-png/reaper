@@ -958,6 +958,28 @@ export function isMonthlyRetainerBudget(
   return mode === "hours" || mode === "amount";
 }
 
+/** Native-currency listed budget for landing totals: fee, or hours × bill rate. */
+export function listedBudgetAmount(
+  project: Pick<
+    Project,
+    "budget_mode" | "budget_hours" | "budget_amount" | "bill_rate"
+  >,
+  settings: Pick<OrganizationSettings, "default_bill_rate"> = DEFAULT_ORG_BUDGET_SETTINGS,
+): number {
+  const mode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  if (mode === "amount") return Math.max(0, project.budget_amount ?? 0);
+  if (mode === "hours") {
+    const hours = project.budget_hours ?? 0;
+    if (hours <= 0) return 0;
+    return hours * effectiveProjectBillRate(project, settings);
+  }
+  return 0;
+}
+
 /** Sidebar / Progress card heading for retainers vs standard projects. */
 export function projectProgressCardTitle(monthlyRetainer: boolean): string {
   return monthlyRetainer ? "Contract" : "Progress";

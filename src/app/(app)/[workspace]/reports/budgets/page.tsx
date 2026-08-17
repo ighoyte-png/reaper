@@ -17,7 +17,7 @@ import type { BudgetStatusFilter } from "@/components/reports/budget-status-line
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
-import { budgetHealth, formatMoney, normalizeBudgetMode } from "@/lib/domain/budget";
+import { budgetHealth, formatMoney, listedBudgetAmount } from "@/lib/domain/budget";
 import { convertAmount, projectCurrency } from "@/lib/domain/currency";
 import { CurrencyChip } from "@/components/ui/currency-chip";
 import { useBudgetHref } from "@/lib/hooks/use-app-href";
@@ -180,13 +180,7 @@ function BudgetsReportContent() {
     let monthlyUsd = 0;
     let monthlyCad = 0;
     for (const project of filtered) {
-      const mode = normalizeBudgetMode(
-        project.budget_mode,
-        project.budget_hours,
-        project.budget_amount,
-      );
-      if (mode !== "amount") continue;
-      const amount = project.budget_amount ?? 0;
+      const amount = listedBudgetAmount(project, settings);
       if (amount <= 0) continue;
       const from = projectCurrency(project, settings.currency_enabled);
       const usd = convertAmount(

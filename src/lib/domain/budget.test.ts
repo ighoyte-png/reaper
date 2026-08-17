@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   budgetHealth,
   calendarRangeBars,
+  listedBudgetAmount,
   projectToDateSpan,
   scheduleOutsideProjectDates,
   weeklyProgressSeries,
 } from "@/lib/domain/budget";
+import { convertAmount } from "@/lib/domain/currency";
 import {
   DEFAULT_ORG_BUDGET_SETTINGS,
   syncAmountWarningFromMargin,
@@ -217,5 +219,94 @@ describe("weeklyProgressSeries ended project", () => {
     expect(last.weekStartKey).toBe("2026-08-10");
     expect(last.cumulativeUsed).toBe(14);
     expect(last.cumulativePlanned).toBe(14);
+  });
+});
+
+describe("listedBudgetAmount", () => {
+  it("uses hours × bill rate for monthly hours retainers", () => {
+    expect(
+      listedBudgetAmount(
+        makeProject({
+          budget_mode: "hours",
+          budget_hours: 15,
+          bill_rate: 150,
+          budget_monthly_reset: true,
+        }),
+      ),
+    ).toBe(2250);
+  });
+
+  it("uses hours × bill rate for non-repeating hours projects", () => {
+    expect(
+      listedBudgetAmount(
+        makeProject({
+          budget_mode: "hours",
+          budget_hours: 40,
+          bill_rate: 175,
+          budget_monthly_reset: false,
+        }),
+      ),
+    ).toBe(7000);
+  });
+
+  it("returns dollar budget amount in amount mode", () => {
+    expect(
+      listedBudgetAmount(
+        makeProject({
+          budget_mode: "amount",
+          budget_hours: null,
+          budget_amount: 12000,
+          bill_rate: null,
+        }),
+      ),
+    ).toBe(12000);
+  });
+
+  it("returns 0 when hours are missing or zero", () => {
+    expect(
+      listedBudgetAmount(
+        makeProject({
+          budget_mode: "hours",
+          budget_hours: 0,
+          bill_rate: 150,
+        }),
+      ),
+    ).toBe(0);
+    expect(
+      listedBudgetAmount(
+        makeProject({
+          budget_mode: "hours",
+          budget_hours: null,
+          bill_rate: 150,
+        }),
+      ),
+    ).toBe(0);
+  });
+
+  it("falls back to the org default bill rate when the project rate is unset", () => {
+    expect(
+      listedBudgetAmount(
+        makeProject({
+          budget_mode: "hours",
+          budget_hours: 10,
+          bill_rate: null,
+        }),
+        { ...DEFAULT_ORG_BUDGET_SETTINGS, default_bill_rate: 200 },
+      ),
+    ).toBe(2000);
+  });
+
+  it("converts CAD hours revenue the same as CAD dollar amounts", () => {
+    const native = listedBudgetAmount(
+      makeProject({
+        budget_mode: "hours",
+        budget_hours: 15,
+        bill_rate: 150,
+        currency: "cad",
+      }),
+    );
+    expect(
+      convertAmount(native, "cad", "usd", 1.35, true),
+    ).toBeCloseTo(2250 / 1.35);
   });
 });

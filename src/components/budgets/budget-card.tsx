@@ -196,7 +196,8 @@ export function BudgetCard({
   const money = (n: number) =>
     formatMoney(n, moneyCur, settings.currency_enabled);
   const showCurrencyChip =
-    settings.currency_enabled && burn.mode === "amount";
+    settings.currency_enabled &&
+    (burn.mode === "amount" || burn.mode === "hours");
 
   const summary =
     burn.mode === "none"
