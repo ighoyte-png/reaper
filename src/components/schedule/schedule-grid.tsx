@@ -5,6 +5,7 @@ import Link from "next/link";
 import { format, isWeekend, parseISO, addWeeks, subWeeks } from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { CurrencyChip } from "@/components/ui/currency-chip";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass, Modal, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
@@ -44,6 +45,7 @@ import {
   normalizeBudgetMode,
   roundAssignmentHours,
 } from "@/lib/domain/budget";
+import { projectCurrency } from "@/lib/domain/currency";
 import { ProductionHoursPanel } from "@/components/budgets/production-hours-panel";
 import {
   availableHoursInRange,
@@ -4602,6 +4604,14 @@ export function ScheduleGrid() {
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm text-[var(--text-muted)]">
             {canManage ? (
               sidebarProjectBurns.map(({ project, client, burn }) => {
+                  const settings = state.organization_settings;
+                  const moneyCur = projectCurrency(
+                    project,
+                    settings.currency_enabled,
+                  );
+                  const showCurrencyChip =
+                    settings.currency_enabled &&
+                    (burn.mode === "amount" || burn.mode === "hours");
                   return (
                     <button
                       key={project.id}
@@ -4622,8 +4632,11 @@ export function ScheduleGrid() {
                             {project.name}
                           </div>
                         </div>
+                        {showCurrencyChip ? (
+                          <CurrencyChip currency={moneyCur} />
+                        ) : null}
                       </div>
-                      <BurnBar burn={burn} settings={state.organization_settings} />
+                      <BurnBar burn={burn} settings={settings} />
                     </button>
                   );
                 })

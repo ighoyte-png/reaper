@@ -65,7 +65,11 @@ export function BurnBar({
   const totalUsed = isAmount ? burn.usedAmount : burn.usedHours;
   const totalFuture = isAmount ? burn.futureAmount : burn.futureHours;
   const money = (n: number) =>
-    formatMoney(n, currency, settings.currency_enabled);
+    formatMoney(
+      n,
+      currency,
+      Boolean(settings.currency_enabled && currency),
+    );
 
   return (
     <div className="min-w-0">
