@@ -4,6 +4,7 @@ import {
   calendarRangeBars,
   projectToDateSpan,
   scheduleOutsideProjectDates,
+  weeklyProgressSeries,
 } from "@/lib/domain/budget";
 import {
   DEFAULT_ORG_BUDGET_SETTINGS,
@@ -181,5 +182,40 @@ describe("projectToDateSpan", () => {
         new Date("2026-08-17T12:00:00"),
       ),
     ).toEqual({ startKey: "2026-03-02", endKey: "2026-08-17" });
+  });
+});
+
+describe("weeklyProgressSeries ended project", () => {
+  it("counts past assignments as used when the term ended last week", () => {
+    const asOf = new Date("2026-08-17T12:00:00");
+    const points = weeklyProgressSeries(
+      makeProject({
+        start_date: "2026-07-13",
+        end_date: "2026-08-14",
+        budget_monthly_reset: false,
+      }),
+      [
+        makeAssignment({
+          start_date: "2026-08-07",
+          end_date: "2026-08-07",
+          hours_per_day: 6,
+        }),
+        makeAssignment({
+          id: "a2",
+          start_date: "2026-08-14",
+          end_date: "2026-08-14",
+          hours_per_day: 8,
+        }),
+      ],
+      asOf,
+    );
+
+    expect(points.length).toBeGreaterThan(0);
+    expect(points.every((p) => !p.isCurrentWeek && !p.isFuture)).toBe(true);
+
+    const last = points[points.length - 1]!;
+    expect(last.weekStartKey).toBe("2026-08-10");
+    expect(last.cumulativeUsed).toBe(14);
+    expect(last.cumulativePlanned).toBe(14);
   });
 });

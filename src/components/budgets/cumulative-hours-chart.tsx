@@ -10,6 +10,7 @@ import {
   formatMoney,
   type WeeklyProgressPoint,
 } from "@/lib/domain/budget";
+import { progressLineHandoffIndex } from "@/components/budgets/progress-line-handoff";
 
 type ChartTab = "progress" | "weekly";
 
@@ -294,14 +295,7 @@ function ProgressLineChart({
     return unit === "amount" ? niceAmountAxis(padded) : niceHourAxis(padded);
   }, [dataMax, hasBudget, budgetCap, hasProfit, profitLine, unit]);
 
-  const currentIdx = points.findIndex((p) => p.isCurrentWeek);
-  const handoffIdx =
-    currentIdx >= 0
-      ? currentIdx
-      : Math.max(
-          0,
-          points.findIndex((p) => p.isFuture) - 1,
-        );
+  const handoffIdx = progressLineHandoffIndex(points);
 
   function xAt(i: number) {
     if (points.length <= 1) return padL + plotW / 2;
