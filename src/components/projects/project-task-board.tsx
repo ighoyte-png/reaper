@@ -144,6 +144,8 @@ type Props = {
   allowSelect?: boolean;
   /** Deep-link: scroll to this task, highlight it, and expand notes/comments. */
   focusTaskId?: string | null;
+  /** When set with focusTaskId, highlight/scroll the comment instead of the task. */
+  focusCommentId?: string | null;
   /** When set, only show tasks assigned to this person. */
   assigneePersonId?: string | null;
   /**
@@ -199,7 +201,9 @@ type BoardCtx = {
   hubTaskHref: ((taskId: string) => string) | null;
   /** Deep-link target from ?task= — slight blue highlight. */
   focusTaskId: string | null;
-  /** Remove deep-link highlight (clears ?task= from the URL). */
+  /** Deep-link target from ?comment= — highlight/scroll this comment. */
+  focusCommentId: string | null;
+  /** Remove deep-link highlight (clears ?task= / ?comment= from the URL). */
   clearFocusTask: () => void;
   /** Clear deep-link highlight when interacting with a different task. */
   clearFocusIfOtherTask: (taskId: string) => void;
@@ -368,6 +372,7 @@ export function ProjectTaskBoard({
   allowCardView = false,
   allowSelect: allowSelectProp,
   focusTaskId = null,
+  focusCommentId = null,
   assigneePersonId = null,
   templatesSlot,
   onGanttActiveChange,
@@ -399,9 +404,10 @@ export function ProjectTaskBoard({
   const searchParams = useSearchParams();
 
   function clearFocusTask() {
-    if (!searchParams.has("task")) return;
+    if (!searchParams.has("task") && !searchParams.has("comment")) return;
     const params = new URLSearchParams(searchParams.toString());
     params.delete("task");
+    params.delete("comment");
     const qs = params.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
@@ -1445,13 +1451,30 @@ export function ProjectTaskBoard({
       }
       markMentionsReadForTask(focusTaskId, viewerPersonId);
     }
-    const t = window.setTimeout(() => {
-      document
-        .getElementById(`task-row-${focusTaskId}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 150);
-    return () => window.clearTimeout(t);
-  }, [focusTaskId, visibleTasks, state.tasks, projectId, viewerPersonId, unreadTaskThreadIds, dismissTaskThreadUnread, markMentionsReadForTask]);
+    const targetId = focusCommentId
+      ? `task-comment-${focusCommentId}`
+      : `task-row-${focusTaskId}`;
+    let attempts = 0;
+    let retry: number | undefined;
+    let cancelled = false;
+    const tryScroll = () => {
+      if (cancelled) return;
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (attempts++ < 12) {
+        retry = window.setTimeout(tryScroll, 50);
+      }
+    };
+    const t = window.setTimeout(tryScroll, 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+      if (retry != null) window.clearTimeout(retry);
+    };
+  }, [focusTaskId, focusCommentId, visibleTasks, state.tasks, projectId, viewerPersonId, unreadTaskThreadIds, dismissTaskThreadUnread, markMentionsReadForTask]);
 
   // Re-open comment panels that have an unfinished local reply draft.
   useEffect(() => {
@@ -1851,6 +1874,7 @@ export function ProjectTaskBoard({
         ? (taskId: string) => projectHref(project, `task=${taskId}`)
         : null,
     focusTaskId,
+    focusCommentId,
     clearFocusTask,
     clearFocusIfOtherTask,
     selected,
@@ -3749,7 +3773,8 @@ function TaskRow({
   const multiSelectDrag =
     listManage && ctx.selected.size > 1 && isSelected;
   const canEditStatus = ctx.allowStatusEdit;
-  const isFocused = ctx.focusTaskId === task.id;
+  const hasDeepLink = ctx.focusTaskId === task.id;
+  const isFocused = hasDeepLink && !ctx.focusCommentId;
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
   const [descExpanded, setDescExpanded] = useState(false);
   const ordered =
@@ -4078,7 +4103,7 @@ function TaskRow({
         ) : null}
         {!ctx.compact ? (
           <>
-            {isFocused ? (
+            {hasDeepLink ? (
               <button
                 type="button"
                 className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--accent)] hover:bg-[var(--accent)]/15 hover:text-[var(--accent)]"
@@ -4468,7 +4493,15 @@ function CommentItem({
   }
 
   return (
-    <div className="group relative rounded-md border border-[var(--border)] bg-[var(--comment-bg)] p-5 text-sm">
+    <div
+      id={`task-comment-${comment.id}`}
+      className={cn(
+        "group relative rounded-md border p-5 text-sm",
+        ctx.focusCommentId === comment.id
+          ? "border-[var(--accent)]/25 bg-[var(--accent)]/15 ring-1 ring-[var(--accent)]/25"
+          : "border-[var(--border)] bg-[var(--comment-bg)]",
+      )}
+    >
       <div className="flex items-start gap-3">
         <PersonAvatar
           avatarUrl={authorPerson?.avatar_url}

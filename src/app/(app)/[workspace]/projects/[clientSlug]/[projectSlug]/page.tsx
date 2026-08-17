@@ -90,6 +90,7 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const focusTaskId = searchParams.get("task");
+  const focusCommentId = searchParams.get("comment");
   const focusMilestoneId = searchParams.get("milestone");
   const appHref = useAppHref();
   const budgetHref = useBudgetHref();
@@ -518,6 +519,7 @@ export default function ProjectDetailPage() {
               projectId={project.id}
               allowCardView
               focusTaskId={focusTaskId}
+              focusCommentId={focusCommentId}
               onGanttActiveChange={setGanttViewActive}
               templatesSlot={
                 ganttViewActive

@@ -981,7 +981,7 @@ export default function DashboardPage() {
           kind: "comment",
           title: task.title,
           bodyHtml: comment.body,
-          href: projectHref(project, `task=${task.id}`),
+          href: projectHref(project, `task=${task.id}&comment=${comment.id}`),
           dateKey: (comment.created_at || unread.created_at || "").slice(0, 10),
           project,
           client,

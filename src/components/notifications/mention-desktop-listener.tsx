@@ -136,7 +136,7 @@ export function MentionDesktopListener() {
 
             const href =
               project && task
-                ? projectHref(project, `task=${task.id}`)
+                ? projectHref(project, `task=${task.id}&comment=${commentId}`)
                 : appHref("/dashboard");
 
             void showDesktopNotification(authorName, {
