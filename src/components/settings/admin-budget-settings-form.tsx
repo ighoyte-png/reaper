@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Field, inputClass } from "@/components/ui/form";
+import { Field, inputClass, ConfirmDialog } from "@/components/ui/form";
 import { buttonClass } from "@/components/ui/button";
 import type { OrganizationSettings } from "@/lib/types";
 import {
@@ -72,13 +72,22 @@ function ThresholdPreview({
 export function AdminBudgetSettingsForm({
   initial,
   onSave,
+  onEnableMultiCurrency,
+  onDisableMultiCurrency,
 }: {
   initial: OrganizationSettings;
   onSave: (next: OrganizationSettings) => Promise<void>;
+  onEnableMultiCurrency?: (next: OrganizationSettings) => Promise<void>;
+  onDisableMultiCurrency?: (
+    next: OrganizationSettings,
+    saveAs: "usd" | "cad",
+  ) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmEnable, setConfirmEnable] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState(false);
 
   useEffect(() => {
     setDraft(initial);
@@ -99,11 +108,29 @@ export function AdminBudgetSettingsForm({
       ? null
       : "Capacity thresholds must increase: low < near < over.";
 
-  const invalid = Boolean(hoursErr || amountErr || capacityErr);
+  const rateInvalid =
+    draft.currency_enabled &&
+    (!(draft.usd_to_cad_rate > 0) || !Number.isFinite(draft.usd_to_cad_rate));
 
-  async function save() {
+  const invalid = Boolean(hoursErr || amountErr || capacityErr || rateInvalid);
+
+  async function persist() {
     if (invalid) {
-      setError(hoursErr || amountErr || capacityErr || "Invalid settings");
+      setError(
+        rateInvalid
+          ? "USD → CAD rate must be greater than 0."
+          : hoursErr || amountErr || capacityErr || "Invalid settings",
+      );
+      return;
+    }
+    const turningOn = !initial.currency_enabled && draft.currency_enabled;
+    const turningOff = initial.currency_enabled && !draft.currency_enabled;
+    if (turningOn && onEnableMultiCurrency) {
+      setConfirmEnable(true);
+      return;
+    }
+    if (turningOff && onDisableMultiCurrency) {
+      setConfirmDisable(true);
       return;
     }
     setBusy(true);
@@ -115,6 +142,10 @@ export function AdminBudgetSettingsForm({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function save() {
+    void persist();
   }
 
   function setMargin(margin: number) {
@@ -350,6 +381,48 @@ export function AdminBudgetSettingsForm({
         ) : null}
       </section>
 
+      <section className="space-y-3">
+        <h3 className="text-sm font-semibold">Currency Settings</h3>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.currency_enabled}
+            onChange={(e) =>
+              setDraft({ ...draft, currency_enabled: e.target.checked })
+            }
+          />
+          <span>
+            Multi-currency (USD / CAD)
+            <span className="block text-xs text-[var(--text-muted)]">
+              Store amounts in their native currency and convert at report time
+              using a live USD → CAD rate.
+            </span>
+          </span>
+        </label>
+        {draft.currency_enabled ? (
+          <Field label="1 USD = CAD">
+            <input
+              type="number"
+              min={0.01}
+              step={0.01}
+              className={inputClass}
+              value={draft.usd_to_cad_rate}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  usd_to_cad_rate: Number(e.target.value) || 0,
+                })
+              }
+            />
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Changing this rate recalculates reports. Org default rates stay
+              USD.
+            </p>
+          </Field>
+        ) : null}
+      </section>
+
       {error ? (
         <p className="text-sm text-[var(--status-over)]">{error}</p>
       ) : null}
@@ -364,6 +437,71 @@ export function AdminBudgetSettingsForm({
           {busy ? "Saving…" : "Save Admin Settings"}
         </button>
       </div>
+
+      {confirmEnable ? (
+        <ConfirmDialog
+          title="Enable multi-currency"
+          message="Saving this selection will convert this account to multi currency. All existing dollar values already entered on people cost rates, contractors and project budgets will default to USD. Updating contractors default currency will update their currency on all projects used."
+          confirmLabel="Enable"
+          tone="accent"
+          confirmDisabled={busy}
+          onCancel={() => setConfirmEnable(false)}
+          onConfirm={() => {
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await onEnableMultiCurrency?.(draft);
+                setConfirmEnable(false);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Could not enable");
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+        />
+      ) : null}
+
+      {confirmDisable ? (
+        <ConfirmDialog
+          title="Remove multi-currency"
+          message="Removing multi currency option requires you to choose a final currency conversion. Choose Save as USD or Save as CAD, and all conversions will be made, where applicable, to reconcile your budgets."
+          confirmLabel="Save as USD"
+          altConfirmLabel="Save as CAD"
+          tone="accent"
+          confirmDisabled={busy}
+          onCancel={() => setConfirmDisable(false)}
+          onConfirm={() => {
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await onDisableMultiCurrency?.(draft, "usd");
+                setConfirmDisable(false);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Could not disable");
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+          onAltConfirm={() => {
+            void (async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await onDisableMultiCurrency?.(draft, "cad");
+                setConfirmDisable(false);
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "Could not disable");
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

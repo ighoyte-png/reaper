@@ -18,7 +18,11 @@ import {
   ORG_ID,
 } from "@/lib/demo/seed";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
-import type { OrganizationSettings } from "@/lib/types";
+import {
+  convertPersonFeesAndExpenses,
+  convertWorkspaceToCurrency,
+  stampPeopleAndProjectsUsd,
+} from "@/lib/domain/currency";
 import {
   applyRealtimeTableEvent,
   isTrueLocalEcho,
@@ -116,6 +120,9 @@ import {
   updateOrganizationNameRow,
   updateOrganizationSlugRow,
   upsertOrganizationSettingsRow,
+  enableOrgMultiCurrencyRow,
+  disableOrgMultiCurrencyRow,
+  convertPersonRelatedMoneyRow,
   updateProfileRoleRow,
   switchOrganizationRpc,
   upsertPodRow,
@@ -176,6 +183,8 @@ import type {
   LeaveKind,
   MentionTarget,
   Milestone,
+  OrganizationSettings,
+  CurrencyCode,
   Person,
   Profile,
   Pod,
@@ -238,6 +247,8 @@ function loadDemoState(): DemoState {
         ),
         is_contractor: Boolean((p as Person).is_contractor),
         deleted_at: (p as Person).deleted_at ?? null,
+        currency:
+          p.currency === "usd" || p.currency === "cad" ? p.currency : null,
       })),
       leave_days: (parsed.leave_days ?? seed.leave_days).map((l) => ({
         ...l,
@@ -265,6 +276,8 @@ function loadDemoState(): DemoState {
         share_token: p.share_token ?? null,
         hide_from_public_share: Boolean(p.hide_from_public_share),
         sandbox_mode: Boolean(p.sandbox_mode),
+        currency:
+          p.currency === "usd" || p.currency === "cad" ? p.currency : null,
       })),
       clients: (parsed.clients ?? seed.clients).map((c) => ({
         ...c,
@@ -565,6 +578,8 @@ interface DataContextValue {
   updateOrganizationSlug: (slug: string) => Promise<void>;
   /** Managers: update org-wide rates and budget/capacity thresholds. */
   upsertOrganizationSettings: (settings: OrganizationSettings) => Promise<void>;
+  enableOrgMultiCurrency: (usdToCadRate: number) => Promise<void>;
+  disableOrgMultiCurrency: (saveAs: CurrencyCode) => Promise<void>;
   /** Admin-only: change a profile's role (member / manager / admin). */
   updateProfileRole: (profileId: string, role: Role) => Promise<void>;
   /** Switch active workspace by org id or slug; reloads bootstrap and navigates. */
@@ -2643,6 +2658,41 @@ export function DataProvider({ children }: { children: ReactNode }) {
           );
         }
       },
+      enableOrgMultiCurrency: async (usdToCadRate) => {
+        if (!manage) return;
+        const rate = Math.round(usdToCadRate * 100) / 100;
+        if (!(rate > 0)) return;
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            enableOrgMultiCurrencyRow(supabaseRef.current!, rate),
+          );
+          await refreshSupabase(supabaseRef.current!);
+          return;
+        }
+        patch((prev) => {
+          const stamped = stampPeopleAndProjectsUsd(prev);
+          return {
+            ...stamped,
+            organization_settings: {
+              ...prev.organization_settings,
+              currency_enabled: true,
+              usd_to_cad_rate: rate,
+            },
+          };
+        });
+      },
+      disableOrgMultiCurrency: async (saveAs) => {
+        if (!manage) return;
+        if (saveAs !== "usd" && saveAs !== "cad") return;
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            disableOrgMultiCurrencyRow(supabaseRef.current!, saveAs),
+          );
+          await refreshSupabase(supabaseRef.current!);
+          return;
+        }
+        patch((prev) => convertWorkspaceToCurrency(prev, saveAs));
+      },
       updateProfileRole: async (profileId, role) => {
         if (!manage) return;
         const target = state.profiles.find((p) => p.id === profileId);
@@ -3087,18 +3137,55 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       upsertPerson: async (person) => {
         const row = withOrg(person) as Person;
+        const prevPerson = state.people.find((p) => p.id === row.id);
+        const from =
+          prevPerson?.currency === "cad" || prevPerson?.currency === "usd"
+            ? prevPerson.currency
+            : null;
+        const to =
+          row.currency === "cad" || row.currency === "usd" ? row.currency : null;
+        const currencyChanged =
+          Boolean(state.organization_settings.currency_enabled) &&
+          from &&
+          to &&
+          from !== to;
         patch((prev) => {
           const exists = prev.people.some((p) => p.id === row.id);
+          let members = prev.project_members;
+          let expenses = prev.project_contractor_expenses;
+          if (currencyChanged && from && to) {
+            const converted = convertPersonFeesAndExpenses(
+              members,
+              expenses,
+              row.id,
+              from,
+              to,
+              prev.organization_settings.usd_to_cad_rate,
+            );
+            members = converted.members;
+            expenses = converted.expenses;
+          }
           return {
             ...prev,
             people: exists
               ? prev.people.map((p) => (p.id === row.id ? row : p))
               : [...prev.people, row],
+            project_members: members,
+            project_contractor_expenses: expenses,
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
-          // Strip ephemeral signed URLs in the API layer when attachment id is set.
           await runRemote(() => upsertPersonRow(supabaseRef.current!, row));
+          if (currencyChanged && from && to) {
+            await runRemote(() =>
+              convertPersonRelatedMoneyRow(
+                supabaseRef.current!,
+                row.id,
+                from,
+                to,
+              ),
+            );
+          }
         }
       },
       updatePersonAvatar: async (personId, avatarUrl, avatarAttachmentId) => {

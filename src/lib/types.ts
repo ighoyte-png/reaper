@@ -1,4 +1,5 @@
 export type Role = "admin" | "manager" | "member";
+export type CurrencyCode = "usd" | "cad";
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
 export type ClientStatus = "active" | "archived";
 export type BudgetMode = "none" | "hours" | "amount";
@@ -61,6 +62,10 @@ export interface OrganizationSettings {
   capacity_near_pct: number;
   /** Utilization: over starts here. */
   capacity_over_pct: number;
+  /** When true, people/projects have native USD or CAD amounts. */
+  currency_enabled: boolean;
+  /** Live Admin rate: 1 USD = usd_to_cad_rate CAD. */
+  usd_to_cad_rate: number;
 }
 
 export interface Profile {
@@ -136,6 +141,8 @@ export interface Project {
    * no schedule/budget/reporting (except My Tasks / mentions / Task Pulse).
    */
   sandbox_mode: boolean;
+  /** Native budget/bill currency when org multi-currency is on; null while off. */
+  currency?: CurrencyCode | null;
 }
 
 export interface Milestone {
@@ -366,6 +373,8 @@ export interface Person {
   avatar_color: string | null;
   /** Soft-deleted teammates remain for history but are hidden from directories. */
   deleted_at: string | null;
+  /** Native cost-rate / contractor-fee currency when multi-currency is on. */
+  currency?: CurrencyCode | null;
 }
 
 export interface HolidayCalendar {

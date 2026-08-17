@@ -7,7 +7,9 @@ import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { personAvatarColor } from "@/lib/domain/people";
 import { podsManagedBy, sortPods } from "@/lib/domain/pods";
-import type { HolidayCalendar, Person, Pod, Profile, Role } from "@/lib/types";
+import type { CurrencyCode, HolidayCalendar, Person, Pod, Profile, Role } from "@/lib/types";
+import { convertAmount } from "@/lib/domain/currency";
+import { CurrencyToggle } from "@/components/ui/currency-chip";
 
 const BASE_TABS = [
   { id: "details", label: "Details" },
@@ -54,6 +56,8 @@ export function PersonForm({
   onCancel,
   onDelete,
   saveLabel,
+  currencyEnabled = false,
+  usdToCadRate = 1,
 }: {
   person: Omit<Person, "organization_id">;
   isNew: boolean;
@@ -77,6 +81,8 @@ export function PersonForm({
   onCancel: () => void;
   onDelete?: () => void;
   saveLabel: string;
+  currencyEnabled?: boolean;
+  usdToCadRate?: number;
 }) {
   const podsSorted = useMemo(() => sortPods(pods), [pods]);
   const showPodsTab = podsSorted.length > 0;
@@ -305,17 +311,43 @@ export function PersonForm({
                   />
                 </Field>
                 <Field label="Cost Rate">
-                  <input
-                    type="number"
-                    className={inputClass}
-                    value={person.cost_rate}
-                    onChange={(e) =>
-                      onChange({
-                        ...person,
-                        cost_rate: Number(e.target.value) || 0,
-                      })
-                    }
-                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      className={cn(inputClass, "min-w-0 flex-1")}
+                      value={person.cost_rate}
+                      onChange={(e) =>
+                        onChange({
+                          ...person,
+                          cost_rate: Number(e.target.value) || 0,
+                        })
+                      }
+                    />
+                    {currencyEnabled ? (
+                      <CurrencyToggle
+                        value={person.currency === "cad" ? "cad" : "usd"}
+                        onChange={(next: CurrencyCode) => {
+                          const from =
+                            person.currency === "cad" ? "cad" : "usd";
+                          if (from === next) {
+                            onChange({ ...person, currency: next });
+                            return;
+                          }
+                          onChange({
+                            ...person,
+                            currency: next,
+                            cost_rate: convertAmount(
+                              person.cost_rate,
+                              from,
+                              next,
+                              usdToCadRate,
+                              true,
+                            ),
+                          });
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 </Field>
               </div>
               <p className="text-xs text-[var(--text-muted)]">

@@ -57,7 +57,7 @@ import { cn } from "@/lib/cn";
 import type { Client, Project, ProjectStatus } from "@/lib/types";
 import type { ContractorTerms } from "@/lib/domain/contractor";
 
-function emptyProject(id: string): Omit<Project, "organization_id"> {
+function emptyProject(id: string, currencyEnabled = false): Omit<Project, "organization_id"> {
   return {
     id,
     client_id: null,
@@ -77,6 +77,7 @@ function emptyProject(id: string): Omit<Project, "organization_id"> {
     manager_person_id: null,
     hide_from_public_share: false,
     sandbox_mode: false,
+    currency: currencyEnabled ? "usd" : null,
   };
 }
 
@@ -167,7 +168,13 @@ function ProjectsPageContent() {
     setCreateTemplateId("");
     setPmDailyHours(null);
     setPmBaselineDates(null);
-    setEditing({ ...emptyProject(newId("proj")), ...partial });
+    setEditing({
+      ...emptyProject(
+        newId("proj"),
+        state.organization_settings.currency_enabled,
+      ),
+      ...partial,
+    });
   }
 
   function closeProjectForm() {

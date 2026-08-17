@@ -109,6 +109,8 @@ function mapProject(row: Record<string, unknown>): Project {
     share_token: row.share_token ? String(row.share_token) : null,
     hide_from_public_share: Boolean(row.hide_from_public_share),
     sandbox_mode: Boolean(row.sandbox_mode),
+    currency:
+      row.currency === "usd" || row.currency === "cad" ? row.currency : null,
   };
 }
 
@@ -394,6 +396,8 @@ function mapPerson(row: Record<string, unknown>): Person {
     is_contractor: Boolean(row.is_contractor),
     avatar_color: row.avatar_color ? String(row.avatar_color) : null,
     deleted_at: row.deleted_at ? String(row.deleted_at) : null,
+    currency:
+      row.currency === "usd" || row.currency === "cad" ? row.currency : null,
   };
 }
 
@@ -1937,11 +1941,66 @@ export async function upsertOrganizationSettingsRow(
     capacity_low_max_pct: settings.capacity_low_max_pct,
     capacity_near_pct: settings.capacity_near_pct,
     capacity_over_pct: settings.capacity_over_pct,
+    currency_enabled: Boolean(settings.currency_enabled),
+    usd_to_cad_rate: settings.usd_to_cad_rate,
     updated_at: new Date().toISOString(),
   };
   const { error } = await supabase
     .from("organization_settings")
     .upsert(payload, { onConflict: "organization_id" });
+  if (!error) return;
+  const missingCurrency =
+    /Could not find the '(currency_enabled|usd_to_cad_rate)' column/i.test(
+      error.message,
+    ) ||
+    (error.code === "PGRST204" &&
+      /(currency_enabled|usd_to_cad_rate)/i.test(error.message));
+  if (missingCurrency) {
+    const {
+      currency_enabled: _e,
+      usd_to_cad_rate: _r,
+      ...rest
+    } = payload;
+    const retry = await supabase
+      .from("organization_settings")
+      .upsert(rest, { onConflict: "organization_id" });
+    if (retry.error) throw retry.error;
+    return;
+  }
+  throw error;
+}
+
+export async function enableOrgMultiCurrencyRow(
+  supabase: SupabaseClient,
+  usdToCadRate?: number,
+) {
+  const { error } = await supabase.rpc("enable_org_multi_currency", {
+    p_usd_to_cad_rate: usdToCadRate ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function disableOrgMultiCurrencyRow(
+  supabase: SupabaseClient,
+  saveAs: "usd" | "cad",
+) {
+  const { error } = await supabase.rpc("disable_org_multi_currency", {
+    p_save_as: saveAs,
+  });
+  if (error) throw error;
+}
+
+export async function convertPersonRelatedMoneyRow(
+  supabase: SupabaseClient,
+  personId: string,
+  from: "usd" | "cad",
+  to: "usd" | "cad",
+) {
+  const { error } = await supabase.rpc("convert_person_related_money", {
+    p_person_id: personId,
+    p_from: from,
+    p_to: to,
+  });
   if (error) throw error;
 }
 
@@ -2090,6 +2149,9 @@ export async function upsertProjectRow(
     share_token: project.share_token ?? null,
     hide_from_public_share: Boolean(project.hide_from_public_share),
     sandbox_mode: Boolean(project.sandbox_mode),
+    currency: project.currency === "usd" || project.currency === "cad"
+      ? project.currency
+      : null,
   };
 
   const missingMonthly = (message: string, code?: string) =>
@@ -2591,6 +2653,10 @@ export async function upsertPersonRow(
     hide_from_utilization: Boolean(person.hide_from_utilization),
     is_contractor: Boolean(person.is_contractor),
     avatar_color: person.avatar_color || null,
+    currency:
+      person.currency === "usd" || person.currency === "cad"
+        ? person.currency
+        : null,
   };
   // R2 avatars: attachment id is source of truth; don't write ephemeral signed URLs.
   if (payload.avatar_attachment_id) {

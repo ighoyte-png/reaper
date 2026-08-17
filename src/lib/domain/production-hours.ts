@@ -20,8 +20,12 @@ import {
   isCommitContractor,
 } from "@/lib/domain/contractor";
 import {
+  costForHours,
+  personAmountToProject,
+  projectCurrency,
+} from "@/lib/domain/currency";
+import {
   DEFAULT_ORG_BUDGET_SETTINGS,
-  effectiveCostRate,
   targetCostPct,
 } from "@/lib/domain/org-settings";
 import { toDateKey } from "@/lib/domain/dates";
@@ -108,9 +112,10 @@ export function productionHoursEstimate(
     };
   }
 
+  const dest = projectCurrency(project, settings.currency_enabled);
   const avgCostRate =
     teamRatePeople.reduce(
-      (sum, p) => sum + effectiveCostRate(p, settings),
+      (sum, p) => sum + costForHours(p, 1, dest, settings),
       0,
     ) / teamRatePeople.length;
 
@@ -132,6 +137,7 @@ export function productionHoursEstimate(
       rangeStart,
       rangeEnd,
       project,
+      settings,
     );
     contractorAmount += expense.amount;
     contractorHoursEquiv += expense.hours;
@@ -151,7 +157,7 @@ export function productionHoursEstimate(
         asOf,
       );
       contractorHoursEquiv += leftoverHours;
-      contractorAmount += leftoverHours * effectiveCostRate(person, settings);
+      contractorAmount += costForHours(person, leftoverHours, dest, settings);
     }
   } else {
     for (const personId of rosterIds) {
@@ -160,7 +166,10 @@ export function productionHoursEstimate(
       const member = membersByPerson.get(personId);
       if (!isCommitContractor(person, member)) continue;
       const committed = contractorCommitted(person, member, { settings });
-      contractorAmount += committed.amount;
+      contractorAmount +=
+        committed.mode === "hours"
+          ? costForHours(person, committed.hours, dest, settings)
+          : personAmountToProject(committed.amount, person, project, settings);
       contractorHoursEquiv += committed.hours;
     }
   }

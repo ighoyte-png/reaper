@@ -1,6 +1,7 @@
 import { clsx } from "clsx";
 import type { BudgetBurn, OrganizationSettings } from "@/lib/types";
 import { budgetHealth, formatHours, formatMoney } from "@/lib/domain/budget";
+import type { CurrencyCode } from "@/lib/types";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
 
 const hatchStyle = {
@@ -12,10 +13,12 @@ export function BurnBar({
   burn,
   compact = false,
   settings = DEFAULT_ORG_BUDGET_SETTINGS,
+  currency = null,
 }: {
   burn: BudgetBurn;
   compact?: boolean;
   settings?: OrganizationSettings;
+  currency?: CurrencyCode | null;
 }) {
   if (burn.mode === "none") {
     if (compact) return null;
@@ -61,6 +64,8 @@ export function BurnBar({
 
   const totalUsed = isAmount ? burn.usedAmount : burn.usedHours;
   const totalFuture = isAmount ? burn.futureAmount : burn.futureHours;
+  const money = (n: number) =>
+    formatMoney(n, currency, settings.currency_enabled);
 
   return (
     <div className="min-w-0">
@@ -68,7 +73,7 @@ export function BurnBar({
         <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
           <span className="text-[var(--text-muted)]">
             {isAmount
-              ? `${formatMoney(burn.plannedAmount)} / ${formatMoney(burn.totalAmount ?? 0)}`
+              ? `${money(burn.plannedAmount)} / ${money(burn.totalAmount ?? 0)}`
               : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}`}
           </span>
           <span
@@ -81,8 +86,8 @@ export function BurnBar({
           >
             {isAmount
               ? burn.amountOverBy > 0
-                ? `${formatMoney(burn.amountOverBy)} over`
-                : `${formatMoney(Math.max(0, burn.remainingAmount ?? 0))} left`
+                ? `${money(burn.amountOverBy)} over`
+                : `${money(Math.max(0, burn.remainingAmount ?? 0))} left`
               : burn.overBy > 0
                 ? `${formatHours(burn.overBy)} over`
                 : `${formatHours(Math.max(0, burn.remainingHours))} left`}
@@ -97,7 +102,7 @@ export function BurnBar({
         title={
           totalFuture > 0
             ? isAmount
-              ? `${formatMoney(totalUsed)} used · ${formatMoney(totalFuture)} planned`
+              ? `${money(totalUsed)} used · ${money(totalFuture)} planned`
               : `${formatHours(totalUsed)} used · ${formatHours(totalFuture)} planned`
             : undefined
         }

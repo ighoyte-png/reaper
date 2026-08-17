@@ -67,6 +67,8 @@ export default function SettingsPage() {
     updateOrganizationName,
     updateOrganizationSlug,
     upsertOrganizationSettings,
+    enableOrgMultiCurrency,
+    disableOrgMultiCurrency,
     createAdditionalWorkspace,
     newId,
     updateDemoShare,
@@ -1305,6 +1307,27 @@ export default function SettingsPage() {
                   onSave={async (next) => {
                     await upsertOrganizationSettings(next);
                     push("Admin settings saved", "success");
+                  }}
+                  onEnableMultiCurrency={async (next) => {
+                    await upsertOrganizationSettings({
+                      ...next,
+                      currency_enabled: false,
+                    });
+                    await enableOrgMultiCurrency(next.usd_to_cad_rate);
+                    push("Multi-currency enabled", "success");
+                  }}
+                  onDisableMultiCurrency={async (next, saveAs) => {
+                    await upsertOrganizationSettings({
+                      ...next,
+                      currency_enabled: true,
+                    });
+                    await disableOrgMultiCurrency(saveAs);
+                    push(
+                      saveAs === "cad"
+                        ? "Saved as CAD and turned off multi-currency"
+                        : "Saved as USD and turned off multi-currency",
+                      "success",
+                    );
                   }}
                 />
               </div>

@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/nav/page-header";
 import { ContractorTag } from "@/components/projects/project-manager-person";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { BurnBar } from "@/components/ui/burn-bar";
+import { CurrencyChip, CurrencyToggle } from "@/components/ui/currency-chip";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { useData } from "@/lib/data/store";
 import { useAppHref, resolveProjectBySlugs, useProjectHref } from "@/lib/hooks/use-app-href";
@@ -52,12 +53,19 @@ import {
   isProjectBasisContractor,
 } from "@/lib/domain/contractor";
 import { remainingTargetCostAllowance, targetCostPct } from "@/lib/domain/org-settings";
+import {
+  convertAmount,
+  convertBurnToCurrency,
+  personAmountToProject,
+  personCurrency,
+  projectCurrency,
+} from "@/lib/domain/currency";
 import { projectPeriodEconomics } from "@/lib/domain/forecast";
 import { personAvatarColor } from "@/lib/domain/people";
 import { toDateKey } from "@/lib/domain/dates";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
-import type { ProjectMember } from "@/lib/types";
+import type { CurrencyCode, ProjectMember } from "@/lib/types";
 
 export default function ProjectBudgetDetailPage() {
   const params = useParams<{ clientSlug: string; projectSlug: string }>();
@@ -103,6 +111,7 @@ export default function ProjectBudgetDetailPage() {
   const [retainerTab, setRetainerTab] = useState<"calendar" | "weekly">(
     "calendar",
   );
+  const [viewCurrency, setViewCurrency] = useState<CurrencyCode | null>(null);
   const client = project
     ? state.clients.find((c) => c.id === project.client_id)
     : undefined;
@@ -181,6 +190,7 @@ export default function ProjectBudgetDetailPage() {
             new Date(),
             projectMembers,
             projectExpenses,
+            state.organization_settings,
           )
         : [],
     [
@@ -205,6 +215,7 @@ export default function ProjectBudgetDetailPage() {
             new Date(),
             projectMembers,
             projectExpenses,
+            state.organization_settings,
           )
         : [],
     [
@@ -233,6 +244,7 @@ export default function ProjectBudgetDetailPage() {
             new Date(),
             state.people,
             projectMembers,
+            state.organization_settings,
           )
         : [],
     [project, state.assignments, state.people, projectMembers],
@@ -253,6 +265,8 @@ export default function ProjectBudgetDetailPage() {
         state.people,
         false,
         { year, monthIndex: m },
+        state.organization_settings,
+        project,
       );
     }
     return { hours, amount };
@@ -536,6 +550,8 @@ export default function ProjectBudgetDetailPage() {
       dashUsedPlanned: boolean;
       is_contractor: boolean;
       notes?: string;
+      mixedCurrency?: boolean;
+      nativeCurrency?: CurrencyCode;
     };
     const staff = staffTeam.map((person) => {
       const split = personHoursSplitInRange(
@@ -594,10 +610,19 @@ export default function ProjectBudgetDetailPage() {
                 usedHours: 0,
                 plannedHours: 0,
                 totalHours: 0,
-                moneyAmount: line.amount,
+                moneyAmount: personAmountToProject(
+                  line.amount,
+                  person,
+                  project,
+                  state.organization_settings,
+                ),
                 dashUsedPlanned: true,
                 is_contractor: true,
                 notes: line.notes || undefined,
+            mixedCurrency:
+              state.organization_settings.currency_enabled &&
+              personCurrency(person, true) !== projectCurrency(project, true),
+            nativeCurrency: personCurrency(person, true),
               });
             }
           } else {
@@ -620,9 +645,18 @@ export default function ProjectBudgetDetailPage() {
                 usedHours: 0,
                 plannedHours: 0,
                 totalHours: 0,
-                moneyAmount: line.amount,
+                moneyAmount: personAmountToProject(
+                  line.amount,
+                  person,
+                  project,
+                  state.organization_settings,
+                ),
                 dashUsedPlanned: true,
                 is_contractor: true,
+            mixedCurrency:
+              state.organization_settings.currency_enabled &&
+              personCurrency(person, true) !== projectCurrency(project, true),
+            nativeCurrency: personCurrency(person, true),
               });
             }
           }
@@ -735,9 +769,18 @@ export default function ProjectBudgetDetailPage() {
             usedHours: 0,
             plannedHours: 0,
             totalHours: 0,
-            moneyAmount: committed.amount,
+            moneyAmount: personAmountToProject(
+              committed.amount,
+              person,
+              project,
+              state.organization_settings,
+            ),
             dashUsedPlanned: true,
             is_contractor: true,
+            mixedCurrency:
+              state.organization_settings.currency_enabled &&
+              personCurrency(person, true) !== projectCurrency(project, true),
+            nativeCurrency: personCurrency(person, true),
           });
         } else {
           contractors.push({
@@ -840,25 +883,75 @@ export default function ProjectBudgetDetailPage() {
     project.budget_hours,
     project.budget_amount,
   );
-  const health = budgetHealth(burn, state.organization_settings);
+  const settings = state.organization_settings;
+  const projectCur = projectCurrency(project, settings.currency_enabled);
+  const activeView = viewCurrency ?? projectCur;
+  const money = (n: number) =>
+    formatMoney(
+      convertAmount(
+        n,
+        projectCur,
+        activeView,
+        settings.usd_to_cad_rate,
+        settings.currency_enabled,
+      ),
+      activeView,
+      settings.currency_enabled,
+    );
+  const displayBurn = convertBurnToCurrency(
+    burn,
+    projectCur,
+    activeView,
+    settings,
+  );
+  const health = budgetHealth(burn, settings);
   const chartUnit = mode === "amount" ? "amount" : "hours";
   const contractorBaseline =
     chartUnit === "amount"
-      ? (burn.contractorAmount ?? 0)
+      ? (displayBurn.contractorAmount ?? 0)
       : (burn.contractorHours ?? 0);
   const showHoursMetrics = mode === "hours";
   const showAmountMetrics = mode === "amount";
   const monthlyCap = isMonthlyRetainerBudget(project)
     ? mode === "amount"
-      ? project.budget_amount ?? 0
+      ? convertAmount(
+          project.budget_amount ?? 0,
+          projectCur,
+          activeView,
+          settings.usd_to_cad_rate,
+          settings.currency_enabled,
+        )
       : project.budget_hours ?? 0
     : undefined;
+
+  const viewBars = (bars: MonthBurnBar[]) => {
+    if (chartUnit !== "amount" || !settings.currency_enabled) return bars;
+    const c = (n: number) =>
+      convertAmount(
+        n,
+        projectCur,
+        activeView,
+        settings.usd_to_cad_rate,
+        true,
+      );
+    return bars.map((bar) => ({
+      ...bar,
+      plannedAmount: c(bar.plannedAmount),
+      usedAmount: c(bar.usedAmount),
+      futureAmount: c(bar.futureAmount),
+      contractorAmount: c(bar.contractorAmount),
+      contractorUsedAmount: c(bar.contractorUsedAmount),
+      contractorFutureAmount: c(bar.contractorFutureAmount),
+      value: c(bar.value),
+      cap: c(bar.cap),
+    }));
+  };
 
   const burnSummary =
     burn.mode === "none"
       ? `${formatHours(burn.plannedHours)} planned`
       : burn.mode === "amount"
-        ? `${formatMoney(burn.plannedAmount)} / ${formatMoney(burn.totalAmount ?? 0)}`
+        ? `${money(burn.plannedAmount)} / ${money(burn.totalAmount ?? 0)}`
         : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}${
             burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
           }`;
@@ -943,7 +1036,7 @@ export default function ProjectBudgetDetailPage() {
       : showAmountMetrics
         ? periodRemainingAmount == null
           ? "—"
-          : formatMoney(periodRemainingAmount)
+          : money(periodRemainingAmount)
         : periodRemainingHours == null
           ? "—"
           : formatHours(periodRemainingHours);
@@ -1059,6 +1152,15 @@ export default function ProjectBudgetDetailPage() {
                   ? "Monthly Hours"
                   : "Hours Budget"}
           </span>
+          {settings.currency_enabled ? (
+            <>
+              <CurrencyChip currency={projectCur} />
+              <CurrencyToggle
+                value={activeView}
+                onChange={setViewCurrency}
+              />
+            </>
+          ) : null}
         </div>
 
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
@@ -1075,7 +1177,11 @@ export default function ProjectBudgetDetailPage() {
             {burnSummary}
             {project.budget_monthly_reset ? " · this month" : ""}
           </p>
-          <BurnBar burn={burn} settings={state.organization_settings} />
+          <BurnBar
+            burn={displayBurn}
+            settings={settings}
+            currency={activeView}
+          />
           <dl className="mt-4 grid gap-3 sm:grid-cols-3">
             <div>
               <dt className="text-xs text-[var(--text-muted)]">
@@ -1087,7 +1193,7 @@ export default function ProjectBudgetDetailPage() {
                       isRetainer ? burn.usedHours : hoursFx.hoursUsedToDate,
                     )
                   : showAmountMetrics
-                    ? formatMoney(burn.usedAmount)
+                    ? money(burn.usedAmount)
                     : formatHours(hoursFx.hoursUsedToDate)}
               </dd>
             </div>
@@ -1105,7 +1211,7 @@ export default function ProjectBudgetDetailPage() {
                         : hoursFx.hoursFuturePlanned,
                     )
                   : showAmountMetrics
-                    ? formatMoney(burn.futureAmount)
+                    ? money(burn.futureAmount)
                     : formatHours(hoursFx.hoursFuturePlanned)}
               </dd>
             </div>
@@ -1130,7 +1236,7 @@ export default function ProjectBudgetDetailPage() {
                   : showAmountMetrics
                     ? burn.remainingAmount == null
                       ? "—"
-                      : formatMoney(burn.remainingAmount)
+                      : money(burn.remainingAmount)
                     : "—"}
               </dd>
             </div>
@@ -1144,7 +1250,7 @@ export default function ProjectBudgetDetailPage() {
                 {mode === "none"
                   ? "—"
                   : mode === "amount"
-                    ? formatMoney(burn.totalAmount ?? 0)
+                    ? money(burn.totalAmount ?? 0)
                     : formatHours(burn.totalHours)}
               </dd>
             </div>
@@ -1156,7 +1262,7 @@ export default function ProjectBudgetDetailPage() {
                 {mode === "none"
                   ? "—"
                   : mode === "amount"
-                    ? formatMoney(burn.remainingAmount ?? 0)
+                    ? money(burn.remainingAmount ?? 0)
                     : formatHours(burn.remainingHours)}
               </dd>
             </div>
@@ -1167,10 +1273,10 @@ export default function ProjectBudgetDetailPage() {
               <dd className="mt-0.5 text-sm font-medium tabular-nums">
                 {isRetainer
                   ? mode === "amount"
-                    ? formatMoney(yearTotals.amount)
+                    ? money(yearTotals.amount)
                     : formatHours(yearTotals.hours)
                   : mode === "amount"
-                    ? formatMoney(burn.plannedAmount)
+                    ? money(burn.plannedAmount)
                     : formatHours(hoursFx.hoursTotalPlanned)}
               </dd>
             </div>
@@ -1235,7 +1341,7 @@ export default function ProjectBudgetDetailPage() {
               </div>
               {retainerTab === "calendar" ? (
                 <ProjectYearBurnChart
-                  bars={periodMode === "term" ? termBars : yearBars}
+                  bars={viewBars(periodMode === "term" ? termBars : yearBars)}
                   unit={chartUnit}
                   monthlyCap={monthlyCap}
                   year={periodMode === "term" ? undefined : year}
@@ -1342,7 +1448,7 @@ export default function ProjectBudgetDetailPage() {
                   {showHoursMetrics
                     ? formatHours(periodSplit?.usedHours ?? 0)
                     : showAmountMetrics
-                      ? formatMoney(periodSplit?.usedAmount ?? 0)
+                      ? money(periodSplit?.usedAmount ?? 0)
                       : formatHours(periodSplit?.usedHours ?? 0)}
                 </dd>
               </div>
@@ -1352,7 +1458,7 @@ export default function ProjectBudgetDetailPage() {
                   {showHoursMetrics
                     ? formatHours(periodSplit?.futureHours ?? 0)
                     : showAmountMetrics
-                      ? formatMoney(periodSplit?.futureAmount ?? 0)
+                      ? money(periodSplit?.futureAmount ?? 0)
                       : formatHours(periodSplit?.futureHours ?? 0)}
                 </dd>
               </div>
@@ -1366,12 +1472,12 @@ export default function ProjectBudgetDetailPage() {
                         {formatHours(periodRevenueCost.contractorHours)}
                         <span className="block text-[11px] font-normal text-[var(--text-muted)]">
                           {isRetainer
-                            ? `cost ${formatMoney(periodRevenueCost.contractorCost)}`
-                            : `billed ${formatMoney(periodRevenueCost.contractorRevenue)} · cost ${formatMoney(periodRevenueCost.contractorCost)}`}
+                            ? `cost ${money(periodRevenueCost.contractorCost)}`
+                            : `billed ${money(periodRevenueCost.contractorRevenue)} · cost ${money(periodRevenueCost.contractorCost)}`}
                         </span>
                       </>
                     ) : (
-                      formatMoney(periodRevenueCost.contractorCost)
+                      money(periodRevenueCost.contractorCost)
                     )}
                   </dd>
                 </div>
@@ -1400,7 +1506,7 @@ export default function ProjectBudgetDetailPage() {
                       marginToneClass,
                     )}
                   >
-                    {formatMoney(periodMargin)}
+                    {money(periodMargin)}
                     {periodMarginPct != null
                       ? ` (${periodMarginPct.toFixed(0)}%)`
                       : ""}
@@ -1418,7 +1524,7 @@ export default function ProjectBudgetDetailPage() {
                       targetCostLeft < 0 && "text-[var(--status-over)]",
                     )}
                   >
-                    {formatMoney(targetCostLeft)}
+                    {money(targetCostLeft)}
                   </dd>
                 </div>
               ) : null}
@@ -1428,8 +1534,8 @@ export default function ProjectBudgetDetailPage() {
                 </dt>
                 <dd className="tabular-nums text-[var(--text-muted)]">
                   {mode === "hours"
-                    ? `${formatMoney(periodRevenue)} / ${formatMoney(periodRevenueCost.cost)}`
-                    : formatMoney(periodRevenueCost.cost)}
+                    ? `${money(periodRevenue)} / ${money(periodRevenueCost.cost)}`
+                    : money(periodRevenueCost.cost)}
                 </dd>
               </div>
             </dl>
@@ -1457,7 +1563,7 @@ export default function ProjectBudgetDetailPage() {
                   </thead>
                   <tbody>
                     {teamPeriod.staff.map((row) => (
-                      <TeamRow key={row.id} row={row} />
+                      <TeamRow key={row.id} row={row} formatAmount={money} />
                     ))}
                     {teamPeriod.contractors.length > 0 ? (
                       <tr>
@@ -1470,7 +1576,7 @@ export default function ProjectBudgetDetailPage() {
                       </tr>
                     ) : null}
                     {teamPeriod.contractors.map((row) => (
-                      <TeamRow key={row.id} row={row} />
+                      <TeamRow key={row.id} row={row} formatAmount={money} />
                     ))}
                   </tbody>
                 </table>
@@ -1486,6 +1592,7 @@ export default function ProjectBudgetDetailPage() {
 
 function TeamRow({
   row,
+  formatAmount,
 }: {
   row: {
     id: string;
@@ -1501,10 +1608,13 @@ function TeamRow({
     dashUsedPlanned?: boolean;
     is_contractor: boolean;
     notes?: string;
+    mixedCurrency?: boolean;
+    nativeCurrency?: CurrencyCode;
   };
+  formatAmount: (n: number) => string;
 }) {
-  const money = row.moneyAmount != null;
-  const dashPartial = Boolean(row.dashUsedPlanned) || money;
+  const showMoney = row.moneyAmount != null;
+  const dashPartial = Boolean(row.dashUsedPlanned) || showMoney;
   const avatarPersonId = row.personId ?? row.id;
   return (
     <tr className="border-b border-[var(--border)]/60">
@@ -1526,6 +1636,9 @@ function TeamRow({
             <div className="flex items-center gap-2">
               <span className="min-w-0 truncate">{row.name}</span>
               {row.is_contractor ? <ContractorTag /> : null}
+              {row.mixedCurrency && row.nativeCurrency ? (
+                <CurrencyChip currency={row.nativeCurrency} />
+              ) : null}
             </div>
             {row.notes ? (
               <p className="truncate text-[11px] text-[var(--text-muted)]">
@@ -1542,7 +1655,7 @@ function TeamRow({
         {dashPartial ? "—" : formatHours(row.plannedHours)}
       </td>
       <td className="py-2 text-right tabular-nums">
-        {money ? formatMoney(row.moneyAmount!) : formatHours(row.totalHours)}
+        {showMoney ? formatAmount(row.moneyAmount!) : formatHours(row.totalHours)}
       </td>
     </tr>
   );

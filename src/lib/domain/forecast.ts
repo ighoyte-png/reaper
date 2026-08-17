@@ -22,8 +22,12 @@ import {
   isCommitContractor,
 } from "@/lib/domain/contractor";
 import {
+  costForHours,
+  personAmountToProject,
+  projectCurrency,
+} from "@/lib/domain/currency";
+import {
   DEFAULT_ORG_BUDGET_SETTINGS,
-  effectiveCostRate,
   effectiveProjectBillRate,
 } from "@/lib/domain/org-settings";
 
@@ -108,7 +112,12 @@ export function projectPeriodEconomics(
     );
     const hours = split.usedHours + split.futureHours;
     scheduleHours += hours;
-    scheduleCost += hours * effectiveCostRate(person, settings);
+    scheduleCost += costForHours(
+      person,
+      hours,
+      projectCurrency(project, settings.currency_enabled),
+      settings,
+    );
   }
 
   let contractorHours = 0;
@@ -121,6 +130,7 @@ export function projectPeriodEconomics(
       rangeStart,
       rangeEnd,
       project,
+      settings,
     );
     contractorHours += expense.hours;
     contractorCost += expense.amount;
@@ -140,8 +150,12 @@ export function projectPeriodEconomics(
         asOf,
       );
       contractorHours += leftoverHours;
-      contractorCost +=
-        leftoverHours * effectiveCostRate(person, settings);
+      contractorCost += costForHours(
+        person,
+        leftoverHours,
+        projectCurrency(project, settings.currency_enabled),
+        settings,
+      );
     }
   } else {
     for (const personId of personIds) {
@@ -151,7 +165,15 @@ export function projectPeriodEconomics(
       if (!isCommitContractor(person, member)) continue;
       const committed = contractorCommitted(person, member, { settings });
       contractorHours += committed.hours;
-      contractorCost += committed.amount;
+      contractorCost +=
+        committed.mode === "hours"
+          ? costForHours(
+              person,
+              committed.hours,
+              projectCurrency(project, settings.currency_enabled),
+              settings,
+            )
+          : personAmountToProject(committed.amount, person, project, settings);
     }
   }
 
@@ -201,7 +223,12 @@ export function projectForecast(
     const person = byId.get(a.person_id);
     plannedHours += hours;
     revenue += hours * billRate;
-    cost += hours * effectiveCostRate(person, settings);
+    cost += costForHours(
+      person,
+      hours,
+      projectCurrency(project, settings.currency_enabled),
+      settings,
+    );
   }
 
   const margin = revenue - cost;

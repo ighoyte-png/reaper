@@ -256,6 +256,8 @@ function buildPortalGanttContext(
     updateOrganizationName: async () => {},
     updateOrganizationSlug: async () => {},
     upsertOrganizationSettings: async () => {},
+    enableOrgMultiCurrency: async () => {},
+    disableOrgMultiCurrency: async () => {},
     updateProfileRole: async () => {},
     switchWorkspace: async () => {},
     upsertProject: async () => state.projects[0]!,

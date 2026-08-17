@@ -22,6 +22,8 @@ import {
 } from "@/lib/domain/budget";
 import { cn } from "@/lib/cn";
 import type { Project } from "@/lib/types";
+import { projectCurrency } from "@/lib/domain/currency";
+import { CurrencyChip } from "@/components/ui/currency-chip";
 
 function forecastFromBurn(
   project: Project,
@@ -184,15 +186,23 @@ export function BudgetCard({
             new Date(),
             membersForProject,
             expensesForProject,
+            state.organization_settings,
           )
         : []))
     : [];
+
+  const settings = state.organization_settings;
+  const moneyCur = projectCurrency(project, settings.currency_enabled);
+  const money = (n: number) =>
+    formatMoney(n, moneyCur, settings.currency_enabled);
+  const showCurrencyChip =
+    settings.currency_enabled && burn.mode === "amount";
 
   const summary =
     burn.mode === "none"
       ? formatHours(burn.plannedHours)
       : burn.mode === "amount"
-        ? `${formatMoney(burn.plannedAmount)} / ${formatMoney(burn.totalAmount ?? 0)}`
+        ? `${money(burn.plannedAmount)} / ${money(burn.totalAmount ?? 0)}`
         : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}${
             burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
           }`;
@@ -221,6 +231,7 @@ export function BudgetCard({
                 ? "Monthly Hours"
                 : "Hours"}
         </span>
+        {showCurrencyChip ? <CurrencyChip currency={moneyCur} /> : null}
       </div>
       <div className="mt-auto space-y-3">
         <div>
@@ -253,6 +264,7 @@ export function BudgetCard({
               burn={burn}
               compact
               settings={state.organization_settings}
+              currency={moneyCur}
             />
           )}
         </div>
@@ -269,7 +281,7 @@ export function BudgetCard({
                 {showHoursMetrics
                   ? formatHours(hoursFx.hoursUsedToDate)
                   : showAmountMetrics
-                    ? formatMoney(burn.usedAmount)
+                    ? money(burn.usedAmount)
                     : formatHours(hoursFx.hoursUsedToDate)}
               </dd>
             </div>
@@ -279,7 +291,7 @@ export function BudgetCard({
                 {showHoursMetrics
                   ? formatHours(hoursFx.hoursFuturePlanned)
                   : showAmountMetrics
-                    ? formatMoney(burn.futureAmount)
+                    ? money(burn.futureAmount)
                     : formatHours(hoursFx.hoursFuturePlanned)}
               </dd>
             </div>
@@ -300,7 +312,7 @@ export function BudgetCard({
                   : showAmountMetrics
                     ? burn.remainingAmount == null
                       ? "—"
-                      : formatMoney(burn.remainingAmount)
+                      : money(burn.remainingAmount)
                     : "—"}
               </dd>
             </div>

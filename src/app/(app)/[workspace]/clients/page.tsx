@@ -120,6 +120,7 @@ function ContactLine({
 function emptyProject(
   id: string,
   clientId: string,
+  currencyEnabled = false,
 ): Omit<Project, "organization_id"> {
   return {
     id,
@@ -140,6 +141,7 @@ function emptyProject(
     manager_person_id: null,
     hide_from_public_share: false,
     sandbox_mode: false,
+    currency: currencyEnabled ? "usd" : null,
   };
 }
 
@@ -319,7 +321,13 @@ function ClientsPageContent() {
     setCreateTemplateId("");
     setPendingCreateApply(false);
     setPmDailyHours(null);
-    setProjectDraft(emptyProject(newId("proj"), clientId));
+    setProjectDraft(
+      emptyProject(
+        newId("proj"),
+        clientId,
+        state.organization_settings.currency_enabled,
+      ),
+    );
   }
 
   async function applyPmSchedule(

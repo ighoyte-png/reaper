@@ -60,6 +60,7 @@ const mutedActionIconClass =
 
 const emptyPerson = (
   costRate: number,
+  currencyEnabled = false,
 ): Omit<Person, "organization_id"> => ({
   id: "",
   profile_id: null,
@@ -79,6 +80,7 @@ const emptyPerson = (
   is_contractor: false,
   avatar_color: null,
   deleted_at: null,
+  currency: currencyEnabled ? "usd" : null,
 });
 
 export default function PeoplePage() {
@@ -414,7 +416,10 @@ function PeoplePageContent() {
   function openNewPerson() {
     openEdit(
       {
-        ...emptyPerson(state.organization_settings.default_cost_rate),
+        ...emptyPerson(
+          state.organization_settings.default_cost_rate,
+          state.organization_settings.currency_enabled,
+        ),
         id: newId("person"),
         avatar_color: randomAvatarColor(),
       },
@@ -912,6 +917,8 @@ function PeoplePageContent() {
                 : undefined
             }
             saveLabel={isNewPerson ? "Add & Invite" : "Save"}
+            currencyEnabled={state.organization_settings.currency_enabled}
+            usdToCadRate={state.organization_settings.usd_to_cad_rate}
           />
         </Modal>
       )}

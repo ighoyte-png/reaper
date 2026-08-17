@@ -119,6 +119,8 @@ export function ConfirmDialog({
   onCancel,
   children,
   confirmDisabled = false,
+  altConfirmLabel,
+  onAltConfirm,
 }: {
   title: string;
   message: string;
@@ -133,6 +135,8 @@ export function ConfirmDialog({
   onCancel: () => void;
   children?: ReactNode;
   confirmDisabled?: boolean;
+  altConfirmLabel?: string;
+  onAltConfirm?: () => void;
 }) {
   const mounted = useMounted();
   if (!mounted) return null;
@@ -161,6 +165,16 @@ export function ConfirmDialog({
           >
             {resolvedLabel}
           </Button>
+          {altConfirmLabel && onAltConfirm ? (
+            <Button
+              variant="primary"
+              size="lg"
+              disabled={confirmDisabled}
+              onClick={onAltConfirm}
+            >
+              {altConfirmLabel}
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>,

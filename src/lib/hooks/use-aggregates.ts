@@ -184,6 +184,7 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
             new Date(),
             membersForProject,
             expensesForProject,
+            state.organization_settings,
           ),
         );
         continue;

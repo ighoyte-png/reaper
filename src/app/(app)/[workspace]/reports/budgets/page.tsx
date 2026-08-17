@@ -17,7 +17,9 @@ import type { BudgetStatusFilter } from "@/components/reports/budget-status-line
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
-import { budgetHealth } from "@/lib/domain/budget";
+import { budgetHealth, formatMoney, normalizeBudgetMode } from "@/lib/domain/budget";
+import { convertAmount, projectCurrency } from "@/lib/domain/currency";
+import { CurrencyChip } from "@/components/ui/currency-chip";
 import { useBudgetHref } from "@/lib/hooks/use-app-href";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
@@ -171,6 +173,53 @@ function BudgetsReportContent() {
     });
   }, [projects, clientFilter, managerFilter, query, state.clients]);
 
+  const dollarTotals = useMemo(() => {
+    const settings = state.organization_settings;
+    let projectUsd = 0;
+    let projectCad = 0;
+    let monthlyUsd = 0;
+    let monthlyCad = 0;
+    for (const project of filtered) {
+      const mode = normalizeBudgetMode(
+        project.budget_mode,
+        project.budget_hours,
+        project.budget_amount,
+      );
+      if (mode !== "amount") continue;
+      const amount = project.budget_amount ?? 0;
+      if (amount <= 0) continue;
+      const from = projectCurrency(project, settings.currency_enabled);
+      const usd = convertAmount(
+        amount,
+        from,
+        "usd",
+        settings.usd_to_cad_rate,
+        settings.currency_enabled,
+      );
+      const cad = convertAmount(
+        amount,
+        from,
+        "cad",
+        settings.usd_to_cad_rate,
+        settings.currency_enabled,
+      );
+      if (project.budget_monthly_reset) {
+        monthlyUsd += usd;
+        monthlyCad += cad;
+      } else {
+        projectUsd += usd;
+        projectCad += cad;
+      }
+    }
+    return {
+      enabled: settings.currency_enabled,
+      projectUsd,
+      projectCad,
+      monthlyUsd,
+      monthlyCad,
+    };
+  }, [filtered, state.organization_settings]);
+
   const healthFilter = (
     ["all", "tracked", "healthy", "near", "over"].includes(filters.health)
       ? filters.health
@@ -316,8 +365,21 @@ function BudgetsReportContent() {
               over={budgetStatus.over}
               active={healthFilter}
               onSelect={(next) => setFilter("health", next)}
-              className="mb-8"
+              className="mb-4"
             />
+
+            <div className="mb-8 grid gap-3 sm:grid-cols-2">
+              <DollarTotalCard
+                label="Project Budgets"
+                totals={dollarTotals}
+                kind="project"
+              />
+              <DollarTotalCard
+                label="Monthly Repeating Budgets"
+                totals={dollarTotals}
+                kind="monthly"
+              />
+            </div>
 
             <label className="relative mb-4 block md:hidden">
               <Search
@@ -446,6 +508,46 @@ function ClientNavButton({
         {count}
       </span>
     </button>
+  );
+}
+
+function DollarTotalCard({
+  label,
+  totals,
+  kind,
+}: {
+  label: string;
+  totals: {
+    enabled: boolean;
+    projectUsd: number;
+    projectCad: number;
+    monthlyUsd: number;
+    monthlyCad: number;
+  };
+  kind: "project" | "monthly";
+}) {
+  const usd = kind === "project" ? totals.projectUsd : totals.monthlyUsd;
+  const cad = kind === "project" ? totals.projectCad : totals.monthlyCad;
+  return (
+    <div className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-3 py-2.5">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+        {label}
+      </div>
+      {totals.enabled ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm tabular-nums">
+          <span className="inline-flex items-center gap-1.5">
+            {formatMoney(usd)}
+            <CurrencyChip currency="usd" />
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            {formatMoney(cad)}
+            <CurrencyChip currency="cad" />
+          </span>
+        </div>
+      ) : (
+        <div className="mt-1.5 text-sm tabular-nums">{formatMoney(usd)}</div>
+      )}
+    </div>
   );
 }
 

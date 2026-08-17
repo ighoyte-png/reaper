@@ -13,6 +13,8 @@ export const DEFAULT_ORG_BUDGET_SETTINGS: OrganizationSettings = {
   capacity_low_max_pct: 60,
   capacity_near_pct: 85,
   capacity_over_pct: 100,
+  currency_enabled: false,
+  usd_to_cad_rate: 1,
 };
 
 export function normalizeOrgBudgetSettings(
@@ -38,6 +40,8 @@ export function normalizeOrgBudgetSettings(
     ),
     capacity_near_pct: numOr(partial?.capacity_near_pct, d.capacity_near_pct),
     capacity_over_pct: numOr(partial?.capacity_over_pct, d.capacity_over_pct),
+    currency_enabled: Boolean(partial?.currency_enabled),
+    usd_to_cad_rate: Math.max(0.01, numOr(partial?.usd_to_cad_rate, d.usd_to_cad_rate)),
   };
 }
 

@@ -27,6 +27,11 @@ import { ContractorTag } from "@/components/projects/project-manager-person";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import {
+  convertAmount,
+  projectCurrency,
+} from "@/lib/domain/currency";
+import { CurrencyChip, CurrencyToggle } from "@/components/ui/currency-chip";
+import {
   contractorExpenseAppliesInMonth,
   defaultContractorRepeatEndMonth,
   formatHours,
@@ -156,6 +161,9 @@ export function ProjectForm({
   } = useData();
   const [tab, setTab] = useState<TabId>("details");
   const { showPods, podTabs, podFilter, setPodFilter } = usePodFilter(pods);
+  const currencyEnabled = Boolean(state.organization_settings.currency_enabled);
+  const usdToCad = state.organization_settings.usd_to_cad_rate;
+  const projectCur = projectCurrency(project, currencyEnabled);
   const clientsSorted = [...clients].sort((a, b) =>
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
   );
@@ -647,6 +655,46 @@ export function ProjectForm({
                   ]}
                 />
               </Field>
+              {currencyEnabled &&
+              (project.budget_mode === "hours" ||
+                project.budget_mode === "amount") ? (
+                <Field label="Currency">
+                  <CurrencyToggle
+                    value={projectCur}
+                    onChange={(next) => {
+                      const from = projectCur;
+                      if (from === next) {
+                        onChange({ ...project, currency: next });
+                        return;
+                      }
+                      onChange({
+                        ...project,
+                        currency: next,
+                        budget_amount:
+                          project.budget_amount == null
+                            ? null
+                            : convertAmount(
+                                project.budget_amount,
+                                from,
+                                next,
+                                usdToCad,
+                                true,
+                              ),
+                        bill_rate:
+                          project.bill_rate == null
+                            ? null
+                            : convertAmount(
+                                project.bill_rate,
+                                from,
+                                next,
+                                usdToCad,
+                                true,
+                              ),
+                      });
+                    }}
+                  />
+                </Field>
+              ) : null}
               {project.budget_mode === "hours" ? (
                 <>
                   <Field label="Total Budget (Hours)">
@@ -752,6 +800,7 @@ export function ProjectForm({
                 newId={newId}
                 onUpsert={upsertProjectContractorExpense}
                 onDelete={deleteProjectContractorExpense}
+                currencyEnabled={currencyEnabled}
               />
             ) : (
               <ClassicContractorTermsPanel
@@ -761,6 +810,7 @@ export function ProjectForm({
                 ]}
                 contractorTerms={contractorTerms}
                 setContractorTerms={setContractorTerms}
+                currencyEnabled={currencyEnabled}
               />
             )
           ) : null}
@@ -855,6 +905,7 @@ function ClassicContractorTermsPanel({
   contractors,
   contractorTerms,
   setContractorTerms,
+  currencyEnabled = false,
 }: {
   contractors: Person[];
   contractorTerms: Record<
@@ -865,6 +916,7 @@ function ClassicContractorTermsPanel({
     >
   >;
   setContractorTerms: (personId: string, patch: Partial<ContractorTerms>) => void;
+  currencyEnabled?: boolean;
 }) {
   if (contractors.length === 0) {
     return (
@@ -914,6 +966,11 @@ function ClassicContractorTermsPanel({
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-medium">{person.name}</span>
               <ContractorTag />
+              {currencyEnabled ? (
+                <CurrencyChip
+                  currency={person.currency === "cad" ? "cad" : "usd"}
+                />
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-3 text-sm">
               {termOptions.map((opt) => (
@@ -1043,6 +1100,7 @@ function ContractorsPanel({
   newId,
   onUpsert,
   onDelete,
+  currencyEnabled = false,
 }: {
   project: Omit<Project, "organization_id">;
   contractors: Person[];
@@ -1062,6 +1120,7 @@ function ContractorsPanel({
     },
   ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  currencyEnabled?: boolean;
 }) {
   const thisMonth = startOfMonth(new Date());
   const [month, setMonth] = useState(thisMonth);
@@ -1226,6 +1285,11 @@ function ContractorsPanel({
             >
               <span className="max-w-[10rem] truncate">{c.name}</span>
               <ContractorTag />
+              {currencyEnabled ? (
+                <CurrencyChip
+                  currency={c.currency === "cad" ? "cad" : "usd"}
+                />
+              ) : null}
             </button>
           );
         })}

@@ -10,6 +10,7 @@ import type {
   Assignment,
   BudgetBurn,
   ContractorMode,
+  CurrencyCode,
   OrganizationSettings,
   Person,
   Project,
@@ -25,6 +26,11 @@ import {
   effectiveCostRate,
   effectiveProjectBillRate,
 } from "@/lib/domain/org-settings";
+import {
+  costForHours,
+  personAmountToProject,
+  projectCurrency,
+} from "@/lib/domain/currency";
 import { expandAssignmentInRange } from "@/lib/domain/recurrence";
 import { assignmentHoursWithRecurrence } from "@/lib/domain/recurrence";
 import {
@@ -141,6 +147,7 @@ function attributeMonthlyExpenses(
   monthStart: string,
   asOf: Date,
   allowedPersonIds?: Set<string> | null,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): {
   usedHours: number;
   usedAmount: number;
@@ -157,6 +164,7 @@ function attributeMonthlyExpenses(
     monthKey,
     project,
     allowedPersonIds,
+    settings,
   );
   const todayKey = toDateKey(asOf);
   if (monthStart > todayKey) {
@@ -204,6 +212,20 @@ function projectHoursInDateRangeForPeople(
     }, 0);
 }
 
+function laborCost(
+  person: Person | undefined,
+  hours: number,
+  settings: OrganizationSettings,
+  project?: Pick<Project, "currency"> | null,
+): number {
+  return costForHours(
+    person ?? null,
+    hours,
+    projectCurrency(project ?? null, settings.currency_enabled),
+    settings,
+  );
+}
+
 function projectBillableAmountInDateRangeForPeople(
   projectId: string,
   assignments: Assignment[],
@@ -213,6 +235,7 @@ function projectBillableAmountInDateRangeForPeople(
   personIds: Set<string>,
   includeTentative = false,
   settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+  project?: Pick<Project, "currency"> | null,
 ): number {
   if (toKey < fromKey || personIds.size === 0) return 0;
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -221,9 +244,14 @@ function projectBillableAmountInDateRangeForPeople(
     if (a.project_id !== projectId) continue;
     if (!personIds.has(a.person_id)) continue;
     if (!includeTentative && a.status !== "confirmed") continue;
-    const rate = effectiveCostRate(byId.get(a.person_id), settings);
+    const person = byId.get(a.person_id);
     for (const occ of expandAssignmentInRange(a, fromKey, toKey)) {
-      sum += occurrenceHoursInRange(occ, fromKey, toKey) * rate;
+      sum += laborCost(
+        person,
+        occurrenceHoursInRange(occ, fromKey, toKey),
+        settings,
+        project,
+      );
     }
   }
   return sum;
@@ -562,11 +590,16 @@ export function contractorExpenseEntryAmount(
   expense: Pick<ProjectContractorExpense, "amount" | "hours">,
   person: Person | undefined,
   settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+  project?: Pick<Project, "currency"> | null,
 ): number {
-  if ((expense.amount ?? 0) > 0) return expense.amount;
+  if ((expense.amount ?? 0) > 0) {
+    return person
+      ? personAmountToProject(expense.amount, person, project ?? {}, settings)
+      : expense.amount;
+  }
   const hours = expense.hours ?? 0;
   if (!person || hours <= 0) return 0;
-  return hours * effectiveCostRate(person, settings);
+  return laborCost(person, hours, settings, project);
 }
 
 /** Sum contractor expenses for a project in a given yyyy-MM month. */
@@ -575,7 +608,7 @@ export function contractorExpenseTotalsForMonth(
   expenses: ProjectContractorExpense[],
   people: Person[],
   monthKey: string,
-  project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
+  project?: Pick<Project, "start_date" | "end_date" | "id" | "currency"> | null,
   allowedPersonIds?: Set<string> | null,
   settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): { usedHours: number; usedAmount: number } {
@@ -604,7 +637,7 @@ export function contractorExpenseTotalsForMonth(
       if (!applies) continue;
     }
     const person = peopleById.get(e.person_id);
-    usedAmount += contractorExpenseEntryAmount(e, person, settings);
+    usedAmount += contractorExpenseEntryAmount(e, person, settings, project);
     usedHours += contractorExpenseEntryHours(e, person, settings);
   }
   return { usedHours, usedAmount };
@@ -735,7 +768,8 @@ export function contractorExpenseTotalsInRange(
   people: Person[],
   rangeStart: string,
   rangeEnd: string,
-  project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
+  project?: Pick<Project, "start_date" | "end_date" | "id" | "currency"> | null,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): { hours: number; amount: number } {
   const split = contractorExpenseSplitInRange(
     projectId,
@@ -745,6 +779,7 @@ export function contractorExpenseTotalsInRange(
     rangeEnd,
     new Date(),
     project,
+    settings,
   );
   return {
     hours: split.usedHours + split.futureHours,
@@ -760,7 +795,8 @@ export function contractorExpenseSplitInRange(
   rangeStart: string,
   rangeEnd: string,
   asOf: Date = new Date(),
-  project?: Pick<Project, "start_date" | "end_date" | "id"> | null,
+  project?: Pick<Project, "start_date" | "end_date" | "id" | "currency"> | null,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): {
   usedHours: number;
   futureHours: number;
@@ -797,6 +833,8 @@ export function contractorExpenseSplitInRange(
       people,
       format(d, "yyyy-MM"),
       project ?? null,
+      null,
+      settings,
     );
     if (monthStart > todayKey) {
       futureHours += totals.usedHours;
@@ -819,6 +857,7 @@ function contractorCommitmentTotals(
   rangeEnd: string,
   includeTentative: boolean,
   settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+  project?: Pick<Project, "currency"> | null,
 ): {
   usedHours: number;
   futureHours: number;
@@ -848,6 +887,7 @@ function contractorCommitmentTotals(
       new Set([personId]),
       includeTentative,
       settings,
+      project,
     );
     const committed = contractorCommitted(person, member, {
       settings,
@@ -855,7 +895,18 @@ function contractorCommitmentTotals(
       scheduledAmount,
     });
     usedHours += committed.hours;
-    usedAmount += committed.amount;
+    if (committed.mode === "fixed_fee") {
+      usedAmount += personAmountToProject(
+        committed.amount,
+        person,
+        project ?? {},
+        settings,
+      );
+    } else if (committed.mode === "hours") {
+      usedAmount += laborCost(person, committed.hours, settings, project);
+    } else {
+      usedAmount += committed.amount;
+    }
   }
   return {
     usedHours,
@@ -983,6 +1034,7 @@ export function projectPlannedAmount(
   includeTentative = false,
   opts?: { year: number; monthIndex: number },
   settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+  project?: Pick<Project, "currency"> | null,
 ): number {
   const byId = new Map(people.map((p) => [p.id, p]));
   return assignments
@@ -993,11 +1045,10 @@ export function projectPlannedAmount(
     )
     .reduce((sum, a) => {
       const person = byId.get(a.person_id);
-      const rate = effectiveCostRate(person, settings);
       const hours = opts
         ? assignmentHoursInMonth(a, opts.year, opts.monthIndex)
         : assignmentHours(a);
-      return sum + hours * rate;
+      return sum + laborCost(person, hours, settings, project);
     }, 0);
 }
 
@@ -1095,6 +1146,7 @@ export function budgetBurn(
         internalIds,
         includeTentative,
         settings,
+        project,
       );
       contractorUsedAmount = projectBillableAmountInDateRangeForPeople(
         project.id,
@@ -1105,6 +1157,7 @@ export function budgetBurn(
         contractorScheduledIds,
         includeTentative,
         settings,
+        project,
       );
       const monthly = isMonthlyRetainerBudget(project);
       const asOfMonth = format(asOf, "yyyy-MM");
@@ -1126,6 +1179,7 @@ export function budgetBurn(
             rangeEnd,
             includeTentative,
             settings,
+            project,
           )
         : { usedHours: 0, usedAmount: 0 };
       contractorUsedHours += commitUsed.usedHours;
@@ -1142,6 +1196,7 @@ export function budgetBurn(
           asOfMonth,
           project,
           dollarIds,
+          settings,
         );
         contractorUsedHours += expenseUsed.usedHours;
         contractorUsedAmount += expenseUsed.usedAmount;
@@ -1173,6 +1228,7 @@ export function budgetBurn(
         internalIds,
         includeTentative,
         settings,
+        project,
       );
       contractorFutureAmount = projectBillableAmountInDateRangeForPeople(
         project.id,
@@ -1183,6 +1239,7 @@ export function budgetBurn(
         contractorScheduledIds,
         includeTentative,
         settings,
+        project,
       );
     }
   } else {
@@ -1216,6 +1273,7 @@ export function budgetBurn(
             usedEnd,
             includeTentative,
             settings,
+            project,
           )
         : 0;
     internalFutureAmount =
@@ -1228,6 +1286,7 @@ export function budgetBurn(
             rangeEnd,
             includeTentative,
             settings,
+            project,
           )
         : 0;
   }
@@ -1242,6 +1301,8 @@ export function budgetBurn(
         people,
         format(asOf, "yyyy-MM"),
         project,
+        null,
+        settings,
       );
       contractorUsedHours += expenseUsed.usedHours;
       contractorUsedAmount += expenseUsed.usedAmount;
@@ -1379,12 +1440,18 @@ export function roundAssignmentHours(hours: number): number {
   return Math.round(hours * 100) / 100;
 }
 
-export function formatMoney(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
+export function formatMoney(
+  amount: number,
+  currency?: CurrencyCode | null,
+  enabled = false,
+): string {
+  const formatted = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(amount);
+  if (!enabled) return formatted;
+  return `${formatted} ${(currency ?? "usd").toUpperCase()}`;
 }
 
 /** Compact currency labels for chart Y-axis ticks. */
@@ -1486,6 +1553,7 @@ function monthBurnSplit(
     monthStart,
     asOf,
     dollarIds,
+    settings,
   );
   if (!classifiedPeople) {
     const split = projectHoursSplitInRange(
@@ -1506,6 +1574,8 @@ function monthBurnSplit(
       people,
       false,
       { year, monthIndex },
+      settings,
+      project,
     );
     const expenseUsedHours = monthExpenses.usedHours;
     const expenseUsedAmount = monthExpenses.usedAmount;
@@ -1584,6 +1654,9 @@ function monthBurnSplit(
       monthStart,
       usedEnd,
       internalIds,
+      false,
+      settings,
+      project,
     );
     contractorUsedAmount = projectBillableAmountInDateRangeForPeople(
       project.id,
@@ -1592,6 +1665,9 @@ function monthBurnSplit(
       monthStart,
       usedEnd,
       contractorScheduledIds,
+      false,
+      settings,
+      project,
     );
     if (!monthly && monthKey === commitMonthKey) {
       const commit = contractorCommitmentTotals(
@@ -1604,6 +1680,7 @@ function monthBurnSplit(
         monthEnd,
         false,
         settings,
+        project,
       );
       contractorUsedHours += commit.usedHours;
       contractorUsedAmount += commit.usedAmount;
@@ -1631,6 +1708,9 @@ function monthBurnSplit(
       futureStart,
       monthEnd,
       internalIds,
+      false,
+      settings,
+      project,
     );
     contractorFutureAmount = projectBillableAmountInDateRangeForPeople(
       project.id,
@@ -1639,6 +1719,9 @@ function monthBurnSplit(
       futureStart,
       monthEnd,
       contractorScheduledIds,
+      false,
+      settings,
+      project,
     );
   }
 
@@ -1657,6 +1740,7 @@ function monthBurnSplit(
       monthEnd,
       false,
       settings,
+      project,
     );
     if (monthStart > todayKey) {
       contractorFutureHours += commit.usedHours;
@@ -1710,6 +1794,7 @@ export function projectHoursSplitInRange(
   rangeEnd: string,
   asOf: Date = new Date(),
   settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+  project?: Pick<Project, "currency"> | null,
 ): {
   usedHours: number;
   futureHours: number;
@@ -1752,6 +1837,7 @@ export function projectHoursSplitInRange(
           usedEnd,
           false,
           settings,
+          project,
         )
       : 0;
   const futureAmount =
@@ -1764,6 +1850,7 @@ export function projectHoursSplitInRange(
           rangeEnd,
           false,
           settings,
+          project,
         )
       : 0;
 
@@ -1872,6 +1959,7 @@ export function calendarRangeBars(
   asOf: Date = new Date(),
   projectMembers: ProjectMember[] = [],
   contractorExpenses: ProjectContractorExpense[] = [],
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): MonthBurnBar[] {
   if (rangeEnd < rangeStart) return [];
   const mode = normalizeBudgetMode(
@@ -1909,6 +1997,7 @@ export function calendarRangeBars(
       asOf,
       projectMembers,
       contractorExpenses,
+      settings,
     );
     const value = mode === "amount" ? split.plannedAmount : split.plannedHours;
     out.push({
@@ -1947,6 +2036,7 @@ export function calendarYearBars(
   asOf: Date = new Date(),
   projectMembers: ProjectMember[] = [],
   contractorExpenses: ProjectContractorExpense[] = [],
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): MonthBurnBar[] {
   return calendarRangeBars(
     project,
@@ -1957,6 +2047,7 @@ export function calendarYearBars(
     asOf,
     projectMembers,
     contractorExpenses,
+    settings,
   );
 }
 
@@ -2027,6 +2118,7 @@ export function projectBillableAmountInDateRange(
   toKey: string,
   includeTentative = false,
   settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+  project?: Pick<Project, "currency"> | null,
 ): number {
   if (toKey < fromKey) return 0;
   const byId = new Map(people.map((p) => [p.id, p]));
@@ -2034,9 +2126,14 @@ export function projectBillableAmountInDateRange(
   for (const a of assignments) {
     if (a.project_id !== projectId) continue;
     if (!includeTentative && a.status !== "confirmed") continue;
-    const rate = effectiveCostRate(byId.get(a.person_id), settings);
+    const person = byId.get(a.person_id);
     for (const occ of expandAssignmentInRange(a, fromKey, toKey)) {
-      sum += occurrenceHoursInRange(occ, fromKey, toKey) * rate;
+      sum += laborCost(
+        person,
+        occurrenceHoursInRange(occ, fromKey, toKey),
+        settings,
+        project,
+      );
     }
   }
   return sum;
@@ -2124,12 +2221,16 @@ export function projectHoursForecast(
       let sum = 0;
       for (const a of assignments) {
         if (a.project_id !== project.id || a.status !== "confirmed") continue;
-        const rate = effectiveCostRate(byId.get(a.person_id), settings);
         const from = rangeStart;
         const to = usedEnd;
         if (to < from) continue;
         for (const occ of expandAssignmentInRange(a, from, to)) {
-          sum += occurrenceHoursInRange(occ, from, to) * rate;
+          sum += laborCost(
+            byId.get(a.person_id),
+            occurrenceHoursInRange(occ, from, to),
+            settings,
+            project,
+          );
         }
       }
       return sum;
@@ -2139,10 +2240,15 @@ export function projectHoursForecast(
       let sum = 0;
       for (const a of assignments) {
         if (a.project_id !== project.id || a.status !== "confirmed") continue;
-        const rate = effectiveCostRate(byId.get(a.person_id), settings);
+        const person = byId.get(a.person_id);
         if (futureStart > rangeEnd) continue;
         for (const occ of expandAssignmentInRange(a, futureStart, rangeEnd)) {
-          sum += occurrenceHoursInRange(occ, futureStart, rangeEnd) * rate;
+          sum += laborCost(
+            person,
+            occurrenceHoursInRange(occ, futureStart, rangeEnd),
+            settings,
+            project,
+          );
         }
       }
       return sum;
@@ -2356,6 +2462,7 @@ export function weeklyProgressSeries(
   asOf: Date = new Date(),
   people: Person[] = [],
   projectMembers: ProjectMember[] = [],
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
 ): WeeklyProgressPoint[] {
   const span = projectDateSpan(project, assignments);
   if (!span) return [];
@@ -2409,6 +2516,9 @@ export function weeklyProgressSeries(
         from,
         to,
         internalIds,
+        false,
+        settings,
+        project,
       );
     }
     return projectBillableAmountInDateRange(
@@ -2417,6 +2527,9 @@ export function weeklyProgressSeries(
       people,
       from,
       to,
+      false,
+      settings,
+      project,
     );
   }
 
