@@ -13,7 +13,7 @@ import { ContractorTag, ManagerTag } from "@/components/projects/project-manager
 import { EmptyState, Field, Modal, ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
+import { CardGridPlaceholders } from "@/components/ui/card-grid-placeholders";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -57,7 +57,9 @@ const actionIconClass =
 const mutedActionIconClass =
   "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]";
 
-const emptyPerson = (): Omit<Person, "organization_id"> => ({
+const emptyPerson = (
+  costRate: number,
+): Omit<Person, "organization_id"> => ({
   id: "",
   profile_id: null,
   name: "",
@@ -66,7 +68,7 @@ const emptyPerson = (): Omit<Person, "organization_id"> => ({
   department: "",
   office: "",
   capacity_hours_week: 40,
-  cost_rate: 70,
+  cost_rate: Number.isFinite(costRate) ? costRate : 0,
   timezone: "America/Los_Angeles",
   holiday_calendar_id: null,
   avatar_url: null,
@@ -408,6 +410,17 @@ function PeoplePageContent() {
     );
   }
 
+  function openNewPerson() {
+    openEdit(
+      {
+        ...emptyPerson(state.organization_settings.default_cost_rate),
+        id: newId("person"),
+        avatar_color: randomAvatarColor(),
+      },
+      true,
+    );
+  }
+
   const peopleSections = useMemo((): {
     heading?: string;
     cards: { person: Person; isManager: boolean }[];
@@ -512,7 +525,7 @@ function PeoplePageContent() {
     return (
       <article
         key={person.id}
-        className="flex flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
+        className="flex h-full flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4"
       >
         <div className="flex items-start gap-3">
           <PersonAvatar
@@ -552,35 +565,37 @@ function PeoplePageContent() {
             ) : null}
           </div>
         </div>
-        <div className="mt-3 flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
-          <span
-            className={cn(
-              "h-2 w-2 shrink-0 rounded-full",
-              level === "healthy" && "bg-[var(--status-healthy)]",
-              level === "near" && "bg-[var(--status-near)]",
-              level === "over" && "bg-[var(--status-over)]",
-              (level === "unavailable" || level === "low") &&
-                "bg-[var(--status-unavailable)]",
-            )}
-          />
-          {formatHours(booked)} / {formatHours(available)} this week
-        </div>
-        {canManage || personPods.length > 0 ? (
-          <div className="mt-3 flex items-center gap-2 border-t border-[var(--border)] pt-2.5">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-1">
-              {personPods.map((pod) => (
-                <span
-                  key={pod.id}
-                  className="max-w-full truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
-                  title={pod.name}
-                >
-                  {pod.name}
-                </span>
-              ))}
-            </div>
-            {canManage ? renderPersonActions(person) : null}
+        <div className="mt-auto pt-3">
+          <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            <span
+              className={cn(
+                "h-2 w-2 shrink-0 rounded-full",
+                level === "healthy" && "bg-[var(--status-healthy)]",
+                level === "near" && "bg-[var(--status-near)]",
+                level === "over" && "bg-[var(--status-over)]",
+                (level === "unavailable" || level === "low") &&
+                  "bg-[var(--status-unavailable)]",
+              )}
+            />
+            {formatHours(booked)} / {formatHours(available)} this week
           </div>
-        ) : null}
+          {canManage || personPods.length > 0 ? (
+            <div className="mt-3 flex items-center gap-2 border-t border-[var(--border)] pt-2.5">
+              <div className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-1">
+                {personPods.map((pod) => (
+                  <span
+                    key={pod.id}
+                    className="max-w-full truncate rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-muted)]"
+                    title={pod.name}
+                  >
+                    {pod.name}
+                  </span>
+                ))}
+              </div>
+              {canManage ? renderPersonActions(person) : null}
+            </div>
+          ) : null}
+        </div>
       </article>
     );
   }
@@ -741,19 +756,7 @@ function PeoplePageContent() {
               <Button variant="secondary" onClick={() => setShowPodsEditor(true)}>
                 Edit Pods
               </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  openEdit(
-                    {
-                      ...emptyPerson(),
-                      id: newId("person"),
-                      avatar_color: randomAvatarColor(),
-                    },
-                    true,
-                  );
-                }}
-              >
+              <Button variant="primary" onClick={openNewPerson}>
                 Add Person
               </Button>
             </>
@@ -793,16 +796,7 @@ function PeoplePageContent() {
             <EmptyState
               title="No people yet"
               cta="Add Your First Person"
-              onClick={() => {
-                openEdit(
-                  {
-                    ...emptyPerson(),
-                    id: newId("person"),
-                    avatar_color: randomAvatarColor(),
-                  },
-                  true,
-                );
-              }}
+              onClick={openNewPerson}
             />
           ) : (
             <p className="py-16 text-center text-sm text-[var(--text-muted)]">
@@ -842,6 +836,14 @@ function PeoplePageContent() {
                 {section.cards.map(({ person, isManager }) =>
                   renderPersonCard(person, isManager),
                 )}
+                {canManage && section.heading !== "Contractors" ? (
+                  <CardGridPlaceholders
+                    count={section.cards.length}
+                    xlColumns={4}
+                    onAdd={openNewPerson}
+                    addLabel="Add Person"
+                  />
+                ) : null}
               </div>
             ))}
           </div>
