@@ -16,6 +16,7 @@ import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { utilizationVisiblePeople, personAvatarColor } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import type { CapacityLevel } from "@/lib/types";
 import {
   capacityLegendItems,
@@ -98,6 +99,7 @@ export function UtilizationHeatmap({
     fetchPersonUtilizationWeeksRpc,
     ensureScheduleRange,
   } = useData();
+  const isPhone = useIsPhone();
   const anchors = useMemo(
     () =>
       Array.from({ length: weeks }, (_, i) =>
@@ -196,11 +198,13 @@ export function UtilizationHeatmap({
         </div>
       ) : null}
 
-      <div className="overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg)]">
+      <div className="min-w-0 overflow-auto rounded-md border border-[var(--border)] bg-[var(--bg)]">
         <div
           className="min-w-max grid"
           style={{
-            gridTemplateColumns: `200px repeat(${weeks}, minmax(88px, 1fr))`,
+            gridTemplateColumns: isPhone
+              ? `7.5rem repeat(${weeks}, minmax(3.75rem, 1fr))`
+              : `200px repeat(${weeks}, minmax(88px, 1fr))`,
           }}
         >
           <div className="sticky left-0 z-[1] bg-[var(--bg)] px-3 py-2.5 text-xs font-medium text-[var(--text-muted)]">

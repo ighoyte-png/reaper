@@ -23,6 +23,7 @@ import { Field, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { useData } from "@/lib/data/store";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { useViewAsOptional } from "@/lib/view-as";
 import {
   ASSET_KIND_LABELS,
@@ -47,6 +48,7 @@ export function ProjectNotebook({
 }) {
   const { state, canManage: roleCanManage, upsertProjectAsset, deleteProjectAsset, newId } =
     useData();
+  const isPhone = useIsPhone();
   const viewAs = useViewAsOptional();
   const orgCanManage = viewAs ? viewAs.effectiveCanManage : roleCanManage;
   const canManage =
@@ -350,7 +352,7 @@ export function ProjectNotebook({
           <SortableContext
             items={assets.map((a) => a.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!editable}
+            disabled={!editable || isPhone}
           >
             <ul className="space-y-1.5">
               {assets.map((a) => (
@@ -392,8 +394,9 @@ function SortableAssetRow({
   onDelete: () => void;
   onToggleHide: () => void;
 }) {
+  const isPhone = useIsPhone();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: asset.id, disabled: !canManage });
+    useSortable({ id: asset.id, disabled: !canManage || isPhone });
   const isNote = Boolean(asset.body.trim());
 
   const actions = canManage ? (
@@ -458,7 +461,7 @@ function SortableAssetRow({
       {isNote ? (
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            {canManage ? (
+            {canManage && !isPhone ? (
               <button
                 type="button"
                 className="cursor-grab touch-none text-[var(--text-muted)]"
@@ -480,7 +483,7 @@ function SortableAssetRow({
         </div>
       ) : (
         <div className="flex items-center gap-2">
-          {canManage ? (
+          {canManage && !isPhone ? (
             <button
               type="button"
               className="cursor-grab touch-none text-[var(--text-muted)]"

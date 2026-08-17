@@ -41,7 +41,7 @@ export function DateInput({
     <input
       {...props}
       type="date"
-      className={cn("cursor-pointer", className)}
+      className={cn("cursor-pointer min-w-0 max-w-full", className)}
       onClick={(e) => {
         onClick?.(e);
         if (e.defaultPrevented || props.disabled || props.readOnly) return;

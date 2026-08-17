@@ -68,6 +68,7 @@ import { EntityFileAttachments } from "@/components/ui/file-attachments";
 import { listEntityFileAttachments, syncInlineAttachmentsFromHtml, cleanupEntityAttachmentsClient } from "@/lib/storage/client-upload";
 import { useData } from "@/lib/data/store";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { useViewAsOptional } from "@/lib/view-as";
 import { MILESTONE_PURPLE } from "@/lib/domain/gantt";
 import {
@@ -207,6 +208,9 @@ type BoardCtx = {
   clearFocusTask: () => void;
   /** Clear deep-link highlight when interacting with a different task. */
   clearFocusIfOtherTask: (taskId: string) => void;
+  /** Phone: skip row/list drag so vertical scroll is not stolen. */
+  allowDrag: boolean;
+  isPhone: boolean;
   selected: Set<string>;
   toggleSelect: (id: string, shiftKey?: boolean) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
@@ -402,6 +406,7 @@ export function ProjectTaskBoard({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const isPhone = useIsPhone();
 
   function clearFocusTask() {
     if (!searchParams.has("task") && !searchParams.has("comment")) return;
@@ -460,6 +465,8 @@ export function ProjectTaskBoard({
   } | null>(null);
   const [ganttStructuralNotice, setGanttStructuralNotice] = useState(false);
   const [view, setView] = useState<TaskBoardView>("list");
+  const displayView: TaskBoardView =
+    isPhone && view === "gantt" ? "list" : view;
 
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -580,8 +587,8 @@ export function ProjectTaskBoard({
   }
 
   useEffect(() => {
-    onGanttActiveChange?.(view === "gantt");
-  }, [view, onGanttActiveChange]);
+    onGanttActiveChange?.(displayView === "gantt");
+  }, [displayView, onGanttActiveChange]);
 
   const visibleTasks = useMemo(() => {
     const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
@@ -1877,6 +1884,8 @@ export function ProjectTaskBoard({
     focusCommentId,
     clearFocusTask,
     clearFocusIfOtherTask,
+    allowDrag: manageLists && !isPhone,
+    isPhone,
     selected,
     toggleSelect,
     setParentsSelected,
@@ -1904,7 +1913,7 @@ export function ProjectTaskBoard({
     newId,
     onAttachmentError: (msg) => toast(msg, "warning"),
     unreadTaskThreadIds,
-    boardView: view,
+    boardView: displayView,
     isListGanttLocked,
     guardGanttStructuralEdit,
     orderedListTasksByListId,
@@ -1914,7 +1923,7 @@ export function ProjectTaskBoard({
     return <TaskBoardSkeleton compact={compact} />;
   }
 
-  if (view === "card" && allowCardView) {
+  if (displayView === "card" && allowCardView) {
     return (
       <section
         className={cn(
@@ -1928,10 +1937,11 @@ export function ProjectTaskBoard({
               Tasks
             </h3>
             <ViewToggle
-              view={view}
+              view={displayView}
               setView={setTaskView}
               allowCardView={allowCardView}
               showGanttEnabled={ganttEnabledSomewhere}
+              allowGantt={!isPhone}
             />
           </div>
           {activeLists.length === 0 ? (
@@ -1989,7 +1999,7 @@ export function ProjectTaskBoard({
     );
   }
 
-  if (view === "calendar") {
+  if (displayView === "calendar") {
     return (
       <>
         <section
@@ -2004,10 +2014,11 @@ export function ProjectTaskBoard({
                 Tasks
               </h3>
               <ViewToggle
-                view={view}
+                view={displayView}
                 setView={setTaskView}
                 allowCardView={allowCardView}
                 showGanttEnabled={ganttEnabledSomewhere}
+                allowGantt={!isPhone}
               />
             </div>
             <ProjectTaskCalendar tasks={visibleTasks} todayKey={todayKey()} />
@@ -2018,7 +2029,7 @@ export function ProjectTaskBoard({
     );
   }
 
-  if (view === "gantt") {
+  if (displayView === "gantt") {
     return (
       <>
         <section
@@ -2033,10 +2044,11 @@ export function ProjectTaskBoard({
                 Tasks
               </h3>
               <ViewToggle
-                view={view}
+                view={displayView}
                 setView={setTaskView}
                 allowCardView={allowCardView}
                 showGanttEnabled={ganttEnabledSomewhere}
+                allowGantt={!isPhone}
               />
             </div>
             <div data-gantt-root data-project-id={projectId}>
@@ -2056,6 +2068,7 @@ export function ProjectTaskBoard({
     <>
     <section
       className={cn(
+        "min-w-0",
         !compact &&
           "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
       )}
@@ -2066,10 +2079,11 @@ export function ProjectTaskBoard({
           Tasks
         </h3>
         <ViewToggle
-          view={view}
+          view={displayView}
           setView={setTaskView}
           allowCardView={allowCardView}
           showGanttEnabled={ganttEnabledSomewhere}
+          allowGantt={!isPhone}
         />
         {manageLists ? (
           <div className="ml-auto flex items-center gap-1">
@@ -2332,7 +2346,7 @@ export function ProjectTaskBoard({
           <SortableContext
             items={activeLists.map((l) => l.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!manageLists}
+            disabled={!manageLists || isPhone}
           >
             {activeLists.map((list) => {
               const listTasks = tasksForList(visibleTasks, list.id);
@@ -2597,12 +2611,14 @@ function ViewToggle({
   setView,
   allowCardView,
   showGanttEnabled,
+  allowGantt = true,
 }: {
   view: TaskBoardView;
   setView: (v: TaskBoardView) => void;
   allowCardView: boolean;
   /** When true, Gantt tab uses the special green accent. */
   showGanttEnabled: boolean;
+  allowGantt?: boolean;
 }) {
   if (!allowCardView) return null;
   return (
@@ -2640,18 +2656,20 @@ function ViewToggle({
         <CalendarDays size={12} />
         Calendar
       </button>
-      <button
-        type="button"
-        className={cn(
-          "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
-          view === "gantt" && "bg-[var(--row-hover)]",
-          showGanttEnabled && "text-[var(--status-healthy)]",
-        )}
-        onClick={() => setView("gantt")}
-      >
-        <ChartGantt size={12} />
-        Gantt
-      </button>
+      {allowGantt ? (
+        <button
+          type="button"
+          className={cn(
+            "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
+            view === "gantt" && "bg-[var(--row-hover)]",
+            showGanttEnabled && "text-[var(--status-healthy)]",
+          )}
+          onClick={() => setView("gantt")}
+        >
+          <ChartGantt size={12} />
+          Gantt
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -2708,7 +2726,7 @@ function ListSection({
     useSortable({
       id: list.id,
       data: { type: "list" } satisfies ListDragData,
-      disabled: !listManage,
+      disabled: !listManage || !ctx.allowDrag,
     });
 
   const selectableIds = parents.flatMap((p) =>
@@ -2745,7 +2763,7 @@ function ListSection({
         )}
         style={list.color ? { backgroundColor: list.color } : undefined}
       >
-        {ctx.manageLists ? (
+        {ctx.allowDrag ? (
           <button
             type="button"
             className="cursor-grab touch-none text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -2756,6 +2774,8 @@ function ListSection({
           >
             <GripVertical size={14} />
           </button>
+        ) : ctx.manageLists ? (
+          <span className="w-3.5 shrink-0" aria-hidden />
         ) : null}
         <button
           type="button"
@@ -2950,7 +2970,7 @@ function ListSection({
             <SortableContext
               items={parents.map((t) => t.id)}
               strategy={verticalListSortingStrategy}
-              disabled={!listManage}
+              disabled={!listManage || !ctx.allowDrag}
             >
               {parents.map((t) =>
                 t.is_divider ? (
@@ -3282,7 +3302,7 @@ function InlineTaskForm({
   return (
     <div
       className={cn(
-        "bg-[var(--bg)] px-2 py-3",
+        "min-w-0 max-w-full overflow-x-hidden bg-[var(--bg)] px-2 py-3",
         onDelete ? "border-b border-[var(--divider)]" : "border-t border-[var(--divider)]",
       )}
       style={{ paddingLeft: 8 + depth * 16 }}
@@ -3310,15 +3330,15 @@ function InlineTaskForm({
           }}
         />
       </div>
-      <div className="pl-[2.375rem]">
+      <div className="min-w-0 pl-0 sm:pl-[2.375rem]">
         <div className="my-3 border-t border-dashed border-[var(--divider)]" />
-        <div className="space-y-3">
-          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+        <div className="min-w-0 space-y-3">
+          <div className="grid min-w-0 gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
             <span className="text-sm text-[var(--text-muted)]">Assigned to</span>
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
               <Select
                 searchable
-                className="min-w-0 flex-1"
+                className="min-w-0 w-full max-w-full flex-1"
                 value={assigneeId}
                 onChange={setAssigneeId}
                 options={[
@@ -3341,15 +3361,15 @@ function InlineTaskForm({
               ) : null}
             </div>
           </div>
-          <div className="grid gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+          <div className="grid min-w-0 gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
             <span className="text-sm text-[var(--text-muted)]">Dates</span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
               <label className="min-w-0">
                 <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
                   Start
                 </span>
                 <DateInput
-                  className={cn(inputClass, "mt-0 h-8")}
+                  className={cn(inputClass, "mt-0 h-8 min-w-0 max-w-full")}
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                 />
@@ -3359,7 +3379,7 @@ function InlineTaskForm({
                   End
                 </span>
                 <DateInput
-                  className={cn(inputClass, "mt-0 h-8")}
+                  className={cn(inputClass, "mt-0 h-8 min-w-0 max-w-full")}
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
                 />
@@ -3391,7 +3411,7 @@ function InlineTaskForm({
             />
           )}
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-3 flex sticky bottom-0 flex-wrap items-center justify-between gap-2 bg-[var(--bg)] py-1">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -3493,7 +3513,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
         listId: task.list_id,
         parentId: null,
       } satisfies TaskDragData,
-      disabled: !ctx.manageLists || editing || isExiting,
+      disabled: !ctx.manageLists || !ctx.allowDrag || editing || isExiting,
     });
 
   useEffect(() => {
@@ -3568,7 +3588,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
           ctx.onTaskExitComplete(task.id);
         }}
       >
-        {ctx.manageLists ? (
+        {ctx.allowDrag ? (
           <button
             type="button"
             className="cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100"
@@ -3743,6 +3763,7 @@ function TaskRow({
       } satisfies TaskDragData,
       disabled:
         !listManage ||
+        !ctx.allowDrag ||
         ctx.editingTaskId === task.id ||
         isExiting ||
         task.is_client_review,
@@ -3829,7 +3850,7 @@ function TaskRow({
           <SortableContext
             items={kids.map((k) => k.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!listManage}
+            disabled={!listManage || !ctx.allowDrag}
           >
             {kids.map((k) => (
               <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />
@@ -3904,7 +3925,7 @@ function TaskRow({
         title={
           multiSelectDrag ? "Drag to move all selected tasks" : undefined
         }
-        {...(multiSelectDrag ? { ...attributes, ...listeners } : {})}
+        {...(multiSelectDrag && ctx.allowDrag ? { ...attributes, ...listeners } : {})}
         onClick={
           ctx.readOnly || multiSelectDrag
             ? undefined
@@ -3913,7 +3934,7 @@ function TaskRow({
               }
         }
       >
-        {listManage && !task.is_client_review ? (
+        {listManage && ctx.allowDrag && !task.is_client_review ? (
           <button
             type="button"
             className={cn(
@@ -4006,7 +4027,11 @@ function TaskRow({
           {ctx.hubTaskHref ? (
             <Link
               href={ctx.hubTaskHref(task.id)}
-              className="min-w-0 truncate hover:underline"
+              className={cn(
+                "min-w-0",
+                ctx.isPhone ? "line-clamp-2" : "truncate",
+                "hover:underline",
+              )}
               onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
@@ -4023,7 +4048,8 @@ function TaskRow({
           ) : (
             <span
               className={cn(
-                "min-w-0 truncate",
+                "min-w-0",
+                ctx.isPhone ? "line-clamp-2" : "truncate",
                 task.status === "complete" && "line-through",
                 isClientReviewApproved(task) &&
                   "text-[var(--status-healthy)] line-through",
@@ -4042,7 +4068,7 @@ function TaskRow({
               expanded={isExpanded}
             />
           ) : null}
-          {task.due_date ? (
+          {task.due_date && !ctx.isPhone ? (
             <span
               className={cn(
                 "shrink-0 text-xs",
@@ -4185,7 +4211,7 @@ function TaskRow({
         <SortableContext
           items={kids.map((k) => k.id)}
           strategy={verticalListSortingStrategy}
-          disabled={!ctx.manageLists}
+          disabled={!ctx.manageLists || !ctx.allowDrag}
         >
           {kids.map((k) => (
             <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />
@@ -4806,6 +4832,8 @@ function KanbanBoard({
   manageLists: boolean;
   onMove: (taskId: string, destStatus: TaskStatus, destIndex: number) => void;
 }) {
+  const isPhone = useIsPhone();
+  const allowDrag = manageLists && !isPhone;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -4823,7 +4851,7 @@ function KanbanBoard({
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     setActiveId(null);
-    if (!manageLists || !over) return;
+    if (!allowDrag || !over) return;
     const activeData = active.data.current as CardDragData | undefined;
     if (!activeData) return;
     const overData = over.data.current as
@@ -4871,7 +4899,7 @@ function KanbanBoard({
               .filter((t) => t.status === status)
               .sort((a, b) => a.sort_order - b.sort_order)}
             orderedListTasks={orderedListTasks}
-            manageLists={manageLists}
+            manageLists={allowDrag}
             activeId={activeId}
           />
         ))}

@@ -22,6 +22,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import type { TemplateMilestone } from "@/lib/types";
 
 export function TemplateMilestoneList({
@@ -37,6 +38,7 @@ export function TemplateMilestoneList({
     upsertTemplateMilestone,
     deleteTemplateMilestone,
   } = useData();
+  const isPhone = useIsPhone();
 
   const milestones = state.template_milestones
     .filter((m) => m.template_id === templateId)
@@ -117,7 +119,7 @@ export function TemplateMilestoneList({
         <SortableContext
           items={milestones.map((m) => m.id)}
           strategy={verticalListSortingStrategy}
-          disabled={!editMode}
+          disabled={!editMode || isPhone}
         >
           <div className="space-y-2">
             {milestones.map((m) => (
@@ -216,8 +218,9 @@ function TemplateMilestoneRow({
   editMode: boolean;
   onEdit: () => void;
 }) {
+  const isPhone = useIsPhone();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: milestone.id, disabled: !editMode });
+    useSortable({ id: milestone.id, disabled: !editMode || isPhone });
 
   return (
     <div
@@ -229,7 +232,7 @@ function TemplateMilestoneRow({
       }}
       className="flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg-elevated)]/40 px-2 py-2"
     >
-      {editMode ? (
+      {editMode && !isPhone ? (
         <button
           type="button"
           className="cursor-grab touch-none text-[var(--text-muted)]"

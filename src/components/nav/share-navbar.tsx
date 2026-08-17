@@ -64,8 +64,8 @@ export function ShareNavbar() {
             );
           })}
         </nav>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <div className="hidden min-w-0 truncate text-right text-xs text-[var(--text-muted)] sm:block">
+        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-2">
+          <div className="hidden min-w-0 truncate text-right text-xs text-[var(--text-muted)] md:block">
             <div className="truncate font-medium text-[var(--text)]">
               {state.organization.name}
             </div>
@@ -74,7 +74,7 @@ export function ShareNavbar() {
           <ThemeToggle
             className={cn(
               navLinkClass(false),
-              "h-auto w-auto border-0 bg-transparent",
+              "hidden h-auto w-auto border-0 bg-transparent md:inline-flex",
             )}
           />
         </div>
@@ -143,6 +143,17 @@ export function ShareNavbar() {
               );
             })}
           </nav>
+          <div className="shrink-0 border-t border-[var(--border)] p-2">
+            <p className="truncate px-2.5 pb-2 text-xs text-[var(--text-muted)]">
+              <span className="font-medium text-[var(--text)]">
+                {state.organization.name}
+              </span>
+              <span className="mt-0.5 block">Public view · read only</span>
+            </p>
+            <ThemeToggle
+              className="flex h-auto w-full cursor-pointer items-center justify-start gap-3 rounded-lg border-0 bg-transparent px-2.5 py-2 text-left text-sm font-medium text-[var(--text)] hover:bg-[var(--row-hover)]"
+            />
+          </div>
         </div>
       </div>
       {aboutOpen ? <AboutDialog onClose={() => setAboutOpen(false)} /> : null}

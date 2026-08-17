@@ -220,7 +220,7 @@ export function AppNavbar() {
             );
           })}
         </nav>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
           {!shareBasePath ? (
             <>
               <GlobalSearchTrigger
@@ -239,7 +239,7 @@ export function AppNavbar() {
             </>
           ) : null}
           {accountName ? (
-            <div ref={accountMenuRef} className="relative">
+            <div ref={accountMenuRef} className="relative hidden md:block">
               <button
                 type="button"
                 className={cn(
@@ -498,6 +498,127 @@ export function AppNavbar() {
               );
             })}
           </nav>
+          {accountName ? (
+            <div className="shrink-0 border-t border-[var(--border)]">
+              <div className="flex items-start gap-3 px-4 py-3">
+                <PersonAvatar
+                  avatarUrl={myPerson?.avatar_url}
+                  avatarAttachmentId={myPerson?.avatar_attachment_id}
+                  name={accountName}
+                  size="sm"
+                  personId={myPerson?.id}
+                  color={myPerson ? personAvatarColor(myPerson) : null}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold leading-tight text-[var(--text)]">
+                    {accountName}
+                  </p>
+                  {identitySubtitle ? (
+                    <p className="mt-0.5 truncate text-xs text-[var(--text-muted)]">
+                      {identitySubtitle}
+                    </p>
+                  ) : null}
+                  {state.memberships.length > 1 ? (
+                    <div className="mt-2 space-y-0.5">
+                      {state.memberships.map((m) => {
+                        const active =
+                          m.organization_id === state.organization.id;
+                        return (
+                          <button
+                            key={m.organization_id}
+                            type="button"
+                            className={cn(
+                              "flex w-full cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs",
+                              active
+                                ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                                : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                            )}
+                            onClick={() => {
+                              if (active) return;
+                              setOpen(false);
+                              void switchWorkspace(m.org.slug, {
+                                preservePath: true,
+                              });
+                            }}
+                          >
+                            <Building2
+                              size={12}
+                              strokeWidth={1.75}
+                              className="shrink-0 opacity-70"
+                            />
+                            <span className="min-w-0 flex-1 truncate">
+                              {m.org.name}
+                            </span>
+                            {active ? (
+                              <Check
+                                size={12}
+                                strokeWidth={2}
+                                className="shrink-0"
+                              />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-1 flex items-center gap-1 truncate text-[11px] text-[var(--text-muted)]">
+                      <Building2
+                        size={11}
+                        strokeWidth={1.75}
+                        className="shrink-0 opacity-70"
+                      />
+                      <span className="truncate">{workspaceName}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-0.5 p-2 pt-0">
+                {showSettings ? (
+                  <Link
+                    href={appHref("/settings")}
+                    className={menuItemClass(settingsActive)}
+                    onClick={() => setOpen(false)}
+                  >
+                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                      <Settings size={14} strokeWidth={1.75} />
+                    </span>
+                    <span className="text-sm font-medium">Settings</span>
+                  </Link>
+                ) : null}
+                <button
+                  type="button"
+                  className={menuItemClass()}
+                  onClick={() => toggleTheme()}
+                >
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                    {theme === "dark" ? (
+                      <Sun size={14} strokeWidth={1.75} />
+                    ) : (
+                      <Moon size={14} strokeWidth={1.75} />
+                    )}
+                  </span>
+                  <span className="text-sm font-medium">Appearance</span>
+                </button>
+                <PlatformAdminNavLink
+                  variant="menu"
+                  onNavigate={() => setOpen(false)}
+                />
+                <button
+                  type="button"
+                  className={cn(
+                    menuItemClass(),
+                    "text-[var(--text-muted)] hover:text-[var(--text)]",
+                  )}
+                  onClick={() => void signOut()}
+                >
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+                    <LogOut size={14} strokeWidth={1.75} />
+                  </span>
+                  <span className="text-sm font-medium">Sign out</span>
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
       {aboutOpen ? <AboutDialog onClose={() => setAboutOpen(false)} /> : null}

@@ -44,17 +44,17 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "min-h-0 w-full flex-1 overflow-y-auto outline-none",
+        "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden outline-none",
         withoutOverflow,
       )}
       tabIndex={-1}
     >
       {chrome}
       {body.length > 0 ? (
-        <div className="px-4">
+        <div className="px-4 min-w-0">
           <div
             className={cn(
-              "mx-auto w-full",
+              "mx-auto w-full min-w-0",
               constrained && "max-w-[1400px]",
             )}
           >

@@ -1130,7 +1130,7 @@ export default function DashboardPage() {
 
       <div
         className={cn(
-          "flex flex-col gap-4 py-3 sm:py-5 lg:grid lg:grid-cols-3",
+          "flex min-w-0 flex-col gap-4 py-3 sm:py-5 lg:grid lg:grid-cols-3",
           viewerFullyHidden ? "lg:items-stretch" : "lg:items-start",
         )}
       >

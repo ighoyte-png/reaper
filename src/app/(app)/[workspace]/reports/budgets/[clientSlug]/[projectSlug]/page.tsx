@@ -1311,7 +1311,7 @@ export default function ProjectBudgetDetailPage() {
                     {chartUnit === "amount" ? "Spend Per Week" : "Hours Per Week"}
                   </button>
                   {scheduleOutsideDates ? (
-                    <OutsideDatesChartNote className="min-w-[12rem] flex-1 text-right" />
+                    <OutsideDatesChartNote className="min-w-0 flex-1 text-right sm:min-w-[12rem]" />
                   ) : null}
                 </div>
                 {retainerTab === "calendar" && periodMode !== "term" ? (
@@ -1549,7 +1549,7 @@ export default function ProjectBudgetDetailPage() {
                 No one assigned yet.
               </p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="min-w-0 overflow-x-auto">
                 <table className="w-full min-w-[20rem] text-left text-sm">
                   <thead>
                     <tr className="border-b border-[var(--border)] text-xs text-[var(--text-muted)]">

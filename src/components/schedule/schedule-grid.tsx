@@ -98,7 +98,7 @@ import {
 } from "@/lib/domain/schedule-zoom";
 import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
 import { cn } from "@/lib/cn";
-import { useMediaQuery } from "@/lib/hooks/use-media-query";
+import { useMediaQuery, useIsPhone } from "@/lib/hooks/use-media-query";
 import {
   clientNameOf,
   projectDisplayColor,
@@ -212,8 +212,14 @@ export function ScheduleGrid() {
   const projectHref = useProjectHref();
   const isNarrow = useMediaQuery("(max-width: 1023px)");
   const isCoarse = useMediaQuery("(pointer: coarse)");
-  const DAY_W = isNarrow ? DAY_W_MOBILE : DAY_W_DESKTOP;
-  const LABEL_PX = isNarrow ? LABEL_MOBILE : LABEL_DESKTOP;
+  const isPhone = useIsPhone();
+  const LABEL_PX = isPhone || isNarrow ? LABEL_MOBILE : LABEL_DESKTOP;
+  const [phoneDayW, setPhoneDayW] = useState(DAY_W_MOBILE);
+  const DAY_W = isPhone
+    ? phoneDayW
+    : isNarrow
+      ? DAY_W_MOBILE
+      : DAY_W_DESKTOP;
   const { filters, setFilter, setFilters } = useUrlFilters({
     project: "all",
     person: "all",
@@ -234,7 +240,7 @@ export function ScheduleGrid() {
   const personFilter = filters.person;
   const [halfZoom, setHalfZoom] = useState(false);
   const dayW =
-    zoom === "day" && halfZoom
+    !isPhone && zoom === "day" && halfZoom
       ? Math.max(20, Math.round(DAY_W / 2))
       : DAY_W;
   const [podFilter, setPodFilter] = useState<PodFilter>("all");
@@ -436,7 +442,22 @@ export function ScheduleGrid() {
   const assignmentsRef = useRef(state.assignments);
   assignmentsRef.current = state.assignments;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const weekSwipeRef = useRef<{ x: number; y: number } | null>(null);
+  const ignoreNextScheduleClickRef = useRef(false);
   const todayKey = toDateKey(new Date());
+
+  useLayoutEffect(() => {
+    if (!isPhone) return;
+    function measure() {
+      const cols = zoom === "day" ? 5 : 1;
+      const gutter = 16;
+      const w = Math.max(160, window.innerWidth - LABEL_PX - gutter);
+      setPhoneDayW(Math.max(36, Math.floor(w / cols)));
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [isPhone, zoom, LABEL_PX]);
 
   const { columns, totalWidth: tw, rangeLabel } = useMemo(
     () =>
@@ -446,8 +467,9 @@ export function ScheduleGrid() {
         todayKey,
         dayW,
         isNarrow,
+        isPhone,
       }),
-    [zoom, anchor, todayKey, dayW, isNarrow],
+    [zoom, anchor, todayKey, dayW, isNarrow, isPhone],
   );
   const startKey = columns[0]?.startKey ?? todayKey;
   const endKey = columns[columns.length - 1]?.endKey ?? todayKey;
@@ -636,8 +658,9 @@ export function ScheduleGrid() {
 
   function shiftAnchor(delta: number) {
     if (zoom === "month") setAnchor((a) => shiftMonth(a, delta));
-    else if (zoom === "week") setAnchor((a) => shiftWeek(a, delta * 4));
-    else setAnchor((a) => shiftWeek(a, delta));
+    else if (zoom === "week") {
+      setAnchor((a) => shiftWeek(a, isPhone ? delta : delta * 4));
+    } else setAnchor((a) => shiftWeek(a, delta));
   }
 
   function goToday() {
@@ -1719,12 +1742,27 @@ export function ScheduleGrid() {
    */
   function onScheduleBackgroundPointerDown(e: ReactPointerEvent) {
     if (e.button !== 0) return;
+    if (isPhone) {
+      weekSwipeRef.current = { x: e.clientX, y: e.clientY };
+    }
     if (dragSnapshot.current || leaveDragSnapshot.current) return;
     if (draft || leaveDraft) return;
     if (!selectedId && !leaveEditForm && !selectedLeaveBlockId) return;
     const target = e.target as Element | null;
     if (target?.closest("[data-schedule-block]")) return;
     deselectScheduleItem();
+  }
+
+  function onScheduleWeekSwipeEnd(e: ReactPointerEvent) {
+    const start = weekSwipeRef.current;
+    weekSwipeRef.current = null;
+    if (!isPhone || !start) return;
+    if (gridDragging || draft || leaveDraft) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    ignoreNextScheduleClickRef.current = true;
+    shiftAnchor(dx < 0 ? 1 : -1);
   }
 
   function selectLeaveBlock(block: LeaveBlock | null) {
@@ -2406,7 +2444,7 @@ export function ScheduleGrid() {
                 { value: "month", label: "By month" },
               ]}
             />
-            {zoom === "day" ? (
+            {zoom === "day" && !isPhone ? (
               <NavBtn
                 onClick={() => setHalfZoom((z) => !z)}
                 label={
@@ -2434,7 +2472,7 @@ export function ScheduleGrid() {
                   value={projectFilter}
                   onChange={(v) => setFilter("project", v)}
                   searchable
-                  className="mt-0 h-8 w-auto min-w-[13rem] max-w-[22rem] shrink-0"
+                  className="mt-0 h-8 w-full min-w-0 max-w-full shrink sm:w-auto sm:min-w-[13rem] sm:max-w-[22rem] sm:shrink-0"
                   aria-label="Filter by project"
                   options={[
                     { value: "all", label: "All projects" },
@@ -2449,7 +2487,7 @@ export function ScheduleGrid() {
                   onChange={(v) => setFilter("person", v)}
                   searchable
                   disabled={Boolean(viewAsPersonId)}
-                  className="mt-0 h-8 w-auto min-w-[10rem] max-w-[16rem] shrink-0"
+                  className="mt-0 h-8 w-full min-w-0 max-w-full shrink sm:w-auto sm:min-w-[10rem] sm:max-w-[16rem] sm:shrink-0"
                   aria-label="Filter by person"
                   options={[
                     { value: "all", label: "All people" },
@@ -2536,8 +2574,15 @@ export function ScheduleGrid() {
 
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 overflow-auto overscroll-contain touch-pan-x touch-pan-y"
+          className={cn(
+            "min-h-0 flex-1 overflow-auto overscroll-contain",
+            isPhone ? "touch-pan-y" : "touch-pan-x touch-pan-y",
+          )}
           onPointerDown={onScheduleBackgroundPointerDown}
+          onPointerUp={onScheduleWeekSwipeEnd}
+          onPointerCancel={() => {
+            weekSwipeRef.current = null;
+          }}
         >
           <div style={{ width: LABEL_PX + tw, minWidth: "100%" }}>
             <div className="sticky top-0 z-30 bg-[var(--bg)]">
@@ -3091,6 +3136,10 @@ export function ScheduleGrid() {
                           });
                         }}
                         onColumnClick={(col) => {
+                          if (ignoreNextScheduleClickRef.current) {
+                            ignoreNextScheduleClickRef.current = false;
+                            return;
+                          }
                           if (!canManage) return;
                           const leaveInBand =
                             zoom === "day"
@@ -3501,6 +3550,10 @@ export function ScheduleGrid() {
                               });
                             }}
                             onColumnClick={(col) => {
+                              if (ignoreNextScheduleClickRef.current) {
+                                ignoreNextScheduleClickRef.current = false;
+                                return;
+                              }
                               const leaveBlocked =
                                 zoom === "day"
                                   ? !!isOnFullDayLeave(

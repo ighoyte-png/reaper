@@ -37,6 +37,7 @@ import {
   useFavoriteProjectHref,
   usePathForNav,
 } from "@/lib/hooks/use-app-href";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import type { Project } from "@/lib/types";
 
 function FavoriteTab({
@@ -46,6 +47,7 @@ function FavoriteTab({
   active,
   color,
   suppressClickRef,
+  dragDisabled,
 }: {
   project: Project;
   href: string;
@@ -53,6 +55,7 @@ function FavoriteTab({
   active: boolean;
   color: string;
   suppressClickRef: MutableRefObject<boolean>;
+  dragDisabled?: boolean;
 }) {
   const {
     attributes,
@@ -61,7 +64,7 @@ function FavoriteTab({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: project.id });
+  } = useSortable({ id: project.id, disabled: Boolean(dragDisabled) });
 
   const fullLabel = clientName
     ? `${clientName} - ${project.name}`
@@ -87,7 +90,7 @@ function FavoriteTab({
         isDragging && "z-10 opacity-70",
       )}
       {...attributes}
-      {...listeners}
+      {...(dragDisabled ? {} : listeners)}
     >
       <Link
         href={href}
@@ -158,6 +161,7 @@ function FavoritesBottomNavInner() {
   const { state, profile, isPublicShare, reorderProjectFavorites } = useData();
   const favoriteHref = useFavoriteProjectHref();
   const pathForNav = usePathForNav();
+  const isPhone = useIsPhone();
   const [dragging, setDragging] = useState(false);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
@@ -304,6 +308,7 @@ function FavoritesBottomNavInner() {
           <SortableContext
             items={favorites.map((p) => p.id)}
             strategy={horizontalListSortingStrategy}
+            disabled={isPhone}
           >
             <ul className="ml-auto flex w-max min-w-full items-center justify-end gap-0.5 py-1">
               {favorites.map((project) => {
@@ -321,6 +326,7 @@ function FavoritesBottomNavInner() {
                       active={active}
                       color={projectDisplayColor(project, state.clients)}
                       suppressClickRef={suppressClickRef}
+                      dragDisabled={isPhone}
                     />
                   </li>
                 );

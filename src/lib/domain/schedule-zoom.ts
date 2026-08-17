@@ -46,11 +46,13 @@ export function buildScheduleColumns(opts: {
   todayKey: string;
   dayW: number;
   isNarrow: boolean;
+  /** Phone (<768): one page of columns so the canvas does not pan. */
+  isPhone?: boolean;
 }): { columns: ScheduleColumn[]; totalWidth: number; rangeLabel: string } {
-  const { zoom, anchor, todayKey, dayW, isNarrow } = opts;
+  const { zoom, anchor, todayKey, dayW, isNarrow, isPhone = false } = opts;
 
   if (zoom === "day") {
-    const weeksShown = isNarrow ? 8 : 20;
+    const weeksShown = isPhone ? 1 : isNarrow ? 8 : 20;
     const columns: ScheduleColumn[] = [];
     for (let w = 0; w < weeksShown; w++) {
       const ws = addWeeks(weekStart(anchor), w);
@@ -89,8 +91,8 @@ export function buildScheduleColumns(opts: {
   }
 
   if (zoom === "week") {
-    const weeksShown = isNarrow ? 12 : 26;
-    const colW = isNarrow ? 88 : 110;
+    const weeksShown = isPhone ? 1 : isNarrow ? 12 : 26;
+    const colW = isPhone ? dayW : isNarrow ? 88 : 110;
     const columns: ScheduleColumn[] = Array.from({ length: weeksShown }, (_, w) => {
       const ws = addWeeks(weekStart(anchor), w);
       const startKey = toDateKey(ws);
@@ -124,8 +126,8 @@ export function buildScheduleColumns(opts: {
     };
   }
 
-  const monthsShown = isNarrow ? 6 : 12;
-  const colW = isNarrow ? 112 : 140;
+  const monthsShown = isPhone ? 1 : isNarrow ? 6 : 12;
+  const colW = isPhone ? dayW : isNarrow ? 112 : 140;
   const base = startOfMonth(anchor);
   const columns: ScheduleColumn[] = Array.from({ length: monthsShown }, (_, m) => {
     const month = addMonths(base, m);

@@ -33,6 +33,7 @@ import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import type { TemplateTask, TemplateTaskList } from "@/lib/types";
 
 const INDENT_DRAG_PX = 28;
@@ -62,6 +63,7 @@ export function TemplateTaskBoard({ templateId }: { templateId: string }) {
     upsertTemplateTask,
     deleteTemplateTask,
   } = useData();
+  const isPhone = useIsPhone();
 
   const allLists = useMemo(
     () =>
@@ -371,6 +373,7 @@ export function TemplateTaskBoard({ templateId }: { templateId: string }) {
           <SortableContext
             items={allLists.map((l) => l.id)}
             strategy={verticalListSortingStrategy}
+            disabled={isPhone}
           >
             {allLists.map((list) => {
               const listTasks = allTasks.filter((t) => t.list_id === list.id);
@@ -542,10 +545,12 @@ function ListSection({
   onEditTask: (task: TemplateTask) => void;
   onDelete: () => void;
 }) {
+  const isPhone = useIsPhone();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: list.id,
       data: { type: "list" } satisfies ListDragData,
+      disabled: isPhone,
     });
 
   return (
@@ -561,6 +566,7 @@ function ListSection({
         ref={setNodeRef}
         className="flex flex-wrap items-center gap-2 border-b border-[var(--divider)] bg-[var(--bg-elevated)]/50 px-2 py-1.5"
       >
+        {isPhone ? null : (
         <button
           type="button"
           className="cursor-grab touch-none text-[var(--text-muted)]"
@@ -570,6 +576,7 @@ function ListSection({
         >
           <GripVertical size={14} strokeWidth={1.75} />
         </button>
+        )}
         <button
           type="button"
           className="cursor-pointer text-[var(--text-muted)]"
@@ -692,6 +699,7 @@ function TaskRow({
   onEdit: (task: TemplateTask) => void;
   onAddSubtask: () => void;
 }) {
+  const isPhone = useIsPhone();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: task.id,
@@ -700,6 +708,7 @@ function TaskRow({
         listId: task.list_id,
         parentId: task.parent_id,
       } satisfies TaskDragData,
+      disabled: isPhone,
     });
 
   const hasNotes = notesHasContent(task.notes);
@@ -717,6 +726,7 @@ function TaskRow({
         className="group flex items-center gap-1.5 border-b border-[var(--divider)] px-2 py-1.5 text-sm"
         style={{ paddingLeft: 8 + depth * 16 }}
       >
+        {isPhone ? null : (
         <button
           type="button"
           className="cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100"
@@ -727,6 +737,7 @@ function TaskRow({
         >
           <GripVertical size={14} strokeWidth={1.75} />
         </button>
+        )}
         <span
           className="h-2.5 w-2.5 shrink-0 rounded-sm bg-[var(--text-muted)]/35"
           title="Status is set after apply"

@@ -22,6 +22,7 @@ import { Check, GripVertical, Pencil } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { milestoneDateProgress } from "@/lib/domain/progress";
 import { cn } from "@/lib/cn";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import type { Milestone, Project } from "@/lib/types";
 import { format, parseISO } from "date-fns";
 
@@ -64,6 +65,7 @@ export function SortableMilestoneList({
   onEdit: (milestone: Milestone) => void;
   focusMilestoneId?: string | null;
 }) {
+  const isPhone = useIsPhone();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -98,7 +100,7 @@ export function SortableMilestoneList({
       <SortableContext
         items={milestones.map((m) => m.id)}
         strategy={verticalListSortingStrategy}
-        disabled={!canManage}
+        disabled={!canManage || isPhone}
       >
         <div className="space-y-6">
           {milestones.map((m) => (
@@ -139,8 +141,9 @@ function SortableMilestoneRow({
   onEdit: (milestone: Milestone) => void;
   focused?: boolean;
 }) {
+  const isPhone = useIsPhone();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: milestone.id, disabled: !canManage });
+    useSortable({ id: milestone.id, disabled: !canManage || isPhone });
   const pct = milestoneDateProgress(milestone, project, today);
   const dateLabel = milestone.due_date
     ? formatDisplayDate(milestone.due_date)
@@ -165,7 +168,7 @@ function SortableMilestoneRow({
       )}
     >
       <div className="flex items-start gap-1.5">
-        {canManage ? (
+        {canManage && !isPhone ? (
           <button
             type="button"
             className="mt-1 cursor-grab touch-none text-[var(--text-muted)]"

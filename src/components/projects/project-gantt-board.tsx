@@ -1055,16 +1055,16 @@ export function ProjectGanttBoard({
         anchor,
         todayKey: today,
         dayW,
-        isNarrow: false,
+        isNarrow: containerNarrow,
       }),
-    [anchor, today, dayW],
+    [anchor, today, dayW, containerNarrow],
   );
 
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      setContainerNarrow(entry.contentRect.width < 640);
+      setContainerNarrow(entry.contentRect.width < 1024);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -2132,8 +2132,8 @@ export function ProjectGanttBoard({
   const boardInner = (
     <div
       ref={containerRef}
-      className={cn(
-        "relative flex",
+        className={cn(
+        "relative flex min-w-0",
         viewportExpanded
           ? "h-full min-h-0 flex-1 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]"
           : "min-h-0 items-start",
