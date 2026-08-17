@@ -71,7 +71,7 @@ import {
   readUserViewPrefs,
   scheduleAnchorForOffset,
 } from "@/lib/user-view-prefs";
-import { expandAssignmentsInRange, occurrenceCoversDay, assignmentOverlapsDateRange, type AssignmentOccurrence } from "@/lib/domain/recurrence";
+import { expandAssignmentsInRange, occurrenceCoversDay, assignmentOverlapsDateRange, weeklySeriesEndDate, type AssignmentOccurrence } from "@/lib/domain/recurrence";
 import {
   endWeeklySeriesBeforeOccurrence,
   splitWeeklySeriesForFuture,
@@ -929,7 +929,12 @@ export function ScheduleGrid() {
     const filtered = state.assignments.filter(
       (a) => projectFilter === "all" || a.project_id === projectFilter,
     );
-    const expanded = expandAssignmentsInRange(filtered, startKey, endKey);
+    const expanded = expandAssignmentsInRange(
+      filtered,
+      startKey,
+      endKey,
+      (projectId) => projectsById.get(projectId)?.end_date,
+    );
     if (!dragPreview) return expanded;
     return expanded.map((occ) => {
       if (
@@ -945,7 +950,7 @@ export function ScheduleGrid() {
         end_date: dragPreview.previewEnd,
       };
     });
-  }, [state.assignments, projectFilter, startKey, endKey, dragPreview]);
+  }, [state.assignments, projectFilter, startKey, endKey, dragPreview, projectsById]);
 
   const bookedHoursByPersonDay = useMemo(
     () => buildBookedHoursByPersonDay(occurrences, state.leave_days),
@@ -1294,7 +1299,13 @@ export function ScheduleGrid() {
     let end = rows[0].end_date;
     for (const row of rows) {
       if (row.start_date < start) start = row.start_date;
-      const rowEnd = row.recurrence_end_date ?? row.end_date;
+      const rowEnd =
+        (row.recurrence ?? "none") === "weekly"
+          ? weeklySeriesEndDate(
+              row,
+              projectsById.get(row.project_id)?.end_date,
+            )
+          : row.end_date;
       if (rowEnd > end) end = rowEnd;
     }
     return { start, end };
@@ -1941,6 +1952,12 @@ export function ScheduleGrid() {
         roundAssignmentHours(editForm.hours_per_day),
       ),
     };
+    if ((next.recurrence ?? "none") === "weekly") {
+      next.recurrence_end_date = weeklySeriesEndDate(
+        next,
+        projectsById.get(next.project_id)?.end_date,
+      );
+    }
     const before = state.assignments.find((a) => a.id === editForm.id);
     if (
       before &&
@@ -2260,7 +2277,7 @@ export function ScheduleGrid() {
     const projectIds = new Set<string>();
     for (const a of state.assignments) {
       if (!visibleIds.has(a.person_id)) continue;
-      if (!assignmentOverlapsDateRange(a, startKey, endKey)) continue;
+      if (!assignmentOverlapsDateRange(a, startKey, endKey, projectsById.get(a.project_id)?.end_date)) continue;
       projectIds.add(a.project_id);
     }
     return sortedProjects
@@ -4334,7 +4351,15 @@ export function ScheduleGrid() {
                   patchEditForm({
                     recurrence: e.target.checked ? "weekly" : "none",
                     recurrence_end_date: e.target.checked
-                      ? editForm.recurrence_end_date
+                      ? weeklySeriesEndDate(
+                          {
+                            ...editForm,
+                            recurrence: "weekly",
+                            recurrence_end_date:
+                              editForm.recurrence_end_date,
+                          },
+                          projectsById.get(editForm.project_id)?.end_date,
+                        )
                       : null,
                     recurrence_exceptions: e.target.checked
                       ? (editForm.recurrence_exceptions ?? [])
@@ -4345,19 +4370,25 @@ export function ScheduleGrid() {
               <span>
                 Recurring weekly
                 <span className="block text-xs text-[var(--text-muted)]">
-                  Same weekdays & hours every week until the end date (or
-                  indefinitely if none)
+                  Same weekdays & hours every week until the series end date
                 </span>
               </span>
             </label>
             {(editForm.recurrence ?? "none") === "weekly" && (
-              <Field label="Series end date (optional)">
+              <Field label="Series end date">
                 <DateInput
                   className={inputClass}
                   value={editForm.recurrence_end_date ?? ""}
                   onChange={(e) =>
                     patchEditForm({
-                      recurrence_end_date: e.target.value || null,
+                      recurrence_end_date: weeklySeriesEndDate(
+                        {
+                          ...editForm,
+                          recurrence: "weekly",
+                          recurrence_end_date: e.target.value || null,
+                        },
+                        projectsById.get(editForm.project_id)?.end_date,
+                      ),
                     })
                   }
                 />
@@ -5138,6 +5169,7 @@ function MemberTodaySummary({
       assignments.filter((a) => a.person_id === myPerson.id),
       todayKey,
       todayKey,
+      (projectId) => projectsById.get(projectId)?.end_date,
     )
       .filter((o) => occurrenceCoversDay(o, todayKey))
       .sort((a, b) => {

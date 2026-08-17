@@ -2246,7 +2246,12 @@ export function projectHoursForecast(
         const from = rangeStart;
         const to = usedEnd;
         if (to < from) continue;
-        for (const occ of expandAssignmentInRange(a, from, to)) {
+        for (const occ of expandAssignmentInRange(
+          a,
+          from,
+          to,
+          project.end_date,
+        )) {
           sum += laborCost(
             byId.get(a.person_id),
             occurrenceHoursInRange(occ, from, to),
@@ -2264,7 +2269,12 @@ export function projectHoursForecast(
         if (a.project_id !== project.id || a.status !== "confirmed") continue;
         const person = byId.get(a.person_id);
         if (futureStart > rangeEnd) continue;
-        for (const occ of expandAssignmentInRange(a, futureStart, rangeEnd)) {
+        for (const occ of expandAssignmentInRange(
+          a,
+          futureStart,
+          rangeEnd,
+          project.end_date,
+        )) {
           sum += laborCost(
             person,
             occurrenceHoursInRange(occ, futureStart, rangeEnd),
