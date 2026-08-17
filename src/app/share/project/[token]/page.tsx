@@ -35,6 +35,7 @@ import {
   titleCaseWords,
 } from "@/lib/domain/assets";
 import {
+  calendarRangeBars,
   calendarYearBars,
   contractorExpenseTotalsInRange,
   hoursCommitmentTotalInRange,
@@ -302,6 +303,30 @@ export default function ProjectSharePage() {
           ),
           portalChartPeople(portal.hoursRetainer.people),
           chartYear,
+          new Date(),
+          portalChartMembers(portal.project.id, portal.hoursRetainer.members),
+          portalChartExpenses(portal.project.id, portal.hoursRetainer.expenses),
+        )
+      : [];
+
+  const termBars =
+    portal?.hoursRetainer != null &&
+    portal.project.start_date &&
+    portal.project.end_date
+      ? calendarRangeBars(
+          portalChartProject(
+            portal.project.id,
+            portal.hoursRetainer.budgetHours,
+            portal.project.start_date,
+            portal.project.end_date,
+          ),
+          portalChartAssignments(
+            portal.project.id,
+            portal.hoursRetainer.assignments,
+          ),
+          portalChartPeople(portal.hoursRetainer.people),
+          portal.project.start_date,
+          portal.project.end_date,
           new Date(),
           portalChartMembers(portal.project.id, portal.hoursRetainer.members),
           portalChartExpenses(portal.project.id, portal.hoursRetainer.expenses),
@@ -1028,32 +1053,34 @@ export default function ProjectSharePage() {
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold">
-                    {chartYear} Calendar
+                    {periodMode === "term" ? "Calendar" : `${chartYear} Calendar`}
                   </h2>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
-                      onClick={() => setChartYear((y) => y - 1)}
-                      aria-label="Previous year"
-                    >
-                      <ChevronLeft size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
-                      onClick={() => setChartYear((y) => y + 1)}
-                      aria-label="Next year"
-                    >
-                      <ChevronRight size={16} />
-                    </button>
-                  </div>
+                  {periodMode !== "term" ? (
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                        onClick={() => setChartYear((y) => y - 1)}
+                        aria-label="Previous year"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] hover:bg-[var(--row-hover)]"
+                        onClick={() => setChartYear((y) => y + 1)}
+                        aria-label="Next year"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
                 <ProjectYearBurnChart
-                  bars={yearBars}
+                  bars={periodMode === "term" ? termBars : yearBars}
                   unit="hours"
                   monthlyCap={portal.hoursRetainer.budgetHours}
-                  year={chartYear}
+                  year={periodMode === "term" ? undefined : chartYear}
                   compact
                   blendContractors
                   selectedMonthKey={selectedMonthKey}
