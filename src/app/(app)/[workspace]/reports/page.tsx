@@ -49,6 +49,11 @@ import {
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 
+/** Visible project rows in landing overview lists before the card scrolls. */
+const OVERVIEW_LIST_VISIBLE_ROWS = 10;
+const OVERVIEW_ROW_H = "2.625rem";
+const OVERVIEW_ROW_GAP = "0.375rem"; // space-y-1.5
+
 const reports: {
   path: string;
   title: string;
@@ -798,6 +803,33 @@ function UtilizationOverview({
   );
 }
 
+function ReportOverviewRowList({
+  count,
+  children,
+}: {
+  count: number;
+  children: ReactNode;
+}) {
+  const scroll = count > OVERVIEW_LIST_VISIBLE_ROWS;
+  return (
+    <div
+      className={cn(
+        "min-h-0 min-w-0 space-y-1.5 overflow-x-hidden",
+        scroll && "overflow-y-auto overscroll-contain",
+      )}
+      style={
+        scroll
+          ? {
+              maxHeight: `calc(${OVERVIEW_LIST_VISIBLE_ROWS} * ${OVERVIEW_ROW_H} + ${OVERVIEW_LIST_VISIBLE_ROWS - 1} * ${OVERVIEW_ROW_GAP})`,
+            }
+          : undefined
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
 function BudgetsOverview({
   data,
   plannedHours,
@@ -872,12 +904,12 @@ function BudgetsOverview({
         />
       </div>
       {data.rows.length > 0 ? (
-        <div className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
+        <ReportOverviewRowList count={data.rows.length}>
           {data.rows.map((row) => (
             <Link
               key={row.id}
               href={budgetHref(row.project)}
-              className="block min-w-0 space-y-1 rounded-md px-0.5 py-0.5 hover:bg-[var(--row-hover)]"
+              className="block min-w-0 shrink-0 space-y-1 rounded-md px-0.5 py-0.5 hover:bg-[var(--row-hover)]"
             >
               <div className="flex min-w-0 items-baseline justify-between gap-2 text-[11px]">
                 <span className="min-w-0 truncate text-[var(--text-muted)]">
@@ -894,7 +926,7 @@ function BudgetsOverview({
               />
             </Link>
           ))}
-        </div>
+        </ReportOverviewRowList>
       ) : (
         <p className="text-xs text-[var(--text-muted)]">No Budgeted Projects.</p>
       )}
@@ -940,12 +972,12 @@ function TimelinesOverview({
         </div>
       </div>
       {data.rows.length > 0 ? (
-        <div className="min-h-0 min-w-0 flex-1 space-y-1.5 overflow-y-auto overflow-x-hidden">
+        <ReportOverviewRowList count={data.rows.length}>
           {data.rows.map((row) => (
             <Link
               key={row.id}
               href={projectHref(row.project)}
-              className="block min-w-0 space-y-1 rounded-md px-0.5 py-0.5 hover:bg-[var(--row-hover)]"
+              className="block min-w-0 shrink-0 space-y-1 rounded-md px-0.5 py-0.5 hover:bg-[var(--row-hover)]"
             >
               <div className="flex min-w-0 items-baseline justify-between gap-2 text-[11px]">
                 <span className="min-w-0 truncate text-[var(--text-muted)]">
@@ -958,7 +990,7 @@ function TimelinesOverview({
               <ProgressBar pct={row.pct} size="sm" />
             </Link>
           ))}
-        </div>
+        </ReportOverviewRowList>
       ) : (
         <p className="text-xs text-[var(--text-muted)]">
           No Projects with Timelines.
