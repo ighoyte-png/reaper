@@ -26,9 +26,9 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#111111",
     theme_color: "#111111",
     launch_handler: {
-      client_mode: "focus-existing",
+      client_mode: ["navigate-new", "auto"],
     },
-    capture_links: "existing-client-navigate",
+    capture_links: "new-client",
     url_handlers: [{ origin }],
     icons: [
       {
