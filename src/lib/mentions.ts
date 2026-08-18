@@ -63,3 +63,44 @@ export function extractMentionPersonIds(html: string): string[] {
   }
   return [...ids];
 }
+
+/** People newly tagged in next vs prev (optional self-exclusion). */
+export function newlyMentionedPersonIds(
+  prevIds: Iterable<string>,
+  nextIds: Iterable<string>,
+  excludePersonId?: string | null,
+): string[] {
+  const prev = new Set(
+    [...prevIds].filter((id): id is string => Boolean(id)),
+  );
+  return [...new Set([...nextIds].filter(Boolean))].filter(
+    (id) => !prev.has(id) && id !== excludePersonId,
+  );
+}
+
+/**
+ * Inbox rows to insert / delete when mention membership changes.
+ * Only newly tagged people get a row — dismissed or already-read
+ * mentions are not resurrected on an unrelated save.
+ */
+export function mentionUnreadSyncPlan(args: {
+  currentPersonIds: Iterable<string>;
+  existingUnreadPersonIds: Iterable<string>;
+  newlyMentionedPersonIds: Iterable<string>;
+}): { toAdd: string[]; toRemove: string[] } {
+  const current = new Set(
+    [...args.currentPersonIds].filter((id): id is string => Boolean(id)),
+  );
+  const existing = new Set(
+    [...args.existingUnreadPersonIds].filter(
+      (id): id is string => Boolean(id),
+    ),
+  );
+  const newly = new Set(
+    [...args.newlyMentionedPersonIds].filter((id) => current.has(id)),
+  );
+  return {
+    toRemove: [...existing].filter((id) => !current.has(id)),
+    toAdd: [...newly].filter((id) => !existing.has(id)),
+  };
+}

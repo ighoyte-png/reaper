@@ -794,7 +794,7 @@ export default function DashboardPage() {
   const mentionInbox = useMemo(() => {
     if (!mentionPersonId) return [];
     return (state.unread_mentions ?? []).filter(
-      (r) => r.person_id === mentionPersonId,
+      (r) => r.person_id === mentionPersonId && !r.read_at,
     );
   }, [mentionPersonId, state.unread_mentions]);
   const unreadMentionIds = useMemo(
@@ -1327,9 +1327,7 @@ export default function DashboardPage() {
                       "text-[var(--status-attention)]",
                   )}
                 >
-                  {unreadMentionIds.size > 0
-                    ? `${unreadMentionIds.size} to review`
-                    : `${taggedMentions.length} mentioned`}
+                  {`${unreadMentionIds.size} to review`}
                 </div>
               </KpiCard>
 
@@ -1600,7 +1598,7 @@ function TaggedMentionsPanel({
       </div>
       {total === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
-          No mentions yet.
+          No new mentions.
         </p>
       ) : (
         <ul

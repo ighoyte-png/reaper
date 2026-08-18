@@ -37,6 +37,7 @@ import type {
   TemplateTaskList,
 } from "@/lib/types";
 import type { SearchHit } from "@/lib/search";
+import { mentionUnreadSyncPlan } from "@/lib/mentions";
 import {
   DEFAULT_ORG_BUDGET_SETTINGS,
   normalizeOrgBudgetSettings,
@@ -3435,8 +3436,11 @@ export async function upsertTaskCommentRow(
   const existing = new Set(
     (existingRes.data ?? []).map((r) => String(r.person_id)),
   );
-  const toRemove = [...existing].filter((id) => !idSet.has(id));
-  const toAdd = ids.filter((id) => !existing.has(id));
+  const { toAdd, toRemove } = mentionUnreadSyncPlan({
+    currentPersonIds: ids,
+    existingUnreadPersonIds: existing,
+    newlyMentionedPersonIds: mentionsToAdd,
+  });
 
   if (toRemove.length > 0) {
     const { error: delUnreadErr } = await supabase
@@ -3816,12 +3820,12 @@ async function syncSourceMentionUnreads(
   args: {
     organization_id: string;
     person_ids: string[];
+    newly_person_ids: string[];
     column: "task_id" | "assignment_id";
     sourceId: string;
   },
 ): Promise<void> {
   const ids = [...new Set(args.person_ids.filter(Boolean))];
-  const idSet = new Set(ids);
 
   const existingRes = await supabase
     .from("mention_unreads")
@@ -3846,11 +3850,12 @@ async function syncSourceMentionUnreads(
   }
   if (existingRes.error) throw existingRes.error;
 
-  const existing = new Set(
-    (existingRes.data ?? []).map((r) => String(r.person_id)),
-  );
-  const toRemove = [...existing].filter((id) => !idSet.has(id));
-  const toAdd = ids.filter((id) => !existing.has(id));
+  const existing = (existingRes.data ?? []).map((r) => String(r.person_id));
+  const { toAdd, toRemove } = mentionUnreadSyncPlan({
+    currentPersonIds: ids,
+    existingUnreadPersonIds: existing,
+    newlyMentionedPersonIds: args.newly_person_ids,
+  });
 
   if (toRemove.length > 0) {
     const { error: delErr } = await supabase
@@ -3860,8 +3865,6 @@ async function syncSourceMentionUnreads(
       .in("person_id", toRemove);
     if (delErr) throw delErr;
   }
-
-  if (ids.length === 0) return;
 
   if (toAdd.length > 0) {
     const { error: addErr } = await supabase.from("mention_unreads").insert(
@@ -3883,11 +3886,13 @@ export async function syncTaskNoteMentionUnreads(
     task_id: string;
     organization_id: string;
     person_ids: string[];
+    newly_person_ids: string[];
   },
 ): Promise<void> {
   await syncSourceMentionUnreads(supabase, {
     organization_id: args.organization_id,
     person_ids: args.person_ids,
+    newly_person_ids: args.newly_person_ids,
     column: "task_id",
     sourceId: args.task_id,
   });
@@ -3899,11 +3904,13 @@ export async function syncAssignmentNoteMentionUnreads(
     assignment_id: string;
     organization_id: string;
     person_ids: string[];
+    newly_person_ids: string[];
   },
 ): Promise<void> {
   await syncSourceMentionUnreads(supabase, {
     organization_id: args.organization_id,
     person_ids: args.person_ids,
+    newly_person_ids: args.newly_person_ids,
     column: "assignment_id",
     sourceId: args.assignment_id,
   });

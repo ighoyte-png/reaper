@@ -45,6 +45,7 @@ import {
 import {
   extractMentionPersonIds,
   mentionUnreadMatchesTarget,
+  newlyMentionedPersonIds,
 } from "@/lib/mentions";
 import {
   dispatchAssignmentNoteMention,
@@ -3526,12 +3527,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           edited_by_profile_id: profile?.id ?? null,
         } as Assignment;
 
-        const prevMentionIds = new Set(
-          extractMentionPersonIds(existing?.notes ?? ""),
-        );
+        const prevMentionIds = extractMentionPersonIds(existing?.notes ?? "");
         const nextMentionIds = extractMentionPersonIds(row.notes ?? "");
-        const newlyMentioned = [...nextMentionIds].filter(
-          (id) => !prevMentionIds.has(id) && id !== myPerson?.id,
+        const newlyMentioned = newlyMentionedPersonIds(
+          prevMentionIds,
+          nextMentionIds,
+          myPerson?.id,
         );
 
         patch((prev) => {
@@ -3578,6 +3579,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               assignment_id: row.id,
               organization_id: row.organization_id,
               person_ids: nextMentionIds,
+              newly_person_ids: newlyMentioned,
             });
           });
         }
@@ -4326,15 +4328,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 null),
           };
         }
+        const prevMentionIds = extractMentionPersonIds(
+          existing?.notes ?? "",
+        );
+        const nextMentionIds = extractMentionPersonIds(row.notes ?? "");
+        const newlyMentionedLocal = newlyMentionedPersonIds(
+          prevMentionIds,
+          nextMentionIds,
+          myPerson?.id,
+        );
         patch((prev) => {
           const exists = prev.tasks.some((t) => t.id === row.id);
-          const prevMentionIds = new Set(
-            extractMentionPersonIds(existing?.notes ?? ""),
-          );
-          const nextMentionIds = extractMentionPersonIds(row.notes ?? "");
-          const newlyMentionedLocal = [...nextMentionIds].filter(
-            (id) => !prevMentionIds.has(id) && id !== myPerson?.id,
-          );
           let unread_mentions = prev.unread_mentions.filter(
             (r) =>
               r.task_id !== row.id || nextMentionIds.includes(r.person_id),
@@ -4370,15 +4374,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", row.id);
           noteLocalWrite("mention_unreads", `task:${row.id}`);
-          const nextMentionIdsForSync = extractMentionPersonIds(
-            row.notes ?? "",
-          );
           runRemoteSoft(async () => {
             await upsertTaskRow(supabaseRef.current!, row);
             await syncTaskNoteMentionUnreads(supabaseRef.current!, {
               task_id: row.id,
               organization_id: row.organization_id,
-              person_ids: nextMentionIdsForSync,
+              person_ids: nextMentionIds,
+              newly_person_ids: newlyMentionedLocal,
             });
           });
         }
@@ -4445,16 +4447,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         }
         // Desktop notify newly @mentioned people in task notes (org broadcast).
-        const prevMentionIds = new Set(
-          extractMentionPersonIds(existing?.notes ?? ""),
-        );
-        const nextMentionIds = extractMentionPersonIds(row.notes ?? "");
-        const newlyMentioned = [...nextMentionIds].filter(
-          (id) => !prevMentionIds.has(id) && id !== myPerson?.id,
-        );
-        if (newlyMentioned.length > 0) {
+        if (newlyMentionedLocal.length > 0) {
           const payload: TaskNoteMentionBroadcast = {
-            personIds: newlyMentioned,
+            personIds: newlyMentionedLocal,
             taskId: row.id,
             projectId: row.project_id,
             taskTitle: row.title,
