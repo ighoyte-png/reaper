@@ -10,17 +10,20 @@ import { mentionUnreadKey } from "@/lib/mentions";
 import { notesPlainText } from "@/lib/notes-html";
 import {
   ASSIGNMENT_NOTE_MENTION_EVENT,
+  COMMENT_REACTION_EVENT,
   TASK_NOTE_MENTION_EVENT,
   notificationPortraitIcon,
   reaperNotificationBadgeUrl,
   showDesktopNotification,
   type AssignmentNoteMentionBroadcast,
+  type CommentReactionBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 
 /**
  * Shows OS desktop notifications for @mentions (comments / task notes /
- * assignment notes) and new bulletin board posts (via unread_bulletin_ids).
+ * assignment notes), comment emoji reactions, and new bulletin board posts
+ * (via unread_bulletin_ids).
  */
 export function MentionDesktopListener() {
   const {
@@ -271,11 +274,14 @@ export function MentionDesktopListener() {
   ]);
 
   useEffect(() => {
-    if (isPublicShare || !myPerson) return;
-    const personId = myPerson.id;
+    if (isPublicShare) return;
+    const personId = myPerson?.id ?? null;
+    const myProfileId = profile?.id ?? null;
+    if (!personId && !myProfileId) return;
     const orgName = state.organization?.name?.trim() || "Reaper";
 
     function onTaskNoteMention(ev: Event) {
+      if (!personId) return;
       const detail = (ev as CustomEvent<TaskNoteMentionBroadcast>).detail;
       if (!detail?.personIds?.includes(personId)) return;
 
@@ -311,6 +317,7 @@ export function MentionDesktopListener() {
     }
 
     function onAssignmentNoteMention(ev: Event) {
+      if (!personId) return;
       const detail = (ev as CustomEvent<AssignmentNoteMentionBroadcast>).detail;
       if (!detail?.personIds?.includes(personId)) return;
 
@@ -346,21 +353,70 @@ export function MentionDesktopListener() {
       })();
     }
 
+    function onCommentReaction(ev: Event) {
+      const detail = (ev as CustomEvent<CommentReactionBroadcast>).detail;
+      if (!detail?.authorProfileId || !myProfileId) return;
+      if (detail.authorProfileId !== myProfileId) return;
+      if (detail.reactorProfileId === myProfileId) return;
+
+      const reactorName = detail.reactorName?.trim() || "Someone";
+      const emoji = detail.emoji?.trim() || "";
+      void (async () => {
+        const icon = await notificationPortraitIcon({
+          name: reactorName,
+          avatarUrl: detail.reactorAvatarUrl,
+          avatarAttachmentId: detail.reactorAvatarAttachmentId,
+          color: detail.reactorColor,
+        });
+        const project = detail.projectId
+          ? (stateRef.current.projects.find((p) => p.id === detail.projectId) ??
+            null)
+          : null;
+        const href =
+          project && detail.taskId
+            ? projectHref(
+                project,
+                `task=${detail.taskId}&comment=${detail.commentId}`,
+              )
+            : appHref("/dashboard");
+        void showDesktopNotification(reactorName, {
+          body: [
+            orgName,
+            emoji
+              ? `${emoji} reacted to your comment`
+              : "Reacted to your comment",
+            detail.taskTitle ? detail.taskTitle : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          tag: `comment-reaction-${detail.commentId}-${detail.reactorProfileId}-${emoji}`,
+          icon,
+          href,
+          onClick: () => {
+            router.push(href);
+          },
+        });
+      })();
+    }
+
     window.addEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
     window.addEventListener(
       ASSIGNMENT_NOTE_MENTION_EVENT,
       onAssignmentNoteMention,
     );
+    window.addEventListener(COMMENT_REACTION_EVENT, onCommentReaction);
     return () => {
       window.removeEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
       window.removeEventListener(
         ASSIGNMENT_NOTE_MENTION_EVENT,
         onAssignmentNoteMention,
       );
+      window.removeEventListener(COMMENT_REACTION_EVENT, onCommentReaction);
     };
   }, [
     isPublicShare,
     myPerson,
+    profile?.id,
     state.organization?.name,
     router,
     projectHref,

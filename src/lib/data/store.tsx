@@ -49,8 +49,10 @@ import {
 } from "@/lib/mentions";
 import {
   dispatchAssignmentNoteMention,
+  dispatchCommentReaction,
   dispatchTaskNoteMention,
   type AssignmentNoteMentionBroadcast,
+  type CommentReactionBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -1490,6 +1492,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const detail = payload as AssignmentNoteMentionBroadcast;
           if (!detail?.personIds?.length || !detail.assignmentId) return;
           dispatchAssignmentNoteMention(detail);
+        },
+      )
+      .on(
+        "broadcast",
+        { event: "comment-reaction" },
+        ({ payload }) => {
+          const detail = payload as CommentReactionBroadcast;
+          if (
+            !detail?.authorProfileId ||
+            !detail.commentId ||
+            !detail.reactorProfileId ||
+            !detail.emoji
+          ) {
+            return;
+          }
+          dispatchCommentReaction(detail);
         },
       )
       .subscribe();
@@ -4660,22 +4678,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!profileId) return;
         const trimmed = emoji.trim();
         if (!trimmed) return;
+        const comment = state.task_comments.find((c) => c.id === commentId);
+        if (!comment) return;
         let nextActive = false;
-        let organizationId = "";
+        const organizationId = comment.organization_id;
         patch((prev) => {
-          const comment = prev.task_comments.find((c) => c.id === commentId);
-          if (!comment) return prev;
-          organizationId = comment.organization_id;
-          const hasMine = comment.reactions.some(
+          const current = prev.task_comments.find((c) => c.id === commentId);
+          if (!current) return prev;
+          const hasMine = current.reactions.some(
             (r) => r.profile_id === profileId && r.emoji === trimmed,
           );
           nextActive = !hasMine;
           const reactions = hasMine
-            ? comment.reactions.filter(
+            ? current.reactions.filter(
                 (r) =>
                   !(r.profile_id === profileId && r.emoji === trimmed),
               )
-            : [...comment.reactions, { emoji: trimmed, profile_id: profileId }];
+            : [...current.reactions, { emoji: trimmed, profile_id: profileId }];
           return {
             ...prev,
             task_comments: prev.task_comments.map((c) =>
@@ -4695,6 +4714,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
               active: nextActive,
             }),
           );
+        }
+        if (
+          nextActive &&
+          comment.author_profile_id &&
+          comment.author_profile_id !== profileId
+        ) {
+          const task =
+            state.tasks.find((t) => t.id === comment.task_id) ?? null;
+          const payload: CommentReactionBroadcast = {
+            authorProfileId: comment.author_profile_id,
+            reactorProfileId: profileId,
+            commentId,
+            taskId: comment.task_id,
+            projectId: task?.project_id ?? "",
+            taskTitle: task?.title ?? "",
+            emoji: trimmed,
+            reactorName:
+              myPerson?.name?.trim() ||
+              profile?.full_name?.trim() ||
+              profile?.email?.trim() ||
+              "Someone",
+            reactorAvatarUrl: myPerson?.avatar_url ?? null,
+            reactorAvatarAttachmentId: myPerson?.avatar_attachment_id ?? null,
+            reactorColor: myPerson ? personAvatarColor(myPerson) : null,
+          };
+          if (orgChannelRef.current) {
+            void orgChannelRef.current.send({
+              type: "broadcast",
+              event: "comment-reaction",
+              payload,
+            });
+          }
         }
       },
       upsertBulletin: (bulletin) => {

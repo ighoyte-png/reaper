@@ -3,7 +3,8 @@ import type { BudgetBurn, OrganizationSettings } from "@/lib/types";
 import { budgetHealth, formatHours, formatMoney } from "@/lib/domain/budget";
 import type { CurrencyCode } from "@/lib/types";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
-import { burnBarFillSegments, burnFillClass, barFillCapClass } from "@/lib/domain/bar-fill";
+import { burnBarFillSegments, burnFillClass } from "@/lib/domain/bar-fill";
+import { BarFillPill } from "@/components/ui/bar-fill-pill";
 
 const hatchStyle = {
   backgroundImage:
@@ -55,6 +56,7 @@ export function BurnBar({
     health,
     warningPct,
   });
+  const fillPct = segments.reduce((sum, seg) => sum + seg.width, 0);
 
   const legendContractorClass =
     health === "over"
@@ -112,31 +114,25 @@ export function BurnBar({
             : undefined
         }
       >
-        {segments.map((seg, idx) => {
-          const cap = barFillCapClass(idx, segments.length);
-          return (
+        <BarFillPill totalPct={fillPct}>
+          {segments.map((seg, idx) => (
             <div
               key={`${seg.tone}-${idx}-${seg.hatched ? "h" : "s"}`}
               className={clsx(
-                "relative h-full min-w-0 shrink-0 overflow-hidden",
+                "relative h-full min-w-0 overflow-hidden",
                 burnFillClass(seg.tone),
-                cap,
                 seg.hatched &&
                   idx > 0 &&
                   "border-l border-[var(--progress-approved-hatch)]",
               )}
-              style={{ width: `${seg.width}%` }}
+              style={{ flex: `${seg.width} 0 0` }}
             >
               {seg.hatched ? (
-                <div
-                  className={clsx("absolute inset-0", cap)}
-                  style={hatchStyle}
-                  aria-hidden
-                />
+                <div className="absolute inset-0" style={hatchStyle} aria-hidden />
               ) : null}
             </div>
-          );
-        })}
+          ))}
+        </BarFillPill>
       </div>
       {hasContractor && !compact ? (
         <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">

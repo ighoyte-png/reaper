@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  barFillCapClass,
   burnBarFillSegments,
   utilizationBarSlices,
 } from "@/lib/domain/bar-fill";
@@ -107,17 +106,5 @@ describe("utilizationBarSlices", () => {
     expect(utilizationBarSlices(100, "over", 85)).toEqual([
       { width: 100, tone: "over" },
     ]);
-  });
-});
-
-describe("barFillCapClass", () => {
-  it("rounds both ends when there is a single fill", () => {
-    expect(barFillCapClass(0, 1)).toBe("rounded-full");
-  });
-
-  it("rounds the leading and trailing caps of a split fill", () => {
-    expect(barFillCapClass(0, 3)).toBe("rounded-l-full");
-    expect(barFillCapClass(1, 3)).toBe("");
-    expect(barFillCapClass(2, 3)).toBe("rounded-r-full");
   });
 });

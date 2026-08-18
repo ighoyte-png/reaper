@@ -13,7 +13,8 @@ import {
   type ProductionHoursEstimate,
 } from "@/lib/domain/production-hours";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
-import { burnBarFillSegments, burnFillClass, barFillCapClass } from "@/lib/domain/bar-fill";
+import { burnBarFillSegments, burnFillClass } from "@/lib/domain/bar-fill";
+import { BarFillPill } from "@/components/ui/bar-fill-pill";
 import type {
   Assignment,
   OrganizationSettings,
@@ -61,6 +62,9 @@ function ProductionHoursBar({
 
   const hasContractor = contractorPct > 0;
   const hasAvailable = availablePct > 0 && estimate.health !== "over";
+  const fillPct =
+    segments.reduce((sum, seg) => sum + seg.width, 0) +
+    (hasAvailable ? Math.min(100, availablePct) : 0);
   const legendContractor = burnFillClass(
     estimate.health === "over" ? "over" : "contractor",
   );
@@ -74,43 +78,31 @@ function ProductionHoursBar({
         className="flex h-4 overflow-hidden rounded-full bg-[var(--border)]"
         title={`${formatHours(estimate.usedHours)} used · ${formatHours(estimate.futureHours)} planned`}
       >
-        {segments.map((seg, idx) => {
-          const cap = barFillCapClass(
-            idx,
-            segments.length + (hasAvailable ? 1 : 0),
-          );
-          return (
+        <BarFillPill totalPct={fillPct}>
+          {segments.map((seg, idx) => (
             <div
               key={`${seg.tone}-${idx}-${seg.hatched ? "h" : "s"}`}
               className={clsx(
-                "relative h-full min-w-0 shrink-0 overflow-hidden",
+                "relative h-full min-w-0 overflow-hidden",
                 burnFillClass(seg.tone),
-                cap,
                 seg.hatched &&
                   idx > 0 &&
                   "border-l border-[var(--progress-approved-hatch)]",
               )}
-              style={{ width: `${seg.width}%` }}
+              style={{ flex: `${seg.width} 0 0` }}
             >
               {seg.hatched ? (
-                <div
-                  className={clsx("absolute inset-0", cap)}
-                  style={hatchStyle}
-                  aria-hidden
-                />
+                <div className="absolute inset-0" style={hatchStyle} aria-hidden />
               ) : null}
             </div>
-          );
-        })}
-        {hasAvailable ? (
-          <div
-            className={clsx(
-              "h-full shrink-0 bg-[var(--hours-available)]",
-              barFillCapClass(segments.length, segments.length + 1),
-            )}
-            style={{ width: `${Math.min(100, availablePct)}%` }}
-          />
-        ) : null}
+          ))}
+          {hasAvailable ? (
+            <div
+              className="h-full min-w-0 bg-[var(--hours-available)]"
+              style={{ flex: `${Math.min(100, availablePct)} 0 0` }}
+            />
+          ) : null}
+        </BarFillPill>
       </div>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)]">
         {hasContractor ? (

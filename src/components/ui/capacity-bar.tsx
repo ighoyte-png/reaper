@@ -4,8 +4,8 @@ import { capacityLevelTextClass } from "@/lib/domain/capacity";
 import {
   utilizationBarSlices,
   utilizationFillClass,
-  barFillCapClass,
 } from "@/lib/domain/bar-fill";
+import { BarFillPill } from "@/components/ui/bar-fill-pill";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
 import type { CapacityLevel } from "@/lib/types";
 
@@ -31,6 +31,7 @@ export function CapacityBar({
       : Math.min(100, (booked / available) * 100);
   const over = available > 0 && booked > available;
   const slices = utilizationBarSlices(pct, level, nearPct);
+  const fillPct = slices.reduce((sum, slice) => sum + slice.width, 0);
 
   return (
     <div className="min-w-0 space-y-1">
@@ -49,17 +50,15 @@ export function CapacityBar({
         </span>
       </div>
       <div className="flex h-2 overflow-hidden rounded-full bg-[var(--border)]">
-        {slices.map((slice, idx) => (
-          <div
-            key={`${slice.tone}-${idx}`}
-            className={cn(
-              "h-full shrink-0",
-              utilizationFillClass(slice.tone),
-              barFillCapClass(idx, slices.length),
-            )}
-            style={{ width: `${slice.width}%` }}
-          />
-        ))}
+        <BarFillPill totalPct={fillPct}>
+          {slices.map((slice, idx) => (
+            <div
+              key={`${slice.tone}-${idx}`}
+              className={cn("h-full min-w-0", utilizationFillClass(slice.tone))}
+              style={{ flex: `${slice.width} 0 0` }}
+            />
+          ))}
+        </BarFillPill>
       </div>
     </div>
   );

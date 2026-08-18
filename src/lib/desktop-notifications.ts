@@ -1,6 +1,6 @@
 import { avatarContentAbsoluteUrl } from "@/lib/storage/avatar-url";
 
-/** Browser / PWA desktop notifications for @mentions. */
+/** Browser / PWA desktop notifications for @mentions and comment reactions. */
 
 export function desktopNotificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
@@ -287,6 +287,27 @@ export function dispatchAssignmentNoteMention(
   window.dispatchEvent(
     new CustomEvent(ASSIGNMENT_NOTE_MENTION_EVENT, { detail }),
   );
+}
+
+export type CommentReactionBroadcast = {
+  authorProfileId: string;
+  reactorProfileId: string;
+  commentId: string;
+  taskId: string;
+  projectId: string;
+  taskTitle: string;
+  emoji: string;
+  reactorName: string;
+  reactorAvatarUrl?: string | null;
+  reactorAvatarAttachmentId?: string | null;
+  reactorColor?: string | null;
+};
+
+export const COMMENT_REACTION_EVENT = "reaper:comment-reaction";
+
+export function dispatchCommentReaction(detail: CommentReactionBroadcast) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(COMMENT_REACTION_EVENT, { detail }));
 }
 
 const PROMPT_SNOOZE_KEY = "reaper.notification-prompt.snooze-until";
