@@ -4,6 +4,7 @@ import { capacityLevelTextClass } from "@/lib/domain/capacity";
 import {
   utilizationBarSlices,
   utilizationFillClass,
+  barFillCapClass,
 } from "@/lib/domain/bar-fill";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
 import type { CapacityLevel } from "@/lib/types";
@@ -51,7 +52,11 @@ export function CapacityBar({
         {slices.map((slice, idx) => (
           <div
             key={`${slice.tone}-${idx}`}
-            className={cn("h-full shrink-0", utilizationFillClass(slice.tone))}
+            className={cn(
+              "h-full shrink-0",
+              utilizationFillClass(slice.tone),
+              barFillCapClass(idx, slices.length),
+            )}
             style={{ width: `${slice.width}%` }}
           />
         ))}

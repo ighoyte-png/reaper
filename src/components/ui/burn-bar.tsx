@@ -3,7 +3,7 @@ import type { BudgetBurn, OrganizationSettings } from "@/lib/types";
 import { budgetHealth, formatHours, formatMoney } from "@/lib/domain/budget";
 import type { CurrencyCode } from "@/lib/types";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
-import { burnBarFillSegments, burnFillClass } from "@/lib/domain/bar-fill";
+import { burnBarFillSegments, burnFillClass, barFillCapClass } from "@/lib/domain/bar-fill";
 
 const hatchStyle = {
   backgroundImage:
@@ -112,20 +112,31 @@ export function BurnBar({
             : undefined
         }
       >
-        {segments.map((seg, idx) => (
-          <div
-            key={`${seg.tone}-${idx}-${seg.hatched ? "h" : "s"}`}
-            className={clsx(
-              "relative h-full min-w-0 shrink-0 overflow-hidden",
-              burnFillClass(seg.tone),
-            )}
-            style={{ width: `${seg.width}%` }}
-          >
-            {seg.hatched ? (
-              <div className="absolute inset-0" style={hatchStyle} aria-hidden />
-            ) : null}
-          </div>
-        ))}
+        {segments.map((seg, idx) => {
+          const cap = barFillCapClass(idx, segments.length);
+          return (
+            <div
+              key={`${seg.tone}-${idx}-${seg.hatched ? "h" : "s"}`}
+              className={clsx(
+                "relative h-full min-w-0 shrink-0 overflow-hidden",
+                burnFillClass(seg.tone),
+                cap,
+                seg.hatched &&
+                  idx > 0 &&
+                  "border-l border-[var(--progress-approved-hatch)]",
+              )}
+              style={{ width: `${seg.width}%` }}
+            >
+              {seg.hatched ? (
+                <div
+                  className={clsx("absolute inset-0", cap)}
+                  style={hatchStyle}
+                  aria-hidden
+                />
+              ) : null}
+            </div>
+          );
+        })}
       </div>
       {hasContractor && !compact ? (
         <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">

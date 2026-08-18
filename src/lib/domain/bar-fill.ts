@@ -130,3 +130,12 @@ export function utilizationFillClass(tone: UtilizationFillTone): string {
       return "bg-[var(--status-unavailable)]";
   }
 }
+
+/** Pill caps for a horizontal fill: both ends if one slice, else first/last. */
+export function barFillCapClass(index: number, count: number): string {
+  if (count <= 0 || index < 0 || index >= count) return "";
+  if (count === 1) return "rounded-full";
+  if (index === 0) return "rounded-l-full";
+  if (index === count - 1) return "rounded-r-full";
+  return "";
+}
