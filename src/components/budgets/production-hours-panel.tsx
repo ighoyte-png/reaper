@@ -13,6 +13,7 @@ import {
   type ProductionHoursEstimate,
 } from "@/lib/domain/production-hours";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
+import { burnBarFillSegments, burnFillClass } from "@/lib/domain/bar-fill";
 import type {
   Assignment,
   OrganizationSettings,
@@ -37,8 +38,10 @@ function healthTextClass(health: ProductionHoursEstimate["health"]) {
 
 function ProductionHoursBar({
   estimate,
+  warningPct,
 }: {
   estimate: ProductionHoursEstimate;
+  warningPct: number;
 }) {
   const cap = estimate.targetMarginHours;
   const contractorPct =
@@ -48,23 +51,22 @@ function ProductionHoursBar({
   const availableHours = Math.max(0, estimate.remainingTargetHours);
   const availablePct = cap > 0 ? (availableHours / cap) * 100 : 0;
 
-  const fillClass = clsx(
-    estimate.health === "over" && "bg-[var(--status-over)]",
-    estimate.health === "near" && "bg-[var(--status-near)]",
-    (estimate.health === "healthy" || estimate.health === "none") &&
-      "bg-[var(--accent)]",
-  );
-  const contractorFillClass = clsx(
-    estimate.health === "over" && "bg-[var(--status-over)]",
-    estimate.health === "near" && "bg-[var(--status-near)]",
-    (estimate.health === "healthy" || estimate.health === "none") &&
-      "bg-[var(--status-healthy)]",
-  );
+  const segments = burnBarFillSegments({
+    contractorPct,
+    usedPct,
+    futurePct,
+    health: estimate.health,
+    warningPct,
+  });
 
   const hasContractor = contractorPct > 0;
-  const hasUsed = usedPct > 0;
-  const hasFuture = futurePct > 0;
   const hasAvailable = availablePct > 0 && estimate.health !== "over";
+  const legendContractor = burnFillClass(
+    estimate.health === "over" ? "over" : "contractor",
+  );
+  const legendInternal = burnFillClass(
+    estimate.health === "over" ? "over" : "internal",
+  );
 
   return (
     <div className="min-w-0">
@@ -72,29 +74,20 @@ function ProductionHoursBar({
         className="flex h-4 overflow-hidden rounded-full bg-[var(--border)]"
         title={`${formatHours(estimate.usedHours)} used · ${formatHours(estimate.futureHours)} planned`}
       >
-        {hasContractor ? (
+        {segments.map((seg, idx) => (
           <div
-            className={clsx("h-full shrink-0", contractorFillClass)}
-            style={{ width: `${Math.min(100, contractorPct)}%` }}
-          />
-        ) : null}
-        {hasUsed ? (
-          <div
-            className={clsx("h-full shrink-0", fillClass)}
-            style={{ width: `${Math.min(100, usedPct)}%` }}
-          />
-        ) : null}
-        {hasFuture ? (
-          <div
+            key={`${seg.tone}-${idx}-${seg.hatched ? "h" : "s"}`}
             className={clsx(
               "relative h-full min-w-0 shrink-0 overflow-hidden",
-              fillClass,
+              burnFillClass(seg.tone),
             )}
-            style={{ width: `${Math.min(100, futurePct)}%` }}
+            style={{ width: `${seg.width}%` }}
           >
-            <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+            {seg.hatched ? (
+              <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+            ) : null}
           </div>
-        ) : null}
+        ))}
         {hasAvailable ? (
           <div
             className="h-full shrink-0 bg-[var(--hours-available)]"
@@ -103,12 +96,12 @@ function ProductionHoursBar({
         ) : null}
       </div>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-[var(--text-muted)]">
-        {estimate.contractorHoursEquiv > 0 ? (
+        {hasContractor ? (
           <span className="inline-flex items-center gap-1">
             <span
               className={clsx(
                 "inline-block h-2 w-2 rounded-full",
-                contractorFillClass,
+                legendContractor,
               )}
               aria-hidden
             />
@@ -117,7 +110,7 @@ function ProductionHoursBar({
         ) : null}
         <span className="inline-flex items-center gap-1">
           <span
-            className={clsx("inline-block h-2 w-2 rounded-full", fillClass)}
+            className={clsx("inline-block h-2 w-2 rounded-full", legendInternal)}
             aria-hidden
           />
           Used
@@ -126,7 +119,7 @@ function ProductionHoursBar({
           <span
             className={clsx(
               "relative inline-block h-2 w-2 overflow-hidden rounded-full",
-              fillClass,
+              legendInternal,
             )}
             aria-hidden
           >
@@ -211,7 +204,10 @@ export function ProductionHoursPanel({
 
   return (
     <div className="space-y-3">
-      <ProductionHoursBar estimate={estimate} />
+      <ProductionHoursBar
+        estimate={estimate}
+        warningPct={settings.amount_warning_pct}
+      />
 
       <dl className="space-y-1.5 text-sm">
         <div className="flex justify-between gap-2">

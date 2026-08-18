@@ -3,6 +3,7 @@ import type { BudgetBurn, OrganizationSettings } from "@/lib/types";
 import { budgetHealth, formatHours, formatMoney } from "@/lib/domain/budget";
 import type { CurrencyCode } from "@/lib/types";
 import { DEFAULT_ORG_BUDGET_SETTINGS } from "@/lib/domain/org-settings";
+import { burnBarFillSegments, burnFillClass } from "@/lib/domain/bar-fill";
 
 const hatchStyle = {
   backgroundImage:
@@ -44,23 +45,23 @@ export function BurnBar({
   const contractorPct = budget > 0 ? (contractorPlanned / budget) * 100 : 0;
   const usedPct = budget > 0 ? (internalUsed / budget) * 100 : 0;
   const futurePct = budget > 0 ? (internalFuture / budget) * 100 : 0;
+  const warningPct = isAmount
+    ? settings.amount_warning_pct
+    : settings.hours_warning_pct;
+  const segments = burnBarFillSegments({
+    contractorPct,
+    usedPct,
+    futurePct,
+    health,
+    warningPct,
+  });
 
-  const fillClass = clsx(
-    health === "over" && "bg-[var(--status-over)]",
-    health === "near" && "bg-[var(--status-near)]",
-    (health === "healthy" || health === "none") && "bg-[var(--accent)]",
-  );
-
-  const contractorFillClass = clsx(
-    health === "over" && "bg-[var(--status-over)]",
-    health === "near" && "bg-[var(--status-near)]",
-    (health === "healthy" || health === "none") &&
-      "bg-[var(--status-healthy)]",
-  );
-
-  const hasContractorSeg = contractorPct > 0;
-  const hasUsed = usedPct > 0;
-  const hasFuture = futurePct > 0;
+  const legendContractorClass =
+    health === "over"
+      ? burnFillClass("over")
+      : burnFillClass("contractor");
+  const legendInternalClass =
+    health === "over" ? burnFillClass("over") : burnFillClass("internal");
 
   const totalUsed = isAmount ? burn.usedAmount : burn.usedHours;
   const totalFuture = isAmount ? burn.futureAmount : burn.futureHours;
@@ -111,54 +112,20 @@ export function BurnBar({
             : undefined
         }
       >
-        {hasContractorSeg ? (
+        {segments.map((seg, idx) => (
           <div
-            className={clsx(
-              "h-full shrink-0",
-              contractorFillClass,
-              !hasUsed && !hasFuture && "rounded-full",
-              hasUsed || hasFuture ? "rounded-l-full" : "",
-            )}
-            style={{ width: `${contractorPct}%` }}
-          />
-        ) : null}
-        {hasUsed ? (
-          <div
-            className={clsx(
-              "h-full shrink-0",
-              fillClass,
-              hasFuture
-                ? hasContractorSeg
-                  ? ""
-                  : "rounded-l-full"
-                : hasContractorSeg
-                  ? "rounded-r-full"
-                  : "rounded-full",
-            )}
-            style={{ width: `${usedPct}%` }}
-          />
-        ) : null}
-        {hasFuture ? (
-          <div
+            key={`${seg.tone}-${idx}-${seg.hatched ? "h" : "s"}`}
             className={clsx(
               "relative h-full min-w-0 shrink-0 overflow-hidden",
-              fillClass,
-              hasUsed || hasContractorSeg
-                ? "rounded-r-full border-l border-[var(--progress-approved-hatch)]"
-                : "rounded-full",
+              burnFillClass(seg.tone),
             )}
-            style={{ width: `${futurePct}%` }}
+            style={{ width: `${seg.width}%` }}
           >
-            <div
-              className={clsx(
-                "absolute inset-0",
-                hasUsed || hasContractorSeg ? "rounded-r-full" : "rounded-full",
-              )}
-              style={hatchStyle}
-              aria-hidden
-            />
+            {seg.hatched ? (
+              <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+            ) : null}
           </div>
-        ) : null}
+        ))}
       </div>
       {hasContractor && !compact ? (
         <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-muted)]">
@@ -166,7 +133,7 @@ export function BurnBar({
             <span
               className={clsx(
                 "inline-block h-2 w-2 rounded-full",
-                contractorFillClass,
+                legendContractorClass,
               )}
               aria-hidden
             />
@@ -174,7 +141,10 @@ export function BurnBar({
           </span>
           <span className="inline-flex items-center gap-1">
             <span
-              className={clsx("inline-block h-2 w-2 rounded-full", fillClass)}
+              className={clsx(
+                "inline-block h-2 w-2 rounded-full",
+                legendInternalClass,
+              )}
               aria-hidden
             />
             Internal

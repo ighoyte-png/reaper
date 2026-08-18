@@ -1218,6 +1218,7 @@ export default function DashboardPage() {
                 upcomingLeaveBlocks={upcomingLeaveBlocks}
                 people={leaveCalendarPeople}
                 appHref={appHref}
+                nearPct={state.organization_settings.capacity_near_pct}
               />
             ) : null}
           </div>
@@ -1372,6 +1373,10 @@ export default function DashboardPage() {
                 }
                 appHref={appHref}
                 projectHref={projectHref}
+                nearPct={state.organization_settings.capacity_near_pct}
+                capacityThresholds={capacityThresholdsFromSettings(
+                  state.organization_settings,
+                )}
               />
             ) : null}
 
@@ -1914,6 +1919,7 @@ function DashboardCapacityLeave({
   upcomingLeaveBlocks,
   people,
   appHref,
+  nearPct,
 }: {
   canManage: boolean;
   peopleLoad: {
@@ -1933,6 +1939,7 @@ function DashboardCapacityLeave({
   }[];
   people: Person[];
   appHref: (path: string) => string;
+  nearPct: number;
 }) {
   return (
     <>
@@ -1960,6 +1967,7 @@ function DashboardCapacityLeave({
                 booked={booked}
                 available={available}
                 level={level}
+                nearPct={nearPct}
               />
             ))}
           </div>
@@ -2084,6 +2092,8 @@ function TodaySchedule({
   person,
   appHref,
   projectHref,
+  nearPct,
+  capacityThresholds,
 }: {
   assignments: {
     id: string;
@@ -2098,6 +2108,8 @@ function TodaySchedule({
   person?: Person | null;
   appHref: (path: string) => string;
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
+  nearPct: number;
+  capacityThresholds: ReturnType<typeof capacityThresholdsFromSettings>;
 }) {
   const dayAvailable = person ? dailyCapacityHours(person) : 0;
   const scheduleBarLabel = viewingToday
@@ -2155,6 +2167,7 @@ function TodaySchedule({
     dayBooked,
     dayAvailable,
     dayAvailable <= 0 && dayBooked <= 0,
+    capacityThresholds,
   );
 
   const pieTotal = slices.reduce((s, x) => s + x.hours, 0);
@@ -2177,6 +2190,7 @@ function TodaySchedule({
             booked={dayBooked}
             available={dayAvailable}
             level={dayLevel}
+            nearPct={nearPct}
           />
         </div>
       ) : null}

@@ -48,6 +48,11 @@ import {
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
+import {
+  utilizationBarSlices,
+  utilizationFillClass,
+} from "@/lib/domain/bar-fill";
+import { capacityThresholdsFromSettings } from "@/lib/domain/org-settings";
 
 /** Visible project rows in landing overview lists before the card scrolls. */
 const OVERVIEW_LIST_VISIBLE_ROWS = 10;
@@ -483,7 +488,13 @@ function ReportsPageContent() {
             className="h-full min-h-0"
             overview={
               report.path === "/reports/utilization" ? (
-                <UtilizationOverview data={utilization} />
+                <UtilizationOverview
+                  data={utilization}
+                  nearPct={state.organization_settings.capacity_near_pct}
+                  thresholds={capacityThresholdsFromSettings(
+                    state.organization_settings,
+                  )}
+                />
               ) : report.path === "/reports/tasks" ? (
                 <TasksOverview
                   data={tasks}
@@ -597,6 +608,8 @@ function ReportCard({
 
 function UtilizationOverview({
   data,
+  nearPct,
+  thresholds,
 }: {
   data: {
     thisWeek: WeekUtilPoint;
@@ -607,6 +620,8 @@ function UtilizationOverview({
     unavailable: number;
     peopleCount: number;
   };
+  nearPct: number;
+  thresholds: ReturnType<typeof capacityThresholdsFromSettings>;
 }) {
   const chartMax = Math.max(120, ...data.weeks.map((w) => w.pct), 1);
   const yTicks = [0, 50].filter((t) => t <= chartMax);
@@ -669,11 +684,21 @@ function UtilizationOverview({
 
           <div className="absolute inset-y-0 left-7 right-0 flex items-end gap-1">
             {data.weeks.map((week, i) => {
-              const tone = utilBarTone(week.pct);
+              const level = capacityLevel(
+                week.booked,
+                week.available,
+                week.available <= 0,
+                thresholds,
+              );
               const fillPct = Math.min(week.pct, chartMax);
               const trackPct = Math.min(Math.max(capacityLine, fillPct), chartMax);
               const fillHeight = (fillPct / chartMax) * 100;
               const trackHeight = (trackPct / chartMax) * 100;
+              const slices = utilizationBarSlices(
+                Math.min(100, week.pct),
+                level,
+                nearPct,
+              );
               return (
                 <div
                   key={week.key}
@@ -689,20 +714,38 @@ function UtilizationOverview({
                     style={{ height: `${Math.max(trackHeight, fillHeight, week.pct > 0 ? 4 : 0)}%` }}
                   >
                     <div
-                      className={cn(
-                        "absolute inset-x-0 bottom-0 rounded-t",
-                        tone === "over" && "bg-[var(--status-over)]",
-                        tone === "near" && "bg-[var(--status-near)]",
-                        tone === "healthy" && "bg-[var(--status-healthy)]",
-                        tone === "low" && "bg-[var(--status-healthy)]",
-                      )}
+                      className="absolute inset-x-0 bottom-0 flex flex-col-reverse"
                       style={{
                         height:
                           trackHeight > 0
                             ? `${(fillHeight / Math.max(trackHeight, 0.001)) * 100}%`
                             : "0%",
                       }}
-                    />
+                    >
+                      {level === "over" ? (
+                        <div
+                          className={cn(
+                            "w-full rounded-t",
+                            utilizationFillClass("over"),
+                          )}
+                          style={{ height: "100%" }}
+                        />
+                      ) : (
+                        slices.map((slice, idx) => (
+                          <div
+                            key={`${slice.tone}-${idx}`}
+                            className={cn(
+                              "w-full",
+                              utilizationFillClass(slice.tone),
+                              idx === slices.length - 1 && "rounded-t",
+                            )}
+                            style={{
+                              height: `${(slice.width / Math.max(Math.min(100, week.pct), 0.001)) * 100}%`,
+                            }}
+                          />
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
               );
