@@ -293,9 +293,64 @@ export function nextWorkingDay(dateKey: string): string {
   return toDateKey(d);
 }
 
+/** Previous working day (Mon–Fri). */
+export function prevWorkingDay(dateKey: string): string {
+  let d = addDays(parseISO(dateKey), -1);
+  while (d.getDay() === 0 || d.getDay() === 6) d = addDays(d, -1);
+  return toDateKey(d);
+}
+
 function isWeekendKey(dateKey: string): boolean {
   const dow = parseISO(dateKey).getDay();
   return dow === 0 || dow === 6;
+}
+
+/** Next working day that is not in `leaveDates`, or the date itself if already free. */
+export function nextAvailableScheduleDay(
+  dateKey: string,
+  leaveDates: Iterable<string> = [],
+): string {
+  const leave = leaveDates instanceof Set ? leaveDates : new Set(leaveDates);
+  if (!isWeekendKey(dateKey) && !leave.has(dateKey)) return dateKey;
+  let cursor = dateKey;
+  for (let i = 0; i < 366; i += 1) {
+    cursor = nextWorkingDay(cursor);
+    if (!leave.has(cursor)) return cursor;
+  }
+  return dateKey;
+}
+
+/** Previous working day that is not in `leaveDates`, or the date itself if already free. */
+export function prevAvailableScheduleDay(
+  dateKey: string,
+  leaveDates: Iterable<string> = [],
+): string {
+  const leave = leaveDates instanceof Set ? leaveDates : new Set(leaveDates);
+  if (!isWeekendKey(dateKey) && !leave.has(dateKey)) return dateKey;
+  let cursor = dateKey;
+  for (let i = 0; i < 366; i += 1) {
+    cursor = prevWorkingDay(cursor);
+    if (!leave.has(cursor)) return cursor;
+  }
+  return dateKey;
+}
+
+/**
+ * Clip a project timeline onto schedule days: start rolls forward off
+ * weekends/leave; end rolls backward off weekends/leave.
+ */
+export function snapPmTimelineToScheduleDays(
+  startDate: string,
+  endDate: string,
+  leaveDates: Iterable<string> = [],
+): { start: string; end: string } | null {
+  const lo = startDate <= endDate ? startDate : endDate;
+  const hi = startDate <= endDate ? endDate : startDate;
+  const leave = leaveDates instanceof Set ? leaveDates : new Set(leaveDates);
+  const start = nextAvailableScheduleDay(lo, leave);
+  const end = prevAvailableScheduleDay(hi, leave);
+  if (start > end) return null;
+  return { start, end };
 }
 
 /**

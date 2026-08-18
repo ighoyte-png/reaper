@@ -33,6 +33,7 @@ import {
 import { CurrencyChip, CurrencyToggle } from "@/components/ui/currency-chip";
 import {
   contractorExpenseAppliesInMonth,
+  contractorRepeatEndMonth,
   defaultContractorRepeatEndMonth,
   formatHours,
   formatMoney,
@@ -1201,7 +1202,9 @@ function ContractorsPanel({
         hours: isHours ? value : 0,
         notes: notes.trim(),
         repeat_monthly: repeatMonthly,
-        repeat_end_month: null,
+        repeat_end_month: repeatMonthly
+          ? contractorRepeatEndMonth(viewedMonthKey, project.end_date)
+          : null,
         created_at: nowIso,
         updated_at: nowIso,
         created_by_profile_id: null,
@@ -1226,7 +1229,10 @@ function ContractorsPanel({
         hours: isHours ? value : 0,
         notes: editNotes.trim(),
         repeat_monthly: editRepeat,
-        repeat_end_month: editRepeat ? row.repeat_end_month : null,
+        repeat_end_month: editRepeat
+          ? (row.repeat_end_month ??
+            contractorRepeatEndMonth(row.month_key, project.end_date))
+          : null,
         updated_at: new Date().toISOString(),
       });
       setEditingId(null);
@@ -1377,8 +1383,8 @@ function ContractorsPanel({
             <div className="space-y-4">
               <p className="text-sm text-[var(--text-muted)]">
                 {uiMode === "hours"
-                  ? "Add hours for this contractor. Repeat Monthly applies the same hours from the selected month through the end of the project timeline or the calendar year, whichever comes first. Does not create schedule assignments."
-                  : "Add dollar expenses for this contractor. Repeat Monthly applies the same amount from the selected month through the end of the project timeline or the calendar year, whichever comes first."}
+                  ? "Add hours for this contractor. Repeat Monthly applies the same hours from the selected month through the project end date, or 12 months later if the project has no end date. Does not create schedule assignments."
+                  : "Add dollar expenses for this contractor. Repeat Monthly applies the same amount from the selected month through the project end date, or 12 months later if the project has no end date."}
               </p>
 
               <div className="space-y-3 rounded-md border border-[var(--border)] p-3">

@@ -653,10 +653,12 @@ export default function ProjectBudgetDetailPage() {
                 ),
                 dashUsedPlanned: true,
                 is_contractor: true,
-            mixedCurrency:
-              state.organization_settings.currency_enabled &&
-              personCurrency(person, true) !== projectCurrency(project, true),
-            nativeCurrency: personCurrency(person, true),
+                notes: line.notes || undefined,
+                mixedCurrency:
+                  state.organization_settings.currency_enabled &&
+                  personCurrency(person, true) !==
+                    projectCurrency(project, true),
+                nativeCurrency: personCurrency(person, true),
               });
             }
           }
@@ -696,10 +698,7 @@ export default function ProjectBudgetDetailPage() {
                 moneyAmount: null,
                 dashUsedPlanned: true,
                 is_contractor: true,
-                notes:
-                  "notes" in line
-                    ? String(line.notes ?? "") || undefined
-                    : undefined,
+                notes: line.notes || undefined,
               });
             }
           } else {

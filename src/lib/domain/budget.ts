@@ -291,6 +291,21 @@ export function contractorApplyEndMonthKey(
 }
 
 /**
+ * Inclusive last month for a new Repeat Monthly expense.
+ * Project end month if set; otherwise 12 months after the start month.
+ */
+export function contractorRepeatEndMonth(
+  startMonthKey: string,
+  projectEndDate?: string | null,
+): string {
+  const projectEnd = projectEndDate?.trim() || null;
+  if (projectEnd) return `${projectEnd.slice(0, 7)}-01`;
+  const y = Number(startMonthKey.slice(0, 4));
+  const m = Number(startMonthKey.slice(5, 7)) - 1;
+  return format(addMonths(new Date(y, m, 1), 12), "yyyy-MM-dd");
+}
+
+/**
  * Hours-per-month commitments on retainers apply from the current month
  * through min(project end, Dec of asOf's year). Past and future calendar
  * years do not receive invented hours (use stored expense rows instead).
@@ -543,11 +558,9 @@ export function contractorExpenseAppliesInMonth(
   const expenseMonth = expense.month_key.slice(0, 7);
   if (expense.repeat_monthly) {
     if (expenseMonth > prefix) return false;
-    let end = contractorApplyEndMonthKey(project, expenseMonth);
-    if (expense.repeat_end_month) {
-      const bound = expense.repeat_end_month.slice(0, 7);
-      if (bound < end) end = bound;
-    }
+    const end = expense.repeat_end_month
+      ? expense.repeat_end_month.slice(0, 7)
+      : contractorApplyEndMonthKey(project, expenseMonth);
     return prefix <= end;
   }
   return expenseMonth === prefix;
@@ -713,7 +726,7 @@ export function contractorExpenseLinesInRange(
 
 /**
  * Aggregate per-month expense lines into one row per expenseId
- * (amount × months in range). No notes.
+ * (amount × months in range). Notes match the source expense.
  */
 export function contractorExpenseAggregatesInRange(
   project: Pick<Project, "id" | "start_date" | "end_date">,
@@ -728,6 +741,7 @@ export function contractorExpenseAggregatesInRange(
   personId: string;
   amount: number;
   hours: number;
+  notes: string;
 }> {
   const lines = contractorExpenseLinesInRange(
     project,
@@ -739,7 +753,13 @@ export function contractorExpenseAggregatesInRange(
   );
   const byExpense = new Map<
     string,
-    { expenseId: string; personId: string; amount: number; hours: number }
+    {
+      expenseId: string;
+      personId: string;
+      amount: number;
+      hours: number;
+      notes: string;
+    }
   >();
   for (const line of lines) {
     const existing = byExpense.get(line.expenseId);
@@ -752,6 +772,7 @@ export function contractorExpenseAggregatesInRange(
         personId: line.personId,
         amount: line.amount,
         hours: line.hours,
+        notes: line.notes,
       });
     }
   }

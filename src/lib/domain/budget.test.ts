@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   budgetHealth,
   calendarRangeBars,
+  contractorExpenseAggregatesInRange,
+  contractorExpenseAppliesInMonth,
+  contractorRepeatEndMonth,
   listedBudgetAmount,
   projectToDateSpan,
   scheduleOutsideProjectDates,
@@ -12,7 +15,12 @@ import {
   DEFAULT_ORG_BUDGET_SETTINGS,
   syncAmountWarningFromMargin,
 } from "@/lib/domain/org-settings";
-import type { Assignment, BudgetBurn, Project } from "@/lib/types";
+import type {
+  Assignment,
+  BudgetBurn,
+  Project,
+  ProjectContractorExpense,
+} from "@/lib/types";
 
 const warning75 = {
   ...DEFAULT_ORG_BUDGET_SETTINGS,
@@ -308,5 +316,107 @@ describe("listedBudgetAmount", () => {
     expect(
       convertAmount(native, "cad", "usd", 1.35, true),
     ).toBeCloseTo(2250 / 1.35);
+  });
+});
+
+function makeExpense(
+  partial: Partial<ProjectContractorExpense> = {},
+): ProjectContractorExpense {
+  return {
+    id: "pce-1",
+    organization_id: "org",
+    project_id: "proj-1",
+    person_id: "person-1",
+    month_key: "2026-03-01",
+    amount: 1000,
+    hours: 0,
+    notes: "Retainer",
+    repeat_monthly: true,
+    repeat_end_month: null,
+    created_at: "2026-03-01T00:00:00.000Z",
+    updated_at: "2026-03-01T00:00:00.000Z",
+    created_by_profile_id: null,
+    ...partial,
+  };
+}
+
+describe("contractorRepeatEndMonth", () => {
+  it("uses the project end month when the timeline has an end", () => {
+    expect(contractorRepeatEndMonth("2026-03-01", "2028-06-15")).toBe(
+      "2028-06-01",
+    );
+  });
+
+  it("falls back to 12 months after start when there is no project end", () => {
+    expect(contractorRepeatEndMonth("2026-03-01", null)).toBe("2027-03-01");
+    expect(contractorRepeatEndMonth("2026-03-01")).toBe("2027-03-01");
+  });
+
+  it("computes an independent end for each start month", () => {
+    expect(contractorRepeatEndMonth("2026-01-01", null)).toBe("2027-01-01");
+    expect(contractorRepeatEndMonth("2026-06-01", null)).toBe("2027-06-01");
+  });
+});
+
+describe("contractorExpenseAppliesInMonth", () => {
+  const openEnded = makeProject({
+    start_date: "2026-01-01",
+    end_date: "2028-12-31",
+  });
+
+  it("lets an explicit repeat end span past December of the start year", () => {
+    const expense = makeExpense({
+      month_key: "2026-03-01",
+      repeat_end_month: "2028-06-01",
+    });
+    expect(
+      contractorExpenseAppliesInMonth(openEnded, expense, "2026-03"),
+    ).toBe(true);
+    expect(
+      contractorExpenseAppliesInMonth(openEnded, expense, "2027-01"),
+    ).toBe(true);
+    expect(
+      contractorExpenseAppliesInMonth(openEnded, expense, "2028-06"),
+    ).toBe(true);
+    expect(
+      contractorExpenseAppliesInMonth(openEnded, expense, "2028-07"),
+    ).toBe(false);
+  });
+
+  it("keeps the calendar-year cap when repeat_end_month is null", () => {
+    const expense = makeExpense({
+      month_key: "2026-03-01",
+      repeat_end_month: null,
+    });
+    expect(
+      contractorExpenseAppliesInMonth(openEnded, expense, "2026-12"),
+    ).toBe(true);
+    expect(
+      contractorExpenseAppliesInMonth(openEnded, expense, "2027-01"),
+    ).toBe(false);
+  });
+});
+
+describe("contractorExpenseAggregatesInRange", () => {
+  it("keeps the source expense notes on the year/term row", () => {
+    const project = makeProject({
+      start_date: "2026-01-01",
+      end_date: "2026-12-31",
+    });
+    const rows = contractorExpenseAggregatesInRange(
+      project,
+      [
+        makeExpense({
+          repeat_end_month: "2026-12-01",
+          notes: "Monthly studio fee",
+        }),
+      ],
+      [],
+      "2026-01",
+      "2026-12",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.notes).toBe("Monthly studio fee");
+    expect(rows[0]!.amount).toBe(1000 * 10);
   });
 });

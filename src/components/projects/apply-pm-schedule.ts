@@ -4,6 +4,7 @@ import {
   buildPmScheduleAssignments,
   findPmProjectAssignments,
   fullDayLeaveDatesInRange,
+  snapPmTimelineToScheduleDays,
 } from "@/lib/domain/project-manager-schedule";
 import type { Assignment, LeaveDay } from "@/lib/types";
 
@@ -51,13 +52,29 @@ export async function applyProjectManagerScheduleTime(args: {
     }
   }
 
+  const leaveDates = fullDayLeaveDatesInRange(
+    leaveDays,
+    args.managerPersonId,
+    lo,
+    hi,
+    (leave) =>
+      isFullDayLeave({
+        kind: leave.kind as LeaveDay["kind"],
+        hours_per_day: leave.hours_per_day,
+      }),
+  );
+  const snapped = snapPmTimelineToScheduleDays(lo, hi, leaveDates);
+  if (!snapped) {
+    return { created: false, reason: "No working days in that timeline" };
+  }
+
   const rows = buildPmScheduleAssignments({
     newId: () => args.newId("asg"),
     organizationId: args.organizationId,
     personId: args.managerPersonId,
     projectId: args.projectId,
-    startDate: lo,
-    endDate: hi,
+    startDate: snapped.start,
+    endDate: snapped.end,
     hoursPerDay: args.hoursPerDay,
   });
   if (rows.length === 0) {
@@ -77,17 +94,6 @@ export async function applyProjectManagerScheduleTime(args: {
     args.upsertAssignment(row);
   }
 
-  const leaveDates = fullDayLeaveDatesInRange(
-    leaveDays,
-    args.managerPersonId,
-    lo,
-    hi,
-    (leave) =>
-      isFullDayLeave({
-        kind: leave.kind as LeaveDay["kind"],
-        hours_per_day: leave.hours_per_day,
-      }),
-  );
   if (leaveDates.length === 0) return { created: true, leaveTrimmed: false };
 
   const { upserts, deletes } = applyFullDayLeaveOverrideForDates(
