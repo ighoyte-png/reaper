@@ -91,6 +91,7 @@ import {
 import { notesHasContent, notesPreviewText } from "@/lib/notes-html";
 import { extractMentionPersonIds } from "@/lib/mentions";
 import { cn } from "@/lib/cn";
+import { scrollIntoNearest } from "@/lib/scroll-into-nearest";
 import { PRESET_COLORS } from "@/lib/domain/colors";
 import { projectTeamPersonIds, projectAssigneePeople, canEditProject } from "@/lib/domain/project-access";
 import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
@@ -1468,7 +1469,7 @@ export function ProjectTaskBoard({
       if (cancelled) return;
       const el = document.getElementById(targetId);
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        scrollIntoNearest(el, { behavior: "smooth", block: "center" });
         return;
       }
       if (attempts++ < 12) {

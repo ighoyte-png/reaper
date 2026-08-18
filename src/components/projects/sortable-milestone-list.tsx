@@ -22,6 +22,7 @@ import { Check, GripVertical, Pencil } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { milestoneDateProgress } from "@/lib/domain/progress";
 import { cn } from "@/lib/cn";
+import { scrollIntoNearest } from "@/lib/scroll-into-nearest";
 import { useIsPhone } from "@/lib/hooks/use-media-query";
 import type { Milestone, Project } from "@/lib/types";
 import { format, parseISO } from "date-fns";
@@ -74,9 +75,10 @@ export function SortableMilestoneList({
   useEffect(() => {
     if (!focusMilestoneId) return;
     const t = window.setTimeout(() => {
-      document
-        .getElementById(`milestone-row-${focusMilestoneId}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const el = document.getElementById(`milestone-row-${focusMilestoneId}`);
+      if (el) {
+        scrollIntoNearest(el, { behavior: "smooth", block: "center" });
+      }
     }, 150);
     return () => window.clearTimeout(t);
   }, [focusMilestoneId]);
