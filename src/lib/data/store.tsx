@@ -50,6 +50,7 @@ import {
 } from "@/lib/mentions";
 import {
   dispatchAssignmentNoteMention,
+  dispatchBulletinUnread,
   dispatchCommentReaction,
   dispatchTaskNoteMention,
   type AssignmentNoteMentionBroadcast,
@@ -870,7 +871,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [platformOnly, setPlatformOnly] = useState(false);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const orgChannelRef = useRef<RealtimeChannel | null>(null);
+  const orgChannelReadyRef = useRef(false);
+  const pendingOrgBroadcastsRef = useRef<
+    { event: string; payload: unknown }[]
+  >([]);
+  const notifyReactionInsertRef = useRef<
+    (row: Record<string, unknown>) => void
+  >(() => {});
+  const lastReactionNotifyAtRef = useRef(new Map<string, number>());
   const projectChannelsRef = useRef<Map<string, RealtimeChannel>>(new Map());
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const orgId = state.organization.id || ORG_ID;
   /** Recently written row ids — ignore realtime echoes of our own optimistic writes. */
   const localWritesRef = useRef<Map<string, number>>(new Map());
@@ -1354,12 +1365,40 @@ export function DataProvider({ children }: { children: ReactNode }) {
           newRecord: payload.new ?? null,
           oldRecord: payload.old ?? null,
         });
+        if (
+          table === "task_comment_reactions" &&
+          payload.eventType === "INSERT" &&
+          payload.new
+        ) {
+          notifyReactionInsertRef.current(payload.new);
+        }
+        if (
+          table === "bulletin_unreads" &&
+          payload.eventType === "INSERT" &&
+          payload.new
+        ) {
+          const bulletinId = String(payload.new.bulletin_id ?? "");
+          const profileId = String(payload.new.profile_id ?? "");
+          const sessionId = stateRef.current.sessionProfileId;
+          if (bulletinId && profileId && sessionId && profileId === sessionId) {
+            dispatchBulletinUnread({ bulletinId, profileId });
+          }
+        }
         if (realtimeFlushTimerRef.current == null) {
           realtimeFlushTimerRef.current = setTimeout(flushPendingRealtime, 16);
         }
       },
     [flushPendingRealtime],
   );
+
+  const sendOrgBroadcast = useCallback((event: string, payload: unknown) => {
+    const channel = orgChannelRef.current;
+    if (channel && orgChannelReadyRef.current) {
+      void channel.send({ type: "broadcast", event, payload });
+      return;
+    }
+    pendingOrgBroadcastsRef.current.push({ event, payload });
+  }, []);
 
   // Live sync: org shell stays mounted for the org session.
   useEffect(() => {
@@ -1369,7 +1408,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!client || !organizationId) return;
 
     const orgChannel = client
-      .channel(`org-live:${organizationId}`)
+      .channel(`org-live:${organizationId}`, {
+        config: { broadcast: { self: false } },
+      })
       .on(
         "postgres_changes",
         {
@@ -1514,7 +1555,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
           dispatchCommentReaction(detail);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status !== "SUBSCRIBED") return;
+        orgChannelReadyRef.current = true;
+        const queued = pendingOrgBroadcastsRef.current;
+        pendingOrgBroadcastsRef.current = [];
+        for (const msg of queued) {
+          void orgChannel.send({
+            type: "broadcast",
+            event: msg.event,
+            payload: msg.payload,
+          });
+        }
+      });
 
     orgChannelRef.current = orgChannel;
 
@@ -1523,6 +1576,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         clearTimeout(realtimeFlushTimerRef.current);
         realtimeFlushTimerRef.current = null;
       }
+      orgChannelReadyRef.current = false;
       orgChannelRef.current = null;
       void client.removeChannel(orgChannel);
     };
@@ -2005,6 +2059,66 @@ export function DataProvider({ children }: { children: ReactNode }) {
       state.assignments,
     ],
   );
+
+  useEffect(() => {
+    notifyReactionInsertRef.current = (row) => {
+      const commentId = String(row.comment_id ?? "");
+      const reactorId = String(row.profile_id ?? "");
+      const emoji = String(row.emoji ?? "");
+      const myId = stateRef.current.sessionProfileId;
+      if (!commentId || !reactorId || !emoji || !myId) return;
+      if (reactorId === myId) return;
+      const key = `${commentId}:${reactorId}:${emoji}`;
+      const now = Date.now();
+      const prevAt = lastReactionNotifyAtRef.current.get(key) ?? 0;
+      if (now - prevAt < 2000) return;
+      lastReactionNotifyAtRef.current.set(key, now);
+
+      void (async () => {
+        try {
+          const bundle = await ensureMentionComments([commentId]);
+          const snap = stateRef.current;
+          const comment =
+            bundle.task_comments.find((c) => c.id === commentId) ??
+            mentionCommentByIdRef.current.get(commentId) ??
+            snap.task_comments.find((c) => c.id === commentId) ??
+            null;
+          if (!comment || comment.author_profile_id !== myId) return;
+          const task =
+            bundle.tasks.find((t) => t.id === comment.task_id) ??
+            mentionTaskByIdRef.current.get(comment.task_id) ??
+            snap.tasks.find((t) => t.id === comment.task_id) ??
+            null;
+          const reactorPerson =
+            snap.people.find((p) => p.profile_id === reactorId) ?? null;
+          const reactorProfile =
+            snap.profiles.find((p) => p.id === reactorId) ?? null;
+          dispatchCommentReaction({
+            authorProfileId: myId,
+            reactorProfileId: reactorId,
+            commentId,
+            taskId: comment.task_id,
+            projectId: task?.project_id ?? "",
+            taskTitle: task?.title ?? "",
+            emoji,
+            reactorName:
+              reactorPerson?.name?.trim() ||
+              reactorProfile?.full_name?.trim() ||
+              reactorProfile?.email?.trim() ||
+              "Someone",
+            reactorAvatarUrl: reactorPerson?.avatar_url ?? null,
+            reactorAvatarAttachmentId:
+              reactorPerson?.avatar_attachment_id ?? null,
+            reactorColor: reactorPerson
+              ? personAvatarColor(reactorPerson)
+              : null,
+          });
+        } catch {
+          lastReactionNotifyAtRef.current.delete(key);
+        }
+      })();
+    };
+  }, [ensureMentionComments]);
 
   const ensureProjectData = useCallback(
     async (projectId: string) => {
@@ -3624,13 +3738,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             authorAvatarAttachmentId: myPerson?.avatar_attachment_id ?? null,
             authorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
-          if (orgChannelRef.current) {
-            void orgChannelRef.current.send({
-              type: "broadcast",
-              event: "assignment-note-mention",
-              payload,
-            });
-          }
+          sendOrgBroadcast("assignment-note-mention", payload);
         }
       },
       deleteAssignment: (id) => {
@@ -4517,13 +4625,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             authorAvatarAttachmentId: myPerson?.avatar_attachment_id ?? null,
             authorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
-          if (orgChannelRef.current) {
-            void orgChannelRef.current.send({
-              type: "broadcast",
-              event: "task-note-mention",
-              payload,
-            });
-          }
+          sendOrgBroadcast("task-note-mention", payload);
         }
       },
       deleteTask: (id) => {
@@ -4776,13 +4878,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             reactorAvatarAttachmentId: myPerson?.avatar_attachment_id ?? null,
             reactorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
-          if (orgChannelRef.current) {
-            void orgChannelRef.current.send({
-              type: "broadcast",
-              event: "comment-reaction",
-              payload,
-            });
-          }
+          sendOrgBroadcast("comment-reaction", payload);
         }
       },
       upsertBulletin: (bulletin) => {
@@ -5494,6 +5590,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureProjectData,
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
+      sendOrgBroadcast,
       fetchProjectBudgetBurnsRpc,
       fetchMonthlyRetainerYearBarsRpc,
       fetchPersonUtilizationWeeksRpc,

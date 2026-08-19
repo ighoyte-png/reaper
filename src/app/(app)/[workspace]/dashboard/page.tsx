@@ -794,7 +794,7 @@ export default function DashboardPage() {
   const mentionInbox = useMemo(() => {
     if (!mentionPersonId) return [];
     return (state.unread_mentions ?? []).filter(
-      (r) => r.person_id === mentionPersonId && !r.read_at,
+      (r) => r.person_id === mentionPersonId,
     );
   }, [mentionPersonId, state.unread_mentions]);
   const unreadMentionIds = useMemo(

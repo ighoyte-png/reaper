@@ -310,6 +310,18 @@ export function dispatchCommentReaction(detail: CommentReactionBroadcast) {
   window.dispatchEvent(new CustomEvent(COMMENT_REACTION_EVENT, { detail }));
 }
 
+export type BulletinUnreadBroadcast = {
+  bulletinId: string;
+  profileId: string;
+};
+
+export const BULLETIN_UNREAD_EVENT = "reaper:bulletin-unread";
+
+export function dispatchBulletinUnread(detail: BulletinUnreadBroadcast) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(BULLETIN_UNREAD_EVENT, { detail }));
+}
+
 const PROMPT_SNOOZE_KEY = "reaper.notification-prompt.snooze-until";
 const PROMPT_DISMISS_KEY = "reaper.notification-prompt.dismissed";
 const PROMPT_SNOOZE_MS = 24 * 60 * 60 * 1000;

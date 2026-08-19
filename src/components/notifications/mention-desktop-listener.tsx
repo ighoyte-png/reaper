@@ -10,15 +10,118 @@ import { mentionUnreadKey } from "@/lib/mentions";
 import { notesPlainText } from "@/lib/notes-html";
 import {
   ASSIGNMENT_NOTE_MENTION_EVENT,
+  BULLETIN_UNREAD_EVENT,
   COMMENT_REACTION_EVENT,
   TASK_NOTE_MENTION_EVENT,
   notificationPortraitIcon,
   reaperNotificationBadgeUrl,
   showDesktopNotification,
   type AssignmentNoteMentionBroadcast,
+  type BulletinUnreadBroadcast,
   type CommentReactionBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
+import type { DemoState } from "@/lib/types";
+
+async function notifyBulletinDesktop(args: {
+  bulletinId: string;
+  snap: DemoState;
+  personId: string | null;
+  profileId: string;
+  manageWithoutPerson: boolean;
+  unreadSet: Set<string>;
+  orgName: string;
+  projectHref: (
+    project: { client_id: string | null; slug: string },
+    search?: string,
+  ) => string;
+  appHref: (path: string) => string;
+  router: { push: (href: string) => void };
+}): Promise<"shown" | "skipped" | "missing"> {
+  const {
+    bulletinId,
+    snap,
+    personId,
+    profileId,
+    manageWithoutPerson,
+    unreadSet,
+    orgName,
+    projectHref,
+    appHref,
+    router,
+  } = args;
+  const bulletin = snap.bulletins.find((b) => b.id === bulletinId) ?? null;
+  if (!bulletin) return "missing";
+  if (
+    !isUnreadBulletin(bulletin, personId, profileId, unreadSet, {
+      manageWithoutPerson,
+      pods: snap.pods,
+      podMembers: snap.pod_members,
+    })
+  ) {
+    return "skipped";
+  }
+
+  const authorPerson = bulletin.created_by_profile_id
+    ? (snap.people.find((p) => p.profile_id === bulletin.created_by_profile_id) ??
+      null)
+    : null;
+  const authorProfile = bulletin.created_by_profile_id
+    ? (snap.profiles.find((p) => p.id === bulletin.created_by_profile_id) ??
+      null)
+    : null;
+  const authorName =
+    authorPerson?.name?.trim() ||
+    authorProfile?.full_name?.trim() ||
+    authorProfile?.email?.trim() ||
+    "Bulletin";
+
+  const snippet = notesPlainText(bulletin.body).slice(0, 140);
+  const linkedProject = bulletin.project_id
+    ? (snap.projects.find((p) => p.id === bulletin.project_id) ?? null)
+    : null;
+  const href = linkedProject
+    ? bulletin.task_id
+      ? projectHref(linkedProject, `task=${bulletin.task_id}`)
+      : bulletin.milestone_id
+        ? projectHref(linkedProject, `milestone=${bulletin.milestone_id}`)
+        : projectHref(linkedProject)
+    : appHref("/dashboard");
+  const isSuccess = bulletin.tone === "success";
+  const notifTitle = isSuccess
+    ? orgName
+    : authorPerson?.name?.trim() ||
+      authorProfile?.full_name?.trim() ||
+      authorProfile?.email?.trim() ||
+      "Bulletin";
+  const notifBody = isSuccess
+    ? bulletin.title || snippet || "Milestone approved"
+    : [
+        orgName,
+        bulletin.title
+          ? `${bulletin.title}${snippet ? ` — ${snippet}` : ""}`
+          : snippet || "New bulletin",
+      ].join("\n");
+  const icon = authorPerson
+    ? await notificationPortraitIcon({
+        name: authorName,
+        avatarUrl: authorPerson.avatar_url,
+        avatarAttachmentId: authorPerson.avatar_attachment_id,
+        color: personAvatarColor(authorPerson),
+      })
+    : reaperNotificationBadgeUrl();
+
+  void showDesktopNotification(notifTitle, {
+    body: notifBody,
+    tag: `bulletin-${bulletinId}`,
+    icon,
+    href,
+    onClick: () => {
+      router.push(href);
+    },
+  });
+  return "shown";
+}
 
 /**
  * Shows OS desktop notifications for @mentions (comments / task notes /
@@ -27,6 +130,7 @@ import {
  */
 export function MentionDesktopListener() {
   const {
+    ready,
     state,
     myPerson,
     profile,
@@ -424,7 +528,7 @@ export function MentionDesktopListener() {
   ]);
 
   useEffect(() => {
-    if (isPublicShare || !profile) {
+    if (isPublicShare || !profile || !ready) {
       seenBulletinIdsRef.current = null;
       return;
     }
@@ -443,92 +547,28 @@ export function MentionDesktopListener() {
     const personId = myPerson?.id ?? null;
     const manageWithoutPerson = canManage && !personId;
     const unreadSet = new Set(mine);
+    const profileId = profile.id;
 
     void (async () => {
       const snap = stateRef.current;
       for (const bulletinId of fresh) {
-        const bulletin =
-          snap.bulletins.find((b) => b.id === bulletinId) ?? null;
-        if (!bulletin) {
-          // Unread row can arrive before the bulletin payload — retry later.
-          continue;
-        }
-        seen.add(bulletinId);
-        if (
-          !isUnreadBulletin(bulletin, personId, profile.id, unreadSet, {
-            manageWithoutPerson,
-            pods: snap.pods,
-            podMembers: snap.pod_members,
-          })
-        ) {
-          continue;
-        }
-
-        const authorPerson = bulletin.created_by_profile_id
-          ? (snap.people.find(
-              (p) => p.profile_id === bulletin.created_by_profile_id,
-            ) ?? null)
-          : null;
-        const authorProfile = bulletin.created_by_profile_id
-          ? (snap.profiles.find((p) => p.id === bulletin.created_by_profile_id) ??
-            null)
-          : null;
-        const authorName =
-          authorPerson?.name?.trim() ||
-          authorProfile?.full_name?.trim() ||
-          authorProfile?.email?.trim() ||
-          "Bulletin";
-
-        const snippet = notesPlainText(bulletin.body).slice(0, 140);
-        const linkedProject = bulletin.project_id
-          ? (snap.projects.find((p) => p.id === bulletin.project_id) ?? null)
-          : null;
-        const href = linkedProject
-          ? bulletin.task_id
-            ? projectHref(linkedProject, `task=${bulletin.task_id}`)
-            : bulletin.milestone_id
-              ? projectHref(
-                  linkedProject,
-                  `milestone=${bulletin.milestone_id}`,
-                )
-              : projectHref(linkedProject)
-          : appHref("/dashboard");
-        const isSuccess = bulletin.tone === "success";
-        const notifTitle = isSuccess
-          ? orgName
-          : authorPerson?.name?.trim() ||
-            authorProfile?.full_name?.trim() ||
-            authorProfile?.email?.trim() ||
-            "Bulletin";
-        const notifBody = isSuccess
-          ? bulletin.title || snippet || "Milestone approved"
-          : [
-              orgName,
-              bulletin.title
-                ? `${bulletin.title}${snippet ? ` — ${snippet}` : ""}`
-                : snippet || "New bulletin",
-            ].join("\n");
-        const icon = authorPerson
-          ? await notificationPortraitIcon({
-              name: authorName,
-              avatarUrl: authorPerson.avatar_url,
-              avatarAttachmentId: authorPerson.avatar_attachment_id,
-              color: personAvatarColor(authorPerson),
-            })
-          : reaperNotificationBadgeUrl();
-
-        void showDesktopNotification(notifTitle, {
-          body: notifBody,
-          tag: `bulletin-${bulletinId}`,
-          icon,
-          href,
-          onClick: () => {
-            router.push(href);
-          },
+        const shown = await notifyBulletinDesktop({
+          bulletinId,
+          snap,
+          personId,
+          profileId,
+          manageWithoutPerson,
+          unreadSet,
+          orgName,
+          projectHref,
+          appHref,
+          router,
         });
+        if (shown !== "missing") seen.add(bulletinId);
       }
     })();
   }, [
+    ready,
     state.unread_bulletin_ids,
     state.organization?.name,
     state.bulletins,
@@ -536,6 +576,65 @@ export function MentionDesktopListener() {
     profile,
     canManage,
     isPublicShare,
+    router,
+    projectHref,
+    appHref,
+  ]);
+
+  useEffect(() => {
+    if (isPublicShare || !profile || !ready) return;
+    const profileId = profile.id;
+    const orgName = state.organization?.name?.trim() || "Reaper";
+    const personId = myPerson?.id ?? null;
+    const manageWithoutPerson = canManage && !personId;
+
+    function onBulletinUnread(ev: Event) {
+      const detail = (ev as CustomEvent<BulletinUnreadBroadcast>).detail;
+      if (!detail?.bulletinId || detail.profileId !== profileId) return;
+      if (seenBulletinIdsRef.current?.has(detail.bulletinId)) return;
+
+      void (async () => {
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          if (seenBulletinIdsRef.current?.has(detail.bulletinId)) return;
+          const snap = stateRef.current;
+          const shown = await notifyBulletinDesktop({
+            bulletinId: detail.bulletinId,
+            snap,
+            personId,
+            profileId,
+            manageWithoutPerson,
+            unreadSet: new Set([
+              ...snap.unread_bulletin_ids,
+              detail.bulletinId,
+            ]),
+            orgName,
+            projectHref,
+            appHref,
+            router,
+          });
+          if (shown === "missing") {
+            await new Promise((r) => setTimeout(r, 50));
+            continue;
+          }
+          if (seenBulletinIdsRef.current) {
+            seenBulletinIdsRef.current.add(detail.bulletinId);
+          }
+          return;
+        }
+      })();
+    }
+
+    window.addEventListener(BULLETIN_UNREAD_EVENT, onBulletinUnread);
+    return () => {
+      window.removeEventListener(BULLETIN_UNREAD_EVENT, onBulletinUnread);
+    };
+  }, [
+    ready,
+    isPublicShare,
+    profile,
+    myPerson?.id,
+    canManage,
+    state.organization?.name,
     router,
     projectHref,
     appHref,
