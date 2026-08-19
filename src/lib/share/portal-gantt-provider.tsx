@@ -298,6 +298,7 @@ function buildPortalGanttContext(
     deleteProjectAsset: () => {},
     upsertTaskList: () => {},
     deleteTaskList: () => {},
+    moveTaskList: () => {},
     upsertTask: () => {},
     deleteTask: () => {},
     upsertTaskComment: () => {},

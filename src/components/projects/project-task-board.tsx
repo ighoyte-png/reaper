@@ -34,6 +34,7 @@ import {
   Copy,
   Eye,
   EyeOff,
+  FolderInput,
   GripVertical,
   LayoutList,
   LayoutGrid,
@@ -179,6 +180,8 @@ function InitialsAvatar({ person }: { person: Person }) {
 }
 
 /** Shared read-only-ish context threaded through row/list/comment sub-components. */
+const MOVE_INTERNAL_CLIENT = "__internal__";
+
 type BoardCtx = {
   people: Person[];
   /** Full org directory (for keeping orphan assignees visible when editing). */
@@ -395,6 +398,7 @@ export function ProjectTaskBoard({
     toggleTaskCommentReaction,
     deleteTask,
     deleteTaskList,
+    moveTaskList,
     newId,
     ensureProjectData,
     dataStatus,
@@ -460,6 +464,12 @@ export function ProjectTaskBoard({
     id: string;
     name: string;
   } | null>(null);
+  const [moveListTarget, setMoveListTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [moveListClientId, setMoveListClientId] = useState("");
+  const [moveListProjectId, setMoveListProjectId] = useState("");
   const [confirmCopyAlign, setConfirmCopyAlign] = useState<{
     id: string;
     name: string;
@@ -540,6 +550,50 @@ export function ProjectTaskBoard({
     () => allLists.filter((l) => l.archived),
     [allLists],
   );
+
+  const moveDestinations = useMemo(() => {
+    const opts = {
+      canManage: orgCanManage,
+      myPersonId: viewerPersonId,
+      projectMembers: state.project_members,
+    };
+    const destProjects = state.projects.filter(
+      (p) =>
+        p.id !== projectId &&
+        p.status === "active" &&
+        canEditProject(p, opts),
+    );
+    const destClientIds = new Set(
+      destProjects
+        .map((p) => p.client_id)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const clients = state.clients
+      .filter((c) => destClientIds.has(c.id))
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const hasInternal = destProjects.some((p) => p.client_id == null);
+    return { destProjects, clients, hasInternal };
+  }, [
+    orgCanManage,
+    viewerPersonId,
+    state.project_members,
+    state.projects,
+    state.clients,
+    projectId,
+  ]);
+
+  const moveProjectsForClient = useMemo(() => {
+    if (!moveListClientId) return [];
+    return moveDestinations.destProjects
+      .filter((p) =>
+        moveListClientId === MOVE_INTERNAL_CLIENT
+          ? p.client_id == null
+          : p.client_id === moveListClientId,
+      )
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [moveDestinations.destProjects, moveListClientId]);
 
   const isPm =
     Boolean(project?.manager_person_id) &&
@@ -1067,6 +1121,32 @@ export function ProjectTaskBoard({
       return;
     }
     copyList(listId, false);
+  }
+
+  function openMoveList(listId: string) {
+    if (!manageLists) return;
+    if (guardGanttStructuralEdit(listId)) return;
+    const sourceList = state.task_lists.find((l) => l.id === listId);
+    if (!sourceList || sourceList.project_id !== projectId) return;
+    setMoveListClientId("");
+    setMoveListProjectId("");
+    setMoveListTarget({ id: sourceList.id, name: sourceList.name });
+  }
+
+  function closeMoveListModal() {
+    setMoveListTarget(null);
+    setMoveListClientId("");
+    setMoveListProjectId("");
+  }
+
+  function confirmMoveList() {
+    if (!moveListTarget || !moveListProjectId) return;
+    const target = state.projects.find((p) => p.id === moveListProjectId);
+    if (!target) return;
+    moveTaskList(moveListTarget.id, target.id);
+    toast("List moved");
+    closeMoveListModal();
+    router.push(projectHref(target));
   }
 
   function addSubtask(listId: string, parentId: string) {
@@ -2412,6 +2492,7 @@ export function ProjectTaskBoard({
                     setConfirmDeleteList({ id: list.id, name: list.name });
                   }}
                   onCopy={() => requestCopyList(list.id)}
+                  onMove={() => openMoveList(list.id)}
                   onUpdateList={(patch) =>
                     upsertTaskList({ ...list, ...patch })
                   }
@@ -2536,6 +2617,7 @@ export function ProjectTaskBoard({
                         setConfirmDeleteList({ id: list.id, name: list.name });
                       }}
                       onCopy={() => requestCopyList(list.id)}
+                      onMove={() => openMoveList(list.id)}
                       onUpdateList={(patch) =>
                         upsertTaskList({ ...list, ...patch })
                       }
@@ -2564,6 +2646,100 @@ export function ProjectTaskBoard({
             setConfirmDeleteList(null);
           }}
         />
+      ) : null}
+      {moveListTarget ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-md rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-md">
+            <h3 className="text-sm font-semibold">Move list to another project</h3>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Choose a client, then a project to move “{moveListTarget.name}” to.
+            </p>
+            <label className="mt-3 block text-xs text-[var(--text-muted)]">
+              Client
+              <Select
+                searchable
+                className={inputClass}
+                value={moveListClientId}
+                onChange={(v) => {
+                  setMoveListClientId(v);
+                  setMoveListProjectId("");
+                }}
+                placeholder="Select a client…"
+                options={[
+                  { value: "", label: "Select a client…" },
+                  ...moveDestinations.clients.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                  })),
+                  ...(moveDestinations.hasInternal
+                    ? [
+                        {
+                          value: MOVE_INTERNAL_CLIENT,
+                          label: "None (Internal / Time-Off Tracking)",
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </label>
+            {moveDestinations.destProjects.length === 0 ? (
+              <p className="mt-3 text-xs text-[var(--text-muted)]">
+                There are no other projects you can move this list to.
+              </p>
+            ) : null}
+            {moveListClientId ? (
+              <label className="mt-3 block text-xs text-[var(--text-muted)]">
+                Project
+                <Select
+                  searchable
+                  className={inputClass}
+                  value={moveListProjectId}
+                  onChange={setMoveListProjectId}
+                  placeholder={
+                    moveProjectsForClient.length === 0
+                      ? "No projects left for this client"
+                      : "Select a project…"
+                  }
+                  options={[
+                    {
+                      value: "",
+                      label:
+                        moveProjectsForClient.length === 0
+                          ? "No projects left for this client"
+                          : "Select a project…",
+                    },
+                    ...moveProjectsForClient.map((p) => ({
+                      value: p.id,
+                      label: p.name,
+                    })),
+                  ]}
+                />
+              </label>
+            ) : null}
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                className="h-9 flex-1 rounded-md border border-[var(--border)] text-sm"
+                onClick={closeMoveListModal}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!moveListProjectId}
+                className={cn(
+                  "h-9 flex-1 rounded-md text-sm font-medium",
+                  moveListProjectId
+                    ? "bg-[var(--accent)] text-[var(--accent-fg)]"
+                    : "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+                )}
+                onClick={confirmMoveList}
+              >
+                Move List
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
       {confirmCopyAlign ? (
         <ConfirmDialog
@@ -2693,6 +2869,7 @@ function ListSection({
   onToggleHideFromClient,
   onDelete,
   onCopy,
+  onMove,
   onUpdateList,
   showGanttControls,
 }: {
@@ -2717,6 +2894,7 @@ function ListSection({
   onToggleHideFromClient: () => void;
   onDelete: () => void;
   onCopy: () => void;
+  onMove: () => void;
   onUpdateList: (patch: Partial<TaskList>) => void;
   showGanttControls: boolean;
 }) {
@@ -2812,6 +2990,15 @@ function ListSection({
               title="Copy list"
             >
               <Copy size={14} />
+            </button>
+            <button
+              type="button"
+              className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+              onClick={onMove}
+              aria-label="Move list to another project"
+              title="Move list to another project"
+            >
+              <FolderInput size={14} />
             </button>
             {showGanttControls ? (
               <>

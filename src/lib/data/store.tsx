@@ -32,6 +32,7 @@ import { addDays, differenceInCalendarDays, parseISO } from "date-fns";
 import { assignmentOverlapsDateRange } from "@/lib/domain/recurrence";
 import { toDateKey } from "@/lib/domain/dates";
 import { canEditProject } from "@/lib/domain/project-access";
+import { applyMoveTaskList } from "@/lib/domain/move-task-list";
 import {
   assigneeSubmittedTaskForReview,
   buildTaskInReviewBulletin,
@@ -143,6 +144,7 @@ import {
   upsertTaskCommentRow,
   toggleTaskCommentReactionRow,
   upsertTaskListRow,
+  moveTaskListRow,
   upsertTaskRow,
   upsertTemplateMilestoneRow,
   upsertTemplateTaskListRow,
@@ -714,6 +716,8 @@ interface DataContextValue {
     list: Omit<TaskList, "organization_id"> & { organization_id?: string },
   ) => void;
   deleteTaskList: (id: string) => void;
+  /** Move a list and its tasks to another project in this workspace. */
+  moveTaskList: (listId: string, targetProjectId: string) => void;
   /**
    * Members can update status/notes on tasks assigned to them; managers can
    * edit any task. UI is expected to gate the editable fields per role.
@@ -4283,6 +4287,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }));
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() => deleteTaskListRow(supabaseRef.current!, id));
+        }
+      },
+      moveTaskList: (listId, targetProjectId) => {
+        if (!listId || !targetProjectId) return;
+        let movedTaskIds: string[] = [];
+        let applied = false;
+        patch((prev) => {
+          const planned = applyMoveTaskList({
+            lists: prev.task_lists,
+            tasks: prev.tasks,
+            listId,
+            targetProjectId,
+          });
+          if (!planned) return prev;
+          applied = true;
+          movedTaskIds = planned.tasks
+            .filter((t) => t.list_id === listId)
+            .map((t) => t.id);
+          return {
+            ...prev,
+            task_lists: planned.lists,
+            tasks: planned.tasks,
+          };
+        });
+        if (!applied) return;
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("task_lists", listId);
+          for (const taskId of movedTaskIds) {
+            noteLocalWrite("tasks", taskId);
+          }
+          runRemoteSoft(() =>
+            moveTaskListRow(supabaseRef.current!, listId, targetProjectId),
+          );
         }
       },
       upsertTask: (task) => {

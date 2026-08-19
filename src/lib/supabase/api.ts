@@ -3242,6 +3242,28 @@ export async function deleteTaskListRow(supabase: SupabaseClient, id: string) {
   if (error) throw error;
 }
 
+export async function moveTaskListRow(
+  supabase: SupabaseClient,
+  listId: string,
+  targetProjectId: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("move_task_list", {
+    p_list_id: listId,
+    p_target_project_id: targetProjectId,
+  });
+  if (!error) return;
+  if (
+    /function .*move_task_list.* does not exist/i.test(error.message) ||
+    error.code === "42883"
+  ) {
+    console.warn(
+      "move_task_list missing — apply supabase/migrations/101_move_task_list.sql",
+    );
+    return;
+  }
+  throw error;
+}
+
 export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
   // Prefer UPDATE first: members only have UPDATE RLS (assigned tasks), and
   // PostgREST upsert requires INSERT which members lack — that caused status

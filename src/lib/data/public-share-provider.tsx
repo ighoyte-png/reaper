@@ -219,6 +219,7 @@ export function PublicShareProvider({
       deleteProjectAsset: () => {},
       upsertTaskList: () => {},
       deleteTaskList: () => {},
+      moveTaskList: () => {},
       upsertTask: () => {},
       deleteTask: () => {},
       upsertTaskComment: () => {},
