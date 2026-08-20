@@ -820,12 +820,25 @@ function TasksReportContent() {
   ]);
 
   const bucketTasks = useMemo(() => {
-    const activeOnly = scopedTasks.filter(
+    return scopedTasks.filter(
       (t) => !archivedListIds.has(t.list_id) && !t.is_divider,
     );
-    if (!myTasksMode) return activeOnly;
-    return activeOnly.filter((t) => taskMatchesDateRange(t, dateFrom, dateTo));
-  }, [scopedTasks, myTasksMode, dateFrom, dateTo, archivedListIds]);
+  }, [scopedTasks, archivedListIds]);
+
+  const dateRangeActive = Boolean(myTasksMode && (dateFrom || dateTo));
+
+  const dateRangeTasks = useMemo(() => {
+    if (!dateRangeActive) return [];
+    return bucketTasks
+      .filter((t) => taskMatchesDateRange(t, dateFrom, dateTo))
+      .sort((a, b) => {
+        const byDue = (a.due_date ?? "").localeCompare(b.due_date ?? "");
+        if (byDue !== 0) return byDue;
+        return a.title.localeCompare(b.title, undefined, {
+          sensitivity: "base",
+        });
+      });
+  }, [dateRangeActive, bucketTasks, dateFrom, dateTo]);
 
   const allArchivedTasks = useMemo(() => {
     if (!myTasksMode) return [];
@@ -1191,6 +1204,29 @@ function TasksReportContent() {
                   </button>
                 ) : null}
               </div>
+            </section>
+          ) : null}
+
+          {dateRangeActive ? (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <CalendarClock
+                  size={14}
+                  className="text-[var(--text-muted)]"
+                />
+                <h2 className="text-sm font-semibold">
+                  Selected Due Dates
+                  {dateRangeTasks.length > 0
+                    ? ` (${dateRangeTasks.length})`
+                    : ""}
+                </h2>
+              </div>
+              <TaskTable
+                {...tableProps}
+                tasks={dateRangeTasks}
+                emptyLabel={EMPTY_SECTION}
+                defaultSortKey="end"
+              />
             </section>
           ) : null}
 
