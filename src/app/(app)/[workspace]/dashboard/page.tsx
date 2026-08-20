@@ -1166,6 +1166,7 @@ export default function DashboardPage() {
               people={sortedPeople}
               pods={state.pods}
               projects={state.projects}
+              clients={state.clients}
               projectHref={projectHref}
               canCreate={effectiveCanManage && !isPublicShare}
               profileId={profile?.id ?? null}
@@ -1648,26 +1649,31 @@ function TaggedMentionsPanel({
               <li key={key} className="relative">
                 <Link
                   href={href}
-                  className="block rounded-md border border-[var(--border)] px-3 py-2 pl-3 pr-9 hover:bg-[var(--row-hover)]"
+                  className="flex gap-2 rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
                   onClick={() => onOpen(target)}
                 >
-                  <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
-                    <span className="flex min-w-0 items-center gap-1.5 truncate">
-                      {unread ? (
-                        <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-attention)]"
-                          aria-label="New"
-                        />
-                      ) : null}
-                      <span className="truncate">{location}</span>
-                    </span>
-                    <span className="shrink-0">{dateKey}</span>
-                  </div>
-                  <div className="truncate text-xs font-medium">
-                    {title}
-                  </div>
-                  <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
-                    <RichNotesHtml html={bodyHtml} />
+                  {client ? (
+                    <ProjectColorBar color={client.color} size="stretch" />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
+                      <span className="flex min-w-0 items-center gap-1.5 truncate">
+                        {unread ? (
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-attention)]"
+                            aria-label="New"
+                          />
+                        ) : null}
+                        <span className="truncate">{location}</span>
+                      </span>
+                      <span className="shrink-0">{dateKey}</span>
+                    </div>
+                    <div className="truncate text-xs font-medium">
+                      {title}
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
+                      <RichNotesHtml html={bodyHtml} />
+                    </div>
                   </div>
                 </Link>
                 <button
@@ -2461,6 +2467,7 @@ function BulletinBoard({
   people,
   pods,
   projects,
+  clients,
   projectHref,
   canCreate,
   profileId,
@@ -2480,6 +2487,7 @@ function BulletinBoard({
   people: Person[];
   pods: Pod[];
   projects: Project[];
+  clients: Client[];
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   canCreate: boolean;
   profileId: string | null;
@@ -2566,6 +2574,10 @@ function BulletinBoard({
             const linkedProject = b.project_id
               ? projects.find((p) => p.id === b.project_id)
               : null;
+            const clientColor =
+              linkedProject?.client_id
+                ? clients.find((c) => c.id === linkedProject.client_id)?.color
+                : undefined;
             const href = linkedProject ? linkHref(b, linkedProject) : null;
             const goToLinked = () => {
               if (!href) return;
@@ -2580,7 +2592,7 @@ function BulletinBoard({
               <li
                 key={b.id}
                 className={cn(
-                  "rounded-md border px-3 py-2 text-sm",
+                  "rounded-md border text-sm",
                   success
                     ? "border-transparent bg-[var(--status-healthy)]/15"
                     : washed
@@ -2604,69 +2616,73 @@ function BulletinBoard({
                 role={href ? "link" : undefined}
                 tabIndex={href ? 0 : undefined}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 font-medium">
-                      {unread ? (
-                        <span
-                          className={cn(
-                            "h-1.5 w-1.5 shrink-0 rounded-full",
-                            success
-                              ? "bg-[var(--status-healthy)]"
-                              : "bg-[var(--status-attention)]",
-                          )}
-                          aria-label="New"
-                        />
+                <div className="flex gap-2 px-3 py-2">
+                  {clientColor ? (
+                    <ProjectColorBar color={clientColor} size="stretch" />
+                  ) : null}
+                  <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        {unread ? (
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 shrink-0 rounded-full",
+                              success
+                                ? "bg-[var(--status-healthy)]"
+                                : "bg-[var(--status-attention)]",
+                            )}
+                            aria-label="New"
+                          />
+                        ) : null}
+                        {b.pinned ? (
+                          <Pin size={11} className="text-[var(--accent)]" />
+                        ) : null}
+                        {b.title}
+                      </div>
+                      {b.body ? (
+                        /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(
+                          b.body,
+                        ) ? (
+                          <div
+                            className="rich-notes mt-1 text-xs text-[var(--text-muted)]"
+                            onClick={(e) => {
+                              if ((e.target as HTMLElement).closest("a")) {
+                                e.stopPropagation();
+                              }
+                            }}
+                          >
+                            <RichNotesHtml html={b.body} />
+                          </div>
+                        ) : (
+                          <LinkifiedText
+                            text={b.body}
+                            className="mt-1 text-xs text-[var(--text-muted)]"
+                          />
+                        )
                       ) : null}
-                      {b.pinned ? (
-                        <Pin size={11} className="text-[var(--accent)]" />
-                      ) : null}
-                      {b.title}
+                      <div className="mt-1 text-[11px] text-[var(--text-muted)]">
+                        {b.created_at.slice(0, 10)}
+                        {author ? ` · ${author.full_name}` : ""}
+                        {` · ${audienceSummary(b)}`}
+                      </div>
                     </div>
-                    {b.body ? (
-                      /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(
-                        b.body,
-                      ) ? (
-                        <div
-                          className="rich-notes mt-1 text-xs text-[var(--text-muted)]"
-                          onClick={(e) => {
-                            if ((e.target as HTMLElement).closest("a")) {
-                              e.stopPropagation();
-                            }
-                          }}
+                    <div
+                      className="flex shrink-0 items-start gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      {showDismissX ? (
+                        <button
+                          type="button"
+                          className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                          aria-label="Dismiss notice"
+                          title="Dismiss"
+                          onClick={() => onDismissFromBoard?.(b.id)}
                         >
-                          <RichNotesHtml html={b.body} />
-                        </div>
-                      ) : (
-                        <LinkifiedText
-                          text={b.body}
-                          className="mt-1 text-xs text-[var(--text-muted)]"
-                        />
-                      )
-                    ) : null}
-                    <div className="mt-1 text-[11px] text-[var(--text-muted)]">
-                      {b.created_at.slice(0, 10)}
-                      {author ? ` · ${author.full_name}` : ""}
-                      {` · ${audienceSummary(b)}`}
-                    </div>
-                  </div>
-                  <div
-                    className="flex shrink-0 items-start gap-1"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    {showDismissX ? (
-                      <button
-                        type="button"
-                        className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                        aria-label="Dismiss notice"
-                        title="Dismiss"
-                        onClick={() => onDismissFromBoard?.(b.id)}
-                      >
-                        <X size={13} strokeWidth={2} />
-                      </button>
-                    ) : null}
-                    {canAuthorEdit ? (
+                          <X size={13} strokeWidth={2} />
+                        </button>
+                      ) : null}
+                      {canAuthorEdit ? (
                       <>
                         <button
                           type="button"
@@ -2702,6 +2718,7 @@ function BulletinBoard({
                         </button>
                       </>
                     ) : null}
+                  </div>
                   </div>
                 </div>
               </li>
