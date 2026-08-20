@@ -22,7 +22,10 @@ import { budgetHealth, formatMoney, listedBudgetAmount } from "@/lib/domain/budg
 import { convertAmount, projectCurrency } from "@/lib/domain/currency";
 import { CurrencyChip } from "@/components/ui/currency-chip";
 import { useBudgetHref } from "@/lib/hooks/use-app-href";
-import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
+import {
+  useMonthlyRetainerYearBarsMap,
+  useProjectBurnsMap,
+} from "@/lib/hooks/use-aggregates";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import {
   sortClientsByName,
@@ -105,6 +108,9 @@ function BudgetsReportContent() {
   const { state, profile } = useData();
   const budgetHref = useBudgetHref();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
+  const budgetYear = new Date().getFullYear();
+  const { barsByProject, ready: barsReady } =
+    useMonthlyRetainerYearBarsMap(budgetYear);
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectParam = searchParams.get("project");
@@ -462,6 +468,8 @@ function BudgetsReportContent() {
                           key={project.id}
                           project={project}
                           href={budgetHref(project)}
+                          burns={burns}
+                          burnsReady={burnsReady}
                         />
                       ))}
                     </div>
@@ -501,6 +509,10 @@ function BudgetsReportContent() {
                             key={project.id}
                             project={project}
                             href={budgetHref(project)}
+                            burns={burns}
+                            burnsReady={burnsReady}
+                            barsByProject={barsByProject}
+                            barsReady={barsReady}
                           />
                         )),
                       )}

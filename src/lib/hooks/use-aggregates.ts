@@ -12,7 +12,74 @@ import {
   type MonthBurnBar,
 } from "@/lib/domain/budget";
 import type { BudgetBurn } from "@/lib/types";
-import type { MonthlyRetainerYearBarRow } from "@/lib/supabase/api";
+import type {
+  MonthlyRetainerYearBarRow,
+  ProjectBudgetBurnRow,
+} from "@/lib/supabase/api";
+
+/** Shared in-flight / settled RPC results so N hook mounts = 1 fetch. */
+type BurnsCacheEntry =
+  | { status: "loading"; promise: Promise<Map<string, BudgetBurn> | null> }
+  | { status: "done"; value: Map<string, BudgetBurn> | null };
+
+type YearBarsCacheEntry =
+  | { status: "loading"; promise: Promise<MonthlyRetainerYearBarRow[] | null> }
+  | { status: "done"; value: MonthlyRetainerYearBarRow[] | null };
+
+const burnsRpcCache = new Map<string, BurnsCacheEntry>();
+const yearBarsRpcCache = new Map<string, YearBarsCacheEntry>();
+
+function loadBurnsRpcOnce(
+  orgId: string,
+  fetch: () => Promise<ProjectBudgetBurnRow[] | null>,
+): Promise<Map<string, BudgetBurn> | null> {
+  const existing = burnsRpcCache.get(orgId);
+  if (existing?.status === "done") {
+    return Promise.resolve(existing.value);
+  }
+  if (existing?.status === "loading") {
+    return existing.promise;
+  }
+  const promise = (async () => {
+    const rows = await fetch();
+    const value =
+      rows == null
+        ? null
+        : new Map(rows.map((r) => [r.project_id, burnFromRpcRow(r)]));
+    burnsRpcCache.set(orgId, { status: "done", value });
+    return value;
+  })().catch((err) => {
+    burnsRpcCache.delete(orgId);
+    throw err;
+  });
+  burnsRpcCache.set(orgId, { status: "loading", promise });
+  return promise;
+}
+
+function loadYearBarsRpcOnce(
+  orgId: string,
+  year: number,
+  fetch: (year: number) => Promise<MonthlyRetainerYearBarRow[] | null>,
+): Promise<MonthlyRetainerYearBarRow[] | null> {
+  const key = `${orgId}:${year}`;
+  const existing = yearBarsRpcCache.get(key);
+  if (existing?.status === "done") {
+    return Promise.resolve(existing.value);
+  }
+  if (existing?.status === "loading") {
+    return existing.promise;
+  }
+  const promise = (async () => {
+    const rows = await fetch(year);
+    yearBarsRpcCache.set(key, { status: "done", value: rows });
+    return rows;
+  })().catch((err) => {
+    yearBarsRpcCache.delete(key);
+    throw err;
+  });
+  yearBarsRpcCache.set(key, { status: "loading", promise });
+  return promise;
+}
 
 /**
  * Org-wide burns via RPC (no full assignment dump). Prefer precise client
@@ -27,8 +94,16 @@ export function useProjectBurnsMap(): {
   /** undefined = loading, null = soft-fail, Map = RPC ok */
   const [rpcBurns, setRpcBurns] = useState<
     Map<string, BudgetBurn> | null | undefined
-  >(mode === "demo" ? null : undefined);
-  const [ready, setReady] = useState(mode === "demo");
+  >(() => {
+    if (mode === "demo") return null;
+    const cached = burnsRpcCache.get(state.organization.id);
+    return cached?.status === "done" ? cached.value : undefined;
+  });
+  const [ready, setReady] = useState(
+    () =>
+      mode === "demo" ||
+      burnsRpcCache.get(state.organization.id)?.status === "done",
+  );
   const orgId = state.organization.id;
 
   useEffect(() => {
@@ -39,19 +114,24 @@ export function useProjectBurnsMap(): {
         setReady(true);
         return;
       }
+      const cached = burnsRpcCache.get(orgId);
+      if (cached?.status === "done") {
+        setRpcBurns(cached.value);
+        setReady(true);
+        return;
+      }
       setRpcBurns(undefined);
       setReady(false);
-      const rows = await fetchProjectBudgetBurnsRpc();
-      if (cancelled) return;
-      if (rows) {
-        setRpcBurns(
-          new Map(rows.map((r) => [r.project_id, burnFromRpcRow(r)])),
-        );
-      } else {
-        // Soft-fail (incl. public share stub): use client-side burn math.
+      try {
+        const value = await loadBurnsRpcOnce(orgId, fetchProjectBudgetBurnsRpc);
+        if (cancelled) return;
+        setRpcBurns(value);
+        setReady(true);
+      } catch {
+        if (cancelled) return;
         setRpcBurns(null);
+        setReady(true);
       }
-      setReady(true);
     }
     void load();
     return () => {
@@ -129,10 +209,18 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
 } {
   const { mode, state, dataStatus, fetchMonthlyRetainerYearBarsRpc } =
     useData();
+  const cacheKey = `${state.organization.id}:${year}`;
   const [rpcRows, setRpcRows] = useState<
     MonthlyRetainerYearBarRow[] | null | undefined
-  >(mode === "demo" ? null : undefined);
-  const [ready, setReady] = useState(mode === "demo");
+  >(() => {
+    if (mode === "demo") return null;
+    const cached = yearBarsRpcCache.get(cacheKey);
+    return cached?.status === "done" ? cached.value : undefined;
+  });
+  const [ready, setReady] = useState(
+    () =>
+      mode === "demo" || yearBarsRpcCache.get(cacheKey)?.status === "done",
+  );
   const orgId = state.organization.id;
 
   useEffect(() => {
@@ -143,12 +231,29 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
         setReady(true);
         return;
       }
+      const key = `${orgId}:${year}`;
+      const cached = yearBarsRpcCache.get(key);
+      if (cached?.status === "done") {
+        setRpcRows(cached.value);
+        setReady(true);
+        return;
+      }
       setRpcRows(undefined);
       setReady(false);
-      const rows = await fetchMonthlyRetainerYearBarsRpc(year);
-      if (cancelled) return;
-      setRpcRows(rows);
-      setReady(true);
+      try {
+        const rows = await loadYearBarsRpcOnce(
+          orgId,
+          year,
+          fetchMonthlyRetainerYearBarsRpc,
+        );
+        if (cancelled) return;
+        setRpcRows(rows);
+        setReady(true);
+      } catch {
+        if (cancelled) return;
+        setRpcRows(null);
+        setReady(true);
+      }
     }
     void load();
     return () => {

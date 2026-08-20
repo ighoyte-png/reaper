@@ -18,10 +18,11 @@ import {
   isMonthlyRetainerBudget,
   normalizeBudgetMode,
   projectHoursForecast,
+  type MonthBurnBar,
   type ProjectHoursForecast,
 } from "@/lib/domain/budget";
 import { cn } from "@/lib/cn";
-import type { Project } from "@/lib/types";
+import type { BudgetBurn, Project } from "@/lib/types";
 import { projectCurrency } from "@/lib/domain/currency";
 import { CurrencyChip } from "@/components/ui/currency-chip";
 
@@ -105,16 +106,91 @@ export function BudgetCard({
   project,
   href,
   showName = true,
+  burns,
+  burnsReady,
+  barsByProject,
+  barsReady,
+}: {
+  project: Project;
+  href?: string;
+  showName?: boolean;
+  burns?: Map<string, BudgetBurn>;
+  burnsReady?: boolean;
+  barsByProject?: Map<string, MonthBurnBar[]>;
+  barsReady?: boolean;
+}) {
+  const mapsProvided =
+    burns != null &&
+    burnsReady != null &&
+    barsByProject != null &&
+    barsReady != null;
+  if (mapsProvided) {
+    return (
+      <BudgetCardView
+        project={project}
+        href={href}
+        showName={showName}
+        burns={burns}
+        burnsReady={burnsReady}
+        barsByProject={barsByProject}
+        barsReady={barsReady}
+      />
+    );
+  }
+  return (
+    <BudgetCardWithHooks
+      project={project}
+      href={href}
+      showName={showName}
+    />
+  );
+}
+
+function BudgetCardWithHooks({
+  project,
+  href,
+  showName = true,
 }: {
   project: Project;
   href?: string;
   showName?: boolean;
 }) {
-  const { state, dataStatus } = useData();
-  const { burns, ready: burnsReady } = useProjectBurnsMap();
   const year = new Date().getFullYear();
+  const { burns, ready: burnsReady } = useProjectBurnsMap();
   const { barsByProject, ready: barsReady } =
     useMonthlyRetainerYearBarsMap(year);
+  return (
+    <BudgetCardView
+      project={project}
+      href={href}
+      showName={showName}
+      burns={burns}
+      burnsReady={burnsReady}
+      barsByProject={barsByProject}
+      barsReady={barsReady}
+    />
+  );
+}
+
+function BudgetCardView({
+  project,
+  href,
+  showName = true,
+  burns,
+  burnsReady,
+  barsByProject,
+  barsReady,
+}: {
+  project: Project;
+  href?: string;
+  showName?: boolean;
+  burns: Map<string, BudgetBurn>;
+  burnsReady: boolean;
+  barsByProject: Map<string, MonthBurnBar[]>;
+  barsReady: boolean;
+}) {
+  const { state, dataStatus } = useData();
+  const year = new Date().getFullYear();
   const membersForProject = state.project_members.filter(
     (m) => m.project_id === project.id,
   );
@@ -355,12 +431,58 @@ function budgetModeLabel(
 export function BudgetListRow({
   project,
   href,
+  burns,
+  burnsReady,
+}: {
+  project: Project;
+  href: string;
+  burns?: Map<string, BudgetBurn>;
+  burnsReady?: boolean;
+}) {
+  const mapsProvided = burns != null && burnsReady != null;
+  if (mapsProvided) {
+    return (
+      <BudgetListRowView
+        project={project}
+        href={href}
+        burns={burns}
+        burnsReady={burnsReady}
+      />
+    );
+  }
+  return <BudgetListRowWithHooks project={project} href={href} />;
+}
+
+function BudgetListRowWithHooks({
+  project,
+  href,
 }: {
   project: Project;
   href: string;
 }) {
-  const { state, dataStatus } = useData();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
+  return (
+    <BudgetListRowView
+      project={project}
+      href={href}
+      burns={burns}
+      burnsReady={burnsReady}
+    />
+  );
+}
+
+function BudgetListRowView({
+  project,
+  href,
+  burns,
+  burnsReady,
+}: {
+  project: Project;
+  href: string;
+  burns: Map<string, BudgetBurn>;
+  burnsReady: boolean;
+}) {
+  const { state, dataStatus } = useData();
   const membersForProject = state.project_members.filter(
     (m) => m.project_id === project.id,
   );

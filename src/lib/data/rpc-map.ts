@@ -61,14 +61,25 @@ export function monthlyYearBarsFromRpcRows(
   for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
     const d = new Date(year, monthIndex, 1);
     const row = byMonth.get(monthIndex);
-    const usedHours = row?.used_hours ?? 0;
-    const futureHours = row?.future_hours ?? 0;
-    const usedAmount = row?.used_amount ?? 0;
-    const futureAmount = row?.future_amount ?? 0;
+    // RPC used_*/future_* are BudgetBurn-style totals (internal + contractor).
+    // MonthBurnBar expects internal-only used/future; chart adds contractor.
     const contractorUsedHours = row?.contractor_used_hours ?? 0;
     const contractorFutureHours = row?.contractor_future_hours ?? 0;
     const contractorUsedAmount = row?.contractor_used_amount ?? 0;
     const contractorFutureAmount = row?.contractor_future_amount ?? 0;
+    const usedHours = Math.max(0, (row?.used_hours ?? 0) - contractorUsedHours);
+    const futureHours = Math.max(
+      0,
+      (row?.future_hours ?? 0) - contractorFutureHours,
+    );
+    const usedAmount = Math.max(
+      0,
+      (row?.used_amount ?? 0) - contractorUsedAmount,
+    );
+    const futureAmount = Math.max(
+      0,
+      (row?.future_amount ?? 0) - contractorFutureAmount,
+    );
     const contractorHours = contractorUsedHours + contractorFutureHours;
     const contractorAmount = contractorUsedAmount + contractorFutureAmount;
     const plannedHours = usedHours + futureHours + contractorHours;
