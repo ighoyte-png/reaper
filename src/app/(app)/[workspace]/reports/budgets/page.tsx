@@ -7,13 +7,14 @@ import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ReportBreadcrumb } from "@/components/nav/breadcrumbs";
 import { FavoritesSidebar } from "@/components/nav/favorites-sidebar";
-import { BudgetCard } from "@/components/budgets/budget-card";
+import { BudgetCard, BudgetListRow } from "@/components/budgets/budget-card";
 import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
 import { BudgetStatusLine } from "@/components/reports/budget-status-line";
 import type { BudgetStatusFilter } from "@/components/reports/budget-status-line";
+import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { inputClass } from "@/components/ui/form";
 import { useData } from "@/lib/data/store";
@@ -28,6 +29,10 @@ import {
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import { nonSandboxProjects } from "@/lib/domain/project-access";
+import {
+  useLiveUserViewPrefs,
+  writeUserViewPrefs,
+} from "@/lib/user-view-prefs";
 import { cn } from "@/lib/cn";
 import type { Client, Project } from "@/lib/types";
 
@@ -97,12 +102,14 @@ export default function BudgetsReportPage() {
 }
 
 function BudgetsReportContent() {
-  const { state } = useData();
+  const { state, profile } = useData();
   const budgetHref = useBudgetHref();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectParam = searchParams.get("project");
+  const viewPrefs = useLiveUserViewPrefs(profile?.id);
+  const directoryLayout = viewPrefs.directoryLayout;
   const { filters, setFilter, setFilters } = useUrlFilters(
     BUDGET_FILTER_DEFAULTS,
     { debounceMs: { q: 250 } },
@@ -351,16 +358,29 @@ function BudgetsReportContent() {
               onSelect={setManagerFilter}
             />
 
-            <BudgetStatusLine
-              all={budgetStatus.all}
-              tracked={budgetStatus.tracked}
-              healthy={budgetStatus.healthy}
-              near={budgetStatus.near}
-              over={budgetStatus.over}
-              active={healthFilter}
-              onSelect={(next) => setFilter("health", next)}
-              className="mb-4"
-            />
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <BudgetStatusLine
+                all={budgetStatus.all}
+                tracked={budgetStatus.tracked}
+                healthy={budgetStatus.healthy}
+                near={budgetStatus.near}
+                over={budgetStatus.over}
+                active={healthFilter}
+                onSelect={(next) => setFilter("health", next)}
+                className="min-w-0"
+              />
+              <ListCardsViewToggle
+                className="ml-auto"
+                value={directoryLayout}
+                onChange={(next) => {
+                  if (!profile?.id) return;
+                  writeUserViewPrefs(profile.id, {
+                    ...viewPrefs,
+                    directoryLayout: next,
+                  });
+                }}
+              />
+            </div>
 
             <div className="mb-8 grid gap-3 sm:grid-cols-2">
               <DollarTotalCard
@@ -420,6 +440,34 @@ function BudgetsReportContent() {
                 No projects match
                 {query.trim() ? ` “${query.trim()}”` : ""}.
               </p>
+            ) : directoryLayout === "list" ? (
+              <div className="space-y-6">
+                {groups.map(({ client, projects: groupProjects }) => (
+                  <section key={clientGroupKey(client)}>
+                    <div className="mb-4 flex items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2">
+                      {client ? (
+                        <ProjectColorBar color={client.color} />
+                      ) : null}
+                      <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
+                        {client?.name ?? "No Client"}
+                      </h2>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {groupProjects.length} project
+                        {groupProjects.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]">
+                      {groupProjects.map((project) => (
+                        <BudgetListRow
+                          key={project.id}
+                          project={project}
+                          href={budgetHref(project)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
             ) : (
               <div className="space-y-6">
                 {packedRows.map((row, rowIndex) => (

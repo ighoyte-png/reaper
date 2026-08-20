@@ -9,7 +9,11 @@ import {
   ProjectManagerFilterBar,
   useProjectManagerFilter,
 } from "@/components/projects/project-manager-filter-bar";
-import { TimelineProjectCard } from "@/components/reports/timeline-project-card";
+import {
+  TimelineProjectCard,
+  TimelineProjectListRow,
+} from "@/components/reports/timeline-project-card";
+import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { StatCountBadge } from "@/components/ui/stat-count-badge";
 import { useData } from "@/lib/data/store";
@@ -21,6 +25,10 @@ import {
 } from "@/lib/domain/sorting";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
+import {
+  useLiveUserViewPrefs,
+  writeUserViewPrefs,
+} from "@/lib/user-view-prefs";
 import type { Client, Project } from "@/lib/types";
 
 const GRID_COLUMNS = 3;
@@ -78,10 +86,12 @@ export default function TimelinesReportPage() {
 }
 
 function TimelinesReportContent() {
-  const { state, mode, ensureOrgMilestones, dataStatus } = useData();
+  const { state, mode, ensureOrgMilestones, dataStatus, profile } = useData();
   const projectHref = useProjectHref();
   const today = format(new Date(), "yyyy-MM-dd");
   const { filters, setFilter } = useUrlFilters({ pm: "all" });
+  const viewPrefs = useLiveUserViewPrefs(profile?.id);
+  const directoryLayout = viewPrefs.directoryLayout;
 
   const eligible = useMemo(() => {
     return sortProjectsByClientThenName(
@@ -164,6 +174,17 @@ function TimelinesReportContent() {
             />
             Total Project Timelines
           </span>
+          <ListCardsViewToggle
+            className="ml-auto"
+            value={directoryLayout}
+            onChange={(next) => {
+              if (!profile?.id) return;
+              writeUserViewPrefs(profile.id, {
+                ...viewPrefs,
+                directoryLayout: next,
+              });
+            }}
+          />
         </div>
 
         {!milestonesReady ? (
@@ -174,6 +195,36 @@ function TimelinesReportContent() {
           <p className="py-8 text-center text-sm text-[var(--text-muted)]">
             No Projects with Timelines.
           </p>
+        ) : directoryLayout === "list" ? (
+          <div className="space-y-6">
+            {groups.map(({ client, projects: groupProjects }) => (
+              <section key={clientGroupKey(client)}>
+                <div className="mb-4 flex items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2">
+                  {client ? (
+                    <ProjectColorBar color={client.color} />
+                  ) : null}
+                  <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
+                    {client?.name ?? "No Client"}
+                  </h2>
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {groupProjects.length} project
+                    {groupProjects.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]">
+                  {groupProjects.map((project) => (
+                    <TimelineProjectListRow
+                      key={project.id}
+                      project={project}
+                      milestones={milestonesByProject.get(project.id) ?? []}
+                      href={projectHref(project)}
+                      today={today}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
           <div className="space-y-10">
             {packedRows.map((row, rowIndex) => (

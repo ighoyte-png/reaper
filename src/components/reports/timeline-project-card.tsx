@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
+import { ChevronDown } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
 import { ProjectStatusTag } from "@/components/projects/project-status-tag";
 import { panelClass } from "@/components/ui/panel";
@@ -119,5 +121,94 @@ export function TimelineProjectCard({
         )}
       </div>
     </Link>
+  );
+}
+
+/** Compact list row: overall project timeline only; expand for milestones. */
+export function TimelineProjectListRow({
+  project,
+  milestones,
+  href,
+  today,
+}: {
+  project: Project;
+  milestones: Milestone[];
+  href: string;
+  today: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const overallPct = projectDateProgress(project, today) ?? 0;
+  const sorted = [...milestones].sort((a, b) => a.sort_order - b.sort_order);
+  const hasMilestones = sorted.length > 0;
+
+  return (
+    <div
+      className={cn(
+        "border-b border-[var(--border)] last:border-b-0",
+        project.status === "archived" && "opacity-60",
+      )}
+    >
+      <div className="flex items-center gap-2 px-3 py-2 hover:bg-[var(--row-hover)]">
+        {hasMilestones ? (
+          <button
+            type="button"
+            className="inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
+            aria-expanded={expanded}
+            aria-label={expanded ? "Hide milestones" : "Show milestones"}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setExpanded((v) => !v);
+            }}
+          >
+            <ChevronDown
+              size={14}
+              className={cn(
+                "transition-transform duration-200 ease-out motion-reduce:transition-none",
+                expanded ? "rotate-0" : "-rotate-90",
+              )}
+            />
+          </button>
+        ) : (
+          <span className="inline-flex h-7 w-7 shrink-0" aria-hidden />
+        )}
+        <Link href={href} className="min-w-0 flex-1">
+          <div className="mb-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="truncate text-sm font-semibold leading-tight">
+              {project.name}
+            </span>
+            <ProjectStatusTag status={project.status} />
+          </div>
+          <ProgressBar
+            pct={overallPct}
+            label={overallProgressLabel(project.start_date, project.end_date)}
+            size="sm"
+          />
+        </Link>
+      </div>
+      {expanded && hasMilestones ? (
+        <div className="space-y-3 border-t border-[var(--border)] px-3 py-3 pl-12">
+          {sorted.map((milestone) => {
+            const pct = milestoneDateProgress(milestone, project, today);
+            const dateLabel = milestone.due_date
+              ? formatDisplayDate(milestone.due_date)
+              : "No date";
+            return (
+              <ProgressBar
+                key={milestone.id}
+                pct={pct ?? 0}
+                label={`${milestone.name} · ${dateLabel}`}
+                approved={milestone.client_approved}
+                readyForApproval={
+                  milestone.approval_enabled && !milestone.client_approved
+                }
+                footerStart={approvedByline(milestone)}
+                size="sm"
+              />
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }

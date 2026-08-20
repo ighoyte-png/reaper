@@ -341,3 +341,160 @@ export function BudgetCard({
 
   return <div className={className}>{body}</div>;
 }
+
+function budgetModeLabel(
+  mode: ReturnType<typeof normalizeBudgetMode>,
+  monthlyReset: boolean | null | undefined,
+): string {
+  if (mode === "none") return "No Budget";
+  if (mode === "amount") return monthlyReset ? "Monthly Amount" : "Dollar";
+  return monthlyReset ? "Monthly Hours" : "Hours";
+}
+
+/** Numbers-only list row for the budgets report (no burn chart / bar). */
+export function BudgetListRow({
+  project,
+  href,
+}: {
+  project: Project;
+  href: string;
+}) {
+  const { state, dataStatus } = useData();
+  const { burns, ready: burnsReady } = useProjectBurnsMap();
+  const membersForProject = state.project_members.filter(
+    (m) => m.project_id === project.id,
+  );
+  const expensesForProject = state.project_contractor_expenses.filter(
+    (e) => e.project_id === project.id,
+  );
+  const projectReady = dataStatus.projects[project.id] === "ready";
+  const mode = normalizeBudgetMode(
+    project.budget_mode,
+    project.budget_hours,
+    project.budget_amount,
+  );
+  const isMonthlyRetainer = isMonthlyRetainerBudget(project);
+  const metricsLoading = !burnsReady;
+
+  if (metricsLoading) {
+    return (
+      <Link
+        href={href}
+        className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--row-hover)]"
+        aria-busy="true"
+      >
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Pulse className="h-4 w-40 max-w-[55%]" />
+          <Pulse className="h-3 w-56 max-w-full" />
+        </div>
+      </Link>
+    );
+  }
+
+  const burn =
+    burns.get(project.id) ??
+    budgetBurn(
+      project,
+      state.assignments,
+      state.people,
+      false,
+      new Date(),
+      membersForProject,
+      expensesForProject,
+      state.organization_settings,
+    );
+  const health = budgetHealth(burn, state.organization_settings);
+  const hoursFx = projectReady
+    ? projectHoursForecast(
+        project,
+        state.assignments,
+        state.people,
+        new Date(),
+        state.organization_settings,
+      )
+    : forecastFromBurn(project, burn);
+  const showHoursMetrics = mode === "hours";
+  const showAmountMetrics = mode === "amount";
+  const settings = state.organization_settings;
+  const moneyCur = projectCurrency(project, settings.currency_enabled);
+  const money = (n: number) =>
+    formatMoney(n, moneyCur, settings.currency_enabled);
+  const showCurrencyChip =
+    settings.currency_enabled &&
+    (burn.mode === "amount" || burn.mode === "hours");
+
+  const summary =
+    burn.mode === "none"
+      ? formatHours(burn.plannedHours)
+      : burn.mode === "amount"
+        ? `${money(burn.plannedAmount)} / ${money(burn.totalAmount ?? 0)}`
+        : `${formatHours(burn.plannedHours)} / ${formatHours(burn.totalHours)}${
+            burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
+          }`;
+
+  const usedLabel = showAmountMetrics
+    ? money(burn.usedAmount)
+    : formatHours(hoursFx.hoursUsedToDate);
+  const futureLabel = showAmountMetrics
+    ? money(burn.futureAmount)
+    : formatHours(hoursFx.hoursFuturePlanned);
+  const remainingLabel = showHoursMetrics
+    ? hoursFx.hoursRemaining == null
+      ? "—"
+      : formatHours(hoursFx.hoursRemaining)
+    : showAmountMetrics
+      ? burn.remainingAmount == null
+        ? "—"
+        : money(burn.remainingAmount)
+      : "—";
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-3 border-b border-[var(--border)] px-3 py-2 last:border-b-0 hover:bg-[var(--row-hover)]",
+        project.status === "archived" && "opacity-60",
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="truncate text-sm font-semibold leading-tight">
+            {project.name}
+          </span>
+          <span className="shrink-0 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+            {budgetModeLabel(mode, project.budget_monthly_reset)}
+          </span>
+          {showCurrencyChip ? <CurrencyChip currency={moneyCur} /> : null}
+        </div>
+        <div
+          className={cn(
+            "mt-0.5 text-xs tabular-nums",
+            health === "over" && "text-[var(--status-over)]",
+            health === "near" && "text-[var(--status-near)]",
+            (health === "healthy" || health === "none") &&
+              "text-[var(--text-muted)]",
+          )}
+        >
+          {summary}
+          {isMonthlyRetainer ? " · this month" : ""}
+        </div>
+        {burn.mode !== "none" ? (
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--text-muted)]">
+            <span className="tabular-nums">
+              {showAmountMetrics ? "Spend" : "Used"} {usedLabel}
+            </span>
+            <span className="tabular-nums">Future {futureLabel}</span>
+            <span
+              className={cn(
+                "tabular-nums",
+                hoursFx.overBudget && "text-[var(--status-over)]",
+              )}
+            >
+              Remaining {remainingLabel}
+            </span>
+          </div>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
