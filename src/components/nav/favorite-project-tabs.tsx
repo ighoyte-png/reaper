@@ -97,10 +97,10 @@ function FavoriteTab({
         title={fullLabel}
         draggable={false}
         className={cn(
-          "flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-t-md rounded-b-none border border-b-0 border-[var(--border)] px-2.5 py-1.5 transition-colors",
+          "flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-t-md rounded-b-none border border-b-0 border-[var(--border)] bg-[var(--sidebar)] px-2.5 py-1.5 text-[var(--text)] transition-colors",
           active
-            ? "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]"
-            : "bg-[var(--sidebar)] text-[var(--text)] hover:bg-[var(--row-hover)]",
+            ? "bg-[var(--bg-elevated)]"
+            : "hover:bg-[var(--bg-elevated)]",
         )}
         onClickCapture={blockNavIfSuppressed}
         onClick={blockNavIfSuppressed}
@@ -134,7 +134,7 @@ function ScrollArrow({
     <button
       type="button"
       className={cn(
-        "pointer-events-auto inline-flex h-8 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+        "pointer-events-auto inline-flex h-8 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]",
         disabled && "pointer-events-none opacity-30",
       )}
       aria-label={
@@ -186,6 +186,18 @@ function FavoritesBottomNavInner() {
   const overflow = canScrollPrev || canScrollNext;
   const showTabs =
     !isPublicShare && Boolean(profile) && favorites.length > 0;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (showTabs) {
+      root.style.setProperty("--app-favorites-pad", "3rem");
+    } else {
+      root.style.removeProperty("--app-favorites-pad");
+    }
+    return () => {
+      root.style.removeProperty("--app-favorites-pad");
+    };
+  }, [showTabs]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -271,7 +283,7 @@ function FavoritesBottomNavInner() {
 
   return (
     <nav
-      className="pointer-events-none absolute bottom-0 left-0 z-30 flex max-w-[min(100%,42rem)] items-end gap-1 pl-2"
+      className="pointer-events-none absolute bottom-0 right-0 z-30 flex max-w-[min(100%,42rem)] items-end gap-1 pr-2"
       aria-label="Favorite projects"
     >
       {overflow ? (

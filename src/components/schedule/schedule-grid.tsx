@@ -2575,7 +2575,7 @@ export function ScheduleGrid() {
         <div
           ref={scrollRef}
           className={cn(
-            "min-h-0 flex-1 overflow-auto overscroll-contain",
+            "min-h-0 flex-1 overflow-auto overscroll-contain pb-[var(--app-favorites-pad,0px)]",
             isPhone ? "touch-pan-y" : "touch-pan-x touch-pan-y",
           )}
           onPointerDown={onScheduleBackgroundPointerDown}
