@@ -7,6 +7,7 @@ export function BrandLockup({
   logoClassName,
   wordmarkClassName,
   showVersion = false,
+  showWordmark = true,
   compact = false,
   stacked = false,
 }: {
@@ -14,6 +15,8 @@ export function BrandLockup({
   logoClassName?: string;
   wordmarkClassName?: string;
   showVersion?: boolean;
+  /** When false, only the mark is shown (no “Reaper” / version). */
+  showWordmark?: boolean;
   compact?: boolean;
   stacked?: boolean;
 }) {
@@ -37,33 +40,35 @@ export function BrandLockup({
           title="Reaper"
         />
       )}
-      <div className="flex min-w-0 flex-col leading-none">
-        <span
-          className={cn(
-            "font-semibold tracking-tight text-[var(--text)]",
-            compact && !stacked
-              ? "text-sm"
-              : stacked
-                ? "text-3xl"
-                : "text-lg",
-            wordmarkClassName,
-          )}
-        >
-          Reaper
-        </span>
-        {showVersion ? (
+      {showWordmark ? (
+        <div className="flex min-w-0 flex-col leading-none">
           <span
             className={cn(
-              "font-medium tracking-wide text-[var(--text-muted)] opacity-50",
+              "font-semibold tracking-tight text-[var(--text)]",
               compact && !stacked
-                ? "mt-0.5 text-[9px] leading-none"
-                : "mt-1 text-[10px]",
+                ? "text-sm"
+                : stacked
+                  ? "text-3xl"
+                  : "text-lg",
+              wordmarkClassName,
             )}
           >
-            v{APP_VERSION}
+            Reaper
           </span>
-        ) : null}
-      </div>
+          {showVersion ? (
+            <span
+              className={cn(
+                "font-medium tracking-wide text-[var(--text-muted)] opacity-50",
+                compact && !stacked
+                  ? "mt-0.5 text-[9px] leading-none"
+                  : "mt-1 text-[10px]",
+              )}
+            >
+              v{APP_VERSION}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

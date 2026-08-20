@@ -33,7 +33,6 @@ import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { personAvatarColor } from "@/lib/domain/people";
 import { useAppHref } from "@/lib/hooks/use-app-href";
-import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { stripWorkspacePrefix } from "@/lib/paths";
 import { isUnreadBulletin } from "@/lib/domain/bulletins";
 import { useViewAs } from "@/lib/view-as";
@@ -60,7 +59,6 @@ function menuItemClass(active?: boolean) {
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const isPhone = useIsPhone();
   const { logout, state, myPerson, profile, shareBasePath, switchWorkspace } =
     useData();
   const { theme, toggleTheme } = useTheme();
@@ -200,10 +198,9 @@ export function AppNavbar() {
           onClick={() => setAboutOpen(true)}
         >
           <BrandLockup
-            showVersion={!isPhone}
+            showWordmark={false}
             compact
             logoClassName="h-8 md:h-6"
-            wordmarkClassName="text-base md:text-sm"
           />
         </button>
         <nav
