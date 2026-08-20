@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Suspense,
   useEffect,
@@ -39,11 +38,6 @@ import {
   usePathForNav,
 } from "@/lib/hooks/use-app-href";
 import { useIsPhone } from "@/lib/hooks/use-media-query";
-import {
-  useUtilityNotifications,
-  type UtilityNotificationCard,
-  type UtilityNotificationKind,
-} from "@/lib/utility-notifications";
 import type { Project } from "@/lib/types";
 
 function FavoriteTab({
@@ -103,10 +97,10 @@ function FavoriteTab({
         title={fullLabel}
         draggable={false}
         className={cn(
-          "flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-md px-2.5 py-1 transition-colors",
+          "flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-t-md rounded-b-none border border-b-0 border-[var(--border)] px-2.5 py-1.5 transition-colors",
           active
-            ? "bg-[var(--bg-elevated)] text-[var(--text)]"
-            : "text-[var(--text)] hover:bg-[var(--row-hover)]",
+            ? "border-[var(--border)] bg-[var(--bg-elevated)] text-[var(--text)]"
+            : "bg-[var(--sidebar)] text-[var(--text)] hover:bg-[var(--row-hover)]",
         )}
         onClickCapture={blockNavIfSuppressed}
         onClick={blockNavIfSuppressed}
@@ -140,54 +134,16 @@ function ScrollArrow({
     <button
       type="button"
       className={cn(
-        "inline-flex h-8 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+        "pointer-events-auto inline-flex h-8 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
         disabled && "pointer-events-none opacity-30",
       )}
-      aria-label={direction === "prev" ? "Scroll favorites left" : "Scroll favorites right"}
+      aria-label={
+        direction === "prev" ? "Scroll favorites left" : "Scroll favorites right"
+      }
       disabled={disabled}
       onClick={onClick}
     >
       <Icon size={16} strokeWidth={1.75} />
-    </button>
-  );
-}
-
-function chipToneClass(kind: UtilityNotificationKind): string {
-  if (kind === "mention") {
-    return "bg-[var(--status-attention-wash)] text-[var(--status-attention)]";
-  }
-  if (kind === "in_review") {
-    return "bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]";
-  }
-  return "bg-[var(--accent)]/15 text-[var(--accent)]";
-}
-
-function UtilityChip({
-  card,
-  onActivate,
-}: {
-  card: UtilityNotificationCard;
-  onActivate: (card: UtilityNotificationCard) => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={card.subtitle ? `${card.title}\n${card.subtitle}` : card.title}
-      className={cn(
-        "flex h-8 max-w-[12rem] shrink-0 cursor-pointer flex-col justify-center rounded-md px-2.5 text-left transition-opacity duration-300",
-        chipToneClass(card.kind),
-        card.visible ? "opacity-100" : "opacity-0",
-      )}
-      onClick={() => onActivate(card)}
-    >
-      <span className="truncate text-[11px] font-semibold leading-tight text-[var(--text)]">
-        {card.title}
-      </span>
-      {card.subtitle ? (
-        <span className="truncate text-[10px] leading-tight text-[var(--text-muted)]">
-          {card.subtitle}
-        </span>
-      ) : null}
     </button>
   );
 }
@@ -201,20 +157,10 @@ export function FavoritesBottomNav() {
 }
 
 function FavoritesBottomNavInner() {
-  const {
-    state,
-    profile,
-    isPublicShare,
-    reorderProjectFavorites,
-    markMentionRead,
-    dismissBulletin,
-    myPerson,
-  } = useData();
+  const { state, profile, isPublicShare, reorderProjectFavorites } = useData();
   const favoriteHref = useFavoriteProjectHref();
   const pathForNav = usePathForNav();
   const isPhone = useIsPhone();
-  const router = useRouter();
-  const { cards, removeCard } = useUtilityNotifications();
   const [dragging, setDragging] = useState(false);
   const [canScrollPrev, setCanScrollPrev] = useState(false);
   const [canScrollNext, setCanScrollNext] = useState(false);
@@ -238,10 +184,8 @@ function FavoritesBottomNavInner() {
   );
 
   const overflow = canScrollPrev || canScrollNext;
-  const showBar =
-    !isPublicShare &&
-    Boolean(profile) &&
-    (favorites.length > 0 || cards.length > 0);
+  const showTabs =
+    !isPublicShare && Boolean(profile) && favorites.length > 0;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -265,7 +209,7 @@ function FavoritesBottomNavInner() {
       ro.disconnect();
       el.removeEventListener("scroll", updateScrollState);
     };
-  }, [favorites, cards.length]);
+  }, [favorites]);
 
   useEffect(() => {
     return () => {
@@ -277,7 +221,7 @@ function FavoritesBottomNavInner() {
     };
   }, []);
 
-  if (!showBar) return null;
+  if (!showTabs) return null;
 
   function armClickSuppression() {
     suppressClickRef.current = true;
@@ -325,53 +269,12 @@ function FavoritesBottomNavInner() {
     el.scrollBy({ left: direction * amount, behavior: "smooth" });
   }
 
-  function onActivateCard(card: UtilityNotificationCard) {
-    removeCard(card.id);
-    if (card.kind === "mention" && card.mentionTarget && myPerson?.id) {
-      markMentionRead(card.mentionTarget, myPerson.id);
-    } else if (
-      (card.kind === "bulletin" || card.kind === "in_review") &&
-      card.bulletinId
-    ) {
-      dismissBulletin(card.bulletinId);
-    }
-    router.push(card.href);
-  }
-
-  const orderedCards = cards;
-
   return (
     <nav
-      className="relative flex h-12 w-full shrink-0 items-center gap-0.5 overflow-hidden border-t border-[var(--border)] bg-[var(--sidebar)] px-1.5 sm:px-2"
-      aria-label={
-        cards.length > 0
-          ? "Utility notifications and favorite projects"
-          : "Favorite projects"
-      }
+      className="pointer-events-none absolute bottom-0 left-0 z-30 flex max-w-[min(100%,42rem)] items-end gap-1 pl-2"
+      aria-label="Favorite projects"
     >
-      {/* Chips left: push favorites; excess clips (no chip scroll). */}
-      {orderedCards.length > 0 ? (
-        <div
-          className={cn(
-            "flex min-w-0 items-center gap-1 overflow-hidden py-1",
-            favorites.length > 0
-              ? "max-w-[calc(100%-7.5rem)] shrink"
-              : "flex-1",
-          )}
-        >
-          <div className="flex w-max items-center gap-1">
-            {orderedCards.map((card) => (
-              <UtilityChip
-                key={card.id}
-                card={card}
-                onActivate={onActivateCard}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {overflow && favorites.length > 0 ? (
+      {overflow ? (
         <ScrollArrow
           direction="prev"
           disabled={!canScrollPrev}
@@ -382,65 +285,57 @@ function FavoritesBottomNavInner() {
       <div
         ref={scrollRef}
         className={cn(
-          "min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          favorites.length > 0
-            ? cn(
-                "flex-1",
-                orderedCards.length > 0 && "min-w-[7.5rem]",
-              )
-            : "hidden",
+          "pointer-events-auto min-w-0 flex-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           dragging && "cursor-grabbing",
         )}
       >
-        {favorites.length > 0 ? (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            autoScroll={false}
-            onDragStart={() => {
-              armClickSuppression();
-              setDragging(true);
-            }}
-            onDragEnd={onDragEnd}
-            onDragCancel={() => {
-              setDragging(false);
-              armClickSuppression();
-              clearClickSuppressionSoon();
-            }}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          autoScroll={false}
+          onDragStart={() => {
+            armClickSuppression();
+            setDragging(true);
+          }}
+          onDragEnd={onDragEnd}
+          onDragCancel={() => {
+            setDragging(false);
+            armClickSuppression();
+            clearClickSuppressionSoon();
+          }}
+        >
+          <SortableContext
+            items={favorites.map((p) => p.id)}
+            strategy={horizontalListSortingStrategy}
+            disabled={isPhone}
           >
-            <SortableContext
-              items={favorites.map((p) => p.id)}
-              strategy={horizontalListSortingStrategy}
-              disabled={isPhone}
-            >
-              <ul className="ml-auto flex w-max min-w-full items-center justify-end gap-0.5 py-1 pl-2">
-                {favorites.map((project) => {
-                  const active = isFavoriteProjectActive(
-                    project,
-                    pathForNav,
-                    state.clients,
-                  );
-                  return (
-                    <li key={project.id} className="shrink-0">
-                      <FavoriteTab
-                        project={project}
-                        href={favoriteHref(project)}
-                        clientName={clientNameOf(project, state.clients)}
-                        active={active}
-                        color={projectDisplayColor(project, state.clients)}
-                        suppressClickRef={suppressClickRef}
-                        dragDisabled={isPhone}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
-            </SortableContext>
-          </DndContext>
-        ) : null}
+            <ul className="flex w-max items-end gap-1.5">
+              {favorites.map((project) => {
+                const active = isFavoriteProjectActive(
+                  project,
+                  pathForNav,
+                  state.clients,
+                );
+                return (
+                  <li key={project.id} className="shrink-0">
+                    <FavoriteTab
+                      project={project}
+                      href={favoriteHref(project)}
+                      clientName={clientNameOf(project, state.clients)}
+                      active={active}
+                      color={projectDisplayColor(project, state.clients)}
+                      suppressClickRef={suppressClickRef}
+                      dragDisabled={isPhone}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </SortableContext>
+        </DndContext>
       </div>
 
-      {overflow && favorites.length > 0 ? (
+      {overflow ? (
         <ScrollArrow
           direction="next"
           disabled={!canScrollNext}
