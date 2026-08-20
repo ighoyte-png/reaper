@@ -1213,10 +1213,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ...prev.project_assets.filter((a) => a.project_id !== projectId),
               ...bundle.project_assets,
             ],
-            assignments: [
-              ...prev.assignments.filter((a) => a.project_id !== projectId),
-              ...bundle.assignments,
-            ],
+            assignments: (() => {
+              const serverIds = new Set(
+                bundle.assignments.map((a) => a.id),
+              );
+              const preserved = prev.assignments.filter(
+                (a) =>
+                  a.project_id === projectId &&
+                  !serverIds.has(a.id) &&
+                  shouldIgnoreLocalEcho("assignments", a.id),
+              );
+              return [
+                ...prev.assignments.filter((a) => a.project_id !== projectId),
+                ...bundle.assignments,
+                ...preserved,
+              ];
+            })(),
           };
         });
         projectReadyRef.current.add(projectId);
@@ -1224,7 +1236,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         console.warn("project realtime catch-up failed", projectId, err);
       }
     },
-    [mode, state.organization.id],
+    [mode, state.organization.id, shouldIgnoreLocalEcho],
   );
 
   const flushPendingRealtime = useCallback(() => {
@@ -2199,10 +2211,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 ),
                 ...bundle.project_assets,
               ],
-              assignments: [
-                ...prev.assignments.filter((a) => a.project_id !== projectId),
-                ...bundle.assignments,
-              ],
+              assignments: (() => {
+                const serverIds = new Set(
+                  bundle.assignments.map((a) => a.id),
+                );
+                const preserved = prev.assignments.filter(
+                  (a) =>
+                    a.project_id === projectId &&
+                    !serverIds.has(a.id) &&
+                    shouldIgnoreLocalEcho("assignments", a.id),
+                );
+                return [
+                  ...prev.assignments.filter(
+                    (a) => a.project_id !== projectId,
+                  ),
+                  ...bundle.assignments,
+                  ...preserved,
+                ];
+              })(),
             };
           });
           projectReadyRef.current.add(projectId);
@@ -2218,7 +2244,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       projectInflight.current.set(projectId, run);
       return run;
     },
-    [mode, state.organization.id],
+    [mode, state.organization.id, shouldIgnoreLocalEcho],
   );
 
   const ensureScheduleRange = useCallback(
