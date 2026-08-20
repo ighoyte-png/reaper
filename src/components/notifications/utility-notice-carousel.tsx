@@ -14,7 +14,6 @@ import {
   AtSign,
   ClipboardCheck,
   Megaphone,
-  X,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -86,7 +85,7 @@ export function UtilityNoticeCarousel() {
   const isPhone = useIsPhone();
   const { markMentionRead, dismissBulletin, myPerson, isPublicShare, profile } =
     useData();
-  const { cards, removeCard, clearAll } = useUtilityNotifications();
+  const { cards, removeCard } = useUtilityNotifications();
 
   const [revealed, setRevealed] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -199,20 +198,6 @@ export function UtilityNoticeCarousel() {
     router.push(card.href);
   }
 
-  function onClearAll() {
-    for (const card of slides) {
-      dismissCard(card, {
-        removeCard,
-        markMentionRead,
-        dismissBulletin,
-        personId: myPerson?.id,
-      });
-    }
-    clearAll();
-    setRevealed(false);
-    setExpandedId(null);
-  }
-
   function onDockPointerEnter() {
     overDockRef.current = true;
     showDock();
@@ -286,16 +271,6 @@ export function UtilityNoticeCarousel() {
               />
             ))}
           </div>
-          <button
-            type="button"
-            className="mb-1 inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-            onClick={onClearAll}
-            aria-label="Clear all notices"
-            title="Clear all"
-          >
-            <X size={12} strokeWidth={1.75} />
-            Clear
-          </button>
         </div>
       </div>
 

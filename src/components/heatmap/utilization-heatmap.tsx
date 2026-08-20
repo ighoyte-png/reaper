@@ -1,7 +1,7 @@
 "use client";
 
 import { addWeeks, format } from "date-fns";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { useData } from "@/lib/data/store";
 import {
@@ -75,8 +75,6 @@ function UtilizationPill({
   );
 }
 
-type CellHours = { booked: number; available: number };
-
 export function UtilizationHeatmap({
   weeks = 8,
   personIds,
@@ -93,12 +91,7 @@ export function UtilizationHeatmap({
   /** Label for the pooled utilization footer row. */
   teamAverageLabel?: string;
 }) {
-  const {
-    state,
-    mode,
-    fetchPersonUtilizationWeeksRpc,
-    ensureScheduleRange,
-  } = useData();
+  const { state, mode, ensureScheduleRange } = useData();
   const isPhone = useIsPhone();
   const anchors = useMemo(
     () =>
@@ -115,64 +108,16 @@ export function UtilizationHeatmap({
         ),
   );
 
-  const [rpcCells, setRpcCells] = useState<Map<string, CellHours> | null>(
-    null,
-  );
+  const rangeStart = toDateKey(anchors[0]!);
+  const rangeEnd = toDateKey(weekEnd(anchors[anchors.length - 1]!));
 
+  // Same assignment window as schedule — client math must see every row
+  // (including sandbox). Do not overwrite with rpc_person_utilization_weeks,
+  // which undercounts vs schedule (e.g. excludes sandbox projects).
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (mode === "demo") {
-        setRpcCells(null);
-        return;
-      }
-      const weekStartKey = toDateKey(anchors[0]!);
-      const weekEndKey = toDateKey(weekEnd(anchors[anchors.length - 1]!));
-      const ids =
-        personIds == null
-          ? utilizationVisiblePeople(state.people).map((p) => p.id)
-          : personIds;
-      const rows = await fetchPersonUtilizationWeeksRpc(
-        weekStartKey,
-        weeks,
-        ids,
-      );
-      if (cancelled) return;
-      if (rows) {
-        const map = new Map<string, CellHours>();
-        for (const row of rows) {
-          const ws =
-            typeof row.week_start === "string"
-              ? row.week_start.slice(0, 10)
-              : String(row.week_start);
-          map.set(`${row.person_id}:${ws}`, {
-            booked: row.booked_hours,
-            available: row.available_hours,
-          });
-        }
-        setRpcCells(map);
-        return;
-      }
-      try {
-        await ensureScheduleRange(weekStartKey, weekEndKey);
-      } catch {
-        /* soft-fail → client math on whatever is loaded */
-      }
-      if (!cancelled) setRpcCells(null);
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    mode,
-    weeks,
-    anchors,
-    personIds,
-    state.people,
-    fetchPersonUtilizationWeeksRpc,
-    ensureScheduleRange,
-  ]);
+    if (mode !== "supabase") return;
+    void ensureScheduleRange(rangeStart, rangeEnd);
+  }, [mode, ensureScheduleRange, rangeStart, rangeEnd]);
 
   return (
     <div className="space-y-3">
@@ -243,24 +188,19 @@ export function UtilizationHeatmap({
               {anchors.map((anchor) => {
                 const start = toDateKey(anchor);
                 const end = toDateKey(weekEnd(anchor));
-                const rpc = rpcCells?.get(`${person.id}:${start}`);
-                const booked =
-                  rpc?.booked ??
-                  personBookedHoursInRange(
-                    person.id,
-                    start,
-                    end,
-                    state.assignments,
-                    state.leave_days,
-                  );
-                const available =
-                  rpc?.available ??
-                  availableHoursInRange(
-                    person,
-                    start,
-                    end,
-                    state.leave_days,
-                  );
+                const booked = personBookedHoursInRange(
+                  person.id,
+                  start,
+                  end,
+                  state.assignments,
+                  state.leave_days,
+                );
+                const available = availableHoursInRange(
+                  person,
+                  start,
+                  end,
+                  state.leave_days,
+                );
                 return (
                   <div
                     key={`${person.id}-${start}`}
@@ -292,24 +232,19 @@ export function UtilizationHeatmap({
                 let booked = 0;
                 let available = 0;
                 for (const person of people) {
-                  const rpc = rpcCells?.get(`${person.id}:${start}`);
-                  booked +=
-                    rpc?.booked ??
-                    personBookedHoursInRange(
-                      person.id,
-                      start,
-                      end,
-                      state.assignments,
-                      state.leave_days,
-                    );
-                  available +=
-                    rpc?.available ??
-                    availableHoursInRange(
-                      person,
-                      start,
-                      end,
-                      state.leave_days,
-                    );
+                  booked += personBookedHoursInRange(
+                    person.id,
+                    start,
+                    end,
+                    state.assignments,
+                    state.leave_days,
+                  );
+                  available += availableHoursInRange(
+                    person,
+                    start,
+                    end,
+                    state.leave_days,
+                  );
                 }
                 return (
                   <div
