@@ -40,7 +40,7 @@ import {
 import { useIsPhone } from "@/lib/hooks/use-media-query";
 import type { Project } from "@/lib/types";
 
-function FavoriteTab({
+function FavoriteBookmark({
   project,
   href,
   clientName,
@@ -97,23 +97,26 @@ function FavoriteTab({
         title={fullLabel}
         draggable={false}
         className={cn(
-          "flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-t-md rounded-b-none border border-b-0 border-[var(--border)] bg-[var(--sidebar)] px-2.5 py-1.5 text-[var(--text)] transition-colors",
+          "inline-flex max-w-[11rem] cursor-pointer items-center gap-1.5 rounded-md px-2 py-0.5 text-[12px] leading-none transition-colors",
           active
-            ? "bg-[var(--bg-elevated)]"
-            : "hover:bg-[var(--bg-elevated)]",
+            ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+            : "text-[var(--text)] hover:bg-[var(--bg-elevated)]",
         )}
         onClickCapture={blockNavIfSuppressed}
         onClick={blockNavIfSuppressed}
         onAuxClick={blockNavIfSuppressed}
       >
         <ProjectColorBar color={color} size="sm" className="self-center" />
-        <span className="min-w-0 text-left leading-tight">
-          <span className="block truncate text-[12px] font-medium">
-            {clientName || "No client"}
-          </span>
-          <span className="mt-0.5 block truncate text-[10px] font-normal text-[var(--text-muted)]">
-            {project.name}
-          </span>
+        <span className="min-w-0 truncate">
+          {clientName ? (
+            <>
+              <span className="text-[var(--text-muted)]">{clientName}</span>
+              <span className="text-[var(--text-muted)]"> · </span>
+              <span>{project.name}</span>
+            </>
+          ) : (
+            project.name
+          )}
         </span>
       </Link>
     </div>
@@ -134,7 +137,7 @@ function ScrollArrow({
     <button
       type="button"
       className={cn(
-        "pointer-events-auto inline-flex h-8 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]",
+        "inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]",
         disabled && "pointer-events-none opacity-30",
       )}
       aria-label={
@@ -143,20 +146,21 @@ function ScrollArrow({
       disabled={disabled}
       onClick={onClick}
     >
-      <Icon size={16} strokeWidth={1.75} />
+      <Icon size={14} strokeWidth={1.75} />
     </button>
   );
 }
 
-export function FavoritesBottomNav() {
+/** Chrome-style bookmarks strip under the main app header. */
+export function FavoritesBookmarksBar() {
   return (
     <Suspense fallback={null}>
-      <FavoritesBottomNavInner />
+      <FavoritesBookmarksBarInner />
     </Suspense>
   );
 }
 
-function FavoritesBottomNavInner() {
+function FavoritesBookmarksBarInner() {
   const { state, profile, isPublicShare, reorderProjectFavorites } = useData();
   const favoriteHref = useFavoriteProjectHref();
   const pathForNav = usePathForNav();
@@ -184,20 +188,8 @@ function FavoritesBottomNavInner() {
   );
 
   const overflow = canScrollPrev || canScrollNext;
-  const showTabs =
+  const showBar =
     !isPublicShare && Boolean(profile) && favorites.length > 0;
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (showTabs) {
-      root.style.setProperty("--app-favorites-pad", "3rem");
-    } else {
-      root.style.removeProperty("--app-favorites-pad");
-    }
-    return () => {
-      root.style.removeProperty("--app-favorites-pad");
-    };
-  }, [showTabs]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -233,7 +225,7 @@ function FavoritesBottomNavInner() {
     };
   }, []);
 
-  if (!showTabs) return null;
+  if (!showBar) return null;
 
   function armClickSuppression() {
     suppressClickRef.current = true;
@@ -283,7 +275,7 @@ function FavoritesBottomNavInner() {
 
   return (
     <nav
-      className="pointer-events-none absolute bottom-0 right-0 z-30 flex max-w-[min(100%,42rem)] items-end gap-1 pr-2"
+      className="flex h-8 w-full shrink-0 items-center gap-0.5 border-b border-[var(--border)] bg-[var(--sidebar)] px-1.5 sm:px-2"
       aria-label="Favorite projects"
     >
       {overflow ? (
@@ -297,7 +289,7 @@ function FavoritesBottomNavInner() {
       <div
         ref={scrollRef}
         className={cn(
-          "pointer-events-auto min-w-0 flex-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          "min-w-0 flex-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           dragging && "cursor-grabbing",
         )}
       >
@@ -321,7 +313,7 @@ function FavoritesBottomNavInner() {
             strategy={horizontalListSortingStrategy}
             disabled={isPhone}
           >
-            <ul className="flex w-max items-end gap-1.5">
+            <ul className="flex w-max items-center gap-0.5 py-0.5">
               {favorites.map((project) => {
                 const active = isFavoriteProjectActive(
                   project,
@@ -330,7 +322,7 @@ function FavoritesBottomNavInner() {
                 );
                 return (
                   <li key={project.id} className="shrink-0">
-                    <FavoriteTab
+                    <FavoriteBookmark
                       project={project}
                       href={favoriteHref(project)}
                       clientName={clientNameOf(project, state.clients)}

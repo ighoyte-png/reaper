@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AppNavbar } from "@/components/nav/app-navbar";
-import { FavoritesBottomNav } from "@/components/nav/favorite-project-tabs";
+import { FavoritesBookmarksBar } from "@/components/nav/favorite-project-tabs";
 import { MobileNavProvider } from "@/components/nav/mobile-nav";
 import { ViewAsBanner } from "@/components/nav/view-as-banner";
 import { Button } from "@/components/ui/button";
@@ -146,13 +146,13 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       <UtilityNotificationsProvider>
         <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
           <AppNavbar />
+          <FavoritesBookmarksBar />
           <NotificationPermissionBanner />
           <ViewAsBanner />
           <ViewAsRouteGuard />
           <MentionDesktopListener />
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
             {children}
-            <FavoritesBottomNav />
             <UtilityNoticeCarousel />
           </div>
         </div>

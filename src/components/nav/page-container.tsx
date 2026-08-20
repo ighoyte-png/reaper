@@ -44,7 +44,7 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden outline-none pb-[var(--app-favorites-pad,0px)]",
+        "min-h-0 min-w-0 w-full flex-1 overflow-y-auto overflow-x-hidden outline-none",
         withoutOverflow,
       )}
       tabIndex={-1}
