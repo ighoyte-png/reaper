@@ -3667,7 +3667,7 @@ function TaskCommentIndicator({
         {unread ? (
           <MessageSquare
             size={16}
-            className="absolute inset-0 fill-[var(--status-near)] text-[var(--status-near)]"
+            className="absolute inset-0 fill-[var(--accent)] text-[var(--accent)]"
             strokeWidth={1.75}
           />
         ) : null}

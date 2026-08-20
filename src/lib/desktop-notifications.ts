@@ -310,6 +310,29 @@ export function dispatchCommentReaction(detail: CommentReactionBroadcast) {
   window.dispatchEvent(new CustomEvent(COMMENT_REACTION_EVENT, { detail }));
 }
 
+export type NewCommentBroadcast = {
+  /** People who should see the toast (person ids). */
+  personIds: string[];
+  /** Newly @mentioned people — they get the mention toast instead. */
+  mentionedPersonIds: string[];
+  commentId: string;
+  taskId: string;
+  projectId: string;
+  taskTitle: string;
+  authorName: string;
+  authorAvatarUrl?: string | null;
+  authorAvatarAttachmentId?: string | null;
+  authorColor?: string | null;
+  snippet?: string;
+};
+
+export const NEW_COMMENT_EVENT = "reaper:new-comment";
+
+export function dispatchNewComment(detail: NewCommentBroadcast) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(NEW_COMMENT_EVENT, { detail }));
+}
+
 export type BulletinUnreadBroadcast = {
   bulletinId: string;
   profileId: string;

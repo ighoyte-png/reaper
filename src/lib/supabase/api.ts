@@ -3746,6 +3746,36 @@ export async function deleteTaskThreadUnreadRow(
   throw error;
 }
 
+/** Upsert a task-thread unread row (e.g. emoji reaction → comment author). */
+export async function upsertTaskThreadUnreadRow(
+  supabase: SupabaseClient,
+  row: {
+    task_id: string;
+    person_id: string;
+    organization_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase.from("task_thread_unreads").upsert(
+    {
+      task_id: row.task_id,
+      person_id: row.person_id,
+      organization_id: row.organization_id,
+    },
+    { onConflict: "task_id,person_id", ignoreDuplicates: true },
+  );
+  if (!error) return true;
+  if (
+    /relation .*task_thread_unreads.* does not exist/i.test(error.message) ||
+    error.code === "42P01"
+  ) {
+    console.warn(
+      "task_thread_unreads missing — apply supabase/migrations/064_task_thread_unreads.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
 /** Dismiss a mention notice for a person. */
 export async function deleteMentionUnreadRow(
   supabase: SupabaseClient,

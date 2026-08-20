@@ -48,13 +48,16 @@ import {
   mentionUnreadMatchesTarget,
   newlyMentionedPersonIds,
 } from "@/lib/mentions";
+import { notesPlainText } from "@/lib/notes-html";
 import {
   dispatchAssignmentNoteMention,
   dispatchBulletinUnread,
   dispatchCommentReaction,
+  dispatchNewComment,
   dispatchTaskNoteMention,
   type AssignmentNoteMentionBroadcast,
   type CommentReactionBroadcast,
+  type NewCommentBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -114,6 +117,7 @@ import {
   syncAssignmentNoteMentionUnreads,
   syncTaskNoteMentionUnreads,
   deleteTaskThreadUnreadRow,
+  upsertTaskThreadUnreadRow,
   seedBulletinUnreadRows,
   upsertClientRow,
   upsertHolidayCalendarDayRow,
@@ -1553,6 +1557,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
             return;
           }
           dispatchCommentReaction(detail);
+        },
+      )
+      .on(
+        "broadcast",
+        { event: "new-comment" },
+        ({ payload }) => {
+          const detail = payload as NewCommentBroadcast;
+          if (
+            !detail?.personIds?.length ||
+            !detail.commentId ||
+            !detail.taskId
+          ) {
+            return;
+          }
+          dispatchNewComment(detail);
         },
       )
       .subscribe((status) => {
@@ -4698,6 +4717,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? (state.people.find((p) => p.profile_id === row.author_profile_id) ??
             null)
           : null;
+        let isNewComment = false;
+        let newlyMentionedForBroadcast: string[] = [];
         patch((prev) => {
           const existing = prev.task_comments.find((c) => c.id === row.id);
           const next: TaskComment = {
@@ -4707,8 +4728,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
               : (existing?.reactions ?? []),
           };
           const exists = Boolean(existing);
+          isNewComment = !exists;
           const prevMentioned = new Set(existing?.mentioned_person_ids ?? []);
           const nextMentioned = new Set(next.mentioned_person_ids);
+          newlyMentionedForBroadcast = [...nextMentioned].filter(
+            (id) => !prevMentioned.has(id),
+          );
           let unread_mentions = prev.unread_mentions.filter(
             (r) =>
               r.comment_id !== next.id || nextMentioned.has(r.person_id),
@@ -4793,6 +4818,49 @@ export function DataProvider({ children }: { children: ReactNode }) {
             upsertTaskCommentRow(supabaseRef.current!, row),
           );
         }
+        if (isNewComment && task && authorPerson) {
+          const commentsForNotify = [
+            ...state.task_comments.filter(
+              (c) => c.task_id === row.task_id && c.id !== row.id,
+            ),
+            row,
+          ];
+          const notifyIds = taskThreadNotifyPersonIds(
+            task,
+            authorPerson.id,
+            state.people,
+            project,
+            commentsForNotify,
+          );
+          if (notifyIds.length > 0) {
+            const snippet = notesPlainText(row.body)
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 140);
+            const payload: NewCommentBroadcast = {
+              personIds: notifyIds,
+              mentionedPersonIds: newlyMentionedForBroadcast,
+              commentId: row.id,
+              taskId: row.task_id,
+              projectId: task.project_id,
+              taskTitle: task.title,
+              authorName:
+                authorPerson.name?.trim() ||
+                profile?.full_name?.trim() ||
+                profile?.email?.trim() ||
+                "Someone",
+              authorAvatarUrl: authorPerson.avatar_url ?? null,
+              authorAvatarAttachmentId:
+                authorPerson.avatar_attachment_id ?? null,
+              authorColor: personAvatarColor(authorPerson),
+              snippet,
+            };
+            sendOrgBroadcast("new-comment", payload);
+            if (mode === "demo") {
+              dispatchNewComment(payload);
+            }
+          }
+        }
       },
       deleteTaskComment: (id) => {
         patch((prev) => ({
@@ -4821,6 +4889,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!comment) return;
         let nextActive = false;
         const organizationId = comment.organization_id;
+        const authorPerson =
+          comment.author_profile_id
+            ? (state.people.find(
+                (p) => p.profile_id === comment.author_profile_id,
+              ) ?? null)
+            : null;
         patch((prev) => {
           const current = prev.task_comments.find((c) => c.id === commentId);
           if (!current) return prev;
@@ -4834,16 +4908,46 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   !(r.profile_id === profileId && r.emoji === trimmed),
               )
             : [...current.reactions, { emoji: trimmed, profile_id: profileId }];
+          let unread_task_threads = prev.unread_task_threads;
+          if (
+            nextActive &&
+            authorPerson &&
+            authorPerson.id !== myPerson?.id &&
+            !unread_task_threads.some(
+              (r) =>
+                r.task_id === comment.task_id &&
+                r.person_id === authorPerson.id,
+            )
+          ) {
+            unread_task_threads = [
+              ...unread_task_threads,
+              { task_id: comment.task_id, person_id: authorPerson.id },
+            ];
+          }
           return {
             ...prev,
             task_comments: prev.task_comments.map((c) =>
               c.id === commentId ? { ...c, reactions } : c,
             ),
+            unread_task_threads,
           };
         });
         if (!organizationId) return;
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("task_comment_reactions", `${commentId}:${trimmed}`);
+          if (nextActive && authorPerson && authorPerson.id !== myPerson?.id) {
+            noteLocalWrite(
+              "task_thread_unreads",
+              `${comment.task_id}:${authorPerson.id}`,
+            );
+            runRemoteSoft(async () => {
+              await upsertTaskThreadUnreadRow(supabaseRef.current!, {
+                task_id: comment.task_id,
+                person_id: authorPerson.id,
+                organization_id: organizationId,
+              });
+            });
+          }
           runRemoteSoft(() =>
             toggleTaskCommentReactionRow(supabaseRef.current!, {
               comment_id: commentId,

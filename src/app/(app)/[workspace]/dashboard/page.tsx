@@ -53,6 +53,7 @@ import {
   isUnreadBulletin,
 } from "@/lib/domain/bulletins";
 import { useViewAs } from "@/lib/view-as";
+import { useUtilityNotifications } from "@/lib/utility-notifications";
 import {
   budgetBurn,
   budgetHealth,
@@ -146,6 +147,7 @@ export default function DashboardPage() {
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const router = useRouter();
+  const { removeMentionCard, removeBulletinCard } = useUtilityNotifications();
   const {
     viewAsPersonId,
     setViewAsPersonId,
@@ -902,6 +904,7 @@ export default function DashboardPage() {
           continue;
         }
         snap.dismissBulletin(b.id);
+        removeBulletinCard(b.id);
       }
     }, 400);
     return () => window.clearTimeout(timer);
@@ -1181,7 +1184,10 @@ export default function DashboardPage() {
                 )
               }
               unreadCount={unreadBulletinCount}
-              onDismissUnread={dismissBulletin}
+              onDismissUnread={(id) => {
+                dismissBulletin(id);
+                removeBulletinCard(id);
+              }}
               onDismissFromBoard={dismissBulletinFromBoard}
               onNavigate={(href) => router.push(href)}
               onSave={(row) => {
@@ -1242,10 +1248,12 @@ export default function DashboardPage() {
               onOpen={(target) => {
                 if (!mentionPersonId) return;
                 markMentionRead(target, mentionPersonId);
+                removeMentionCard(target);
               }}
               onDismiss={(target) => {
                 if (!mentionPersonId) return;
                 dismissMention(target, mentionPersonId);
+                removeMentionCard(target);
               }}
               compact
               stretch={viewerFullyHidden}

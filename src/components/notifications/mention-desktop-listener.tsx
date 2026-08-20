@@ -12,6 +12,7 @@ import {
   ASSIGNMENT_NOTE_MENTION_EVENT,
   BULLETIN_UNREAD_EVENT,
   COMMENT_REACTION_EVENT,
+  NEW_COMMENT_EVENT,
   TASK_NOTE_MENTION_EVENT,
   notificationPortraitIcon,
   reaperNotificationBadgeUrl,
@@ -19,6 +20,7 @@ import {
   type AssignmentNoteMentionBroadcast,
   type BulletinUnreadBroadcast,
   type CommentReactionBroadcast,
+  type NewCommentBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 import type { DemoState } from "@/lib/types";
@@ -503,12 +505,60 @@ export function MentionDesktopListener() {
       })();
     }
 
+    function onNewComment(ev: Event) {
+      if (!personId) return;
+      const detail = (ev as CustomEvent<NewCommentBroadcast>).detail;
+      if (!detail?.personIds?.includes(personId)) return;
+      // Mention toast already covers newly @mentioned people.
+      if (detail.mentionedPersonIds?.includes(personId)) return;
+
+      const authorName = detail.authorName?.trim() || "Someone";
+      void (async () => {
+        const icon = await notificationPortraitIcon({
+          name: authorName,
+          avatarUrl: detail.authorAvatarUrl,
+          avatarAttachmentId: detail.authorAvatarAttachmentId,
+          color: detail.authorColor,
+        });
+        const project = detail.projectId
+          ? (stateRef.current.projects.find((p) => p.id === detail.projectId) ??
+            null)
+          : null;
+        const href =
+          project && detail.taskId
+            ? projectHref(
+                project,
+                `task=${detail.taskId}&comment=${detail.commentId}`,
+              )
+            : appHref("/dashboard");
+        const snippet = detail.snippet?.trim() || "";
+        void showDesktopNotification(authorName, {
+          body: [
+            orgName,
+            detail.taskTitle
+              ? `New comment on “${detail.taskTitle}”`
+              : "New comment",
+            snippet || null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          tag: `new-comment-${detail.commentId}`,
+          icon,
+          href,
+          onClick: () => {
+            router.push(href);
+          },
+        });
+      })();
+    }
+
     window.addEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
     window.addEventListener(
       ASSIGNMENT_NOTE_MENTION_EVENT,
       onAssignmentNoteMention,
     );
     window.addEventListener(COMMENT_REACTION_EVENT, onCommentReaction);
+    window.addEventListener(NEW_COMMENT_EVENT, onNewComment);
     return () => {
       window.removeEventListener(TASK_NOTE_MENTION_EVENT, onTaskNoteMention);
       window.removeEventListener(
@@ -516,6 +566,7 @@ export function MentionDesktopListener() {
         onAssignmentNoteMention,
       );
       window.removeEventListener(COMMENT_REACTION_EVENT, onCommentReaction);
+      window.removeEventListener(NEW_COMMENT_EVENT, onNewComment);
     };
   }, [
     isPublicShare,
