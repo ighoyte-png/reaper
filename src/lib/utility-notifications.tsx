@@ -239,7 +239,30 @@ export function UtilityNotificationsProvider({
       .filter(Boolean);
 
     if (seenMentionKeysRef.current === null) {
-      seenMentionKeysRef.current = new Set(keys);
+      seenMentionKeysRef.current = new Set();
+      const seen = seenMentionKeysRef.current;
+      // Cold-start on dashboard: baseline only (no backfill). Off-dashboard:
+      // surface current unreads as chips.
+      if (!suppressBackfillRef.current && !onDashboard) {
+        for (const row of mine) {
+          const k = mentionUnreadKey(row);
+          if (!k) continue;
+          const target = mentionTargetFromUnread(row);
+          if (!target) continue;
+          const built = buildMentionCard({
+            row,
+            target,
+            state,
+            projectHref,
+            appHref,
+          });
+          if (!built) continue;
+          seen.add(k);
+          enqueue(built);
+        }
+      } else {
+        for (const k of keys) seen.add(k);
+      }
       return;
     }
 
@@ -248,9 +271,10 @@ export function UtilityNotificationsProvider({
       const k = mentionUnreadKey(r);
       return k && !seen.has(k);
     });
-    for (const k of keys) seen.add(k);
 
     for (const row of fresh) {
+      const k = mentionUnreadKey(row);
+      if (!k) continue;
       const target = mentionTargetFromUnread(row);
       if (!target) continue;
       const built = buildMentionCard({
@@ -260,7 +284,14 @@ export function UtilityNotificationsProvider({
         projectHref,
         appHref,
       });
-      if (built) enqueue(built);
+      if (!built) continue;
+      seen.add(k);
+      enqueue(built);
+    }
+    // Baseline keys we intentionally skip (e.g. on dashboard) still count as seen
+    // so leaving the dashboard does not resurrect them.
+    if (onDashboard || suppressBackfillRef.current) {
+      for (const k of keys) seen.add(k);
     }
   }, [
     state.unread_mentions,
@@ -273,6 +304,7 @@ export function UtilityNotificationsProvider({
     state.assignments,
     mentionPersonId,
     isPublicShare,
+    onDashboard,
     enqueue,
     projectHref,
     appHref,
@@ -287,6 +319,23 @@ export function UtilityNotificationsProvider({
     const mine = state.unread_bulletin_ids ?? [];
     if (seenBulletinIdsRef.current === null) {
       seenBulletinIdsRef.current = new Set(mine);
+      if (!suppressBackfillRef.current && !onDashboard) {
+        for (const bulletinId of mine) {
+          const bulletin =
+            state.bulletins.find((b) => b.id === bulletinId) ?? null;
+          if (!bulletin) {
+            seenBulletinIdsRef.current.delete(bulletinId);
+            continue;
+          }
+          const built = buildBulletinCard({
+            bulletin,
+            projectHref,
+            appHref,
+            state,
+          });
+          if (built) enqueue(built);
+        }
+      }
       return;
     }
     const seen = seenBulletinIdsRef.current;
@@ -316,6 +365,7 @@ export function UtilityNotificationsProvider({
     state.clients,
     profile,
     isPublicShare,
+    onDashboard,
     enqueue,
     projectHref,
     appHref,

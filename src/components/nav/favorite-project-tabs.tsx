@@ -349,10 +349,17 @@ function FavoritesBottomNavInner() {
           : "Favorite projects"
       }
     >
-      {/* Utility chips: no own scroll; excess clips under favorites. */}
+      {/* Chips left: push favorites; excess clips (no chip scroll). */}
       {orderedCards.length > 0 ? (
-        <div className="pointer-events-none absolute inset-y-0 left-1.5 z-0 flex max-w-none items-center gap-1 overflow-visible sm:left-2">
-          <div className="pointer-events-auto flex items-center gap-1 py-1">
+        <div
+          className={cn(
+            "flex min-w-0 items-center gap-1 overflow-hidden py-1",
+            favorites.length > 0
+              ? "max-w-[calc(100%-7.5rem)] shrink"
+              : "flex-1",
+          )}
+        >
+          <div className="flex w-max items-center gap-1">
             {orderedCards.map((card) => (
               <UtilityChip
                 key={card.id}
@@ -375,9 +382,13 @@ function FavoritesBottomNavInner() {
       <div
         ref={scrollRef}
         className={cn(
-          "relative z-10 min-w-0 flex-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
-          // Leave room for at least one favorite when chips are present.
-          orderedCards.length > 0 && favorites.length > 0 && "min-w-[7.5rem]",
+          "min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          favorites.length > 0
+            ? cn(
+                "flex-1",
+                orderedCards.length > 0 && "min-w-[7.5rem]",
+              )
+            : "hidden",
           dragging && "cursor-grabbing",
         )}
       >
@@ -402,7 +413,7 @@ function FavoritesBottomNavInner() {
               strategy={horizontalListSortingStrategy}
               disabled={isPhone}
             >
-              <ul className="ml-auto flex w-max min-w-full items-center justify-end gap-0.5 bg-[var(--sidebar)] py-1 pl-2">
+              <ul className="ml-auto flex w-max min-w-full items-center justify-end gap-0.5 py-1 pl-2">
                 {favorites.map((project) => {
                   const active = isFavoriteProjectActive(
                     project,
