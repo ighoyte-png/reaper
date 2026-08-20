@@ -1139,7 +1139,7 @@ export default function DashboardPage() {
       >
         {/*
           Mobile: `contents` flattens children into the parent flex so order-*
-          can interleave identity / notifications / bulletin / rest.
+          can interleave identity / bulletin / notifications / rest.
           Desktop: real columns — main (2) + sidebar stack (1), no row stretch.
         */}
         <aside className="contents lg:col-start-3 lg:row-start-1 lg:flex lg:flex-col lg:gap-4 lg:self-start">
@@ -1159,7 +1159,7 @@ export default function DashboardPage() {
             />
           </div>
 
-          <div className="order-3 lg:order-none">
+          <div className="order-2 lg:order-none">
             <BulletinBoard
               bulletins={bulletins}
               profiles={state.profiles}
@@ -1238,7 +1238,7 @@ export default function DashboardPage() {
         >
           <div
             className={cn(
-              "order-2 grid gap-4 sm:grid-cols-2 lg:order-none",
+              "order-3 grid gap-4 sm:grid-cols-2 lg:order-none",
               viewerFullyHidden &&
                 "min-h-0 flex-1 items-stretch lg:grid-rows-1",
             )}

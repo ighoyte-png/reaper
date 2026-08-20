@@ -18,6 +18,7 @@ import { ListCardsViewToggle } from "@/components/ui/list-cards-view-toggle";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
 import {
@@ -114,7 +115,8 @@ function PeoplePageContent() {
   const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
   const viewPrefs = useLiveUserViewPrefs(profile?.id);
-  const directoryLayout = viewPrefs.directoryLayout;
+  const isPhone = useIsPhone();
+  const directoryLayout = isPhone ? "list" : viewPrefs.directoryLayout;
 
   const start = toDateKey(weekStart(new Date()));
   const end = toDateKey(weekEnd(new Date()));
@@ -780,8 +782,9 @@ function PeoplePageContent() {
         <div className="mb-4 flex justify-end">
           <ListCardsViewToggle
             value={directoryLayout}
+            disableCards={isPhone}
             onChange={(next) => {
-              if (!profile?.id) return;
+              if (!profile?.id || isPhone) return;
               writeUserViewPrefs(profile.id, {
                 ...viewPrefs,
                 directoryLayout: next,

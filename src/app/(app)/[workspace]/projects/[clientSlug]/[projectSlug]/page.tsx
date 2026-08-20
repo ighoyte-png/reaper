@@ -454,9 +454,9 @@ export default function ProjectDetailPage() {
         ) : null}
 
         {showTeamBar ? (
-          <section className="mb-4 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+          <section className="mb-4 min-w-0 rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Team</h2>
-            <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+            <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-x-4 sm:gap-y-2">
               {showManagers && manager ? (
                 <>
                   <ProjectManagerPerson person={manager} showTag />
@@ -468,12 +468,12 @@ export default function ProjectDetailPage() {
                   ) : null}
                 </>
               ) : null}
-              <ul className="flex flex-wrap gap-x-4 gap-y-2">
+              <ul className="-mx-1 flex min-w-0 gap-x-4 gap-y-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
                 {(showManagers && manager ? teamWithoutManager : team).map(
                   (p) => (
                     <li
                       key={p.id}
-                      className="flex min-w-0 items-start gap-2 text-sm"
+                      className="flex min-w-[9.5rem] shrink-0 items-start gap-2 text-sm sm:min-w-0"
                     >
                       <PersonAvatar
                         avatarUrl={p.avatar_url}

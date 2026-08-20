@@ -28,6 +28,7 @@ import type { TemplateApplyOptions } from "@/lib/domain/project-templates";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import { useViewAs } from "@/lib/view-as";
 import {
@@ -139,7 +140,8 @@ function ProjectsPageContent() {
   const projectHref = useProjectHref();
   const { push } = useToast();
   const viewPrefs = useLiveUserViewPrefs(profile?.id);
-  const directoryLayout = viewPrefs.directoryLayout;
+  const isPhone = useIsPhone();
+  const directoryLayout = isPhone ? "list" : viewPrefs.directoryLayout;
   const [editing, setEditing] = useState<Omit<Project, "organization_id"> | null>(
     null,
   );
@@ -606,8 +608,9 @@ function ProjectsPageContent() {
               <ListCardsViewToggle
                 className="ml-auto"
                 value={directoryLayout}
+                disableCards={isPhone}
                 onChange={(next) => {
-                  if (!profile?.id) return;
+                  if (!profile?.id || isPhone) return;
                   writeUserViewPrefs(profile.id, {
                     ...viewPrefs,
                     directoryLayout: next,

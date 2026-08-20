@@ -477,7 +477,7 @@ export function ProjectTaskBoard({
   const [ganttStructuralNotice, setGanttStructuralNotice] = useState(false);
   const [view, setView] = useState<TaskBoardView>("list");
   const displayView: TaskBoardView =
-    isPhone && view === "gantt" ? "list" : view;
+    isPhone && view === "card" ? "list" : view;
 
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -2022,7 +2022,8 @@ export function ProjectTaskBoard({
               setView={setTaskView}
               allowCardView={allowCardView}
               showGanttEnabled={ganttEnabledSomewhere}
-              allowGantt={!isPhone}
+              cardsDisabled={isPhone}
+              onCardsBlocked={() => toast("Available on desktop")}
             />
           </div>
           {activeLists.length === 0 ? (
@@ -2099,8 +2100,10 @@ export function ProjectTaskBoard({
                 setView={setTaskView}
                 allowCardView={allowCardView}
                 showGanttEnabled={ganttEnabledSomewhere}
-                allowGantt={!isPhone}
-              />
+              allowGantt
+              cardsDisabled={isPhone}
+              onCardsBlocked={() => toast("Available on desktop")}
+            />
             </div>
             <ProjectTaskCalendar tasks={visibleTasks} todayKey={todayKey()} />
           </div>
@@ -2129,13 +2132,16 @@ export function ProjectTaskBoard({
                 setView={setTaskView}
                 allowCardView={allowCardView}
                 showGanttEnabled={ganttEnabledSomewhere}
-                allowGantt={!isPhone}
-              />
+              allowGantt
+              cardsDisabled={isPhone}
+              onCardsBlocked={() => toast("Available on desktop")}
+            />
             </div>
             <div data-gantt-root data-project-id={projectId}>
               <ProjectGanttBoard
                 projectId={projectId}
-                readOnly={readOnly || !isPm}
+                readOnly={readOnly || !isPm || isPhone}
+                showDrawer={!isPhone}
               />
             </div>
           </div>
@@ -2164,7 +2170,9 @@ export function ProjectTaskBoard({
           setView={setTaskView}
           allowCardView={allowCardView}
           showGanttEnabled={ganttEnabledSomewhere}
-          allowGantt={!isPhone}
+          allowGantt
+          cardsDisabled={isPhone}
+          onCardsBlocked={() => toast("Available on desktop")}
         />
         {manageLists ? (
           <div className="ml-auto flex items-center gap-1">
@@ -2789,6 +2797,8 @@ function ViewToggle({
   allowCardView,
   showGanttEnabled,
   allowGantt = true,
+  cardsDisabled = false,
+  onCardsBlocked,
 }: {
   view: TaskBoardView;
   setView: (v: TaskBoardView) => void;
@@ -2796,6 +2806,8 @@ function ViewToggle({
   /** When true, Gantt tab uses the special green accent. */
   showGanttEnabled: boolean;
   allowGantt?: boolean;
+  cardsDisabled?: boolean;
+  onCardsBlocked?: () => void;
 }) {
   if (!allowCardView) return null;
   return (
@@ -2814,10 +2826,21 @@ function ViewToggle({
       <button
         type="button"
         className={cn(
-          "inline-flex cursor-pointer items-center gap-1 px-2 py-1",
-          view === "card" && "bg-[var(--row-hover)]",
+          "inline-flex items-center gap-1 px-2 py-1",
+          cardsDisabled
+            ? "cursor-not-allowed opacity-40"
+            : "cursor-pointer",
+          view === "card" && !cardsDisabled && "bg-[var(--row-hover)]",
         )}
-        onClick={() => setView("card")}
+        onClick={() => {
+          if (cardsDisabled) {
+            onCardsBlocked?.();
+            return;
+          }
+          setView("card");
+        }}
+        aria-disabled={cardsDisabled}
+        title={cardsDisabled ? "Available on desktop" : "Cards view"}
       >
         <LayoutGrid size={12} />
         Cards
@@ -2981,7 +3004,15 @@ function ListSection({
           <span className="min-w-0 flex-1 text-lg font-medium">{list.name}</span>
         )}
         {ctx.manageLists && ctx.listsEditMode ? (
-          <div className="flex flex-wrap items-center gap-1">
+          <div
+            className={cn(
+              "flex items-center gap-1",
+              ctx.isPhone
+                ? "w-full basis-full flex-col items-stretch"
+                : "flex-wrap",
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
@@ -3031,7 +3062,7 @@ function ListSection({
                 >
                   <ChartGantt size={14} />
                 </button>
-                {list.gantt_enabled ? (
+                {list.gantt_enabled && !ctx.isPhone ? (
                   <>
                     <input
                       type="date"
@@ -3107,6 +3138,33 @@ function ListSection({
             >
               <Trash2 size={14} />
             </button>
+            </div>
+            {showGanttControls && list.gantt_enabled && ctx.isPhone ? (
+              <div className="flex flex-col gap-1.5">
+                <input
+                  type="date"
+                  className="h-8 w-full rounded border border-[var(--border)] bg-transparent px-2 text-xs text-[var(--text-muted)]"
+                  value={list.start_date ?? ""}
+                  onChange={(e) =>
+                    onUpdateList({
+                      start_date: e.target.value || null,
+                    })
+                  }
+                  aria-label={`${list.name} start date`}
+                />
+                <input
+                  type="date"
+                  className="h-8 w-full rounded border border-[var(--border)] bg-transparent px-2 text-xs text-[var(--text-muted)]"
+                  value={list.end_date ?? ""}
+                  onChange={(e) =>
+                    onUpdateList({
+                      end_date: e.target.value || null,
+                    })
+                  }
+                  aria-label={`${list.name} end date`}
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
         {hasExpandedTasks ? (
@@ -3239,7 +3297,14 @@ function ListSection({
                   onAttachmentError={ctx.onAttachmentError}
                 />
               ) : (
-                <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 text-left opacity-0 transition-opacity group-hover/list:opacity-100 focus-within:opacity-100">
+                <div
+                  className={cn(
+                    "flex flex-wrap items-center gap-2 px-2 py-1.5 text-left transition-opacity focus-within:opacity-100",
+                    ctx.isPhone
+                      ? "opacity-100"
+                      : "opacity-0 group-hover/list:opacity-100",
+                  )}
+                >
                   <Button
                     type="button"
                     variant="secondary"
@@ -3779,7 +3844,10 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
         {ctx.allowDrag ? (
           <button
             type="button"
-            className="cursor-grab touch-none p-0.5 text-[var(--text-muted)] opacity-0 group-hover:opacity-100"
+            className={cn(
+              "cursor-grab touch-none p-0.5 text-[var(--text-muted)]",
+              ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            )}
             aria-label="Drag to reorder divider"
             title="Drag to reorder"
             {...attributes}
@@ -3900,7 +3968,10 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
           <>
             <button
               type="button"
-              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--text)] group-hover:opacity-100"
+              className={cn(
+                "inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              )}
               onClick={(e) => {
                 e.stopPropagation();
                 setEditing(true);
@@ -3912,7 +3983,10 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
             </button>
             <button
               type="button"
-              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--status-over)] group-hover:opacity-100"
+              className={cn(
+                "inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]",
+                ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              )}
               onClick={(e) => {
                 e.stopPropagation();
                 ctx.deleteDivider(task.id);
@@ -4129,7 +4203,9 @@ function TaskRow({
               "touch-none p-0.5 text-[var(--text-muted)]",
               multiSelectDrag
                 ? "cursor-grab opacity-100"
-                : "cursor-grab opacity-0 group-hover:opacity-100",
+                : ctx.isPhone
+                  ? "cursor-grab opacity-100"
+                  : "cursor-grab opacity-0 group-hover:opacity-100",
               depth > 0 && "-translate-x-2",
             )}
             aria-label="Drag to reorder, nest, or move to another list"
@@ -4287,7 +4363,10 @@ function TaskRow({
           {ctx.canManage && !ctx.readOnly && listManage ? (
             <button
               type="button"
-              className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--accent)] group-hover:opacity-100"
+              className={cn(
+                "inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              )}
               onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
@@ -4303,7 +4382,10 @@ function TaskRow({
         {listManage && depth === 0 ? (
           <button
             type="button"
-            className="inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] opacity-0 hover:bg-[var(--row-hover)] hover:text-[var(--accent)] group-hover:opacity-100"
+            className={cn(
+              "inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+              ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            )}
             onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
@@ -4810,7 +4892,14 @@ function CommentItem({
               </div>
               <CommentReactions comment={comment} ctx={ctx} />
               {showActions ? (
-                <div className="absolute bottom-3 right-3 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                <div
+                  className={cn(
+                    "absolute bottom-3 right-3 flex items-center gap-0.5 transition-opacity group-focus-within:opacity-100",
+                    ctx.isPhone
+                      ? "opacity-100"
+                      : "opacity-0 group-hover:opacity-100",
+                  )}
+                >
                   {isAuthor ? (
                     <button
                       type="button"

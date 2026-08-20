@@ -164,12 +164,12 @@ function SortableMilestoneRow({
         opacity: isDragging ? 0.6 : 1,
       }}
       className={cn(
-        "space-y-1.5 rounded-md",
+        "min-w-0 space-y-1.5 rounded-md",
         focused &&
           "bg-[var(--accent)]/15 p-2 ring-1 ring-[var(--accent)]/25",
       )}
     >
-      <div className="flex items-start gap-1.5">
+      <div className="flex min-w-0 items-start gap-1.5">
         {canManage && !isPhone ? (
           <button
             type="button"
@@ -181,7 +181,7 @@ function SortableMilestoneRow({
             <GripVertical size={14} />
           </button>
         ) : null}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 overflow-hidden">
           <ProgressBar
             pct={pct ?? 0}
             label={label}

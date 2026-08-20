@@ -14,6 +14,8 @@ import { progressLineHandoffIndex } from "@/components/budgets/progress-line-han
 
 type ChartTab = "progress" | "weekly";
 
+const CHART_MIN_WIDTH_PX = 560;
+
 const contractorColor = "var(--status-healthy)";
 
 function ChartLegend({
@@ -459,10 +461,12 @@ function ProgressLineChart({
   const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;
 
   return (
-    <div
-      className="relative overflow-visible"
-      onMouseLeave={() => setHoverIdx(null)}
-    >
+    <div className="overflow-x-auto overscroll-x-contain">
+      <div
+        className="relative overflow-visible"
+        style={{ minWidth: CHART_MIN_WIDTH_PX }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="h-auto w-full overflow-hidden"
@@ -769,6 +773,7 @@ function ProgressLineChart({
           />
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
@@ -837,10 +842,12 @@ export function HoursPerWeekChart({
   const hoverVal = hoverIdx != null ? values[hoverIdx]! : 0;
 
   return (
-    <div
-      className="relative overflow-visible"
-      onMouseLeave={() => setHoverIdx(null)}
-    >
+    <div className="overflow-x-auto overscroll-x-contain">
+      <div
+        className="relative overflow-visible"
+        style={{ minWidth: CHART_MIN_WIDTH_PX }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="block h-auto w-full"
@@ -966,6 +973,7 @@ export function HoursPerWeekChart({
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

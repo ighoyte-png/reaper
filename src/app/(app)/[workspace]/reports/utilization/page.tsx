@@ -207,11 +207,11 @@ function UtilizationReportContent() {
                     Nothing scheduled this week.
                   </p>
                 ) : (
-                  <div className="flex flex-col items-center gap-4 pt-2 sm:flex-row sm:items-start lg:flex-col xl:flex-row">
+                  <div className="flex min-w-0 flex-col items-center gap-4 pt-2 xl:flex-row xl:items-start">
                     <SchedulePie
                       slices={week.slices}
                       totalHours={week.booked}
-                      className="size-[10rem] sm:size-[11rem] xl:size-[12rem]"
+                      className="!shrink max-w-full size-[10rem] sm:size-[11rem] xl:!shrink-0 xl:size-[12rem]"
                     />
                     <ul className="min-w-0 flex-1 space-y-1.5 self-stretch">
                       {week.slices.map((slice) => {

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
+import { FavoritesDrawerSection } from "@/components/nav/favorite-project-tabs";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
 import { PlatformAdminNavLink } from "@/components/nav/platform-admin-link";
@@ -32,6 +33,7 @@ import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import { personAvatarColor } from "@/lib/domain/people";
 import { useAppHref } from "@/lib/hooks/use-app-href";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { stripWorkspacePrefix } from "@/lib/paths";
 import { isUnreadBulletin } from "@/lib/domain/bulletins";
 import { useViewAs } from "@/lib/view-as";
@@ -58,6 +60,7 @@ function menuItemClass(active?: boolean) {
 export function AppNavbar() {
   const pathname = usePathname();
   const router = useRouter();
+  const isPhone = useIsPhone();
   const { logout, state, myPerson, profile, shareBasePath, switchWorkspace } =
     useData();
   const { theme, toggleTheme } = useTheme();
@@ -180,14 +183,14 @@ export function AppNavbar() {
 
   return (
     <>
-      <header className="flex h-11 w-full shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--sidebar)] px-2 sm:px-3">
+      <header className="flex h-14 w-full shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--sidebar)] px-2 sm:px-3 md:h-11">
         <button
           type="button"
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text)] hover:bg-[var(--row-hover)] md:hidden"
+          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text)] hover:bg-[var(--row-hover)] md:hidden"
           aria-label="Open menu"
           onClick={toggle}
         >
-          <Menu size={17} strokeWidth={1.75} />
+          <Menu size={22} strokeWidth={1.75} />
         </button>
         <button
           type="button"
@@ -196,7 +199,12 @@ export function AppNavbar() {
           title="About Reaper"
           onClick={() => setAboutOpen(true)}
         >
-          <BrandLockup showVersion compact />
+          <BrandLockup
+            showVersion={!isPhone}
+            compact
+            logoClassName="h-8 md:h-6"
+            wordmarkClassName="text-base md:text-sm"
+          />
         </button>
         <nav
           className="hidden shrink-0 items-center gap-0.5 md:flex"
@@ -229,17 +237,17 @@ export function AppNavbar() {
           {!shareBasePath ? (
             <>
               <GlobalSearchTrigger
-                className="hidden w-64 sm:inline-flex"
+                className="hidden w-64 md:inline-flex"
                 onClick={() => setSearchOpen(true)}
               />
               <button
                 type="button"
-                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] sm:hidden"
+                className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] md:hidden"
                 aria-label="Search"
                 title="Search"
                 onClick={() => setSearchOpen(true)}
               >
-                <Search size={16} strokeWidth={1.75} />
+                <Search size={18} strokeWidth={1.75} />
               </button>
             </>
           ) : null}
@@ -485,42 +493,45 @@ export function AppNavbar() {
               }}
             >
               <BrandLockup
-                showVersion
-                logoClassName="h-8"
-                wordmarkClassName="text-base"
+                showVersion={false}
+                logoClassName="h-9"
+                wordmarkClassName="text-lg"
               />
             </button>
           </div>
-          <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
-            {links.map(({ href, label, icon: Icon }) => {
-              const fullHref = appHref(href);
-              const active =
-                pathForNav === href || pathForNav.startsWith(`${href}/`);
-              const showDot = href === "/dashboard" && hasDashboardDot;
-              return (
-                <Link
-                  key={href}
-                  href={fullHref}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    "relative flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
-                    active
-                      ? "bg-[var(--bg-elevated)] text-[var(--text)]"
-                      : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
-                  )}
-                >
-                  <Icon size={16} strokeWidth={1.75} />
-                  {label}
-                  {showDot ? (
-                    <span
-                      className="ml-auto h-2 w-2 rounded-full bg-[var(--status-attention)]"
-                      aria-label="New dashboard notifications"
-                    />
-                  ) : null}
-                </Link>
-              );
-            })}
-          </nav>
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            <nav className="flex flex-col gap-0.5 p-2">
+              {links.map(({ href, label, icon: Icon }) => {
+                const fullHref = appHref(href);
+                const active =
+                  pathForNav === href || pathForNav.startsWith(`${href}/`);
+                const showDot = href === "/dashboard" && hasDashboardDot;
+                return (
+                  <Link
+                    key={href}
+                    href={fullHref}
+                    onClick={() => setOpen(false)}
+                    className={cn(
+                      "relative flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-sm transition-colors",
+                      active
+                        ? "bg-[var(--bg-elevated)] text-[var(--text)]"
+                        : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                    )}
+                  >
+                    <Icon size={16} strokeWidth={1.75} />
+                    {label}
+                    {showDot ? (
+                      <span
+                        className="ml-auto h-2 w-2 rounded-full bg-[var(--status-attention)]"
+                        aria-label="New dashboard notifications"
+                      />
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </nav>
+            <FavoritesDrawerSection onNavigate={() => setOpen(false)} />
+          </div>
           {accountName ? (
             <div className="shrink-0 border-t border-[var(--border)]">
               <div className="flex items-start gap-3 px-4 py-3">

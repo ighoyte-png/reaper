@@ -479,13 +479,13 @@ function ReportsPageContent() {
           </ul>
         </section>
       ) : null}
-      <div className="grid gap-3 py-3 sm:py-5 md:grid-cols-2 md:items-stretch">
+      <div className="grid min-w-0 gap-3 overflow-x-hidden py-3 sm:py-5 md:grid-cols-2 md:items-stretch">
         {reports.map((report) => (
           <ReportCard
             key={report.path}
             report={report}
             appHref={appHref}
-            className="h-full min-h-0"
+            className="h-full min-h-0 min-w-0"
             overview={
               report.path === "/reports/utilization" ? (
                 <UtilizationOverview
@@ -566,9 +566,9 @@ function ReportCard({
 }) {
   const Icon = report.icon;
   return (
-    <Panel padded={false} className={cn("flex flex-col", className)}>
-      <div className="flex min-h-0 flex-1 flex-col p-4 pb-3">
-        <div className="flex items-start gap-3">
+    <Panel padded={false} className={cn("flex min-w-0 flex-col", className)}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col p-4 pb-3">
+        <div className="flex min-w-0 items-start gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
             <Icon size={16} strokeWidth={1.75} />
           </div>
@@ -587,7 +587,7 @@ function ReportCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-2.5">
+      <div className="flex flex-col gap-2 border-t border-[var(--border)] px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <p className="min-w-0 truncate text-xs text-[var(--text-muted)]">
           {report.cta}
         </p>
@@ -596,7 +596,7 @@ function ReportCard({
           className={buttonClass({
             variant: "secondary",
             size: "sm",
-            className: "h-8 shrink-0 px-3 text-xs",
+            className: "h-8 w-full shrink-0 px-3 text-xs sm:w-auto",
           })}
         >
           View Details

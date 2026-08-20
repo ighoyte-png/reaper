@@ -8,10 +8,13 @@ export function ListCardsViewToggle({
   value,
   onChange,
   className,
+  disableCards = false,
 }: {
   value: DirectoryLayout;
   onChange: (next: DirectoryLayout) => void;
   className?: string;
+  /** When true, cards mode is unavailable (e.g. phone directories). */
+  disableCards?: boolean;
 }) {
   return (
     <div
@@ -38,13 +41,20 @@ export function ListCardsViewToggle({
       <button
         type="button"
         className={cn(
-          "inline-flex h-8 w-8 cursor-pointer items-center justify-center border-l border-[var(--border)]",
-          value === "cards" && "bg-[var(--row-hover)]",
+          "inline-flex h-8 w-8 items-center justify-center border-l border-[var(--border)]",
+          disableCards
+            ? "cursor-not-allowed opacity-40"
+            : "cursor-pointer",
+          value === "cards" && !disableCards && "bg-[var(--row-hover)]",
         )}
-        onClick={() => onChange("cards")}
+        onClick={() => {
+          if (disableCards) return;
+          onChange("cards");
+        }}
+        disabled={disableCards}
         aria-label="Cards view"
         aria-pressed={value === "cards"}
-        title="Cards view"
+        title={disableCards ? "Cards view available on desktop" : "Cards view"}
       >
         <LayoutGrid size={14} />
       </button>

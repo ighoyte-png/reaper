@@ -1,11 +1,14 @@
 "use client";
 
+import { format } from "date-fns";
+import { useEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/cn";
 import {
   formatHours,
   formatMoney,
   type MonthBurnBar,
 } from "@/lib/domain/budget";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 
 function isCurrentMonth(year: number, monthIndex: number, asOf = new Date()) {
   return year === asOf.getFullYear() && monthIndex === asOf.getMonth();
@@ -334,29 +337,56 @@ export function ProjectYearBurnChart({
   /** Paint contractor hours as internal (blue) — client portal only. */
   blendContractors?: boolean;
 }) {
-  const uniqueYears = new Set(bars.map((b) => b.year));
+  const isPhone = useIsPhone();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const currentBarRef = useRef<HTMLDivElement>(null);
+
+  const displayBars = useMemo(() => {
+    if (!isPhone || bars.length <= 6) return bars;
+    const nowKey = format(new Date(), "yyyy-MM");
+    const idx = bars.findIndex((b) => b.key === nowKey);
+    if (idx >= 0) {
+      const end = Math.min(bars.length, Math.max(idx + 1, 6));
+      const start = Math.max(0, end - 6);
+      return bars.slice(start, start + 6);
+    }
+    return bars.slice(-6);
+  }, [bars, isPhone]);
+
+  const uniqueYears = new Set(displayBars.map((b) => b.year));
   const labelYear =
     year !== undefined
       ? year
       : uniqueYears.size === 1
-        ? bars[0]?.year
+        ? displayBars[0]?.year
         : undefined;
-  const overflow = bars.length > 12;
   const barMinPx = compact ? 28 : 36;
+  const chartMinWidth = displayBars.length * barMinPx;
   const multiYear = uniqueYears.size > 1;
   const cap = monthlyCap ?? 0;
   const maxValue = Math.max(
     cap,
-    ...bars.map((b) => barSplit(b, unit).total),
+    ...displayBars.map((b) => barSplit(b, unit).total),
     unit === "hours" ? 1 : 1,
   );
   const capPct = maxValue <= 0 ? 0 : (cap / maxValue) * 100;
   const showCapLine = cap > 0;
   const hasContractor =
     !blendContractors &&
-    bars.some((b) =>
+    displayBars.some((b) =>
       unit === "amount" ? b.contractorAmount > 0 : b.contractorHours > 0,
     );
+  const nowKey = format(new Date(), "yyyy-MM");
+
+  useEffect(() => {
+    if (!isPhone) return;
+    const scroller = scrollRef.current;
+    const target = currentBarRef.current;
+    if (!scroller || !target) return;
+    const left =
+      target.offsetLeft - scroller.clientWidth / 2 + target.offsetWidth / 2;
+    scroller.scrollTo({ left: Math.max(0, left), behavior: "auto" });
+  }, [isPhone, displayBars, selectedMonthKey]);
 
   function displaySplit(bar: MonthBurnBar) {
     const split = barSplit(bar, unit);
@@ -385,19 +415,15 @@ export function ProjectYearBurnChart({
             : `Monthly ${unit === "amount" ? "spend" : "usage"}`}
         </p>
       ) : null}
-      <div className={cn(overflow && "overflow-x-auto")}>
-        <div
-          style={
-            overflow ? { minWidth: bars.length * barMinPx } : undefined
-          }
-        >
+      <div ref={scrollRef} className="overflow-x-auto overscroll-x-contain">
+        <div style={{ minWidth: chartMinWidth }}>
           <div
             className={cn(
               "flex items-end gap-1.5 sm:gap-2",
               compact ? "mb-0.5 h-4" : "mb-1",
             )}
           >
-            {bars.map((bar) => {
+            {displayBars.map((bar) => {
               const { total } = displaySplit(bar);
               return (
                 <div
@@ -432,7 +458,7 @@ export function ProjectYearBurnChart({
                 aria-hidden
               />
             ) : null}
-            {bars.map((bar) => {
+            {displayBars.map((bar) => {
               const {
                 used,
                 future,
@@ -442,28 +468,33 @@ export function ProjectYearBurnChart({
                 total,
               } = displaySplit(bar);
               return (
-                <MonthBarColumn
+                <div
                   key={bar.key}
-                  bar={bar}
-                  unit={unit}
-                  total={total}
-                  used={used}
-                  future={future}
-                  contractorUsed={contractorUsed}
-                  contractorFuture={contractorFuture}
-                  contractor={contractor}
-                  maxValue={maxValue}
-                  cap={cap}
-                  showCapLine={showCapLine}
-                  compact={compact}
-                  selected={selectedMonthKey === bar.key}
-                  onMonthSelect={onMonthSelect}
-                />
+                  ref={bar.key === nowKey ? currentBarRef : undefined}
+                  className="flex h-full min-w-0 flex-1"
+                >
+                  <MonthBarColumn
+                    bar={bar}
+                    unit={unit}
+                    total={total}
+                    used={used}
+                    future={future}
+                    contractorUsed={contractorUsed}
+                    contractorFuture={contractorFuture}
+                    contractor={contractor}
+                    maxValue={maxValue}
+                    cap={cap}
+                    showCapLine={showCapLine}
+                    compact={compact}
+                    selected={selectedMonthKey === bar.key}
+                    onMonthSelect={onMonthSelect}
+                  />
+                </div>
               );
             })}
           </div>
           <div className="mt-1 flex gap-1.5 sm:gap-2">
-            {bars.map((bar) => (
+            {displayBars.map((bar) => (
               <div key={`l-${bar.key}`} className="min-w-0 flex-1 text-center">
                 <span
                   className={cn(

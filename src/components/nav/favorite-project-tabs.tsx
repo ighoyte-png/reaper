@@ -225,7 +225,7 @@ function FavoritesBookmarksBarInner() {
     };
   }, []);
 
-  if (!showBar) return null;
+  if (!showBar || isPhone) return null;
 
   function armClickSuppression() {
     suppressClickRef.current = true;
@@ -347,5 +347,90 @@ function FavoritesBookmarksBarInner() {
         />
       ) : null}
     </nav>
+  );
+}
+
+/** Vertical favorites list for the phone hamburger drawer. */
+export function FavoritesDrawerSection({
+  onNavigate,
+}: {
+  onNavigate?: () => void;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <FavoritesDrawerSectionInner onNavigate={onNavigate} />
+    </Suspense>
+  );
+}
+
+function FavoritesDrawerSectionInner({
+  onNavigate,
+}: {
+  onNavigate?: () => void;
+}) {
+  const { state, profile, isPublicShare } = useData();
+  const favoriteHref = useFavoriteProjectHref();
+  const pathForNav = usePathForNav();
+
+  const favorites = useMemo(
+    () =>
+      orderedFavoriteProjects(
+        state.project_favorites,
+        state.projects,
+        profile?.id,
+      ),
+    [state.project_favorites, state.projects, profile?.id],
+  );
+
+  if (isPublicShare || !profile || favorites.length === 0) return null;
+
+  return (
+    <div className="border-t border-[var(--border)] px-2 pb-2 pt-3">
+      <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+        Favorites
+      </p>
+      <ul className="flex flex-col gap-0.5">
+        {favorites.map((project) => {
+          const active = isFavoriteProjectActive(
+            project,
+            pathForNav,
+            state.clients,
+          );
+          const clientName = clientNameOf(project, state.clients);
+          const color = projectDisplayColor(project, state.clients);
+          const fullLabel = clientName
+            ? `${clientName} - ${project.name}`
+            : project.name;
+          return (
+            <li key={project.id}>
+              <Link
+                href={favoriteHref(project)}
+                title={fullLabel}
+                onClick={() => onNavigate?.()}
+                className={cn(
+                  "flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+                  active
+                    ? "bg-[var(--bg-elevated)] font-medium text-[var(--text)]"
+                    : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                )}
+              >
+                <ProjectColorBar color={color} size="sm" className="self-center" />
+                <span className="min-w-0 truncate">
+                  {clientName ? (
+                    <>
+                      <span className="text-[var(--text-muted)]">{clientName}</span>
+                      <span className="text-[var(--text-muted)]"> · </span>
+                      <span className="text-[var(--text)]">{project.name}</span>
+                    </>
+                  ) : (
+                    <span className="text-[var(--text)]">{project.name}</span>
+                  )}
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

@@ -195,19 +195,21 @@ export function ProgressBar({
   const showFooter = Boolean(footerStart || footerEnd);
   const showEssential = essential !== undefined && essential !== null;
   return (
-    <div className="flex items-stretch gap-2">
+    <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-stretch">
       {showEssential ? (
-        <MilestoneEssentialSlot
-          kind={essential.kind}
-          label={essential.label}
-          url={essential.url}
-          glowHover={essentialGlowHover}
-          approvalTooltip={essentialApprovalTooltip}
-        />
+        <div className="shrink-0 self-start sm:self-stretch">
+          <MilestoneEssentialSlot
+            kind={essential.kind}
+            label={essential.label}
+            url={essential.url}
+            glowHover={essentialGlowHover}
+            approvalTooltip={essentialApprovalTooltip}
+          />
+        </div>
       ) : null}
       <div className="min-w-0 flex-1 space-y-1">
         {label ? (
-          <div className="flex items-center justify-between gap-2 text-xs">
+          <div className="flex min-w-0 items-center justify-between gap-2 text-xs">
             <span className="flex min-w-0 items-center gap-1.5">
               {approved ? (
                 <MilestoneApprovedTag />

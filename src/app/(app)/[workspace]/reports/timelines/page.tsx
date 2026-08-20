@@ -24,6 +24,7 @@ import {
   sortProjectsByClientThenName,
 } from "@/lib/domain/sorting";
 import { useProjectHref } from "@/lib/hooks/use-app-href";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import {
   useLiveUserViewPrefs,
@@ -91,6 +92,7 @@ function TimelinesReportContent() {
   const today = format(new Date(), "yyyy-MM-dd");
   const { filters, setFilter } = useUrlFilters({ pm: "all" });
   const viewPrefs = useLiveUserViewPrefs(profile?.id);
+  const isPhone = useIsPhone();
   const directoryLayout = viewPrefs.directoryLayout;
 
   const eligible = useMemo(() => {
@@ -214,6 +216,36 @@ function TimelinesReportContent() {
                 <div className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)]">
                   {groupProjects.map((project) => (
                     <TimelineProjectListRow
+                      key={project.id}
+                      project={project}
+                      milestones={milestonesByProject.get(project.id) ?? []}
+                      href={projectHref(project)}
+                      today={today}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : isPhone ? (
+          <div className="space-y-10">
+            {groups.map(({ client, projects: groupProjects }) => (
+              <section key={clientGroupKey(client)}>
+                <div className="mb-4 flex min-w-0 items-center gap-2 border-b border-[var(--section-rule)] px-1 pb-2">
+                  {client ? (
+                    <ProjectColorBar color={client.color} />
+                  ) : null}
+                  <h2 className="min-w-0 flex-1 truncate text-sm font-semibold tracking-tight">
+                    {client?.name ?? "No Client"}
+                  </h2>
+                  <span className="shrink-0 text-xs text-[var(--text-muted)]">
+                    {groupProjects.length} project
+                    {groupProjects.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  {groupProjects.map((project) => (
+                    <TimelineProjectCard
                       key={project.id}
                       project={project}
                       milestones={milestonesByProject.get(project.id) ?? []}

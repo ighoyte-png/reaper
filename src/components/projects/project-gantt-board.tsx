@@ -28,6 +28,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { buttonClass } from "@/components/ui/button";
 import { DateInput, Field, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
+import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { RichNotesHtml } from "@/components/ui/simple-rich-text";
 import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
@@ -958,6 +959,7 @@ export function ProjectGanttBoard({
     deleteTask,
     myPerson,
   } = useData();
+  const isPhone = useIsPhone();
   const scrollRef = useRef<HTMLDivElement>(null);
   const headerScrollRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
@@ -1020,6 +1022,10 @@ export function ProjectGanttBoard({
   const [containerNarrow, setContainerNarrow] = useState(false);
   const [halfZoom, setHalfZoom] = useState(false);
   const [viewportExpanded, setViewportExpanded] = useState(false);
+  // Phone: open in fullscreen pan mode by default (and when entering Gantt).
+  useEffect(() => {
+    if (isPhone) setViewportExpanded(true);
+  }, [isPhone]);
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   const today = todayKey();
