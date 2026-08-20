@@ -107,7 +107,7 @@ export function UtilityNoticeCarousel() {
 
   return (
     <div
-      className="pointer-events-auto absolute bottom-2 left-2 z-30 w-[min(100%-1rem,20rem)] rounded-md border border-[var(--border)] bg-[var(--bg)] shadow-md"
+      className="pointer-events-auto fixed bottom-2 left-2 z-40 w-[min(100%-1rem,20rem)] rounded-md border border-[var(--border)] bg-[var(--bg)] shadow-md"
       role="region"
       aria-label="Utility notices"
     >

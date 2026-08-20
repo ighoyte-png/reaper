@@ -10,13 +10,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { usePathname } from "next/navigation";
 import { useData } from "@/lib/data/store";
 import { isSystemBulletin } from "@/lib/domain/bulletins";
 import { mentionTargetFromUnread, mentionUnreadKey } from "@/lib/mentions";
 import { notesPlainText } from "@/lib/notes-html";
 import { resolveAuthorLabel } from "@/lib/domain/people";
-import { stripWorkspacePrefix } from "@/lib/paths";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
 import { desktopNotificationPermission } from "@/lib/desktop-notifications";
@@ -58,10 +56,6 @@ type UtilityNotificationsContextValue = {
 const UtilityNotificationsContext =
   createContext<UtilityNotificationsContextValue | null>(null);
 
-function isDashboardPath(pathForNav: string): boolean {
-  return pathForNav === "/dashboard" || pathForNav.startsWith("/dashboard/");
-}
-
 function mentionCardId(row: MentionUnread): string {
   return `mention:${mentionUnreadKey(row)}`;
 }
@@ -76,7 +70,6 @@ export function UtilityNotificationsProvider({
   children: ReactNode;
 }) {
   const { state, myPerson, profile, isPublicShare } = useData();
-  const pathname = usePathname();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const viewAs = useViewAsOptional();
@@ -85,19 +78,10 @@ export function UtilityNotificationsProvider({
 
   const seenMentionKeysRef = useRef<Set<string> | null>(null);
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
-  /** True until we've left a cold-start dashboard (or never started there). */
-  const suppressBackfillRef = useRef(false);
-  const coldStartCheckedRef = useRef(false);
   const fadeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
 
-  const pathForNav = useMemo(
-    () => stripWorkspacePrefix(pathname, state.organization.slug),
-    [pathname, state.organization.slug],
-  );
-
-  const onDashboard = isDashboardPath(pathForNav);
   const mentionPersonId =
     viewAs?.effectivePersonId ?? myPerson?.id ?? null;
 
@@ -113,22 +97,6 @@ export function UtilityNotificationsProvider({
       window.removeEventListener("storage", sync);
     };
   }, [profile?.id]);
-
-  useEffect(() => {
-    if (coldStartCheckedRef.current) return;
-    coldStartCheckedRef.current = true;
-    if (onDashboard) {
-      suppressBackfillRef.current = true;
-    }
-  }, [onDashboard]);
-
-  useEffect(() => {
-    if (!onDashboard && suppressBackfillRef.current) {
-      // Left dashboard after cold start — still don't resurrect old items;
-      // only clear the "seed baseline" so fresh events enqueue.
-      suppressBackfillRef.current = false;
-    }
-  }, [onDashboard]);
 
   const scheduleVisible = useCallback((id: string) => {
     const delay =
@@ -154,8 +122,6 @@ export function UtilityNotificationsProvider({
   const enqueue = useCallback(
     (card: Omit<UtilityNotificationCard, "visible" | "enqueuedAt">) => {
       if (!prefEnabled || isPublicShare) return;
-      if (onDashboard) return;
-      if (suppressBackfillRef.current) return;
 
       setCards((prev) => {
         if (prev.some((c) => c.id === card.id)) return prev;
@@ -170,7 +136,7 @@ export function UtilityNotificationsProvider({
       });
       scheduleVisible(card.id);
     },
-    [prefEnabled, isPublicShare, onDashboard, scheduleVisible],
+    [prefEnabled, isPublicShare, scheduleVisible],
   );
 
   const removeCard = useCallback((id: string) => {
@@ -241,27 +207,21 @@ export function UtilityNotificationsProvider({
     if (seenMentionKeysRef.current === null) {
       seenMentionKeysRef.current = new Set();
       const seen = seenMentionKeysRef.current;
-      // Cold-start on dashboard: baseline only (no backfill). Off-dashboard:
-      // surface current unreads as chips.
-      if (!suppressBackfillRef.current && !onDashboard) {
-        for (const row of mine) {
-          const k = mentionUnreadKey(row);
-          if (!k) continue;
-          const target = mentionTargetFromUnread(row);
-          if (!target) continue;
-          const built = buildMentionCard({
-            row,
-            target,
-            state,
-            projectHref,
-            appHref,
-          });
-          if (!built) continue;
-          seen.add(k);
-          enqueue(built);
-        }
-      } else {
-        for (const k of keys) seen.add(k);
+      for (const row of mine) {
+        const k = mentionUnreadKey(row);
+        if (!k) continue;
+        const target = mentionTargetFromUnread(row);
+        if (!target) continue;
+        const built = buildMentionCard({
+          row,
+          target,
+          state,
+          projectHref,
+          appHref,
+        });
+        if (!built) continue;
+        seen.add(k);
+        enqueue(built);
       }
       return;
     }
@@ -288,11 +248,6 @@ export function UtilityNotificationsProvider({
       seen.add(k);
       enqueue(built);
     }
-    // Baseline keys we intentionally skip (e.g. on dashboard) still count as seen
-    // so leaving the dashboard does not resurrect them.
-    if (onDashboard || suppressBackfillRef.current) {
-      for (const k of keys) seen.add(k);
-    }
   }, [
     state.unread_mentions,
     state.task_comments,
@@ -304,7 +259,6 @@ export function UtilityNotificationsProvider({
     state.assignments,
     mentionPersonId,
     isPublicShare,
-    onDashboard,
     enqueue,
     projectHref,
     appHref,
@@ -318,22 +272,20 @@ export function UtilityNotificationsProvider({
     }
     const mine = state.unread_bulletin_ids ?? [];
     if (seenBulletinIdsRef.current === null) {
-      seenBulletinIdsRef.current = new Set(mine);
-      if (!suppressBackfillRef.current && !onDashboard) {
-        for (const bulletinId of mine) {
-          const bulletin =
-            state.bulletins.find((b) => b.id === bulletinId) ?? null;
-          if (!bulletin) {
-            seenBulletinIdsRef.current.delete(bulletinId);
-            continue;
-          }
-          const built = buildBulletinCard({
-            bulletin,
-            projectHref,
-            appHref,
-            state,
-          });
-          if (built) enqueue(built);
+      seenBulletinIdsRef.current = new Set();
+      for (const bulletinId of mine) {
+        const bulletin =
+          state.bulletins.find((b) => b.id === bulletinId) ?? null;
+        if (!bulletin) continue;
+        const built = buildBulletinCard({
+          bulletin,
+          projectHref,
+          appHref,
+          state,
+        });
+        if (built) {
+          seenBulletinIdsRef.current.add(bulletinId);
+          enqueue(built);
         }
       }
       return;
@@ -365,7 +317,6 @@ export function UtilityNotificationsProvider({
     state.clients,
     profile,
     isPublicShare,
-    onDashboard,
     enqueue,
     projectHref,
     appHref,
