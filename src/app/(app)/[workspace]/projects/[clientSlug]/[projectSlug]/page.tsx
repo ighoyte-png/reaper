@@ -507,7 +507,7 @@ export default function ProjectDetailPage() {
           </section>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-3">
           {/* Main: tasks (+ sidebar) or full-width Gantt */}
           <div
             className={cn(
@@ -608,9 +608,9 @@ export default function ProjectDetailPage() {
 
           {/* Sidebar (hidden when Gantt active — cards move below) */}
           {!ganttViewActive ? (
-          <div className="space-y-4">
+          <div className="min-w-0 space-y-4">
             {isSandbox ? (
-              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+              <section className="min-w-0 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <h2 className="mb-4 text-sm font-semibold">Sandbox</h2>
                 <div className="flex justify-center px-4 py-6">
                   <SandboxIcon className="w-1/2 max-w-[11rem]" />
@@ -621,7 +621,7 @@ export default function ProjectDetailPage() {
                 </p>
               </section>
             ) : (
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <section className="min-w-0 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">
                   {projectProgressCardTitle(isRetainer)}
@@ -663,7 +663,7 @@ export default function ProjectDetailPage() {
                 size="lg"
               />
               {!isRetainer ? (
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 min-w-0 space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-semibold text-[var(--text-muted)]">
                       Milestones
@@ -912,9 +912,9 @@ export default function ProjectDetailPage() {
         </div>
 
         {ganttViewActive ? (
-          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <div className="mt-4 grid min-w-0 gap-4 lg:grid-cols-3">
             {isSandbox ? (
-              <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+              <section className="min-w-0 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <h2 className="mb-4 text-sm font-semibold">Sandbox</h2>
                 <div className="flex justify-center px-4 py-6">
                   <SandboxIcon className="w-1/2 max-w-[11rem]" />
@@ -925,7 +925,7 @@ export default function ProjectDetailPage() {
                 </p>
               </section>
             ) : (
-            <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+            <section className="min-w-0 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">
                   {projectProgressCardTitle(isRetainer)}
@@ -967,7 +967,7 @@ export default function ProjectDetailPage() {
                 size="lg"
               />
               {!isRetainer ? (
-                <div className="mt-4 space-y-3">
+                <div className="mt-4 min-w-0 space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-xs font-semibold text-[var(--text-muted)]">
                       Milestones

@@ -954,6 +954,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
   const SCHEDULE_EVICT_PAD_DAYS = 7;
 
+  /** True when ranges overlap or sit within `padDays` of each other. */
+  function scheduleRangesNear(
+    a: { start: string; end: string },
+    b: { start: string; end: string },
+    padDays: number,
+  ): boolean {
+    const aEndPad = toDateKey(addDays(parseISO(a.end), padDays));
+    const bEndPad = toDateKey(addDays(parseISO(b.end), padDays));
+    return a.start <= bEndPad && b.start <= aEndPad;
+  }
+
+  function unionScheduleRange(
+    a: { start: string; end: string },
+    b: { start: string; end: string },
+  ): { start: string; end: string } {
+    return {
+      start: a.start < b.start ? a.start : b.start,
+      end: a.end > b.end ? a.end : b.end,
+    };
+  }
+
   const noteLocalWrite = useCallback((table: string, id: string) => {
     if (!id) return;
     localWritesRef.current.set(
@@ -2254,19 +2275,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
       projectId?: string | null,
     ): Promise<{ leaveDays: LeaveDay[]; assignments: Assignment[] } | void> => {
       const snapshotInRange = () => {
-        const leaveDays = state.leave_days.filter(
+        const snap = stateRef.current;
+        const leaveDays = snap.leave_days.filter(
           (l) => l.date >= startKey && l.date <= endKey,
         );
-        const assignments = state.assignments.filter((a) => {
+        const assignments = snap.assignments.filter((a) => {
           const aEnd = a.recurrence_end_date ?? a.end_date;
           return a.start_date <= endKey && aEnd >= startKey;
         });
         return { leaveDays, assignments };
       };
 
+      const requested = { start: startKey, end: endKey };
+
       if (mode !== "supabase") {
-        scheduleRangeLoadedRef.current = { start: startKey, end: endKey };
-        setScheduleRangeLoaded({ start: startKey, end: endKey });
+        const prev = scheduleRangeLoadedRef.current;
+        const next =
+          prev && scheduleRangesNear(prev, requested, SCHEDULE_EVICT_PAD_DAYS)
+            ? unionScheduleRange(prev, requested)
+            : requested;
+        scheduleRangeLoadedRef.current = next;
+        setScheduleRangeLoaded(next);
         return snapshotInRange();
       }
 
@@ -2305,8 +2334,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
             ),
             loadLeaveForRange(client, organizationId, startKey, endKey),
           ]);
+          // Expand the loaded window when callers overlap (e.g. dashboard
+          // leave calendar + utilization heatmap). Replacing with only the
+          // latest request evicted the other widget's days and re-fired a
+          // load↔evict loop. Far-away navigations still replace.
           const nextRange = !projectId
-            ? { start: startKey, end: endKey }
+            ? loadedBefore &&
+              scheduleRangesNear(
+                loadedBefore,
+                requested,
+                SCHEDULE_EVICT_PAD_DAYS,
+              )
+              ? unionScheduleRange(loadedBefore, requested)
+              : requested
             : loadedBefore;
 
           setState((prev) => {
@@ -2347,12 +2387,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
             setScheduleRangeLoaded(nextRange);
           }
           // Merge freshly loaded rows with prior in-memory state for callers.
+          const snap = stateRef.current;
           const leaveById = new Map(
-            state.leave_days.map((l) => [l.id, l] as const),
+            snap.leave_days.map((l) => [l.id, l] as const),
           );
           for (const l of leave_days) leaveById.set(l.id, l);
           const asgById = new Map(
-            state.assignments.map((a) => [a.id, a] as const),
+            snap.assignments.map((a) => [a.id, a] as const),
           );
           for (const a of assignments) asgById.set(a.id, a);
           return {
@@ -2371,7 +2412,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       scheduleRangeInflight.current = run;
       return run;
     },
-    [mode, state.organization.id, state.leave_days, state.assignments],
+    [mode, state.organization.id],
   );
 
   const setActiveRealtimeProjectIds = useCallback((projectIds: string[]) => {

@@ -2137,7 +2137,7 @@ export function ProjectTaskBoard({
               onCardsBlocked={() => toast("Available on desktop")}
             />
             </div>
-            <div data-gantt-root data-project-id={projectId}>
+            <div data-gantt-root data-project-id={projectId} className="min-w-0 max-w-full overflow-hidden">
               <ProjectGanttBoard
                 projectId={projectId}
                 readOnly={readOnly || !isPm || isPhone}

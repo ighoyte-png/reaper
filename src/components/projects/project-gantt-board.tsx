@@ -18,6 +18,8 @@ import {
   GripVertical,
   Maximize2,
   Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   Star,
   Undo2,
@@ -51,6 +53,7 @@ import {
   GANTT_DAY_W_DESKTOP,
   GANTT_DAY_W_NARROW,
   GANTT_HATCH_STYLE,
+  GANTT_LABEL_COLLAPSED_PX,
   GANTT_LABEL_PX,
   GANTT_LIST_ROW_H,
   GANTT_TASK_ROW_H,
@@ -1022,6 +1025,9 @@ export function ProjectGanttBoard({
   const [containerNarrow, setContainerNarrow] = useState(false);
   const [halfZoom, setHalfZoom] = useState(false);
   const [viewportExpanded, setViewportExpanded] = useState(false);
+  /** Task-list name column — collapsed by default so the timeline is easier to see. */
+  const [labelsCollapsed, setLabelsCollapsed] = useState(true);
+  const labelPx = labelsCollapsed ? GANTT_LABEL_COLLAPSED_PX : GANTT_LABEL_PX;
   // Phone: open in fullscreen pan mode by default (and when entering Gantt).
   useEffect(() => {
     if (isPhone) setViewportExpanded(true);
@@ -1300,7 +1306,7 @@ export function ProjectGanttBoard({
     }
     const clientX = edgeScrollClientXRef.current;
     const rect = el.getBoundingClientRect();
-    const labelEdge = rect.left + GANTT_LABEL_PX;
+    const labelEdge = rect.left + labelPx;
     let dx = 0;
     if (clientX < labelEdge + EDGE_SCROLL_PX) {
       dx = -EDGE_SCROLL_SPEED;
@@ -1315,7 +1321,7 @@ export function ProjectGanttBoard({
     const header = headerScrollRef.current;
     if (header) header.scrollLeft = el.scrollLeft;
     edgeScrollRaf.current = requestAnimationFrame(runEdgeScroll);
-  }, []);
+  }, [labelPx]);
 
   const ensureEdgeScroll = useCallback(
     (clientX: number) => {
@@ -1332,10 +1338,10 @@ export function ProjectGanttBoard({
       if (!scrollEl || columns.length === 0) return null;
       const rect = scrollEl.getBoundingClientRect();
       const x =
-        clientX - rect.left + scrollEl.scrollLeft - GANTT_LABEL_PX;
+        clientX - rect.left + scrollEl.scrollLeft - labelPx;
       return columnAtOffsetPx(columns, x);
     },
-    [columns],
+    [columns, labelPx],
   );
 
   const applyDragToColumn = useCallback(
@@ -2179,6 +2185,20 @@ export function ProjectGanttBoard({
             </div>
             <p className="text-sm font-medium">{rangeLabel}</p>
             <div className="ml-auto flex items-center gap-1">
+              <NavBtn
+                onClick={() => setLabelsCollapsed((v) => !v)}
+                label={
+                  labelsCollapsed
+                    ? "Show task list names"
+                    : "Hide task list names"
+                }
+              >
+                {labelsCollapsed ? (
+                  <PanelLeftOpen size={16} />
+                ) : (
+                  <PanelLeftClose size={16} />
+                )}
+              </NavBtn>
               {!readOnly ? (
                 <button
                   type="button"
@@ -2221,11 +2241,11 @@ export function ProjectGanttBoard({
             className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             onScroll={syncBodyFromHeader}
           >
-            <div style={{ minWidth: GANTT_LABEL_PX + totalWidth }}>
+            <div style={{ minWidth: labelPx + totalWidth }}>
               <div className="flex border-b border-[var(--border)]">
                 <div
-                  className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
-                  style={{ width: GANTT_LABEL_PX, height: 24 }}
+                  className="sticky left-0 z-40 flex shrink-0 items-center justify-center border-r border-[var(--border)] bg-[var(--bg)]"
+                  style={{ width: labelPx, height: 24 }}
                 />
                 <div className="flex min-w-0">
                   {headerGroups.map((g) => (
@@ -2251,8 +2271,8 @@ export function ProjectGanttBoard({
               </div>
               <div className="flex">
                 <div
-                  className="sticky left-0 z-40 shrink-0 border-r border-[var(--border)] bg-[var(--bg)]"
-                  style={{ width: GANTT_LABEL_PX, height: 28 }}
+                  className="sticky left-0 z-40 flex shrink-0 items-center justify-center border-r border-[var(--border)] bg-[var(--bg)]"
+                  style={{ width: labelPx, height: 28 }}
                 />
                 <div className="flex min-w-0">
                   {columns.map((col) => {
@@ -2311,13 +2331,13 @@ export function ProjectGanttBoard({
           )}
           onScroll={syncHeaderFromBody}
         >
-          <div style={{ minWidth: GANTT_LABEL_PX + totalWidth }}>
+          <div style={{ minWidth: labelPx + totalWidth }}>
             {/* Body rows */}
             <div className="relative" style={{ height: totalBodyHeight }}>
               {holidayByDate.size > 0 ? (
                 <div
                   className="pointer-events-none absolute bottom-0 top-0 z-[1]"
-                  style={{ left: GANTT_LABEL_PX, width: totalWidth }}
+                  style={{ left: labelPx, width: totalWidth }}
                   aria-hidden
                 >
                   {columns.map((col, index) => {
@@ -2345,7 +2365,7 @@ export function ProjectGanttBoard({
               {(projectGuideKeys.start || projectGuideKeys.end) && (
                 <div
                   className="pointer-events-none absolute bottom-0 top-0 z-[1]"
-                  style={{ left: GANTT_LABEL_PX, width: totalWidth }}
+                  style={{ left: labelPx, width: totalWidth }}
                   aria-hidden
                 >
                   {(["start", "end"] as const).map((edge) => {
@@ -2399,16 +2419,27 @@ export function ProjectGanttBoard({
                       }
                     >
                       <div
-                        className="sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] bg-[var(--bg)] px-2"
+                        className={cn(
+                          "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] bg-[var(--bg)]",
+                          labelsCollapsed ? "justify-center px-0" : "px-2",
+                        )}
                         style={{
-                          width: GANTT_LABEL_PX,
+                          width: labelPx,
                           height: GANTT_TASK_ROW_H,
                           backgroundColor: projWash ?? "var(--bg)",
                         }}
+                        title={labelsCollapsed ? project.name : undefined}
                       >
-                        <span className="min-w-0 truncate text-[11px] font-semibold">
-                          {project.name}
-                        </span>
+                        {labelsCollapsed ? (
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]"
+                            aria-hidden
+                          />
+                        ) : (
+                          <span className="min-w-0 truncate text-[11px] font-semibold">
+                            {project.name}
+                          </span>
+                        )}
                       </div>
                       <div
                         className={cn(
@@ -2508,9 +2539,12 @@ export function ProjectGanttBoard({
                       }
                     >
                       <div
-                        className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] px-2"
+                        className={cn(
+                          "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)]",
+                          labelsCollapsed ? "justify-center gap-0 px-0" : "gap-1 px-2",
+                        )}
                         style={{
-                          width: GANTT_LABEL_PX,
+                          width: labelPx,
                           height: GANTT_LIST_ROW_H,
                           backgroundColor: listWash ?? "var(--bg)",
                         }}
@@ -2521,6 +2555,7 @@ export function ProjectGanttBoard({
                           onClick={() => toggleListExpanded(list.id)}
                           aria-expanded={expanded}
                           aria-label={expanded ? "Collapse list" : "Expand list"}
+                          title={labelsCollapsed ? list.name : undefined}
                         >
                           <ChevronDown
                             size={14}
@@ -2530,14 +2565,16 @@ export function ProjectGanttBoard({
                             )}
                           />
                         </button>
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 truncate text-left text-xs font-semibold hover:underline"
-                          title={list.name}
-                          onClick={() => toggleListExpanded(list.id)}
-                        >
-                          {list.name}
-                        </button>
+                        {!labelsCollapsed ? (
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 truncate text-left text-xs font-semibold hover:underline"
+                            title={list.name}
+                            onClick={() => toggleListExpanded(list.id)}
+                          >
+                            {list.name}
+                          </button>
+                        ) : null}
                       </div>
                       <div
                         className={cn(
@@ -2683,28 +2720,21 @@ export function ProjectGanttBoard({
                         }
                       >
                         <div
-                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] pl-8 pr-2"
+                          className={cn(
+                            "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)]",
+                            labelsCollapsed
+                              ? "justify-center gap-0 px-0"
+                              : "gap-1 pl-8 pr-2",
+                          )}
                           style={{
-                            width: GANTT_LABEL_PX,
+                            width: labelPx,
                             height: GANTT_TASK_ROW_H,
                             backgroundColor: taskWash ?? "var(--bg)",
                           }}
+                          title={labelsCollapsed ? task.title : undefined}
                         >
-                          <span
-                            className="inline-flex shrink-0 items-center justify-center"
-                            style={{ width: GANTT_LABEL_LEAD_PX }}
-                          >
-                            {!readOnly && !task.parent_id ? (
-                              <button
-                                type="button"
-                                className="touch-none cursor-grab p-0.5 text-[var(--text-muted)] opacity-60 hover:opacity-100 active:cursor-grabbing"
-                                aria-label="Drag to reorder within list"
-                                title="Drag to reorder within list"
-                                onPointerDown={(e) => startTaskReorder(e, task)}
-                              >
-                                <GripVertical size={12} />
-                              </button>
-                            ) : taskShowsClientReviewStar(task) ? (
+                          {labelsCollapsed ? (
+                            taskShowsClientReviewStar(task) ? (
                               <Star
                                 size={10}
                                 className={cn(
@@ -2714,26 +2744,65 @@ export function ProjectGanttBoard({
                                 )}
                                 aria-hidden
                               />
-                            ) : null}
-                          </span>
-                          <span
-                            className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]"
-                            title={task.title}
-                          >
-                            {task.title}
-                          </span>
-                          {showAssignees && assignee ? (
-                            <PersonAvatar
-                              avatarUrl={assignee.avatar_url}
-                              avatarAttachmentId={assignee.avatar_attachment_id}
-                              name={assignee.name}
-                              size="xs"
-                              fallback="initials"
-                              personId={assignee.id}
-                              color={personAvatarColor(assignee)}
-                              className="shrink-0"
-                            />
-                          ) : null}
+                            ) : (
+                              <span
+                                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: barColor }}
+                                aria-hidden
+                              />
+                            )
+                          ) : (
+                            <>
+                              <span
+                                className="inline-flex shrink-0 items-center justify-center"
+                                style={{ width: GANTT_LABEL_LEAD_PX }}
+                              >
+                                {!readOnly && !task.parent_id ? (
+                                  <button
+                                    type="button"
+                                    className="touch-none cursor-grab p-0.5 text-[var(--text-muted)] opacity-60 hover:opacity-100 active:cursor-grabbing"
+                                    aria-label="Drag to reorder within list"
+                                    title="Drag to reorder within list"
+                                    onPointerDown={(e) =>
+                                      startTaskReorder(e, task)
+                                    }
+                                  >
+                                    <GripVertical size={12} />
+                                  </button>
+                                ) : taskShowsClientReviewStar(task) ? (
+                                  <Star
+                                    size={10}
+                                    className={cn(
+                                      task.status === "complete"
+                                        ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
+                                        : "fill-[#f59e0b] text-[#f59e0b]",
+                                    )}
+                                    aria-hidden
+                                  />
+                                ) : null}
+                              </span>
+                              <span
+                                className="min-w-0 flex-1 truncate text-[11px] text-[var(--text-muted)]"
+                                title={task.title}
+                              >
+                                {task.title}
+                              </span>
+                              {showAssignees && assignee ? (
+                                <PersonAvatar
+                                  avatarUrl={assignee.avatar_url}
+                                  avatarAttachmentId={
+                                    assignee.avatar_attachment_id
+                                  }
+                                  name={assignee.name}
+                                  size="xs"
+                                  fallback="initials"
+                                  personId={assignee.id}
+                                  color={personAvatarColor(assignee)}
+                                  className="shrink-0"
+                                />
+                              ) : null}
+                            </>
+                          )}
                         </div>
                         <div
                           className={cn(
@@ -2843,34 +2912,46 @@ export function ProjectGanttBoard({
                         }
                       >
                         <div
-                          className="sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-[var(--border)] pl-8 pr-2"
+                          className={cn(
+                            "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)]",
+                            labelsCollapsed
+                              ? "justify-center gap-0 px-0"
+                              : "gap-1 pl-8 pr-2",
+                          )}
                           style={{
-                            width: GANTT_LABEL_PX,
+                            width: labelPx,
                             height: GANTT_TASK_ROW_H,
                             backgroundColor: msWash ?? "var(--bg)",
                           }}
+                          title={labelsCollapsed ? milestone.name : undefined}
                         >
                           <span
                             className="inline-flex shrink-0 items-center justify-center"
-                            style={{ width: GANTT_LABEL_LEAD_PX }}
+                            style={{
+                              width: labelsCollapsed
+                                ? undefined
+                                : GANTT_LABEL_LEAD_PX,
+                            }}
                           >
                             <Star
-                              size={12}
+                              size={labelsCollapsed ? 10 : 12}
                               style={{ color: msColor }}
                               fill="currentColor"
                             />
                           </span>
-                          <span
-                            className={cn(
-                              "min-w-0 truncate text-[11px] font-medium",
-                              msDone
-                                ? "text-[var(--status-healthy)]"
-                                : "text-[var(--text-muted)]",
-                            )}
-                            title={milestone.name}
-                          >
-                            {milestone.name}
-                          </span>
+                          {!labelsCollapsed ? (
+                            <span
+                              className={cn(
+                                "min-w-0 truncate text-[11px] font-medium",
+                                msDone
+                                  ? "text-[var(--status-healthy)]"
+                                  : "text-[var(--text-muted)]",
+                              )}
+                              title={milestone.name}
+                            >
+                              {milestone.name}
+                            </span>
+                          ) : null}
                         </div>
                         <div
                           className={cn(

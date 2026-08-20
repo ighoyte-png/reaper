@@ -26,7 +26,6 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import {
   GlobalSearch,
   GlobalSearchHotkeyBridge,
-  GlobalSearchTrigger,
 } from "@/components/search/global-search";
 import { useTheme } from "@/components/theme/theme-provider";
 import { cn } from "@/lib/cn";
@@ -232,21 +231,15 @@ export function AppNavbar() {
         </nav>
         <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
           {!shareBasePath ? (
-            <>
-              <GlobalSearchTrigger
-                className="hidden w-64 md:inline-flex"
-                onClick={() => setSearchOpen(true)}
-              />
-              <button
-                type="button"
-                className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] md:hidden"
-                aria-label="Search"
-                title="Search"
-                onClick={() => setSearchOpen(true)}
-              >
-                <Search size={18} strokeWidth={1.75} />
-              </button>
-            </>
+            <button
+              type="button"
+              className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+              aria-label="Search"
+              title="Search"
+              onClick={() => setSearchOpen(true)}
+            >
+              <Search size={18} strokeWidth={1.75} />
+            </button>
           ) : null}
           {accountName ? (
             <div ref={accountMenuRef} className="relative hidden md:block">

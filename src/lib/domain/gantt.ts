@@ -11,6 +11,8 @@ import type { Milestone, Task, TaskList } from "@/lib/types";
 
 /** Match Schedule label / day widths (schedule-grid LABEL_DESKTOP / DAY_W_*). */
 export const GANTT_LABEL_PX = 248;
+/** Narrow rail when the task-list name column is collapsed. */
+export const GANTT_LABEL_COLLAPSED_PX = 40;
 /** Match Schedule ROW_H (DAY_H 32 + DAY_PAD_Y*2). */
 export const GANTT_LIST_ROW_H = 38;
 /** Task rows are 2/3 the height of Task List rows. */

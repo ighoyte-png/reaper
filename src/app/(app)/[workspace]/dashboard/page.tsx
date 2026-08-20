@@ -162,10 +162,15 @@ export default function DashboardPage() {
   const end = toDateKey(weekEnd(now));
   const monthEndKey = toDateKey(endOfMonth(now));
   const utilRangeStart = toDateKey(weekStart(addWeeks(now, -5)));
+  /** Cover the 4-week utilization heatmap (current week + 3 ahead). */
+  const utilHeatmapEnd = toDateKey(weekEnd(addWeeks(now, 3)));
 
   useEffect(() => {
     if (mode !== "supabase") return;
-    const scheduleEnd = monthEndKey > end ? monthEndKey : end;
+    // One window for leave calendar (through month-end) and utilization heatmap
+    // (current week + 3 ahead). Competing narrower fetches used to ping-pong
+    // eviction and flash leave days / utilization %.
+    const scheduleEnd = [monthEndKey, end, utilHeatmapEnd].sort().at(-1)!;
     void ensureScheduleRange(utilRangeStart, scheduleEnd);
     void ensureMentionComments();
   }, [
@@ -175,6 +180,7 @@ export default function DashboardPage() {
     utilRangeStart,
     monthEndKey,
     end,
+    utilHeatmapEnd,
   ]);
 
   /** Org-wide read layout (managers + public org share), unless View As. */

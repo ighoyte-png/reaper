@@ -73,7 +73,7 @@ export function TimelineProjectCard({
       className={cn(
         panelClass({
           className:
-            "flex h-full flex-col transition-colors hover:bg-[var(--row-hover)]",
+            "flex h-full min-w-0 flex-col overflow-hidden transition-colors hover:bg-[var(--row-hover)]",
         }),
         project.status === "archived" && "opacity-60",
       )}
