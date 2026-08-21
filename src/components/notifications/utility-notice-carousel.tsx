@@ -28,7 +28,8 @@ import {
 
 const HIDE_DELAY_MS = 400;
 const BASE_TILE = 52;
-const EXPANDED_MAX_W = 288;
+/** ~1/3 narrower than the previous 288px expanded card. */
+const EXPANDED_W = 192;
 const MAX_SCALE = 1.35;
 const INFLUENCE_PX = 100;
 const COUNT_GLOW_MS = 750;
@@ -88,6 +89,7 @@ export function UtilityNoticeCarousel() {
   const { cards, removeCard, prefEnabled } = useUtilityNotifications();
 
   const [revealed, setRevealed] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pointerX, setPointerX] = useState<number | null>(null);
   const [countGlow, setCountGlow] = useState(false);
@@ -96,8 +98,11 @@ export function UtilityNoticeCarousel() {
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const glowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overDockRef = useRef(false);
+  const pinnedRef = useRef(false);
   const prevCountRef = useRef(0);
   const countSeededRef = useRef(false);
+
+  pinnedRef.current = pinned;
 
   const slides = useMemo(
     () => [...cards].sort((a, b) => b.enqueuedAt - a.enqueuedAt),
@@ -115,7 +120,7 @@ export function UtilityNoticeCarousel() {
   const scheduleHide = useCallback(() => {
     clearHideTimer();
     hideTimerRef.current = setTimeout(() => {
-      if (overDockRef.current) return;
+      if (pinnedRef.current || overDockRef.current) return;
       setRevealed(false);
       setExpandedId(null);
       setPointerX(null);
@@ -125,6 +130,21 @@ export function UtilityNoticeCarousel() {
   const showDock = useCallback(() => {
     clearHideTimer();
     setRevealed(true);
+  }, [clearHideTimer]);
+
+  const pinDock = useCallback(() => {
+    clearHideTimer();
+    setPinned(true);
+    setRevealed(true);
+  }, [clearHideTimer]);
+
+  const unpinDock = useCallback(() => {
+    clearHideTimer();
+    setPinned(false);
+    setRevealed(false);
+    setExpandedId(null);
+    setPointerX(null);
+    overDockRef.current = false;
   }, [clearHideTimer]);
 
   useEffect(() => {
@@ -137,6 +157,7 @@ export function UtilityNoticeCarousel() {
   useEffect(() => {
     if (count === 0) {
       setRevealed(false);
+      setPinned(false);
       setExpandedId(null);
       setPointerX(null);
     }
@@ -159,14 +180,14 @@ export function UtilityNoticeCarousel() {
     }, COUNT_GLOW_MS);
   }, [count]);
 
-  // Escape collapses / hides.
+  // Escape collapses / unpins.
   useEffect(() => {
     if (!revealed) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
       setExpandedId(null);
-      if (isPhone) {
-        setRevealed(false);
+      if (pinnedRef.current) {
+        unpinDock();
       } else {
         overDockRef.current = false;
         scheduleHide();
@@ -174,11 +195,12 @@ export function UtilityNoticeCarousel() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [revealed, isPhone, scheduleHide]);
+  }, [revealed, scheduleHide, unpinDock]);
 
-  // Phone: tap outside closes.
+  // Phone (unpinned): tap outside closes hover/open state.
+  // When pinned, only the Notices badge click closes.
   useEffect(() => {
-    if (!isPhone || !revealed) return;
+    if (!isPhone || !revealed || pinned) return;
     function onPointerDown(e: PointerEvent) {
       const root = rootRef.current;
       if (!root) return;
@@ -188,7 +210,7 @@ export function UtilityNoticeCarousel() {
     }
     window.addEventListener("pointerdown", onPointerDown);
     return () => window.removeEventListener("pointerdown", onPointerDown);
-  }, [isPhone, revealed]);
+  }, [isPhone, revealed, pinned]);
 
   if (isPublicShare || !profile || !prefEnabled || count === 0) {
     return null;
@@ -215,7 +237,7 @@ export function UtilityNoticeCarousel() {
     setPointerX(null);
     if (!isPhone) {
       setExpandedId(null);
-      scheduleHide();
+      if (!pinnedRef.current) scheduleHide();
     }
   }
 
@@ -233,7 +255,15 @@ export function UtilityNoticeCarousel() {
   function onBadgePointerLeave() {
     if (isPhone) return;
     overDockRef.current = false;
-    scheduleHide();
+    if (!pinnedRef.current) scheduleHide();
+  }
+
+  function onBadgeClick() {
+    if (pinned) {
+      unpinDock();
+    } else {
+      pinDock();
+    }
   }
 
   return (
@@ -245,7 +275,7 @@ export function UtilityNoticeCarousel() {
     >
       <div
         className={cn(
-          "pointer-events-none absolute bottom-12 left-1/2 flex w-full flex-col items-center px-2 transition-[opacity,transform] duration-200 ease-out",
+          "pointer-events-none absolute bottom-12 left-1/2 flex w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col items-center px-0 transition-[opacity,transform] duration-200 ease-out",
           revealed
             ? "-translate-x-1/2 translate-y-0 opacity-100"
             : "pointer-events-none -translate-x-1/2 translate-y-3 opacity-0",
@@ -254,14 +284,14 @@ export function UtilityNoticeCarousel() {
       >
         <div
           className={cn(
-            "pointer-events-auto flex max-w-[min(100%,36rem)] items-end gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)]/90 px-2.5 py-2 shadow-lg backdrop-blur-md",
+            "pointer-events-auto flex w-full max-w-full items-end justify-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)]/90 px-2.5 py-2 shadow-lg backdrop-blur-md",
             !revealed && "pointer-events-none",
           )}
           onPointerEnter={onDockPointerEnter}
           onPointerLeave={onDockPointerLeave}
           onPointerMove={onDockPointerMove}
         >
-          <div className="flex min-h-[3.25rem] max-w-full items-end gap-1.5 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-h-[3.25rem] w-full flex-wrap items-end justify-center gap-1.5">
             {slides.map((card) => (
               <DockTile
                 key={card.id}
@@ -297,22 +327,19 @@ export function UtilityNoticeCarousel() {
         type="button"
         className={cn(
           "pointer-events-auto absolute bottom-2 left-1/2 z-[1] inline-flex h-8 -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg)]/95 px-3 text-[11px] font-medium text-[var(--text)] shadow-md backdrop-blur-md",
-          revealed && "opacity-70",
+          (revealed || pinned) && "opacity-70",
+          pinned && "border-[var(--status-attention)]/40",
         )}
         aria-expanded={revealed}
+        aria-pressed={pinned}
         aria-label={
-          revealed
-            ? "Hide notices"
-            : `${count} ${count === 1 ? "notice" : "notices"}`
+          pinned
+            ? "Unpin notices"
+            : revealed
+              ? "Pin notices open"
+              : `${count} ${count === 1 ? "notice" : "notices"}`
         }
-        onClick={() => {
-          if (!isPhone) return;
-          setRevealed((v) => {
-            const next = !v;
-            if (!next) setExpandedId(null);
-            return next;
-          });
-        }}
+        onClick={onBadgeClick}
         onPointerEnter={onBadgePointerEnter}
         onPointerLeave={onBadgePointerLeave}
         onFocus={onBadgePointerEnter}
@@ -376,14 +403,14 @@ function DockTile({
         "origin-bottom focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]",
         kindToneClass(card.kind),
         expanded
-          ? "h-auto w-auto max-w-[min(100%,18rem)] items-stretch justify-start gap-1.5 p-3"
+          ? "h-auto items-stretch justify-start gap-1 p-2.5"
           : "items-center justify-center",
         card.visible ? "opacity-100" : "opacity-90",
       )}
       style={
         expanded
           ? {
-              maxWidth: EXPANDED_MAX_W,
+              width: EXPANDED_W,
               transformOrigin: "bottom center",
             }
           : {
@@ -408,35 +435,35 @@ function DockTile({
       onKeyDown={onKeyDown}
     >
       {expanded ? (
-        <span className="flex min-w-0 items-start gap-2">
-          {card.clientColor ? (
-            <ProjectColorBar color={card.clientColor} className="mt-1" />
-          ) : null}
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="flex items-start gap-1.5">
-              <span
-                className={cn(
-                  "mt-0.5 inline-flex shrink-0 items-center justify-center",
-                  kindIconClass(card.kind),
-                )}
-              >
-                <Icon size={16} strokeWidth={1.75} />
-              </span>
-              <span className="min-w-0 text-[12px] font-semibold leading-tight text-[var(--text)]">
-                {card.title}
-              </span>
-            </span>
-            {card.clientName ? (
-              <span className="text-[11px] font-medium leading-snug text-[var(--text)]">
-                {card.clientName}
-              </span>
-            ) : null}
-            {card.subtitle ? (
-              <span className="text-[11px] leading-snug text-[var(--text-muted)]">
-                {card.subtitle}
-              </span>
-            ) : null}
+        <span className="flex w-full min-w-0 flex-col items-start gap-1 text-left">
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center justify-center",
+              kindIconClass(card.kind),
+            )}
+          >
+            <Icon size={16} strokeWidth={1.75} />
           </span>
+          {card.clientName || card.clientColor ? (
+            <span className="flex min-w-0 items-center gap-1.5">
+              {card.clientColor ? (
+                <ProjectColorBar color={card.clientColor} />
+              ) : null}
+              {card.clientName ? (
+                <span className="min-w-0 text-[11px] font-medium leading-snug text-[var(--text)]">
+                  {card.clientName}
+                </span>
+              ) : null}
+            </span>
+          ) : null}
+          <span className="w-full min-w-0 text-[12px] font-semibold leading-tight text-[var(--text)]">
+            {card.title}
+          </span>
+          {card.subtitle ? (
+            <span className="w-full min-w-0 text-[11px] leading-snug text-[var(--text-muted)]">
+              {card.subtitle}
+            </span>
+          ) : null}
         </span>
       ) : (
         <span

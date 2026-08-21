@@ -531,7 +531,7 @@ function ProjectsPageContent() {
         </div>
       ) : (
         <div className="flex flex-col md:flex-row md:gap-5">
-          <aside className="sticky top-3 mt-3 hidden w-64 shrink-0 flex-col self-start overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex md:max-h-[calc(100dvh-2.5rem)]">
+          <aside className="sticky top-3 mt-3 hidden w-64 shrink-0 flex-col self-start overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex md:max-h-[calc(100dvh-10rem)]">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search
