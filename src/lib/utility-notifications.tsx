@@ -21,10 +21,14 @@ import {
   writeNotificationCenterCards,
 } from "@/lib/notification-center-persist";
 import { notesPlainText } from "@/lib/notes-html";
-import { resolveAuthorLabel } from "@/lib/domain/people";
+import {
+  desktopNotificationPermission,
+  notificationPortraitIcon,
+  showDesktopNotification,
+} from "@/lib/desktop-notifications";
+import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
-import { desktopNotificationPermission } from "@/lib/desktop-notifications";
 import type {
   Bulletin,
   MentionTarget,
@@ -120,6 +124,8 @@ export function UtilityNotificationsProvider({
   const seenAssignedCardIdsRef = useRef<Set<string> | null>(null);
   /** Last known assignee per task — null until seeded after storage hydrate. */
   const assigneeSnapshotRef = useRef<Map<string, string | null> | null>(null);
+  /** After first message-thread pass, new cards also get a desktop push. */
+  const messageDesktopSeededRef = useRef(false);
   const fadeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
@@ -146,6 +152,7 @@ export function UtilityNotificationsProvider({
       seenMessageCommentIdsRef.current = null;
       seenAssignedCardIdsRef.current = null;
       assigneeSnapshotRef.current = null;
+      messageDesktopSeededRef.current = false;
       setCards([]);
       setStorageReady(false);
       return;
@@ -153,6 +160,7 @@ export function UtilityNotificationsProvider({
 
     const restored = readNotificationCenterCards(storageKey);
     storageKeyRef.current = storageKey;
+    messageDesktopSeededRef.current = false;
 
     const mentionSeen = new Set<string>();
     const bulletinSeen = new Set<string>();
@@ -471,12 +479,36 @@ export function UtilityNotificationsProvider({
     }
 
     const seen = seenMessageCommentIdsRef.current;
+    const pushDesktop = messageDesktopSeededRef.current;
+    const orgName = state.organization?.name?.trim() || "Reaper";
     const byTask = new Map<string, TaskComment[]>();
     for (const comment of qualifyingComments) {
       const list = byTask.get(comment.task_id) ?? [];
       list.push(comment);
       byTask.set(comment.task_id, list);
     }
+
+    const enqueueMessage = (
+      comment: TaskComment,
+      opts: { desktop: boolean },
+    ) => {
+      const built = buildMessageCard({
+        comment,
+        state,
+        projectHref,
+      });
+      if (!built) return;
+      enqueue(built);
+      if (opts.desktop) {
+        pushTaskMessageDesktop({
+          comment,
+          href: built.href,
+          taskTitle: built.title,
+          orgName,
+          state,
+        });
+      }
+    };
 
     for (const comments of byTask.values()) {
       const sorted = [...comments].sort((a, b) => {
@@ -490,24 +522,14 @@ export function UtilityNotificationsProvider({
         for (const c of sorted) seen.add(c.id);
         const latest = sorted[sorted.length - 1];
         if (latest) {
-          const built = buildMessageCard({
-            comment: latest,
-            state,
-            projectHref,
-          });
-          if (built) enqueue(built);
+          enqueueMessage(latest, { desktop: pushDesktop });
         }
         continue;
       }
       for (const comment of sorted) {
         if (seen.has(comment.id)) continue;
         seen.add(comment.id);
-        const built = buildMessageCard({
-          comment,
-          state,
-          projectHref,
-        });
-        if (built) enqueue(built);
+        enqueueMessage(comment, { desktop: pushDesktop });
       }
     }
 
@@ -516,6 +538,8 @@ export function UtilityNotificationsProvider({
         seen.add(comment.id);
       }
     }
+
+    messageDesktopSeededRef.current = true;
   }, [
     storageReady,
     state.unread_task_threads,
@@ -525,6 +549,7 @@ export function UtilityNotificationsProvider({
     state.clients,
     state.people,
     state.profiles,
+    state.organization?.name,
     mentionPersonId,
     isPublicShare,
     enqueue,
@@ -979,6 +1004,85 @@ function buildMessageCard(args: {
     taskId: task.id,
     commentId: comment.id,
   };
+}
+
+function pushTaskMessageDesktop(args: {
+  comment: TaskComment;
+  href: string;
+  taskTitle: string;
+  orgName: string;
+  state: {
+    people: {
+      id: string;
+      name: string;
+      profile_id: string | null;
+      avatar_url?: string | null;
+      avatar_attachment_id?: string | null;
+      avatar_color?: string | null;
+      deleted_at?: string | null;
+    }[];
+    profiles: {
+      id: string;
+      full_name: string | null;
+      email: string;
+    }[];
+  };
+}): void {
+  const { comment, href, taskTitle, orgName, state } = args;
+  const authorPerson = comment.author_profile_id
+    ? state.people.find((p) => p.profile_id === comment.author_profile_id)
+    : undefined;
+  const authorProfile = comment.author_profile_id
+    ? state.profiles.find((p) => p.id === comment.author_profile_id)
+    : undefined;
+  const authorName =
+    resolveAuthorLabel(
+      authorProfile
+        ? {
+            full_name: authorProfile.full_name ?? undefined,
+            email: authorProfile.email,
+          }
+        : null,
+      authorPerson
+        ? {
+            name: authorPerson.name,
+            deleted_at: authorPerson.deleted_at ?? null,
+          }
+        : null,
+    ) || "Someone";
+  const snippet = notesPlainText(comment.body)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+
+  void (async () => {
+    const icon = await notificationPortraitIcon({
+      name: authorName,
+      avatarUrl: authorPerson?.avatar_url,
+      avatarAttachmentId: authorPerson?.avatar_attachment_id,
+      color: authorPerson
+        ? personAvatarColor({
+            id: authorPerson.id,
+            avatar_color: authorPerson.avatar_color ?? null,
+          })
+        : null,
+    });
+    void showDesktopNotification(authorName, {
+      body: [
+        orgName,
+        taskTitle.trim()
+          ? `New comment on “${taskTitle.trim()}”`
+          : "New comment",
+        snippet || null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      // Same tag as the org-broadcast path so OS toasts coalesce.
+      tag: `new-comment-${comment.id}`,
+      icon,
+      href,
+    });
+  })();
 }
 
 /** True when the person who created/last-edited the task is the notification viewer. */
