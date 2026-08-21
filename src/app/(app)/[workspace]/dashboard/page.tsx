@@ -1225,17 +1225,11 @@ export default function DashboardPage() {
         >
           <div
             className={cn(
-              "order-3 grid gap-4 lg:order-none",
-              !showOrgKpis && showPmHealthKpi
-                ? "sm:grid-cols-3"
-                : "sm:grid-cols-2",
+              "order-3 grid gap-4 sm:grid-cols-2 lg:order-none",
               viewerFullyHidden &&
                 "min-h-0 flex-1 items-stretch lg:grid-rows-1",
             )}
           >
-            {!showOrgKpis && showPmHealthKpi ? (
-              <ActiveProjectsHealthCard stats={projectHealthStats} />
-            ) : null}
             <TaggedMentionsPanel
               mentions={taggedMentions}
               onOpen={(target) => {
@@ -1267,21 +1261,18 @@ export default function DashboardPage() {
 
           {!viewerFullyHidden ? (
           <div className="order-4 min-w-0 space-y-4 lg:order-none">
+            {showOrgKpis ? (
             <div
               className={cn(
                 "grid grid-cols-2 gap-3",
-                showOrgKpis
-                  ? showPmHealthKpi
-                    ? "xl:grid-cols-4"
-                    : "xl:grid-cols-3"
-                  : "xl:grid-cols-2",
+                showPmHealthKpi ? "xl:grid-cols-4" : "xl:grid-cols-3",
               )}
             >
-              {showOrgKpis && showPmHealthKpi ? (
+              {showPmHealthKpi ? (
                 <ActiveProjectsHealthCard stats={projectHealthStats} />
               ) : null}
 
-              {showOrgKpis && showUtilizationWidgets ? (
+              {showUtilizationWidgets ? (
                 <KpiCard
                   title={
                     isPodUtilization
@@ -1349,8 +1340,60 @@ export default function DashboardPage() {
                 </div>
               </KpiCard>
             </div>
+            ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {showPmHealthKpi ? (
+                <ActiveProjectsHealthCard stats={projectHealthStats} />
+              ) : null}
+              <div
+                className={cn(
+                  "grid grid-cols-2 gap-3",
+                  !showPmHealthKpi && "col-span-2",
+                )}
+              >
+                <KpiCard
+                  title="New Mentions"
+                  icon={MessageSquare}
+                  className={
+                    unreadMentionIds.size > 0
+                      ? "!border-0 bg-[var(--status-attention-wash)]"
+                      : undefined
+                  }
+                >
+                  <div
+                    className={cn(
+                      "text-sm font-semibold tabular-nums",
+                      unreadMentionIds.size > 0 &&
+                        "text-[var(--status-attention)]",
+                    )}
+                  >
+                    {`${unreadMentionIds.size} to review`}
+                  </div>
+                </KpiCard>
 
-            {/* Members (non-org KPI strip): health card lives beside Mentions / Task Pulse. */}
+                <KpiCard
+                  title="Overdue / Critical Tasks"
+                  icon={AlertTriangle}
+                  href={myTasksHref}
+                  className={
+                    pulseOverdueTasks.length > 0
+                      ? "!border-0 bg-[var(--status-over)]/20"
+                      : undefined
+                  }
+                >
+                  <div
+                    className={cn(
+                      "text-sm font-semibold tabular-nums",
+                      pulseOverdueTasks.length > 0 &&
+                        "text-[var(--status-over)]",
+                    )}
+                  >
+                    {pulseOverdueTasks.length} Overdue
+                  </div>
+                </KpiCard>
+              </div>
+            </div>
+            )}
 
             {showScheduleWidgets ? (
               <TodaySchedule
