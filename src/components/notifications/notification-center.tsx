@@ -7,9 +7,11 @@ import {
   Bell,
   ClipboardCheck,
   Megaphone,
+  MessageSquare,
   X,
   type LucideIcon,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/form";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -24,6 +26,7 @@ const COUNT_GLOW_MS = 750;
 function kindIcon(kind: UtilityNotificationKind): LucideIcon {
   if (kind === "mention") return AtSign;
   if (kind === "in_review") return ClipboardCheck;
+  if (kind === "message") return MessageSquare;
   return Megaphone;
 }
 
@@ -34,6 +37,7 @@ function kindToneClass(
   if (read) return "bg-[var(--bg-elevated)]/60";
   if (kind === "mention") return "bg-[var(--status-attention-wash)]";
   if (kind === "in_review") return "bg-[var(--status-healthy)]/15";
+  if (kind === "bulletin") return "bg-[var(--status-over)]/15";
   return "bg-[var(--accent)]/15";
 }
 
@@ -44,6 +48,7 @@ function kindIconClass(
   if (read) return "text-[var(--text-muted)]";
   if (kind === "mention") return "text-[var(--status-attention)]";
   if (kind === "in_review") return "text-[var(--status-healthy)]";
+  if (kind === "bulletin") return "text-[var(--status-over)]";
   return "text-[var(--accent)]";
 }
 
@@ -56,6 +61,7 @@ function dismissCard(
       personId: string,
     ) => void;
     dismissBulletin: (bulletinId: string) => void;
+    dismissTaskThreadUnread: (taskId: string, personId: string) => void;
     personId: string | null | undefined;
   },
 ) {
@@ -67,6 +73,8 @@ function dismissCard(
     card.bulletinId
   ) {
     args.dismissBulletin(card.bulletinId);
+  } else if (card.kind === "message" && card.taskId && args.personId) {
+    args.dismissTaskThreadUnread(card.taskId, args.personId);
   }
 }
 
@@ -79,6 +87,7 @@ function acknowledgeCard(
       personId: string,
     ) => void;
     dismissBulletin: (bulletinId: string) => void;
+    dismissTaskThreadUnread: (taskId: string, personId: string) => void;
     personId: string | null | undefined;
   },
 ) {
@@ -92,6 +101,8 @@ function acknowledgeCard(
     card.bulletinId
   ) {
     args.dismissBulletin(card.bulletinId);
+  } else if (card.kind === "message" && card.taskId && args.personId) {
+    args.dismissTaskThreadUnread(card.taskId, args.personId);
   }
 }
 
@@ -101,8 +112,14 @@ function acknowledgeCard(
  */
 export function NotificationCenter() {
   const router = useRouter();
-  const { markMentionRead, dismissBulletin, myPerson, isPublicShare, profile } =
-    useData();
+  const {
+    markMentionRead,
+    dismissBulletin,
+    dismissTaskThreadUnread,
+    myPerson,
+    isPublicShare,
+    profile,
+  } = useData();
   const {
     cards,
     removeCard,
@@ -113,6 +130,7 @@ export function NotificationCenter() {
   } = useUtilityNotifications();
 
   const panelRef = useRef<HTMLElement>(null);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   const slides = useMemo(
     () =>
@@ -129,42 +147,57 @@ export function NotificationCenter() {
   const count = slides.length;
 
   useEffect(() => {
+    if (!centerOpen) setConfirmClearAll(false);
+  }, [centerOpen]);
+
+  useEffect(() => {
     if (!centerOpen) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") closeCenter();
+      if (e.key !== "Escape") return;
+      if (confirmClearAll) {
+        setConfirmClearAll(false);
+        return;
+      }
+      closeCenter();
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [centerOpen, closeCenter]);
+  }, [centerOpen, closeCenter, confirmClearAll]);
 
   if (isPublicShare || !profile) {
     return null;
   }
+
+  const dismissArgs = {
+    removeCard,
+    markMentionRead,
+    dismissBulletin,
+    dismissTaskThreadUnread,
+    personId: myPerson?.id,
+  };
 
   function onActivate(card: UtilityNotificationCard) {
     acknowledgeCard(card, {
       markCardRead,
       markMentionRead,
       dismissBulletin,
+      dismissTaskThreadUnread,
       personId: myPerson?.id,
     });
     closeCenter();
     router.push(card.href);
   }
 
-  function onClearAll() {
+  function onClearAllConfirmed() {
     for (const card of slides) {
-      dismissCard(card, {
-        removeCard,
-        markMentionRead,
-        dismissBulletin,
-        personId: myPerson?.id,
-      });
+      dismissCard(card, dismissArgs);
     }
     clearAll();
+    setConfirmClearAll(false);
   }
 
   return (
+    <>
     <div
       className={cn(
         "fixed inset-0 z-50",
@@ -210,7 +243,7 @@ export function NotificationCenter() {
             <button
               type="button"
               className="cursor-pointer rounded-[var(--radius-md)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-              onClick={onClearAll}
+              onClick={() => setConfirmClearAll(true)}
             >
               Clear all
             </button>
@@ -237,14 +270,7 @@ export function NotificationCenter() {
                   <NotificationCenterCard
                     card={card}
                     onActivate={() => onActivate(card)}
-                    onDismiss={() =>
-                      dismissCard(card, {
-                        removeCard,
-                        markMentionRead,
-                        dismissBulletin,
-                        personId: myPerson?.id,
-                      })
-                    }
+                    onDismiss={() => dismissCard(card, dismissArgs)}
                   />
                 </AnimatedNoticeListItem>
               ))}
@@ -253,6 +279,17 @@ export function NotificationCenter() {
         </div>
       </aside>
     </div>
+    {confirmClearAll ? (
+      <ConfirmDialog
+        title="Clear all notifications?"
+        message="This removes every notification from the center. You can’t undo this."
+        confirmLabel="Clear all"
+        tone="danger"
+        onCancel={() => setConfirmClearAll(false)}
+        onConfirm={onClearAllConfirmed}
+      />
+    ) : null}
+    </>
   );
 }
 

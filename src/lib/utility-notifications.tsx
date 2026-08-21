@@ -12,7 +12,14 @@ import {
 } from "react";
 import { useData } from "@/lib/data/store";
 import { isSystemBulletin } from "@/lib/domain/bulletins";
+import { taskThreadMessageNotifyPersonId } from "@/lib/domain/tasks";
 import { mentionTargetFromUnread, mentionUnreadKey } from "@/lib/mentions";
+import {
+  clearNotificationCenterCards,
+  notificationCenterStorageKey,
+  readNotificationCenterCards,
+  writeNotificationCenterCards,
+} from "@/lib/notification-center-persist";
 import { notesPlainText } from "@/lib/notes-html";
 import { resolveAuthorLabel } from "@/lib/domain/people";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
@@ -23,9 +30,15 @@ import type {
   MentionTarget,
   MentionUnread,
   Project,
+  Task,
+  TaskComment,
 } from "@/lib/types";
 
-export type UtilityNotificationKind = "mention" | "bulletin" | "in_review";
+export type UtilityNotificationKind =
+  | "mention"
+  | "bulletin"
+  | "in_review"
+  | "message";
 
 export type UtilityNotificationCard = {
   id: string;
@@ -45,6 +58,9 @@ export type UtilityNotificationCard = {
   read: boolean;
   mentionTarget?: MentionTarget;
   bulletinId?: string;
+  /** Task thread reply (assigner ↔ assignee). */
+  taskId?: string;
+  commentId?: string;
 };
 
 type UtilityNotificationsContextValue = {
@@ -59,6 +75,8 @@ type UtilityNotificationsContextValue = {
   removeMentionCard: (target: MentionTarget) => void;
   /** Mark matching bulletin/in-review cards as read (does not purge). */
   removeBulletinCard: (bulletinId: string) => void;
+  /** Mark matching message cards as read (does not purge). */
+  removeMessageCard: (taskId: string) => void;
   clearAll: () => void;
 };
 
@@ -73,6 +91,10 @@ function bulletinCardId(bulletinId: string): string {
   return `bulletin:${bulletinId}`;
 }
 
+function messageCardId(commentId: string): string {
+  return `message:${commentId}`;
+}
+
 export function UtilityNotificationsProvider({
   children,
 }: {
@@ -84,15 +106,95 @@ export function UtilityNotificationsProvider({
   const viewAs = useViewAsOptional();
   const [cards, setCards] = useState<UtilityNotificationCard[]>([]);
   const [centerOpen, setCenterOpen] = useState(false);
+  const [storageReady, setStorageReady] = useState(false);
 
   const seenMentionKeysRef = useRef<Set<string> | null>(null);
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
+  const seenMessageCommentIdsRef = useRef<Set<string> | null>(null);
   const fadeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+  const storageKeyRef = useRef<string | null>(null);
 
   const mentionPersonId =
     viewAs?.effectivePersonId ?? myPerson?.id ?? null;
+  const orgId = state.organization?.id || null;
+  const profileId = profile?.id ?? null;
+  const storageKey =
+    !isPublicShare && orgId && profileId && mentionPersonId
+      ? notificationCenterStorageKey(orgId, profileId, mentionPersonId)
+      : null;
+
+  // Restore cards from localStorage before unread watchers run.
+  useEffect(() => {
+    for (const t of fadeTimersRef.current.values()) clearTimeout(t);
+    fadeTimersRef.current.clear();
+
+    if (!storageKey) {
+      storageKeyRef.current = null;
+      seenMentionKeysRef.current = null;
+      seenBulletinIdsRef.current = null;
+      seenMessageCommentIdsRef.current = null;
+      setCards([]);
+      setStorageReady(false);
+      return;
+    }
+
+    const restored = readNotificationCenterCards(storageKey);
+    storageKeyRef.current = storageKey;
+
+    const mentionSeen = new Set<string>();
+    const bulletinSeen = new Set<string>();
+    const messageSeen = new Set<string>();
+    for (const card of restored) {
+      if (card.kind === "mention" && card.mentionTarget) {
+        mentionSeen.add(`${card.mentionTarget.kind}:${card.mentionTarget.id}`);
+      } else if (
+        (card.kind === "bulletin" || card.kind === "in_review") &&
+        card.bulletinId
+      ) {
+        bulletinSeen.add(card.bulletinId);
+      } else if (card.kind === "message" && card.commentId) {
+        messageSeen.add(card.commentId);
+      }
+    }
+    seenMentionKeysRef.current = mentionSeen;
+    seenBulletinIdsRef.current = bulletinSeen;
+    seenMessageCommentIdsRef.current = messageSeen;
+
+    setCards(
+      restored.map((c) => ({
+        ...c,
+        visible: true,
+      })),
+    );
+    setStorageReady(true);
+  }, [storageKey]);
+
+  // Persist whenever the list changes (read/unread/dismiss).
+  useEffect(() => {
+    if (!storageKey || !storageReady || storageKeyRef.current !== storageKey) {
+      return;
+    }
+    writeNotificationCenterCards(
+      storageKey,
+      cards.map((c) => ({
+        id: c.id,
+        kind: c.kind,
+        href: c.href,
+        title: c.title,
+        subtitle: c.subtitle,
+        clientName: c.clientName,
+        clientColor: c.clientColor,
+        enqueuedAt: c.enqueuedAt,
+        read: c.read,
+        mentionTarget: c.mentionTarget,
+        bulletinId: c.bulletinId,
+        taskId: c.taskId,
+        commentId: c.commentId,
+      })),
+    );
+  }, [cards, storageKey, storageReady]);
 
   const scheduleVisible = useCallback((id: string) => {
     const delay =
@@ -195,10 +297,25 @@ export function UtilityNotificationsProvider({
     });
   }, []);
 
+  const removeMessageCard = useCallback((taskId: string) => {
+    setCards((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.kind !== "message" || c.taskId !== taskId || c.read) return c;
+        changed = true;
+        return { ...c, read: true };
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
   const clearAll = useCallback(() => {
     for (const t of fadeTimersRef.current.values()) clearTimeout(t);
     fadeTimersRef.current.clear();
     setCards([]);
+    if (storageKeyRef.current) {
+      clearNotificationCenterCards(storageKeyRef.current);
+    }
   }, []);
 
   const openCenter = useCallback(() => setCenterOpen(true), []);
@@ -207,48 +324,19 @@ export function UtilityNotificationsProvider({
 
   // Watch mention unreads
   useEffect(() => {
-    if (isPublicShare || !mentionPersonId) {
-      seenMentionKeysRef.current = null;
-      return;
-    }
+    if (!storageReady || isPublicShare || !mentionPersonId) return;
     const mine = (state.unread_mentions ?? []).filter(
       (r) => r.person_id === mentionPersonId && !r.read_at,
     );
-    const keys = mine
-      .map((r) => mentionUnreadKey(r))
-      .filter(Boolean);
 
     if (seenMentionKeysRef.current === null) {
       seenMentionKeysRef.current = new Set();
-      const seen = seenMentionKeysRef.current;
-      for (const row of mine) {
-        const k = mentionUnreadKey(row);
-        if (!k) continue;
-        const target = mentionTargetFromUnread(row);
-        if (!target) continue;
-        const built = buildMentionCard({
-          row,
-          target,
-          state,
-          projectHref,
-          appHref,
-        });
-        if (!built) continue;
-        seen.add(k);
-        enqueue(built);
-      }
-      return;
     }
-
     const seen = seenMentionKeysRef.current;
-    const fresh = mine.filter((r) => {
-      const k = mentionUnreadKey(r);
-      return k && !seen.has(k);
-    });
 
-    for (const row of fresh) {
+    for (const row of mine) {
       const k = mentionUnreadKey(row);
-      if (!k) continue;
+      if (!k || seen.has(k)) continue;
       const target = mentionTargetFromUnread(row);
       if (!target) continue;
       const built = buildMentionCard({
@@ -263,6 +351,7 @@ export function UtilityNotificationsProvider({
       enqueue(built);
     }
   }, [
+    storageReady,
     state.unread_mentions,
     state.task_comments,
     state.tasks,
@@ -280,51 +369,30 @@ export function UtilityNotificationsProvider({
 
   // Watch bulletin unreads
   useEffect(() => {
-    if (isPublicShare || !profile) {
-      seenBulletinIdsRef.current = null;
-      return;
-    }
+    if (!storageReady || isPublicShare || !profile) return;
     const mine = state.unread_bulletin_ids ?? [];
     if (seenBulletinIdsRef.current === null) {
       seenBulletinIdsRef.current = new Set();
-      for (const bulletinId of mine) {
-        const bulletin =
-          state.bulletins.find((b) => b.id === bulletinId) ?? null;
-        if (!bulletin) continue;
-        const built = buildBulletinCard({
-          bulletin,
-          projectHref,
-          appHref,
-          state,
-        });
-        if (built) {
-          seenBulletinIdsRef.current.add(bulletinId);
-          enqueue(built);
-        }
-      }
-      return;
     }
     const seen = seenBulletinIdsRef.current;
-    const fresh = mine.filter((id) => !seen.has(id));
-    for (const id of mine) seen.add(id);
 
-    for (const bulletinId of fresh) {
+    for (const bulletinId of mine) {
+      if (seen.has(bulletinId)) continue;
       const bulletin =
         state.bulletins.find((b) => b.id === bulletinId) ?? null;
-      if (!bulletin) {
-        // Retry when bulletin payload arrives — leave out of seen temporarily
-        seen.delete(bulletinId);
-        continue;
-      }
+      if (!bulletin) continue;
       const built = buildBulletinCard({
         bulletin,
         projectHref,
         appHref,
         state,
       });
-      if (built) enqueue(built);
+      if (!built) continue;
+      seen.add(bulletinId);
+      enqueue(built);
     }
   }, [
+    storageReady,
     state.unread_bulletin_ids,
     state.bulletins,
     state.projects,
@@ -336,10 +404,120 @@ export function UtilityNotificationsProvider({
     appHref,
   ]);
 
-  // When unread is cleared elsewhere (dashboard, etc.), mark as read but keep
-  // the card in the notification center until the user dismisses it.
+  // Watch assigner ↔ assignee task-thread replies
   useEffect(() => {
-    if (!mentionPersonId) return;
+    if (!storageReady || isPublicShare || !mentionPersonId) return;
+
+    const unreadTaskIds = new Set(
+      (state.unread_task_threads ?? [])
+        .filter((r) => r.person_id === mentionPersonId)
+        .map((r) => r.task_id),
+    );
+
+    const qualifyingComments = (
+      state.task_comments as TaskComment[]
+    ).filter((comment) => {
+      if (!unreadTaskIds.has(comment.task_id)) return false;
+      if (comment.mentioned_person_ids?.includes(mentionPersonId)) {
+        return false;
+      }
+      const task = state.tasks.find((t) => t.id === comment.task_id);
+      if (!task) return false;
+      const project =
+        state.projects.find((p) => p.id === task.project_id) ?? null;
+      const authorPerson = comment.author_profile_id
+        ? state.people.find((p) => p.profile_id === comment.author_profile_id)
+        : null;
+      if (!authorPerson) return false;
+      return (
+        taskThreadMessageNotifyPersonId(
+          task,
+          authorPerson.id,
+          state.people,
+          project,
+        ) === mentionPersonId
+      );
+    });
+
+    if (seenMessageCommentIdsRef.current === null) {
+      const pendingCommentLoad = [...unreadTaskIds].some((taskId) => {
+        return !(state.task_comments as TaskComment[]).some(
+          (c) => c.task_id === taskId,
+        );
+      });
+      if (
+        pendingCommentLoad &&
+        (state.task_comments as TaskComment[]).length === 0
+      ) {
+        return;
+      }
+      seenMessageCommentIdsRef.current = new Set();
+    }
+
+    const seen = seenMessageCommentIdsRef.current;
+    const byTask = new Map<string, TaskComment[]>();
+    for (const comment of qualifyingComments) {
+      const list = byTask.get(comment.task_id) ?? [];
+      list.push(comment);
+      byTask.set(comment.task_id, list);
+    }
+
+    for (const comments of byTask.values()) {
+      const sorted = [...comments].sort((a, b) => {
+        const ta = a.created_at ?? "";
+        const tb = b.created_at ?? "";
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+      });
+      const anySeen = sorted.some((c) => seen.has(c.id));
+      if (!anySeen) {
+        for (const c of sorted) seen.add(c.id);
+        const latest = sorted[sorted.length - 1];
+        if (latest) {
+          const built = buildMessageCard({
+            comment: latest,
+            state,
+            projectHref,
+          });
+          if (built) enqueue(built);
+        }
+        continue;
+      }
+      for (const comment of sorted) {
+        if (seen.has(comment.id)) continue;
+        seen.add(comment.id);
+        const built = buildMessageCard({
+          comment,
+          state,
+          projectHref,
+        });
+        if (built) enqueue(built);
+      }
+    }
+
+    for (const comment of state.task_comments as TaskComment[]) {
+      if (!unreadTaskIds.has(comment.task_id)) {
+        seen.add(comment.id);
+      }
+    }
+  }, [
+    storageReady,
+    state.unread_task_threads,
+    state.task_comments,
+    state.tasks,
+    state.projects,
+    state.clients,
+    state.people,
+    state.profiles,
+    mentionPersonId,
+    isPublicShare,
+    enqueue,
+    projectHref,
+  ]);
+
+  // When unread is cleared elsewhere, mark as read but keep the card.
+  useEffect(() => {
+    if (!storageReady || !mentionPersonId) return;
     const unreadKeys = new Set(
       (state.unread_mentions ?? [])
         .filter((r) => r.person_id === mentionPersonId && !r.read_at)
@@ -357,9 +535,10 @@ export function UtilityNotificationsProvider({
       });
       return changed ? next : prev;
     });
-  }, [state.unread_mentions, mentionPersonId]);
+  }, [storageReady, state.unread_mentions, mentionPersonId]);
 
   useEffect(() => {
+    if (!storageReady) return;
     const unread = new Set(state.unread_bulletin_ids ?? []);
     setCards((prev) => {
       let changed = false;
@@ -372,7 +551,26 @@ export function UtilityNotificationsProvider({
       });
       return changed ? next : prev;
     });
-  }, [state.unread_bulletin_ids]);
+  }, [storageReady, state.unread_bulletin_ids]);
+
+  useEffect(() => {
+    if (!storageReady || !mentionPersonId) return;
+    const unreadTasks = new Set(
+      (state.unread_task_threads ?? [])
+        .filter((r) => r.person_id === mentionPersonId)
+        .map((r) => r.task_id),
+    );
+    setCards((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.kind !== "message" || !c.taskId || c.read) return c;
+        if (unreadTasks.has(c.taskId)) return c;
+        changed = true;
+        return { ...c, read: true };
+      });
+      return changed ? next : prev;
+    });
+  }, [storageReady, state.unread_task_threads, mentionPersonId]);
 
   const value = useMemo(
     () => ({
@@ -385,6 +583,7 @@ export function UtilityNotificationsProvider({
       removeCard,
       removeMentionCard,
       removeBulletinCard,
+      removeMessageCard,
       clearAll,
     }),
     [
@@ -397,6 +596,7 @@ export function UtilityNotificationsProvider({
       removeCard,
       removeMentionCard,
       removeBulletinCard,
+      removeMessageCard,
       clearAll,
     ],
   );
@@ -421,6 +621,7 @@ export function useUtilityNotifications(): UtilityNotificationsContextValue {
       removeCard: () => {},
       removeMentionCard: () => {},
       removeBulletinCard: () => {},
+      removeMessageCard: () => {},
       clearAll: () => {},
     };
   }
@@ -620,5 +821,79 @@ function buildBulletinCard(args: {
     clientName: client?.name ?? null,
     clientColor: client?.color ?? null,
     bulletinId: bulletin.id,
+  };
+}
+
+function buildMessageCard(args: {
+  comment: TaskComment;
+  state: {
+    tasks: Pick<
+      Task,
+      "id" | "title" | "project_id" | "assignee_person_id" | "created_by_profile_id"
+    >[];
+    projects: Project[];
+    clients: { id: string; name: string; color: string }[];
+    people: {
+      id: string;
+      name: string;
+      profile_id: string | null;
+      deleted_at?: string | null;
+    }[];
+    profiles: {
+      id: string;
+      full_name: string | null;
+      email: string;
+    }[];
+  };
+  projectHref: (
+    project: Pick<Project, "client_id" | "slug">,
+    search?: string,
+  ) => string;
+}): Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> | null {
+  const { comment, state, projectHref } = args;
+  const task = state.tasks.find((t) => t.id === comment.task_id);
+  const project = task
+    ? state.projects.find((p) => p.id === task.project_id)
+    : undefined;
+  if (!task || !project) return null;
+  const client = project.client_id
+    ? state.clients.find((c) => c.id === project.client_id)
+    : undefined;
+  const author = comment.author_profile_id
+    ? state.profiles.find((p) => p.id === comment.author_profile_id)
+    : undefined;
+  const authorPerson = comment.author_profile_id
+    ? state.people.find((p) => p.profile_id === comment.author_profile_id)
+    : undefined;
+  const snippet = notesPlainText(comment.body).replace(/\s+/g, " ").trim();
+  return {
+    id: messageCardId(comment.id),
+    kind: "message",
+    href: projectHref(project, `task=${task.id}&comment=${comment.id}`),
+    title: task.title || "New message",
+    subtitle: [
+      resolveAuthorLabel(
+        author
+          ? {
+              full_name: author.full_name ?? undefined,
+              email: author.email,
+            }
+          : null,
+        authorPerson
+          ? {
+              name: authorPerson.name,
+              deleted_at: authorPerson.deleted_at ?? null,
+            }
+          : null,
+      ),
+      project.name,
+      snippet.slice(0, 120),
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    clientName: client?.name ?? null,
+    clientColor: client?.color ?? null,
+    taskId: task.id,
+    commentId: comment.id,
   };
 }

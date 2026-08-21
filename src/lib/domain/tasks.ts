@@ -462,6 +462,28 @@ export function taskThreadRoleNotifyPersonIds(
   return out;
 }
 
+/**
+ * Counterpart for Notification Center "message" cards: assigner → assignee
+ * or assignee → assigner only (never when a third party comments).
+ */
+export function taskThreadMessageNotifyPersonId(
+  task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,
+  authorPersonId: string | null,
+  people: Pick<Person, "id" | "profile_id">[],
+  project: Pick<Project, "manager_person_id"> | null,
+): string | null {
+  if (!authorPersonId) return null;
+  const assigner = taskAssignerPersonId(task, people, project);
+  const assignee = task.assignee_person_id ?? null;
+  if (authorPersonId === assigner && assignee && assignee !== authorPersonId) {
+    return assignee;
+  }
+  if (authorPersonId === assignee && assigner && assigner !== authorPersonId) {
+    return assigner;
+  }
+  return null;
+}
+
 /** @deprecated Prefer taskThreadRoleNotifyPersonIds — first role notify target. */
 export function taskThreadNotifyPersonId(
   task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,
