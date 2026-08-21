@@ -206,6 +206,27 @@ a.rich-notes-link {
   }
 }
 
+@keyframes notice-card-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.notice-card-enter {
+  animation: notice-card-enter 320ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice-card-enter {
+    animation: none;
+  }
+}
+
 @keyframes milestone-celebrate {
   0% {
     transform: scale(0.4) rotate(-12deg);

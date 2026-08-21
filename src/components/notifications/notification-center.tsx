@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   AtSign,
@@ -172,15 +172,16 @@ export function NotificationCenter() {
   return (
     <div
       className={cn(
-        "pointer-events-none fixed inset-0 z-50",
-        !centerOpen && "invisible",
+        "fixed inset-0 z-50",
+        centerOpen ? "pointer-events-auto" : "pointer-events-none",
       )}
       aria-hidden={!centerOpen}
     >
       <button
         type="button"
+        tabIndex={centerOpen ? 0 : -1}
         className={cn(
-          "pointer-events-auto absolute inset-0 cursor-default bg-black/25 transition-opacity duration-200",
+          "absolute inset-0 cursor-default bg-black/25 transition-opacity duration-300 ease-out",
           centerOpen ? "opacity-100" : "opacity-0",
         )}
         aria-label="Close notification center"
@@ -192,8 +193,9 @@ export function NotificationCenter() {
         aria-modal="true"
         aria-label="Notification center"
         className={cn(
-          "pointer-events-auto absolute inset-y-0 right-0 flex w-full max-w-[22.5rem] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl transition-transform duration-200 ease-out sm:max-w-[24rem]",
+          "absolute inset-y-0 right-0 flex w-full max-w-[22.5rem] flex-col border-l border-[var(--border)] bg-[var(--bg)] shadow-2xl transition-transform duration-300 ease-out sm:max-w-[24rem]",
           centerOpen ? "translate-x-0" : "translate-x-full",
+          !centerOpen && "pointer-events-none",
         )}
       >
         <header className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-3">
@@ -236,7 +238,7 @@ export function NotificationCenter() {
           ) : (
             <ul className="space-y-2">
               {slides.map((card) => (
-                <li key={card.id}>
+                <AnimatedNoticeListItem key={card.id} card={card}>
                   <NotificationCenterCard
                     card={card}
                     onActivate={() => onActivate(card)}
@@ -249,13 +251,42 @@ export function NotificationCenter() {
                       })
                     }
                   />
-                </li>
+                </AnimatedNoticeListItem>
               ))}
             </ul>
           )}
         </div>
       </aside>
     </div>
+  );
+}
+
+function AnimatedNoticeListItem({
+  card,
+  children,
+}: {
+  card: UtilityNotificationCard;
+  children: ReactNode;
+}) {
+  // Cards already visible when mounted (panel open / existing list) skip enter.
+  const mountedAlreadyVisible = useRef(card.visible);
+  const [enter, setEnter] = useState(false);
+
+  useEffect(() => {
+    if (mountedAlreadyVisible.current) return;
+    if (!card.visible) return;
+    setEnter(true);
+  }, [card.visible]);
+
+  return (
+    <li
+      className={cn(
+        !card.visible && !enter && "opacity-0",
+        enter && "notice-card-enter",
+      )}
+    >
+      {children}
+    </li>
   );
 }
 
