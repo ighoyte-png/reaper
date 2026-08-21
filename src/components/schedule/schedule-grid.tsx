@@ -7,10 +7,16 @@ import { ChevronDown, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CurrencyChip } from "@/components/ui/currency-chip";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
-import { inputClass, Modal, DateInput } from "@/components/ui/form";
+import { inputClass, Modal, DateInput, ConfirmDialog } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
+import {
+  boundTasksNotesHtml,
+  isBoundTasksNotes,
+  tasksToSyncForAssignmentBind,
+} from "@/lib/domain/assignment-bound-tasks";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
 import {
@@ -191,6 +197,9 @@ export function ScheduleGrid() {
     state,
     upsertAssignment,
     deleteAssignment,
+    setAssignmentBoundTasks,
+    clearAssignmentBoundTasks,
+    upsertTask,
     deleteLeave,
     applyLeaveUndo,
     setLeaveBlock,
@@ -349,6 +358,14 @@ export function ScheduleGrid() {
   const [sidebarPanelTab, setSidebarPanelTab] = useState<
     "edit" | "tasks" | "hours" | "assigner"
   >("edit");
+  /** Manager: Bind to Assignment checkbox (Tasks tab). */
+  const [bindToAssignment, setBindToAssignment] = useState(false);
+  const [bindEditingSelection, setBindEditingSelection] = useState(false);
+  const [bindDraftIds, setBindDraftIds] = useState<Set<string>>(() => new Set());
+  const [bindConfirm, setBindConfirm] = useState<null | {
+    step: "dates" | "overwrite" | "gantt";
+    taskIds: string[];
+  }>(null);
   const sidebarPreferMinimizedRef = useRef(true);
   const hoursInputRef = useRef<HTMLInputElement>(null);
   /** When set to an assignment id, focus/select Hours after that form mounts. */
@@ -823,6 +840,152 @@ export function ScheduleGrid() {
       setSidebarPanelTab("edit");
     }
   }, [sidebarPanelTab, showProductionHoursTab]);
+
+  const activeAssignmentId = editForm?.id ?? selected?.id ?? null;
+  const boundTaskIdsForActive = useMemo(() => {
+    if (!activeAssignmentId) return [] as string[];
+    return state.assignment_bound_tasks
+      .filter((r) => r.assignment_id === activeAssignmentId)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((r) => r.task_id);
+  }, [state.assignment_bound_tasks, activeAssignmentId]);
+
+  useEffect(() => {
+    const ids = !activeAssignmentId
+      ? []
+      : state.assignment_bound_tasks
+          .filter((r) => r.assignment_id === activeAssignmentId)
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((r) => r.task_id);
+    setBindToAssignment(ids.length > 0);
+    setBindEditingSelection(false);
+    setBindDraftIds(new Set(ids));
+    setBindConfirm(null);
+    // Reset bind chrome when the selected assignment changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- assignment switch only
+  }, [activeAssignmentId]);
+
+  function syncBoundTaskDatesFromAssignment(assignment: Assignment) {
+    const boundIds = state.assignment_bound_tasks
+      .filter((r) => r.assignment_id === assignment.id)
+      .map((r) => r.task_id);
+    if (boundIds.length === 0) return;
+    const toSync = tasksToSyncForAssignmentBind(
+      state.tasks,
+      state.task_lists,
+      boundIds,
+    );
+    for (const task of toSync) {
+      if (
+        task.start_date === assignment.start_date &&
+        task.due_date === assignment.end_date
+      ) {
+        continue;
+      }
+      upsertTask({
+        ...task,
+        start_date: assignment.start_date,
+        due_date: assignment.end_date,
+      });
+    }
+  }
+
+  async function applyAssignmentBind(taskIds: string[]) {
+    const assignment = editForm ?? selected;
+    if (!assignment || !canManage) return;
+    const unique = [...new Set(taskIds)];
+    const titles = unique
+      .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
+      .filter(Boolean);
+    await setAssignmentBoundTasks(assignment.id, unique);
+    const toSync = tasksToSyncForAssignmentBind(
+      state.tasks,
+      state.task_lists,
+      unique,
+    );
+    for (const task of toSync) {
+      upsertTask({
+        ...task,
+        start_date: assignment.start_date,
+        due_date: assignment.end_date,
+      });
+    }
+    const notes = boundTasksNotesHtml(titles);
+    const nextAssignment: Assignment = { ...assignment, notes };
+    upsertAssignment(nextAssignment);
+    setEditForm((prev) =>
+      prev && prev.id === nextAssignment.id
+        ? { ...prev, notes: nextAssignment.notes }
+        : prev,
+    );
+    setBindDraftIds(new Set(unique));
+    setBindEditingSelection(false);
+    setBindToAssignment(true);
+    setBindConfirm(null);
+    push(
+      unique.length === 0
+        ? "Assignment unbound from tasks"
+        : `Bound ${unique.length} priority task${unique.length === 1 ? "" : "s"}`,
+    );
+  }
+
+  async function clearAssignmentBindUi() {
+    const assignment = editForm ?? selected;
+    if (!assignment || !canManage) return;
+    await clearAssignmentBoundTasks(assignment.id);
+    if (isBoundTasksNotes(assignment.notes)) {
+      const cleared = { ...assignment, notes: "" };
+      upsertAssignment(cleared);
+      setEditForm((prev) =>
+        prev && prev.id === cleared.id ? { ...prev, notes: "" } : prev,
+      );
+    }
+    setBindDraftIds(new Set());
+    setBindEditingSelection(false);
+    setBindToAssignment(false);
+    setBindConfirm(null);
+  }
+
+  function beginBindSave() {
+    const taskIds = [...bindDraftIds];
+    setBindConfirm({ step: "dates", taskIds });
+  }
+
+  function advanceBindConfirm() {
+    if (!bindConfirm) return;
+    const { step, taskIds } = bindConfirm;
+    const selectedTasks = taskIds
+      .map((id) => state.tasks.find((t) => t.id === id))
+      .filter((t): t is NonNullable<typeof t> => Boolean(t));
+    const hasExistingDates = selectedTasks.some(
+      (t) => Boolean(t.start_date) || Boolean(t.due_date),
+    );
+    const hasGantt = selectedTasks.some((t) => {
+      const list = state.task_lists.find((l) => l.id === t.list_id);
+      return Boolean(list?.gantt_enabled);
+    });
+    if (step === "dates") {
+      if (hasExistingDates) {
+        setBindConfirm({ step: "overwrite", taskIds });
+        return;
+      }
+      if (hasGantt) {
+        setBindConfirm({ step: "gantt", taskIds });
+        return;
+      }
+      void applyAssignmentBind(taskIds);
+      return;
+    }
+    if (step === "overwrite") {
+      if (hasGantt) {
+        setBindConfirm({ step: "gantt", taskIds });
+        return;
+      }
+      void applyAssignmentBind(taskIds);
+      return;
+    }
+    void applyAssignmentBind(taskIds);
+  }
 
   const assignmentMentionPeople = useMemo(() => {
     const projectId = editForm?.project_id ?? selected?.project_id ?? null;
@@ -1612,6 +1775,9 @@ export function ScheduleGrid() {
         undoRemoveIds,
         toast: "Updated this and all future",
       });
+      for (const row of upserts) {
+        syncBoundTaskDatesFromAssignment(row);
+      }
       const bounds = assignmentRangeBounds(upserts);
       if (
         bounds &&
@@ -1658,6 +1824,9 @@ export function ScheduleGrid() {
       selectStart: string,
       selectEnd: string,
     ) => {
+      for (const row of upserts) {
+        syncBoundTaskDatesFromAssignment(row);
+      }
       const bounds = assignmentRangeBounds(upserts);
       if (
         bounds &&
@@ -1956,6 +2125,16 @@ export function ScheduleGrid() {
       }
     }
     trackedUpsert(row, toast);
+    const datesChanged =
+      !state.assignments.some((a) => a.id === row.id) ||
+      state.assignments.some(
+        (a) =>
+          a.id === row.id &&
+          (a.start_date !== row.start_date || a.end_date !== row.end_date),
+      );
+    if (datesChanged) {
+      syncBoundTaskDatesFromAssignment(row);
+    }
     const bounds = assignmentRangeBounds([row]);
     if (
       bounds &&
@@ -2232,6 +2411,12 @@ export function ScheduleGrid() {
           }
         } else if (after) {
           pushUndo({ kind: "restore", assignment: { ...snap.before } });
+          if (
+            after.start_date !== snap.before.start_date ||
+            after.end_date !== snap.before.end_date
+          ) {
+            syncBoundTaskDatesFromAssignment(after);
+          }
           const bounds = assignmentRangeBounds([after]);
           if (
             bounds &&
@@ -2270,14 +2455,20 @@ export function ScheduleGrid() {
     if (cutIndex < 0 || cutIndex >= days.length - 1) return;
     const leftEnd = cutDate;
     const rightStart = days[cutIndex + 1];
-    const left: Assignment = { ...base, end_date: leftEnd };
+    const clearedNotes = isBoundTasksNotes(base.notes) ? "" : base.notes;
+    const left: Assignment = {
+      ...base,
+      end_date: leftEnd,
+      notes: clearedNotes,
+    };
     const right: Assignment = {
       ...base,
       id: newId("asg"),
       start_date: rightStart,
-      notes: base.notes,
+      notes: clearedNotes,
     };
     pushUndo({ kind: "restore", assignment: { ...base } });
+    void clearAssignmentBoundTasks(assignmentId);
     upsertAssignment(left);
     upsertAssignment(right);
     selectAssignment(left.id);
@@ -4326,17 +4517,109 @@ export function ScheduleGrid() {
             </div>
             {sidebarPanelTab === "tasks" ? (
               <div className="p-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <h3 className="text-xs font-semibold">Tasks</h3>
+                  {canManage && !isPublicShare ? (
+                    <>
+                      <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                        <Checkbox
+                          size="sm"
+                          checked={bindToAssignment}
+                          onChange={(e) => {
+                            const on = e.target.checked;
+                            if (!on) {
+                              void clearAssignmentBindUi();
+                              return;
+                            }
+                            setBindToAssignment(true);
+                            setBindEditingSelection(
+                              boundTaskIdsForActive.length > 0,
+                            );
+                            setBindDraftIds(new Set(boundTaskIdsForActive));
+                          }}
+                        />
+                        Bind to Assignment
+                      </label>
+                      {bindToAssignment &&
+                      boundTaskIdsForActive.length > 0 &&
+                      !bindEditingSelection ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-7 cursor-pointer items-center rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                          onClick={() => {
+                            setBindEditingSelection(true);
+                            setBindDraftIds(new Set(boundTaskIdsForActive));
+                          }}
+                        >
+                          Edit selection
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
                 <ProjectTaskBoard
                   projectId={editForm.project_id}
                   readOnly
                   compact
+                  hideHeader
                   allowSelect={false}
                   assigneePersonId={
                     canManage
                       ? null
                       : (viewAs?.effectivePersonId ?? myPerson?.id ?? null)
                   }
+                  bindSelectMode={
+                    canManage &&
+                    bindToAssignment &&
+                    (bindEditingSelection ||
+                      boundTaskIdsForActive.length === 0)
+                  }
+                  bindSelectedIds={bindDraftIds}
+                  onBindToggleTask={(taskId) => {
+                    setBindDraftIds((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(taskId)) next.delete(taskId);
+                      else next.add(taskId);
+                      return next;
+                    });
+                  }}
+                  priorityOnlyTaskIds={
+                    bindToAssignment &&
+                    boundTaskIdsForActive.length > 0 &&
+                    !bindEditingSelection
+                      ? boundTaskIdsForActive
+                      : !canManage && boundTaskIdsForActive.length > 0
+                        ? boundTaskIdsForActive
+                        : null
+                  }
                 />
+                {canManage &&
+                bindToAssignment &&
+                (bindEditingSelection ||
+                  boundTaskIdsForActive.length === 0) ? (
+                  <div className="mt-3 flex justify-end gap-2">
+                    {bindEditingSelection ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-8 cursor-pointer items-center rounded-md border border-[var(--border)] px-3 text-xs hover:bg-[var(--row-hover)]"
+                        onClick={() => {
+                          setBindEditingSelection(false);
+                          setBindDraftIds(new Set(boundTaskIdsForActive));
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-md bg-[var(--accent)] px-3 text-xs font-medium text-[var(--accent-fg)] hover:opacity-90"
+                      onClick={beginBindSave}
+                    >
+                      <Save size={12} />
+                      Save
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : sidebarPanelTab === "hours" && sidebarProject ? (
               <div className="p-4">
@@ -4656,15 +4939,24 @@ export function ScheduleGrid() {
             </div>
             {sidebarPanelTab === "tasks" ? (
               <div className="p-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <h3 className="text-xs font-semibold">Tasks</h3>
+                </div>
                 <ProjectTaskBoard
                   projectId={selected.project_id}
                   readOnly
                   compact
+                  hideHeader
                   allowSelect={false}
                   assigneePersonId={
                     canManage
                       ? null
                       : (viewAs?.effectivePersonId ?? myPerson?.id ?? null)
+                  }
+                  priorityOnlyTaskIds={
+                    boundTaskIdsForActive.length > 0
+                      ? boundTaskIdsForActive
+                      : null
                   }
                 />
               </div>
@@ -4913,6 +5205,29 @@ export function ScheduleGrid() {
             </button>
           </div>
         </Modal>
+      ) : null}
+      {bindConfirm ? (
+        <ConfirmDialog
+          title={
+            bindConfirm.step === "dates"
+              ? "Update task dates?"
+              : bindConfirm.step === "overwrite"
+                ? "Overwrite existing dates?"
+                : "Gantt list tasks"
+          }
+          message={
+            bindConfirm.step === "dates"
+              ? "Selected tasks will use this assignment’s start and end dates (except tasks on Gantt lists, which only change in Gantt)."
+              : bindConfirm.step === "overwrite"
+                ? "One or more selected tasks already have a start or due date. Binding will overwrite those dates for non-Gantt tasks."
+                : "Some selected tasks are on Gantt-enabled lists. They can be bound as priority tasks, but their dates only change in Gantt view."
+          }
+          mode={bindConfirm.step === "gantt" ? "notice" : "confirm"}
+          tone="accent"
+          confirmLabel={bindConfirm.step === "gantt" ? "Got it" : "Continue"}
+          onConfirm={() => advanceBindConfirm()}
+          onCancel={() => setBindConfirm(null)}
+        />
       ) : null}
     </div>
   );

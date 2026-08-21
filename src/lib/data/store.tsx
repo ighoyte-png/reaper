@@ -110,6 +110,8 @@ import {
   rpcMonthlyRetainerYearBars,
   seedDemoWorkspace,
   upsertAssignmentRow,
+  setAssignmentBoundTaskRows,
+  clearAssignmentBoundTaskRows,
   upsertBulletinRow,
   deleteBulletinUnreadRow,
   upsertBulletinDismissalRow,
@@ -186,6 +188,7 @@ import {
 } from "@/lib/share/token";
 import type {
   Assignment,
+  AssignmentBoundTask,
   Bulletin,
   Client,
   DemoState,
@@ -358,6 +361,14 @@ function loadDemoState(): DemoState {
             contractor_hours: m.contractor_hours ?? null,
           }))
         : seed.project_members,
+      assignment_bound_tasks: Array.isArray(parsed.assignment_bound_tasks)
+        ? (parsed.assignment_bound_tasks as AssignmentBoundTask[]).filter(
+            (r) =>
+              Boolean(r) &&
+              typeof r.assignment_id === "string" &&
+              typeof r.task_id === "string",
+          )
+        : (seed.assignment_bound_tasks ?? []),
       project_contractor_expenses: Array.isArray(
         parsed.project_contractor_expenses,
       )
@@ -502,6 +513,7 @@ function emptySupabaseState(): DemoState {
     milestones: [],
     people: [],
     assignments: [],
+    assignment_bound_tasks: [],
     project_members: [],
     project_contractor_expenses: [],
     leave_days: [],
@@ -663,6 +675,13 @@ interface DataContextValue {
     },
   ) => void;
   deleteAssignment: (id: string) => void;
+  /** Replace which tasks are bound to a calendar assignment. */
+  setAssignmentBoundTasks: (
+    assignmentId: string,
+    taskIds: string[],
+  ) => Promise<void>;
+  /** Clear all task bindings for an assignment (unbind / cut / delete). */
+  clearAssignmentBoundTasks: (assignmentId: string) => Promise<void>;
   upsertMilestone: (
     milestone: Omit<Milestone, "organization_id"> & {
       organization_id?: string;
@@ -1460,6 +1479,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         enqueueRealtimeChange("assignments"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "assignment_bound_tasks",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        enqueueRealtimeChange("assignment_bound_tasks"),
       )
       .on(
         "postgres_changes",
@@ -3281,21 +3310,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteProject: (id) => {
-        patch((prev) => ({
-          ...prev,
-          projects: prev.projects.filter((p) => p.id !== id),
-          assignments: prev.assignments.filter((a) => a.project_id !== id),
-          project_members: prev.project_members.filter(
-            (m) => m.project_id !== id,
-          ),
-          project_contractor_expenses: prev.project_contractor_expenses.filter(
-            (e) => e.project_id !== id,
-          ),
-          milestones: prev.milestones.filter((m) => m.project_id !== id),
-          project_favorites: prev.project_favorites.filter(
-            (f) => f.project_id !== id,
-          ),
-        }));
+        patch((prev) => {
+          const assignments = prev.assignments.filter(
+            (a) => a.project_id !== id,
+          );
+          const assignmentIds = new Set(assignments.map((a) => a.id));
+          return {
+            ...prev,
+            projects: prev.projects.filter((p) => p.id !== id),
+            assignments,
+            assignment_bound_tasks: prev.assignment_bound_tasks.filter((r) =>
+              assignmentIds.has(r.assignment_id),
+            ),
+            project_members: prev.project_members.filter(
+              (m) => m.project_id !== id,
+            ),
+            project_contractor_expenses: prev.project_contractor_expenses.filter(
+              (e) => e.project_id !== id,
+            ),
+            milestones: prev.milestones.filter((m) => m.project_id !== id),
+            project_favorites: prev.project_favorites.filter(
+              (f) => f.project_id !== id,
+            ),
+          };
+        });
         if (mode === "supabase" && supabaseRef.current) {
           runRemoteSoft(() => deleteProjectRow(supabaseRef.current!, id));
         }
@@ -3849,13 +3887,61 @@ export function DataProvider({ children }: { children: ReactNode }) {
         patch((prev) => ({
           ...prev,
           assignments: prev.assignments.filter((a) => a.id !== id),
+          assignment_bound_tasks: prev.assignment_bound_tasks.filter(
+            (r) => r.assignment_id !== id,
+          ),
           unread_mentions: prev.unread_mentions.filter(
             (r) => r.assignment_id !== id,
           ),
         }));
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("assignments", id);
+          noteLocalWrite("assignment_bound_tasks", id);
           runRemoteSoft(() => deleteAssignmentRow(supabaseRef.current!, id));
+        }
+      },
+      setAssignmentBoundTasks: async (assignmentId, taskIds) => {
+        const orgId = state.organization.id || ORG_ID;
+        const unique = [...new Set(taskIds.filter(Boolean))];
+        const rows: AssignmentBoundTask[] = unique.map((task_id, sort_order) => ({
+          assignment_id: assignmentId,
+          task_id,
+          organization_id: orgId,
+          sort_order,
+        }));
+        noteLocalWrite("assignment_bound_tasks", assignmentId);
+        patch((prev) => ({
+          ...prev,
+          assignment_bound_tasks: [
+            ...prev.assignment_bound_tasks.filter(
+              (r) => r.assignment_id !== assignmentId,
+            ),
+            ...rows,
+          ],
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            setAssignmentBoundTaskRows(
+              supabaseRef.current!,
+              assignmentId,
+              orgId,
+              unique,
+            ),
+          );
+        }
+      },
+      clearAssignmentBoundTasks: async (assignmentId) => {
+        noteLocalWrite("assignment_bound_tasks", assignmentId);
+        patch((prev) => ({
+          ...prev,
+          assignment_bound_tasks: prev.assignment_bound_tasks.filter(
+            (r) => r.assignment_id !== assignmentId,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            clearAssignmentBoundTaskRows(supabaseRef.current!, assignmentId),
+          );
         }
       },
       upsertMilestone: (milestone) => {
@@ -4768,6 +4854,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return {
             ...prev,
             tasks: nextTasks,
+            assignment_bound_tasks: prev.assignment_bound_tasks.filter((r) =>
+              remainingTaskIds.has(r.task_id),
+            ),
             task_comments: prev.task_comments.filter((c) =>
               remainingTaskIds.has(c.task_id),
             ),

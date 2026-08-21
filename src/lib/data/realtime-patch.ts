@@ -1,5 +1,6 @@
 import {
   mapAssignment,
+  mapAssignmentBoundTask,
   mapBulletin,
   mapLeaveDay,
   mapMilestone,
@@ -10,7 +11,13 @@ import {
   mapTaskComment,
   mapTaskList,
 } from "@/lib/supabase/api";
-import type { DemoState, PodMember, Task, TaskList } from "@/lib/types";
+import type {
+  AssignmentBoundTask,
+  DemoState,
+  PodMember,
+  Task,
+  TaskList,
+} from "@/lib/types";
 
 function upsertById<T extends { id: string }>(list: T[], row: T): T[] {
   const exists = list.some((x) => x.id === row.id);
@@ -136,6 +143,10 @@ export function realtimeEchoId(
       ? `${String(podId)}:${String(personId)}`
       : null;
   }
+  if (table === "assignment_bound_tasks") {
+    const assignmentId = row.assignment_id;
+    return assignmentId != null ? String(assignmentId) : null;
+  }
   return row.id != null ? String(row.id) : null;
 }
 
@@ -160,12 +171,60 @@ export function applyRealtimeTableEvent(
         const id = String(oldRecord?.id ?? "");
         if (!id) return state;
         const next = state.assignments.filter((a) => a.id !== id);
-        return next.length === state.assignments.length
-          ? state
-          : { ...state, assignments: next };
+        const nextBinds = state.assignment_bound_tasks.filter(
+          (r) => r.assignment_id !== id,
+        );
+        if (
+          next.length === state.assignments.length &&
+          nextBinds.length === state.assignment_bound_tasks.length
+        ) {
+          return state;
+        }
+        return {
+          ...state,
+          assignments: next,
+          assignment_bound_tasks: nextBinds,
+        };
       }
       const mapped = mapAssignment(newRecord as Record<string, unknown>);
       return { ...state, assignments: upsertById(state.assignments, mapped) };
+    }
+    case "assignment_bound_tasks": {
+      const mapped = mapAssignmentBoundTask(source as Record<string, unknown>);
+      if (!mapped.assignment_id || !mapped.task_id) return state;
+      if (isDelete) {
+        const next = state.assignment_bound_tasks.filter(
+          (r) =>
+            !(
+              r.assignment_id === mapped.assignment_id &&
+              r.task_id === mapped.task_id
+            ),
+        );
+        return next.length === state.assignment_bound_tasks.length
+          ? state
+          : { ...state, assignment_bound_tasks: next };
+      }
+      const exists = state.assignment_bound_tasks.some(
+        (r) =>
+          r.assignment_id === mapped.assignment_id &&
+          r.task_id === mapped.task_id,
+      );
+      if (exists) {
+        return {
+          ...state,
+          assignment_bound_tasks: state.assignment_bound_tasks.map((r) =>
+            r.assignment_id === mapped.assignment_id &&
+            r.task_id === mapped.task_id
+              ? mapped
+              : r,
+          ),
+        };
+      }
+      const row: AssignmentBoundTask = mapped;
+      return {
+        ...state,
+        assignment_bound_tasks: [...state.assignment_bound_tasks, row],
+      };
     }
     case "leave_days": {
       if (isDelete) {

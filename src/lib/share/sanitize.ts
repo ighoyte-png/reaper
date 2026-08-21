@@ -110,6 +110,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     clients,
     projects,
     assignments,
+    assignment_bound_tasks: state.assignment_bound_tasks ?? [],
     milestones,
     project_assets,
     task_lists,

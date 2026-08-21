@@ -419,6 +419,14 @@ export interface Assignment {
   edited_by_profile_id: string | null;
 }
 
+/** Tasks highlighted on a calendar assignment (schedule Tasks tab). */
+export interface AssignmentBoundTask {
+  assignment_id: string;
+  task_id: string;
+  organization_id: string;
+  sort_order: number;
+}
+
 /** Per-project contractor compensation mode. */
 export type ContractorMode = "fixed_fee" | "hours" | "scheduled";
 
@@ -522,6 +530,7 @@ export interface DemoState {
   milestones: Milestone[];
   people: Person[];
   assignments: Assignment[];
+  assignment_bound_tasks: AssignmentBoundTask[];
   project_members: ProjectMember[];
   project_contractor_expenses: ProjectContractorExpense[];
   leave_days: LeaveDay[];

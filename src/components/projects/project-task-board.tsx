@@ -132,6 +132,8 @@ import type {
 type InlineTaskDraft = TaskCreateDraft;
 export type TaskBoardView = "list" | "card" | "calendar" | "gantt";
 
+const EMPTY_BIND_IDS: ReadonlySet<string> = new Set();
+
 const GANTT_STRUCTURAL_EDIT_MSG =
   "Changing order or deleting Gantt items should be done in Gantt view.";
 
@@ -158,6 +160,20 @@ type Props = {
   templatesSlot?: ReactNode;
   /** Notified when Gantt view is active so the page can relocate sidebar cards. */
   onGanttActiveChange?: (active: boolean) => void;
+  /** Schedule sidebar: hide Tasks heading / view toggle (chrome lives outside). */
+  hideHeader?: boolean;
+  /**
+   * Bind-to-assignment: row checkboxes with controlled selection
+   * (does not use the board bulk-edit selection).
+   */
+  bindSelectMode?: boolean;
+  bindSelectedIds?: ReadonlySet<string>;
+  onBindToggleTask?: (taskId: string) => void;
+  /**
+   * When set (including empty), only these tasks are shown under PRIORITY TASKS
+   * with no per-list headers.
+   */
+  priorityOnlyTaskIds?: string[] | null;
 };
 
 function todayKey() {
@@ -193,6 +209,10 @@ type BoardCtx = {
   myPersonId: string | null;
   manageLists: boolean;
   allowSelect: boolean;
+  /** Controlled bind-to-assignment selection (schedule sidebar). */
+  bindSelectMode: boolean;
+  bindSelectedIds: ReadonlySet<string>;
+  onBindToggleTask: ((taskId: string) => void) | null;
   listsEditMode: boolean;
   compact: boolean;
   /** Hide edit/drag/comments (e.g. schedule sidebar). */
@@ -384,6 +404,11 @@ export function ProjectTaskBoard({
   assigneePersonId = null,
   templatesSlot,
   onGanttActiveChange,
+  hideHeader = false,
+  bindSelectMode = false,
+  bindSelectedIds,
+  onBindToggleTask,
+  priorityOnlyTaskIds = null,
 }: Props) {
   const {
     state,
@@ -510,9 +535,12 @@ export function ProjectTaskBoard({
 
   const manageLists = viewerCanManage && !readOnly && !isPublicShare;
   const allowSelect =
-    allowSelectProp !== undefined
-      ? allowSelectProp
-      : !isPublicShare && (viewerCanManage || !readOnly);
+    bindSelectMode
+      ? true
+      : allowSelectProp !== undefined
+        ? allowSelectProp
+        : !isPublicShare && (viewerCanManage || !readOnly);
+  const bindIds = bindSelectedIds ?? EMPTY_BIND_IDS;
 
   useEffect(() => {
     if (!projectDataReady || !projectId || !manageLists) return;
@@ -720,6 +748,10 @@ export function ProjectTaskBoard({
   ]);
 
   function toggleSelect(id: string, shiftKey = false) {
+    if (bindSelectMode) {
+      onBindToggleTask?.(id);
+      return;
+    }
     if (shiftKey && selectionAnchorRef.current) {
       const anchorId = selectionAnchorRef.current;
       const a = selectableOrder.indexOf(anchorId);
@@ -741,6 +773,13 @@ export function ProjectTaskBoard({
   }
 
   function setParentsSelected(ids: string[], on: boolean) {
+    if (bindSelectMode) {
+      for (const id of ids) {
+        const has = bindIds.has(id);
+        if (on !== has) onBindToggleTask?.(id);
+      }
+      return;
+    }
     setSelected((prev) => {
       const next = new Set(prev);
       for (const id of ids) {
@@ -1957,6 +1996,9 @@ export function ProjectTaskBoard({
     myPersonId: viewerPersonId,
     manageLists,
     allowSelect,
+    bindSelectMode,
+    bindSelectedIds: bindIds,
+    onBindToggleTask: onBindToggleTask ?? null,
     listsEditMode,
     compact,
     readOnly: readOnly || isPublicShare,
@@ -1969,9 +2011,9 @@ export function ProjectTaskBoard({
     focusCommentId,
     clearFocusTask,
     clearFocusIfOtherTask,
-    allowDrag: manageLists && !isPhone,
+    allowDrag: manageLists && !isPhone && !bindSelectMode,
     isPhone,
-    selected,
+    selected: bindSelectMode ? new Set(bindIds) : selected,
     toggleSelect,
     setParentsSelected,
     multiDragIds,
@@ -2165,6 +2207,7 @@ export function ProjectTaskBoard({
       )}
     >
     <div className="space-y-3">
+      {!hideHeader ? (
       <div className="flex flex-wrap items-center gap-2">
         <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
           Tasks
@@ -2205,8 +2248,9 @@ export function ProjectTaskBoard({
           </div>
         ) : null}
       </div>
+      ) : null}
 
-      {selected.size > 0 ? (
+      {selected.size > 0 && !bindSelectMode ? (
         <div className="sticky top-0 z-20 flex flex-wrap items-end gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] py-2 pl-3 pr-1.5 text-xs shadow-sm sm:pl-4 sm:pr-1.5">
           <label className="flex flex-col gap-0.5">
             <span className="text-[10px] font-medium text-[var(--text-muted)]">
@@ -2422,7 +2466,13 @@ export function ProjectTaskBoard({
         </div>
       ) : null}
 
-      {activeLists.length === 0 ? (
+      {priorityOnlyTaskIds !== null ? (
+        <PriorityTasksSection
+          taskIds={priorityOnlyTaskIds}
+          tasks={visibleTasks}
+          ctx={ctx}
+        />
+      ) : activeLists.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           {manageLists
             ? "No task lists yet - add a list to get started."
@@ -2439,7 +2489,7 @@ export function ProjectTaskBoard({
           <SortableContext
             items={activeLists.map((l) => l.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!manageLists || isPhone}
+            disabled={!manageLists || isPhone || bindSelectMode}
           >
             {activeLists.map((list) => {
               const listTasks = tasksForList(visibleTasks, list.id);
@@ -2535,7 +2585,9 @@ export function ProjectTaskBoard({
     </div>
     </section>
       {templatesSlot}
-      {!compact && (archivedLists.length > 0 || manageLists) ? (
+      {!compact &&
+      priorityOnlyTaskIds === null &&
+      (archivedLists.length > 0 || manageLists) ? (
         <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
           <button
             type="button"
@@ -2875,6 +2927,53 @@ function ViewToggle({
         </button>
       ) : null}
     </div>
+  );
+}
+
+function PriorityTasksSection({
+  taskIds,
+  tasks,
+  ctx,
+}: {
+  taskIds: string[];
+  tasks: Task[];
+  ctx: BoardCtx;
+}) {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const ordered = taskIds
+    .map((id) => byId.get(id))
+    .filter((t): t is Task => t != null && !t.is_divider);
+
+  return (
+    <section className="mb-3 overflow-hidden rounded-md border border-[var(--divider)]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--divider)] bg-[var(--bg-elevated)]/50 px-2 py-2.5">
+        <h4
+          className={cn(
+            "min-w-0 flex-1 font-semibold tracking-wide",
+            ctx.compact ? "text-xs" : "text-sm",
+          )}
+        >
+          PRIORITY TASKS
+        </h4>
+      </div>
+      <div className="px-1 py-1">
+        {ordered.length === 0 ? (
+          <p className="px-2 py-2 text-xs text-[var(--text-muted)]">
+            No bound tasks.
+          </p>
+        ) : (
+          <SortableContext
+            items={ordered.map((t) => t.id)}
+            strategy={verticalListSortingStrategy}
+            disabled
+          >
+            {ordered.map((task) => (
+              <TaskRow key={task.id} task={task} depth={0} ctx={ctx} />
+            ))}
+          </SortableContext>
+        )}
+      </div>
+    </section>
   );
 }
 

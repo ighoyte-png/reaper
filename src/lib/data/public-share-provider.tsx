@@ -204,6 +204,8 @@ export function PublicShareProvider({
       setPersonPods: async () => {},
       upsertAssignment: () => {},
       deleteAssignment: () => {},
+      setAssignmentBoundTasks: async () => {},
+      clearAssignmentBoundTasks: async () => {},
       upsertMilestone: () => {},
       deleteMilestone: () => {},
       upsertLeave: () => {},

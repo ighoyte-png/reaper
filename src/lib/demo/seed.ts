@@ -591,6 +591,7 @@ export function createDemoSeed(): DemoState {
       },
     ],
     project_members: [],
+    assignment_bound_tasks: [],
     project_contractor_expenses: [],
     leave_days: [
       {

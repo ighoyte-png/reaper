@@ -7,6 +7,7 @@ import { isR2Configured } from "@/lib/storage";
 import { avatarContentPath } from "@/lib/storage/avatar-url";
 import type {
   Assignment,
+  AssignmentBoundTask,
   Bulletin,
   Client,
   DemoState,
@@ -474,6 +475,84 @@ export function mapAssignment(row: Record<string, unknown>): Assignment {
   };
 }
 
+export function mapAssignmentBoundTask(
+  row: Record<string, unknown>,
+): AssignmentBoundTask {
+  return {
+    assignment_id: String(row.assignment_id),
+    task_id: String(row.task_id),
+    organization_id: String(row.organization_id),
+    sort_order: num(row.sort_order),
+  };
+}
+
+function missingAssignmentBoundTasksTable(message: string, code?: string) {
+  return (
+    /relation .*assignment_bound_tasks.* does not exist/i.test(message) ||
+    code === "42P01"
+  );
+}
+
+/** Replace bound tasks for an assignment (manager write). */
+export async function setAssignmentBoundTaskRows(
+  supabase: SupabaseClient,
+  assignmentId: string,
+  organizationId: string,
+  taskIds: string[],
+) {
+  const { error: delErr } = await supabase
+    .from("assignment_bound_tasks")
+    .delete()
+    .eq("assignment_id", assignmentId);
+  if (delErr) {
+    if (missingAssignmentBoundTasksTable(delErr.message, delErr.code)) {
+      console.warn(
+        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
+      );
+      return;
+    }
+    throw delErr;
+  }
+  const unique = [...new Set(taskIds.filter(Boolean))];
+  if (unique.length === 0) return;
+  const { error } = await supabase.from("assignment_bound_tasks").insert(
+    unique.map((task_id, sort_order) => ({
+      assignment_id: assignmentId,
+      task_id,
+      organization_id: organizationId,
+      sort_order,
+    })),
+  );
+  if (error) {
+    if (missingAssignmentBoundTasksTable(error.message, error.code)) {
+      console.warn(
+        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function clearAssignmentBoundTaskRows(
+  supabase: SupabaseClient,
+  assignmentId: string,
+) {
+  const { error } = await supabase
+    .from("assignment_bound_tasks")
+    .delete()
+    .eq("assignment_id", assignmentId);
+  if (error) {
+    if (missingAssignmentBoundTasksTable(error.message, error.code)) {
+      console.warn(
+        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
 export function mapLeaveDay(row: Record<string, unknown>): LeaveDay {
   return {
     id: String(row.id),
@@ -504,6 +583,7 @@ function emptyWorkspace(): DemoState {
     milestones: [],
     people: [],
     assignments: [],
+    assignment_bound_tasks: [],
     project_members: [],
     project_contractor_expenses: [],
     leave_days: [],
@@ -825,6 +905,7 @@ export async function loadOrgBootstrap(
     templateMilestonesRes,
     templateTaskListsRes,
     templateTasksRes,
+    assignmentBoundTasksRes,
   ] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", orgId).single(),
     supabase
@@ -898,6 +979,11 @@ export async function loadOrgBootstrap(
       .select("*")
       .eq("organization_id", orgId),
     supabase.from("template_tasks").select("*").eq("organization_id", orgId),
+    supabase
+      .from("assignment_bound_tasks")
+      .select("*")
+      .eq("organization_id", orgId)
+      .order("sort_order", { ascending: true }),
   ]);
 
   for (const res of [orgRes, membershipsRes, clientsRes, projectsRes, peopleRes]) {
@@ -942,6 +1028,26 @@ export async function loadOrgBootstrap(
     : (projectMembersRes.data ?? []).map((row) =>
         mapProjectMember(row as Record<string, unknown>),
       );
+
+  let assignment_bound_tasks: AssignmentBoundTask[] = [];
+  if (assignmentBoundTasksRes.error) {
+    if (
+      missingAssignmentBoundTasksTable(
+        assignmentBoundTasksRes.error.message,
+        assignmentBoundTasksRes.error.code,
+      )
+    ) {
+      console.warn(
+        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
+      );
+    } else {
+      throw assignmentBoundTasksRes.error;
+    }
+  } else {
+    assignment_bound_tasks = (assignmentBoundTasksRes.data ?? []).map((row) =>
+      mapAssignmentBoundTask(row as Record<string, unknown>),
+    );
+  }
 
   let project_contractor_expenses: ProjectContractorExpense[] = [];
   if (contractorExpensesRes.error) {
@@ -1237,6 +1343,7 @@ export async function loadOrgBootstrap(
     milestones: [],
     people,
     assignments: [],
+    assignment_bound_tasks,
     project_members,
     project_contractor_expenses,
     leave_days: [],
