@@ -531,7 +531,7 @@ function ProjectsPageContent() {
         </div>
       ) : (
         <div className="flex flex-col md:flex-row md:gap-5">
-          <aside className="sticky top-3 mt-3 hidden w-64 shrink-0 flex-col self-start overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex">
+          <aside className="sticky top-3 mt-3 hidden w-64 shrink-0 flex-col self-start overflow-hidden rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] sm:top-5 sm:mt-5 md:flex md:max-h-[calc(100dvh-2.5rem)]">
             <div className="shrink-0 border-b border-[var(--border)] p-2">
               <label className="relative block">
                 <Search
@@ -549,33 +549,35 @@ function ProjectsPageContent() {
                 />
               </label>
             </div>
-            <FavoritesSidebar />
-            <nav className="space-y-0.5 p-2" aria-label="Clients">
-              <ClientNavButton
-                active={clientFilter === "all"}
-                onClick={() => setFilter("client", "all")}
-                label="All clients"
-                count={projects.length}
-              />
-              {sidebarClients.map((client) => (
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <FavoritesSidebar />
+              <nav className="space-y-0.5 p-2" aria-label="Clients">
                 <ClientNavButton
-                  key={client.id}
-                  active={clientFilter === client.id}
-                  onClick={() => setFilter("client", client.id)}
-                  label={client.name}
-                  count={clientCounts.get(client.id) ?? 0}
-                  color={client.color}
+                  active={clientFilter === "all"}
+                  onClick={() => setFilter("client", "all")}
+                  label="All clients"
+                  count={projects.length}
                 />
-              ))}
-              {(clientCounts.get("none") ?? 0) > 0 ? (
-                <ClientNavButton
-                  active={clientFilter === "none"}
-                  onClick={() => setFilter("client", "none")}
-                  label="No client"
-                  count={clientCounts.get("none") ?? 0}
-                />
-              ) : null}
-            </nav>
+                {sidebarClients.map((client) => (
+                  <ClientNavButton
+                    key={client.id}
+                    active={clientFilter === client.id}
+                    onClick={() => setFilter("client", client.id)}
+                    label={client.name}
+                    count={clientCounts.get(client.id) ?? 0}
+                    color={client.color}
+                  />
+                ))}
+                {(clientCounts.get("none") ?? 0) > 0 ? (
+                  <ClientNavButton
+                    active={clientFilter === "none"}
+                    onClick={() => setFilter("client", "none")}
+                    label="No client"
+                    count={clientCounts.get("none") ?? 0}
+                  />
+                ) : null}
+              </nav>
+            </div>
           </aside>
 
           <div className="min-w-0 py-3 sm:py-5 md:flex-1">
