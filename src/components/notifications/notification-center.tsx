@@ -108,7 +108,6 @@ export function NotificationCenter() {
     removeCard,
     markCardRead,
     clearAll,
-    prefEnabled,
     centerOpen,
     closeCenter,
   } = useUtilityNotifications();
@@ -130,10 +129,6 @@ export function NotificationCenter() {
   const count = slides.length;
 
   useEffect(() => {
-    if (!prefEnabled && centerOpen) closeCenter();
-  }, [prefEnabled, centerOpen, closeCenter]);
-
-  useEffect(() => {
     if (!centerOpen) return;
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") closeCenter();
@@ -142,7 +137,7 @@ export function NotificationCenter() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [centerOpen, closeCenter]);
 
-  if (isPublicShare || !profile || !prefEnabled) {
+  if (isPublicShare || !profile) {
     return null;
   }
 
@@ -397,7 +392,7 @@ export function NotificationCenterTrigger({
 }: {
   className?: string;
 }) {
-  const { cards, prefEnabled, centerOpen, toggleCenter } =
+  const { cards, centerOpen, toggleCenter } =
     useUtilityNotifications();
   const { isPublicShare, profile } = useData();
   const [countGlow, setCountGlow] = useState(false);
@@ -432,7 +427,7 @@ export function NotificationCenterTrigger({
     };
   }, []);
 
-  if (isPublicShare || !profile || !prefEnabled) {
+  if (isPublicShare || !profile) {
     return null;
   }
 

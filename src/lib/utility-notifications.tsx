@@ -18,10 +18,6 @@ import { resolveAuthorLabel } from "@/lib/domain/people";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useViewAsOptional } from "@/lib/view-as";
 import { desktopNotificationPermission } from "@/lib/desktop-notifications";
-import {
-  readUtilityNotificationsPref,
-  UTILITY_NOTIFICATIONS_PREF_EVENT,
-} from "@/lib/utility-notifications-pref";
 import type {
   Bulletin,
   MentionTarget,
@@ -53,14 +49,15 @@ export type UtilityNotificationCard = {
 
 type UtilityNotificationsContextValue = {
   cards: UtilityNotificationCard[];
-  prefEnabled: boolean;
   centerOpen: boolean;
   openCenter: () => void;
   closeCenter: () => void;
   toggleCenter: () => void;
   markCardRead: (id: string) => void;
   removeCard: (id: string) => void;
+  /** Mark matching mention cards as read (does not purge). */
   removeMentionCard: (target: MentionTarget) => void;
+  /** Mark matching bulletin/in-review cards as read (does not purge). */
   removeBulletinCard: (bulletinId: string) => void;
   clearAll: () => void;
 };
@@ -86,7 +83,6 @@ export function UtilityNotificationsProvider({
   const projectHref = useProjectHref();
   const viewAs = useViewAsOptional();
   const [cards, setCards] = useState<UtilityNotificationCard[]>([]);
-  const [prefEnabled, setPrefEnabled] = useState(true);
   const [centerOpen, setCenterOpen] = useState(false);
 
   const seenMentionKeysRef = useRef<Set<string> | null>(null);
@@ -97,19 +93,6 @@ export function UtilityNotificationsProvider({
 
   const mentionPersonId =
     viewAs?.effectivePersonId ?? myPerson?.id ?? null;
-
-  useEffect(() => {
-    function sync() {
-      setPrefEnabled(readUtilityNotificationsPref(profile?.id));
-    }
-    sync();
-    window.addEventListener(UTILITY_NOTIFICATIONS_PREF_EVENT, sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener(UTILITY_NOTIFICATIONS_PREF_EVENT, sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, [profile?.id]);
 
   const scheduleVisible = useCallback((id: string) => {
     const delay =
@@ -134,8 +117,6 @@ export function UtilityNotificationsProvider({
 
   const enqueue = useCallback(
     (card: Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read">) => {
-      // Pref only gates dock visibility — keep enqueueing so disable/re-enable
-      // preserves and continues notices.
       if (isPublicShare) return;
 
       setCards((prev) => {
@@ -174,30 +155,44 @@ export function UtilityNotificationsProvider({
   const removeMentionCard = useCallback(
     (target: MentionTarget) => {
       const key = `${target.kind}:${target.id}`;
-      setCards((prev) =>
-        prev.filter(
-          (c) =>
-            !(
-              c.kind === "mention" &&
-              c.mentionTarget &&
-              `${c.mentionTarget.kind}:${c.mentionTarget.id}` === key
-            ),
-        ),
-      );
+      // Mark read in the center — do not purge (only X / Clear all remove cards).
+      setCards((prev) => {
+        let changed = false;
+        const next = prev.map((c) => {
+          if (
+            c.kind !== "mention" ||
+            !c.mentionTarget ||
+            c.read ||
+            `${c.mentionTarget.kind}:${c.mentionTarget.id}` !== key
+          ) {
+            return c;
+          }
+          changed = true;
+          return { ...c, read: true };
+        });
+        return changed ? next : prev;
+      });
     },
     [],
   );
 
   const removeBulletinCard = useCallback((bulletinId: string) => {
-    setCards((prev) =>
-      prev.filter(
-        (c) =>
-          !(
-            (c.kind === "bulletin" || c.kind === "in_review") &&
-            c.bulletinId === bulletinId
-          ),
-      ),
-    );
+    // Mark read in the center — do not purge (only X / Clear all remove cards).
+    setCards((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (
+          (c.kind !== "bulletin" && c.kind !== "in_review") ||
+          c.bulletinId !== bulletinId ||
+          c.read
+        ) {
+          return c;
+        }
+        changed = true;
+        return { ...c, read: true };
+      });
+      return changed ? next : prev;
+    });
   }, []);
 
   const clearAll = useCallback(() => {
@@ -382,7 +377,6 @@ export function UtilityNotificationsProvider({
   const value = useMemo(
     () => ({
       cards,
-      prefEnabled,
       centerOpen,
       openCenter,
       closeCenter,
@@ -395,7 +389,6 @@ export function UtilityNotificationsProvider({
     }),
     [
       cards,
-      prefEnabled,
       centerOpen,
       openCenter,
       closeCenter,
@@ -420,7 +413,6 @@ export function useUtilityNotifications(): UtilityNotificationsContextValue {
   if (!ctx) {
     return {
       cards: [],
-      prefEnabled: true,
       centerOpen: false,
       openCenter: () => {},
       closeCenter: () => {},

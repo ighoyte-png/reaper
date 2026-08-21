@@ -4,8 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Bell,
-  BellOff,
   Building2,
   Check,
   ChevronDown,
@@ -36,7 +34,6 @@ import { useAppHref } from "@/lib/hooks/use-app-href";
 import { stripWorkspacePrefix } from "@/lib/paths";
 import { isUnreadBulletin } from "@/lib/domain/bulletins";
 import { useViewAs } from "@/lib/view-as";
-import { useUtilityNotificationsPref } from "@/lib/utility-notifications-pref";
 
 function navLinkClass(active: boolean) {
   return cn(
@@ -62,8 +59,6 @@ export function AppNavbar() {
   const { logout, state, myPerson, profile, shareBasePath, switchWorkspace } =
     useData();
   const { theme, toggleTheme } = useTheme();
-  const { enabled: utilityNotificationsEnabled, toggle: toggleUtilityNotifications } =
-    useUtilityNotificationsPref(profile?.id);
   const appHref = useAppHref();
   const pathForNav = shareBasePath
     ? pathname.startsWith(shareBasePath)
@@ -404,24 +399,6 @@ export function AppNavbar() {
                       </span>
                     </button>
 
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className={menuItemClass()}
-                      onClick={() => toggleUtilityNotifications()}
-                    >
-                      <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
-                        {utilityNotificationsEnabled ? (
-                          <Bell size={14} strokeWidth={1.75} />
-                        ) : (
-                          <BellOff size={14} strokeWidth={1.75} />
-                        )}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        Utility Notifications
-                      </span>
-                    </button>
-
                     <PlatformAdminNavLink
                       variant="menu"
                       onNavigate={() => setAccountOpen(false)}
@@ -626,22 +603,6 @@ export function AppNavbar() {
                     )}
                   </span>
                   <span className="text-sm font-medium">Appearance</span>
-                </button>
-                <button
-                  type="button"
-                  className={menuItemClass()}
-                  onClick={() => toggleUtilityNotifications()}
-                >
-                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--bg-elevated)] text-[var(--text-muted)]">
-                    {utilityNotificationsEnabled ? (
-                      <Bell size={14} strokeWidth={1.75} />
-                    ) : (
-                      <BellOff size={14} strokeWidth={1.75} />
-                    )}
-                  </span>
-                  <span className="text-sm font-medium">
-                    Utility Notifications
-                  </span>
                 </button>
                 <PlatformAdminNavLink
                   variant="menu"
