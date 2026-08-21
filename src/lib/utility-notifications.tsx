@@ -29,6 +29,7 @@ import type {
   Bulletin,
   MentionTarget,
   MentionUnread,
+  Person,
   Project,
   Task,
   TaskComment,
@@ -38,7 +39,8 @@ export type UtilityNotificationKind =
   | "mention"
   | "bulletin"
   | "in_review"
-  | "message";
+  | "message"
+  | "assigned";
 
 export type UtilityNotificationCard = {
   id: string;
@@ -95,6 +97,10 @@ function messageCardId(commentId: string): string {
   return `message:${commentId}`;
 }
 
+function assignedCardId(task: Pick<Task, "id" | "edited_at" | "created_at">): string {
+  return `assigned:${task.id}:${task.edited_at ?? task.created_at}`;
+}
+
 export function UtilityNotificationsProvider({
   children,
 }: {
@@ -111,6 +117,9 @@ export function UtilityNotificationsProvider({
   const seenMentionKeysRef = useRef<Set<string> | null>(null);
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
   const seenMessageCommentIdsRef = useRef<Set<string> | null>(null);
+  const seenAssignedCardIdsRef = useRef<Set<string> | null>(null);
+  /** Last known assignee per task — null until seeded after storage hydrate. */
+  const assigneeSnapshotRef = useRef<Map<string, string | null> | null>(null);
   const fadeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
@@ -135,6 +144,8 @@ export function UtilityNotificationsProvider({
       seenMentionKeysRef.current = null;
       seenBulletinIdsRef.current = null;
       seenMessageCommentIdsRef.current = null;
+      seenAssignedCardIdsRef.current = null;
+      assigneeSnapshotRef.current = null;
       setCards([]);
       setStorageReady(false);
       return;
@@ -146,6 +157,7 @@ export function UtilityNotificationsProvider({
     const mentionSeen = new Set<string>();
     const bulletinSeen = new Set<string>();
     const messageSeen = new Set<string>();
+    const assignedSeen = new Set<string>();
     for (const card of restored) {
       if (card.kind === "mention" && card.mentionTarget) {
         mentionSeen.add(`${card.mentionTarget.kind}:${card.mentionTarget.id}`);
@@ -156,11 +168,15 @@ export function UtilityNotificationsProvider({
         bulletinSeen.add(card.bulletinId);
       } else if (card.kind === "message" && card.commentId) {
         messageSeen.add(card.commentId);
+      } else if (card.kind === "assigned") {
+        assignedSeen.add(card.id);
       }
     }
     seenMentionKeysRef.current = mentionSeen;
     seenBulletinIdsRef.current = bulletinSeen;
     seenMessageCommentIdsRef.current = messageSeen;
+    seenAssignedCardIdsRef.current = assignedSeen;
+    assigneeSnapshotRef.current = null;
 
     setCards(
       restored.map((c) => ({
@@ -510,6 +526,73 @@ export function UtilityNotificationsProvider({
     state.people,
     state.profiles,
     mentionPersonId,
+    isPublicShare,
+    enqueue,
+    projectHref,
+  ]);
+
+  // Watch task assignee changes → "assigned to you"
+  useEffect(() => {
+    if (!storageReady || isPublicShare || !mentionPersonId) {
+      assigneeSnapshotRef.current = null;
+      return;
+    }
+
+    if (seenAssignedCardIdsRef.current === null) {
+      seenAssignedCardIdsRef.current = new Set();
+    }
+    const seenCards = seenAssignedCardIdsRef.current;
+
+    const snapshot = assigneeSnapshotRef.current;
+    if (snapshot === null) {
+      const map = new Map<string, string | null>();
+      for (const task of state.tasks) {
+        map.set(task.id, task.assignee_person_id ?? null);
+      }
+      assigneeSnapshotRef.current = map;
+      return;
+    }
+
+    for (const task of state.tasks) {
+      const next = task.assignee_person_id ?? null;
+      const had = snapshot.has(task.id);
+      const prev = had ? (snapshot.get(task.id) ?? null) : undefined;
+      snapshot.set(task.id, next);
+
+      if (next !== mentionPersonId) continue;
+      if (prev === mentionPersonId) continue;
+      // Skip self-assign / self-create (actor is the viewer).
+      if (
+        assignmentActorIsViewer(
+          task,
+          profileId,
+          mentionPersonId,
+          state.people,
+        )
+      ) {
+        continue;
+      }
+
+      const cardId = assignedCardId(task);
+      if (seenCards.has(cardId)) continue;
+      const built = buildAssignedCard({
+        task,
+        state,
+        projectHref,
+      });
+      if (!built) continue;
+      seenCards.add(cardId);
+      enqueue(built);
+    }
+  }, [
+    storageReady,
+    state.tasks,
+    state.projects,
+    state.clients,
+    state.people,
+    state.profiles,
+    mentionPersonId,
+    profileId,
     isPublicShare,
     enqueue,
     projectHref,
@@ -895,5 +978,96 @@ function buildMessageCard(args: {
     clientColor: client?.color ?? null,
     taskId: task.id,
     commentId: comment.id,
+  };
+}
+
+/** True when the person who created/last-edited the task is the notification viewer. */
+function assignmentActorIsViewer(
+  task: Pick<Task, "created_by_profile_id" | "edited_by_profile_id">,
+  viewerProfileId: string | null,
+  viewerPersonId: string,
+  people: Pick<Person, "id" | "profile_id">[],
+): boolean {
+  const actorProfileId =
+    task.edited_by_profile_id ?? task.created_by_profile_id;
+  if (!actorProfileId) return false;
+  if (viewerProfileId && actorProfileId === viewerProfileId) return true;
+  const actorPerson = people.find((p) => p.profile_id === actorProfileId);
+  return actorPerson?.id === viewerPersonId;
+}
+
+function buildAssignedCard(args: {
+  task: Pick<
+    Task,
+    | "id"
+    | "title"
+    | "project_id"
+    | "created_at"
+    | "edited_at"
+    | "created_by_profile_id"
+    | "edited_by_profile_id"
+  >;
+  state: {
+    projects: Project[];
+    clients: { id: string; name: string; color: string }[];
+    people: {
+      id: string;
+      name: string;
+      profile_id: string | null;
+      deleted_at?: string | null;
+    }[];
+    profiles: {
+      id: string;
+      full_name: string | null;
+      email: string;
+    }[];
+  };
+  projectHref: (
+    project: Pick<Project, "client_id" | "slug">,
+    search?: string,
+  ) => string;
+}): Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> | null {
+  const { task, state, projectHref } = args;
+  const project = state.projects.find((p) => p.id === task.project_id);
+  if (!project) return null;
+  const client = project.client_id
+    ? state.clients.find((c) => c.id === project.client_id)
+    : undefined;
+  const actorProfileId =
+    task.edited_by_profile_id ?? task.created_by_profile_id;
+  const actorProfile = actorProfileId
+    ? state.profiles.find((p) => p.id === actorProfileId)
+    : undefined;
+  const actorPerson = actorProfileId
+    ? state.people.find((p) => p.profile_id === actorProfileId)
+    : undefined;
+  const actorLabel = resolveAuthorLabel(
+    actorProfile
+      ? {
+          full_name: actorProfile.full_name ?? undefined,
+          email: actorProfile.email,
+        }
+      : null,
+    actorPerson
+      ? {
+          name: actorPerson.name,
+          deleted_at: actorPerson.deleted_at ?? null,
+        }
+      : null,
+  );
+  return {
+    id: assignedCardId(task),
+    kind: "assigned",
+    href: projectHref(project, `task=${task.id}`),
+    title: task.title || "Task assigned",
+    subtitle: [
+      actorLabel ? `${actorLabel} assigned you` : "Assigned to you",
+      project.name,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    clientName: client?.name ?? null,
+    clientColor: client?.color ?? null,
+    taskId: task.id,
   };
 }

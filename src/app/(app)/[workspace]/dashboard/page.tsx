@@ -6,8 +6,10 @@ import { useRouter } from "next/navigation";
 import { addWeeks, format, parseISO } from "date-fns";
 import {
   AlertTriangle,
+  AtSign,
   CalendarOff,
   CalendarRange,
+  ClipboardCheck,
   FolderKanban,
   Gauge,
   HeartPulse,
@@ -24,6 +26,10 @@ import {
 } from "lucide-react";
 import { SchedulePie, type SchedulePieSlice } from "@/components/charts/schedule-pie";
 import { LeaveMonthCalendar } from "@/components/dashboard/leave-month-calendar";
+import {
+  NoticeCard,
+  noticeCardActionClassName,
+} from "@/components/notifications/notice-card";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { PersonAvatar } from "@/components/people/person-avatar";
@@ -1587,6 +1593,7 @@ function TaggedMentionsPanel({
   compact?: boolean;
   stretch?: boolean;
 }) {
+  const router = useRouter();
   const total = mentions.length;
   const unreadCount = mentions.filter((r) => r.unread).length;
   return (
@@ -1597,8 +1604,8 @@ function TaggedMentionsPanel({
       )}
     >
       <div className="mb-3 flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
-          <MessageSquare size={16} strokeWidth={1.75} aria-hidden />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--status-attention-wash)] text-[var(--status-attention)]">
+          <AtSign size={16} strokeWidth={1.75} aria-hidden />
         </div>
         <h2 className="text-sm font-semibold">New Mentions</h2>
         {unreadCount > 0 ? (
@@ -1641,60 +1648,52 @@ function TaggedMentionsPanel({
             }) => {
             const location = [
               resolveAuthorLabel(author, authorPerson),
-              client?.name,
               project.name,
               kind === "assignment"
                 ? "Schedule note"
                 : kind === "task"
                   ? "Task description"
                   : null,
+              dateKey,
             ]
               .filter(Boolean)
               .join(" · ");
             return (
-              <li key={key} className="relative">
-                <Link
-                  href={href}
-                  className="flex gap-2 rounded-md border border-[var(--border)] px-3 py-2 pr-9 hover:bg-[var(--row-hover)]"
-                  onClick={() => onOpen(target)}
+              <li key={key}>
+                <NoticeCard
+                  tone="mention"
+                  read={!unread}
+                  icon={AtSign}
+                  clientColor={client?.color}
+                  clientName={client?.name}
+                  title={title}
+                  subtitle={location}
+                  onActivate={() => {
+                    onOpen(target);
+                    router.push(href);
+                  }}
+                  actions={
+                    <button
+                      type="button"
+                      className={noticeCardActionClassName()}
+                      aria-label="Dismiss mention"
+                      title="Dismiss"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDismiss(target);
+                      }}
+                    >
+                      <X size={14} strokeWidth={1.75} />
+                    </button>
+                  }
                 >
-                  {client ? (
-                    <ProjectColorBar color={client.color} className="mt-1" />
-                  ) : null}
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
-                      <span className="flex min-w-0 items-center gap-1.5 truncate">
-                        {unread ? (
-                          <span
-                            className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--status-attention)]"
-                            aria-label="New"
-                          />
-                        ) : null}
-                        <span className="truncate">{location}</span>
-                      </span>
-                      <span className="shrink-0">{dateKey}</span>
-                    </div>
-                    <div className="truncate text-xs font-medium">
-                      {title}
-                    </div>
-                    <div className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">
+                  {bodyHtml ? (
+                    <div className="line-clamp-2">
                       <RichNotesHtml html={bodyHtml} />
                     </div>
-                  </div>
-                </Link>
-                <button
-                  type="button"
-                  className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-                  aria-label="Dismiss mention"
-                  title="Dismiss"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDismiss(target);
-                  }}
-                >
-                  <X size={14} strokeWidth={2} />
-                </button>
+                  ) : null}
+                </NoticeCard>
               </li>
             );
           })}
@@ -2539,12 +2538,12 @@ function BulletinBoard({
     <section className={panelClass()}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--status-over)]/15 text-[var(--status-over)]">
             <Megaphone size={16} strokeWidth={1.75} aria-hidden />
           </div>
           <h2 className="text-sm font-semibold">Bulletin Board</h2>
           {unreadCount > 0 ? (
-            <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
+            <span className="rounded-full bg-[var(--status-over)] px-2 py-0.5 text-[11px] font-medium text-white">
               {unreadCount}
             </span>
           ) : null}
@@ -2570,9 +2569,14 @@ function BulletinBoard({
             const author = profiles.find(
               (p) => p.id === b.created_by_profile_id,
             );
+            const authorPerson = people.find(
+              (p) => p.profile_id === b.created_by_profile_id,
+            );
             const unread = isUnread?.(b) ?? false;
             const systemNotice = isSystemBulletin(b);
             const success = b.tone === "success";
+            const tone = success ? "in_review" : "bulletin";
+            const Icon = success ? ClipboardCheck : Megaphone;
             const isAuthor =
               Boolean(profileId) && b.created_by_profile_id === profileId;
             const washed =
@@ -2580,10 +2584,9 @@ function BulletinBoard({
             const linkedProject = b.project_id
               ? projects.find((p) => p.id === b.project_id)
               : null;
-            const clientColor =
-              linkedProject?.client_id
-                ? clients.find((c) => c.id === linkedProject.client_id)?.color
-                : undefined;
+            const client = linkedProject?.client_id
+              ? clients.find((c) => c.id === linkedProject.client_id)
+              : undefined;
             const href = linkedProject ? linkHref(b, linkedProject) : null;
             const goToLinked = () => {
               if (!href) return;
@@ -2594,139 +2597,130 @@ function BulletinBoard({
               Boolean(onDismissFromBoard) &&
               (systemNotice || (washed && !isAuthor));
             const canAuthorEdit = isAuthor && !systemNotice;
+            const subtitle = [
+              b.created_at.slice(0, 10),
+              resolveAuthorLabel(
+                author
+                  ? {
+                      full_name: author.full_name ?? undefined,
+                      email: author.email,
+                    }
+                  : null,
+                authorPerson
+                  ? {
+                      name: authorPerson.name,
+                      deleted_at: authorPerson.deleted_at ?? null,
+                    }
+                  : null,
+              ),
+              audienceSummary(b),
+            ]
+              .filter(Boolean)
+              .join(" · ");
             return (
-              <li
-                key={b.id}
-                className={cn(
-                  "rounded-md border text-sm",
-                  success
-                    ? "border-transparent bg-[var(--status-healthy)]/15"
-                    : washed
-                      ? "border-transparent bg-[var(--status-attention-wash)]"
-                      : b.pinned
-                        ? "border-transparent bg-[var(--accent)]/5"
-                        : "border-[var(--border)]",
-                  href && "cursor-pointer hover:opacity-95",
-                )}
-                onClick={href ? goToLinked : undefined}
-                onKeyDown={
-                  href
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          goToLinked();
-                        }
-                      }
-                    : undefined
-                }
-                role={href ? "link" : undefined}
-                tabIndex={href ? 0 : undefined}
-              >
-                <div className="flex gap-2 px-3 py-2">
-                  {clientColor ? (
-                    <ProjectColorBar color={clientColor} className="mt-1" />
-                  ) : null}
-                  <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 font-medium">
-                        {unread ? (
-                          <span
-                            className={cn(
-                              "h-1.5 w-1.5 shrink-0 rounded-full",
-                              success
-                                ? "bg-[var(--status-healthy)]"
-                                : "bg-[var(--status-attention)]",
-                            )}
-                            aria-label="New"
-                          />
-                        ) : null}
-                        {b.pinned ? (
-                          <Pin size={11} className="text-[var(--accent)]" />
-                        ) : null}
-                        {b.title}
-                      </div>
-                      {b.body ? (
-                        /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(
-                          b.body,
-                        ) ? (
-                          <div
-                            className="rich-notes mt-1 text-xs text-[var(--text-muted)]"
-                            onClick={(e) => {
-                              if ((e.target as HTMLElement).closest("a")) {
-                                e.stopPropagation();
-                              }
-                            }}
-                          >
-                            <RichNotesHtml html={b.body} />
-                          </div>
-                        ) : (
-                          <LinkifiedText
-                            text={b.body}
-                            className="mt-1 text-xs text-[var(--text-muted)]"
-                          />
-                        )
-                      ) : null}
-                      <div className="mt-1 text-[11px] text-[var(--text-muted)]">
-                        {b.created_at.slice(0, 10)}
-                        {author ? ` · ${author.full_name}` : ""}
-                        {` · ${audienceSummary(b)}`}
-                      </div>
-                    </div>
-                    <div
-                      className="flex shrink-0 items-start gap-1"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
+              <li key={b.id}>
+                <NoticeCard
+                  tone={tone}
+                  read={!unread}
+                  icon={Icon}
+                  clientColor={client?.color}
+                  clientName={client?.name}
+                  title={b.title}
+                  subtitle={subtitle}
+                  metaExtra={
+                    b.pinned ? (
+                      <Pin
+                        size={12}
+                        strokeWidth={1.75}
+                        className="shrink-0 text-[var(--accent)]"
+                        aria-label="Pinned"
+                      />
+                    ) : null
+                  }
+                  onActivate={href ? goToLinked : undefined}
+                  actions={
+                    showDismissX || canAuthorEdit ? (
+                    <>
                       {showDismissX ? (
                         <button
                           type="button"
-                          className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                          className={noticeCardActionClassName()}
                           aria-label="Dismiss notice"
                           title="Dismiss"
-                          onClick={() => onDismissFromBoard?.(b.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDismissFromBoard?.(b.id);
+                          }}
                         >
-                          <X size={13} strokeWidth={2} />
+                          <X size={14} strokeWidth={1.75} />
                         </button>
                       ) : null}
                       {canAuthorEdit ? (
-                      <>
-                        <button
-                          type="button"
-                          className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
-                          aria-label="Edit bulletin"
-                          onClick={() =>
-                            setEditing({
-                              id: b.id,
-                              project_id: b.project_id,
-                              task_id: b.task_id ?? null,
-                              milestone_id: b.milestone_id ?? null,
-                              title: b.title,
-                              body: b.body,
-                              pinned: b.pinned,
-                              audience: b.audience,
-                              audience_person_ids: [...b.audience_person_ids],
-                              audience_pod_ids: [...(b.audience_pod_ids ?? [])],
-                              tone: b.tone ?? "default",
-                              created_by_profile_id: b.created_by_profile_id,
-                              created_at: b.created_at,
-                            })
+                        <>
+                          <button
+                            type="button"
+                            className={noticeCardActionClassName()}
+                            aria-label="Edit bulletin"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditing({
+                                id: b.id,
+                                project_id: b.project_id,
+                                task_id: b.task_id ?? null,
+                                milestone_id: b.milestone_id ?? null,
+                                title: b.title,
+                                body: b.body,
+                                pinned: b.pinned,
+                                audience: b.audience,
+                                audience_person_ids: [...b.audience_person_ids],
+                                audience_pod_ids: [
+                                  ...(b.audience_pod_ids ?? []),
+                                ],
+                                tone: b.tone ?? "default",
+                                created_by_profile_id: b.created_by_profile_id,
+                                created_at: b.created_at,
+                              });
+                            }}
+                          >
+                            <Pencil size={14} strokeWidth={1.75} />
+                          </button>
+                          <button
+                            type="button"
+                            className={noticeCardActionClassName(true)}
+                            aria-label="Delete bulletin"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDeleteId(b.id);
+                            }}
+                          >
+                            <Trash2 size={14} strokeWidth={1.75} />
+                          </button>
+                        </>
+                      ) : null}
+                    </>
+                    ) : undefined
+                  }
+                >
+                  {b.body ? (
+                    /<\/?(?:p|strong|b|u|a|br|span|ul|ol|li)\b/i.test(b.body) ? (
+                      <div
+                        className="rich-notes line-clamp-3"
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest("a")) {
+                            e.stopPropagation();
                           }
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--status-over)]"
-                          aria-label="Delete bulletin"
-                          onClick={() => setConfirmDeleteId(b.id)}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                  </div>
-                </div>
+                        }}
+                      >
+                        <RichNotesHtml html={b.body} />
+                      </div>
+                    ) : (
+                      <LinkifiedText
+                        text={b.body}
+                        className="line-clamp-3"
+                      />
+                    )
+                  ) : null}
+                </NoticeCard>
               </li>
             );
           })}

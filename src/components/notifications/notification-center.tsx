@@ -8,11 +8,16 @@ import {
   ClipboardCheck,
   Megaphone,
   MessageSquare,
+  UserPlus,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { ConfirmDialog } from "@/components/ui/form";
-import { ProjectColorBar } from "@/components/ui/project-color-bar";
+import {
+  NoticeCard,
+  noticeCardActionClassName,
+  type NoticeCardTone,
+} from "@/components/notifications/notice-card";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
 import {
@@ -27,29 +32,12 @@ function kindIcon(kind: UtilityNotificationKind): LucideIcon {
   if (kind === "mention") return AtSign;
   if (kind === "in_review") return ClipboardCheck;
   if (kind === "message") return MessageSquare;
+  if (kind === "assigned") return UserPlus;
   return Megaphone;
 }
 
-function kindToneClass(
-  kind: UtilityNotificationKind,
-  read: boolean,
-): string {
-  if (read) return "bg-[var(--bg-elevated)]/60";
-  if (kind === "mention") return "bg-[var(--status-attention-wash)]";
-  if (kind === "in_review") return "bg-[var(--status-healthy)]/15";
-  if (kind === "bulletin") return "bg-[var(--status-over)]/15";
-  return "bg-[var(--accent)]/15";
-}
-
-function kindIconClass(
-  kind: UtilityNotificationKind,
-  read: boolean,
-): string {
-  if (read) return "text-[var(--text-muted)]";
-  if (kind === "mention") return "text-[var(--status-attention)]";
-  if (kind === "in_review") return "text-[var(--status-healthy)]";
-  if (kind === "bulletin") return "text-[var(--status-over)]";
-  return "text-[var(--accent)]";
+function kindAsTone(kind: UtilityNotificationKind): NoticeCardTone {
+  return kind;
 }
 
 function dismissCard(
@@ -331,95 +319,30 @@ function NotificationCenterCard({
   onActivate: () => void;
   onDismiss: () => void;
 }) {
-  const Icon = kindIcon(card.kind);
-  const read = card.read;
-
   return (
-    <div
-      className={cn(
-        "group relative flex w-full gap-2.5 rounded-[var(--radius-md)] border p-3 text-left transition-colors",
-        read
-          ? "border-[var(--border)]/80 opacity-80"
-          : "border-[var(--border)]",
-        kindToneClass(card.kind, read),
-        "hover:brightness-[0.98] dark:hover:brightness-110",
-      )}
-    >
-      <button
-        type="button"
-        className="absolute inset-0 cursor-pointer rounded-[var(--radius-md)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        aria-label={`${read ? "Read" : "Unread"}: ${card.title}`}
-        onClick={onActivate}
-      />
-      {!read ? (
-        <span
-          className="absolute left-1.5 top-1.5 z-[2] h-1.5 w-1.5 rounded-full bg-[var(--status-attention)]"
-          aria-hidden
-        />
-      ) : null}
-      <span
-        className={cn(
-          "relative z-[1] mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg)]/70",
-          kindIconClass(card.kind, read),
-        )}
-        aria-hidden
-      >
-        <Icon size={16} strokeWidth={1.75} />
-      </span>
-      <div className="relative z-[1] min-w-0 flex-1 pointer-events-none">
-        <div className="mb-1 flex min-w-0 items-center gap-1.5">
-          {card.clientColor ? (
-            <ProjectColorBar color={card.clientColor} />
-          ) : null}
-          {card.clientName ? (
-            <span
-              className={cn(
-                "min-w-0 truncate text-[11px] font-medium",
-                read ? "text-[var(--text-muted)]" : "text-[var(--text)]",
-              )}
-            >
-              {card.clientName}
-            </span>
-          ) : null}
-          <span
-            className={cn(
-              "ml-auto shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
-              read
-                ? "bg-[var(--bg)]/80 text-[var(--text-muted)]"
-                : "bg-[var(--status-attention)]/15 text-[var(--status-attention)]",
-            )}
-          >
-            {read ? "Read" : "Unread"}
-          </span>
-        </div>
-        <p
-          className={cn(
-            "text-[13px] leading-snug",
-            read
-              ? "font-medium text-[var(--text-muted)]"
-              : "font-semibold text-[var(--text)]",
-          )}
+    <NoticeCard
+      tone={kindAsTone(card.kind)}
+      read={card.read}
+      icon={kindIcon(card.kind)}
+      clientColor={card.clientColor}
+      clientName={card.clientName}
+      title={card.title}
+      subtitle={card.subtitle}
+      onActivate={onActivate}
+      actions={
+        <button
+          type="button"
+          className={noticeCardActionClassName()}
+          aria-label="Dismiss"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDismiss();
+          }}
         >
-          {card.title}
-        </p>
-        {card.subtitle ? (
-          <p className="mt-0.5 text-[12px] leading-snug text-[var(--text-muted)]">
-            {card.subtitle}
-          </p>
-        ) : null}
-      </div>
-      <button
-        type="button"
-        className="relative z-[2] inline-flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-[var(--radius-md)] text-[var(--text-muted)] opacity-70 hover:bg-[var(--bg)]/80 hover:opacity-100"
-        aria-label="Dismiss"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDismiss();
-        }}
-      >
-        <X size={14} strokeWidth={1.75} />
-      </button>
-    </div>
+          <X size={14} strokeWidth={1.75} />
+        </button>
+      }
+    />
   );
 }
 

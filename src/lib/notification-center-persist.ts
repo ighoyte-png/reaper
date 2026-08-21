@@ -4,7 +4,8 @@ export type PersistedNotificationKind =
   | "mention"
   | "bulletin"
   | "in_review"
-  | "message";
+  | "message"
+  | "assigned";
 
 export type PersistedNotificationCard = {
   id: string;
@@ -27,6 +28,7 @@ const KINDS = new Set<PersistedNotificationKind>([
   "bulletin",
   "in_review",
   "message",
+  "assigned",
 ]);
 
 /** localStorage key for notification-center cards (per org + profile + person). */
