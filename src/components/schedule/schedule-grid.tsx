@@ -1664,6 +1664,10 @@ export function ScheduleGrid() {
     if (id) {
       setSelectedLeaveBlockId(null);
       setLeaveEditForm(null);
+      const hasBoundTasks = state.assignment_bound_tasks.some(
+        (r) => r.assignment_id === id,
+      );
+      if (hasBoundTasks) setSidebarPanelTab("tasks");
     }
     if (id) {
       if (isNarrow) setMobilePanelOpen(true);
@@ -1694,19 +1698,23 @@ export function ScheduleGrid() {
     if (!a) return;
 
     deepLinkAssignmentRef.current = assignmentId;
+    selectAssignment(a.id, { start: a.start_date, end: a.end_date });
     const tabRaw = filters.tab?.trim().toLowerCase();
-    if (!tabRaw || tabRaw === "details" || tabRaw === "edit") {
-      setSidebarPanelTab("edit");
-    } else if (tabRaw === "tasks") {
+    if (tabRaw === "tasks") {
       setSidebarPanelTab("tasks");
     } else if (tabRaw === "hours") {
       setSidebarPanelTab("hours");
     } else if (tabRaw === "assigner") {
       setSidebarPanelTab("assigner");
-    } else {
+    } else if (tabRaw === "details" || tabRaw === "edit") {
       setSidebarPanelTab("edit");
+    } else {
+      // No explicit tab: Tasks when bound, otherwise Edit.
+      const hasBound = state.assignment_bound_tasks.some(
+        (r) => r.assignment_id === a.id,
+      );
+      setSidebarPanelTab(hasBound ? "tasks" : "edit");
     }
-    selectAssignment(a.id, { start: a.start_date, end: a.end_date });
     setFilters({ assignment: "", tab: "", date: "" });
   }, [
     filters.assignment,
@@ -4564,7 +4572,10 @@ export function ScheduleGrid() {
                   hideHeader
                   allowSelect={false}
                   assigneePersonId={
-                    canManage
+                    canManage ||
+                    Boolean(
+                      projectsById.get(editForm.project_id)?.sandbox_mode,
+                    )
                       ? null
                       : (viewAs?.effectivePersonId ?? myPerson?.id ?? null)
                   }
@@ -4949,7 +4960,10 @@ export function ScheduleGrid() {
                   hideHeader
                   allowSelect={false}
                   assigneePersonId={
-                    canManage
+                    canManage ||
+                    Boolean(
+                      projectsById.get(selected.project_id)?.sandbox_mode,
+                    )
                       ? null
                       : (viewAs?.effectivePersonId ?? myPerson?.id ?? null)
                   }
