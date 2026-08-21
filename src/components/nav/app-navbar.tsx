@@ -27,6 +27,7 @@ import {
   GlobalSearch,
   GlobalSearchHotkeyBridge,
 } from "@/components/search/global-search";
+import { NotificationCenterTrigger } from "@/components/notifications/notification-center";
 import { useTheme } from "@/components/theme/theme-provider";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -231,15 +232,18 @@ export function AppNavbar() {
         </nav>
         <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5">
           {!shareBasePath ? (
-            <button
-              type="button"
-              className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-              aria-label="Search"
-              title="Search"
-              onClick={() => setSearchOpen(true)}
-            >
-              <Search size={18} strokeWidth={1.75} />
-            </button>
+            <>
+              <NotificationCenterTrigger className="h-10 w-10 md:h-8 md:w-8" />
+              <button
+                type="button"
+                className="inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)] md:h-8 md:w-8"
+                aria-label="Search"
+                title="Search"
+                onClick={() => setSearchOpen(true)}
+              >
+                <Search size={18} strokeWidth={1.75} />
+              </button>
+            </>
           ) : null}
           {accountName ? (
             <div ref={accountMenuRef} className="relative hidden md:block">

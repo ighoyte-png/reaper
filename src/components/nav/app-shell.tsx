@@ -14,7 +14,7 @@ import { loginPathWithNext, stripWorkspacePrefix } from "@/lib/paths";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 import { MentionDesktopListener } from "@/components/notifications/mention-desktop-listener";
 import { NotificationPermissionBanner } from "@/components/notifications/notification-permission-banner";
-import { UtilityNoticeCarousel } from "@/components/notifications/utility-notice-carousel";
+import { NotificationCenter } from "@/components/notifications/notification-center";
 import { UtilityNotificationsProvider } from "@/lib/utility-notifications";
 
 function isSchedulePath(pathname: string, workspaceSlug: string): boolean {
@@ -153,7 +153,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           <MentionDesktopListener />
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
             {children}
-            <UtilityNoticeCarousel />
+            <NotificationCenter />
           </div>
         </div>
       </UtilityNotificationsProvider>

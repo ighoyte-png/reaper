@@ -45,6 +45,8 @@ export type UtilityNotificationCard = {
   enqueuedAt: number;
   /** Fade-in after mount. */
   visible: boolean;
+  /** Opened/acknowledged in the notification center (stays in the list). */
+  read: boolean;
   mentionTarget?: MentionTarget;
   bulletinId?: string;
 };
@@ -52,6 +54,11 @@ export type UtilityNotificationCard = {
 type UtilityNotificationsContextValue = {
   cards: UtilityNotificationCard[];
   prefEnabled: boolean;
+  centerOpen: boolean;
+  openCenter: () => void;
+  closeCenter: () => void;
+  toggleCenter: () => void;
+  markCardRead: (id: string) => void;
   removeCard: (id: string) => void;
   removeMentionCard: (target: MentionTarget) => void;
   removeBulletinCard: (bulletinId: string) => void;
@@ -80,6 +87,7 @@ export function UtilityNotificationsProvider({
   const viewAs = useViewAsOptional();
   const [cards, setCards] = useState<UtilityNotificationCard[]>([]);
   const [prefEnabled, setPrefEnabled] = useState(true);
+  const [centerOpen, setCenterOpen] = useState(false);
 
   const seenMentionKeysRef = useRef<Set<string> | null>(null);
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
@@ -125,26 +133,34 @@ export function UtilityNotificationsProvider({
   }, []);
 
   const enqueue = useCallback(
-    (card: Omit<UtilityNotificationCard, "visible" | "enqueuedAt">) => {
+    (card: Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read">) => {
       // Pref only gates dock visibility — keep enqueueing so disable/re-enable
       // preserves and continues notices.
       if (isPublicShare) return;
 
       setCards((prev) => {
         if (prev.some((c) => c.id === card.id)) return prev;
+        // Newest notices sit at the top of the center list.
         return [
-          ...prev,
           {
             ...card,
             enqueuedAt: Date.now(),
             visible: false,
+            read: false,
           },
+          ...prev,
         ];
       });
       scheduleVisible(card.id);
     },
     [isPublicShare, scheduleVisible],
   );
+
+  const markCardRead = useCallback((id: string) => {
+    setCards((prev) =>
+      prev.map((c) => (c.id === id && !c.read ? { ...c, read: true } : c)),
+    );
+  }, []);
 
   const removeCard = useCallback((id: string) => {
     const t = fadeTimersRef.current.get(id);
@@ -189,6 +205,10 @@ export function UtilityNotificationsProvider({
     fadeTimersRef.current.clear();
     setCards([]);
   }, []);
+
+  const openCenter = useCallback(() => setCenterOpen(true), []);
+  const closeCenter = useCallback(() => setCenterOpen(false), []);
+  const toggleCenter = useCallback(() => setCenterOpen((v) => !v), []);
 
   // Watch mention unreads
   useEffect(() => {
@@ -321,7 +341,8 @@ export function UtilityNotificationsProvider({
     appHref,
   ]);
 
-  // Drop cards whose unread was cleared elsewhere
+  // When unread is cleared elsewhere (dashboard, etc.), mark as read but keep
+  // the card in the notification center until the user dismisses it.
   useEffect(() => {
     if (!mentionPersonId) return;
     const unreadKeys = new Set(
@@ -330,30 +351,43 @@ export function UtilityNotificationsProvider({
         .map((r) => mentionUnreadKey(r))
         .filter(Boolean),
     );
-    setCards((prev) =>
-      prev.filter((c) => {
-        if (c.kind !== "mention" || !c.mentionTarget) return true;
+    setCards((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.kind !== "mention" || !c.mentionTarget || c.read) return c;
         const key = `${c.mentionTarget.kind}:${c.mentionTarget.id}`;
-        return unreadKeys.has(key);
-      }),
-    );
+        if (unreadKeys.has(key)) return c;
+        changed = true;
+        return { ...c, read: true };
+      });
+      return changed ? next : prev;
+    });
   }, [state.unread_mentions, mentionPersonId]);
 
   useEffect(() => {
     const unread = new Set(state.unread_bulletin_ids ?? []);
-    setCards((prev) =>
-      prev.filter((c) => {
-        if (c.kind !== "bulletin" && c.kind !== "in_review") return true;
-        if (!c.bulletinId) return true;
-        return unread.has(c.bulletinId);
-      }),
-    );
+    setCards((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.kind !== "bulletin" && c.kind !== "in_review") return c;
+        if (!c.bulletinId || c.read) return c;
+        if (unread.has(c.bulletinId)) return c;
+        changed = true;
+        return { ...c, read: true };
+      });
+      return changed ? next : prev;
+    });
   }, [state.unread_bulletin_ids]);
 
   const value = useMemo(
     () => ({
       cards,
       prefEnabled,
+      centerOpen,
+      openCenter,
+      closeCenter,
+      toggleCenter,
+      markCardRead,
       removeCard,
       removeMentionCard,
       removeBulletinCard,
@@ -362,6 +396,11 @@ export function UtilityNotificationsProvider({
     [
       cards,
       prefEnabled,
+      centerOpen,
+      openCenter,
+      closeCenter,
+      toggleCenter,
+      markCardRead,
       removeCard,
       removeMentionCard,
       removeBulletinCard,
@@ -382,6 +421,11 @@ export function useUtilityNotifications(): UtilityNotificationsContextValue {
     return {
       cards: [],
       prefEnabled: true,
+      centerOpen: false,
+      openCenter: () => {},
+      closeCenter: () => {},
+      toggleCenter: () => {},
+      markCardRead: () => {},
       removeCard: () => {},
       removeMentionCard: () => {},
       removeBulletinCard: () => {},
@@ -423,7 +467,7 @@ function buildMentionCard(args: {
     search?: string,
   ) => string;
   appHref: (path: string) => string;
-}): Omit<UtilityNotificationCard, "visible" | "enqueuedAt"> | null {
+}): Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> | null {
   const { row, target, state, projectHref, appHref } = args;
   const id = mentionCardId(row);
 
@@ -541,7 +585,7 @@ function buildBulletinCard(args: {
     people: { profile_id: string | null; name: string }[];
     profiles: { id: string; full_name: string | null; email: string }[];
   };
-}): Omit<UtilityNotificationCard, "visible" | "enqueuedAt"> | null {
+}): Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> | null {
   const { bulletin, projectHref, appHref, state } = args;
   const inReview =
     isSystemBulletin(bulletin) && bulletin.tone === "success";
