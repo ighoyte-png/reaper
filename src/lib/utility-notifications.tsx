@@ -37,6 +37,10 @@ export type UtilityNotificationCard = {
   href: string;
   title: string;
   subtitle: string;
+  /** Client display name when the notice is project-linked. */
+  clientName?: string | null;
+  /** Client brand color for the dock / dashboard color bar. */
+  clientColor?: string | null;
   /** ISO time when enqueued (for stable oldest→newest order). */
   enqueuedAt: number;
   /** Fade-in after mount. */
@@ -47,6 +51,7 @@ export type UtilityNotificationCard = {
 
 type UtilityNotificationsContextValue = {
   cards: UtilityNotificationCard[];
+  prefEnabled: boolean;
   removeCard: (id: string) => void;
   removeMentionCard: (target: MentionTarget) => void;
   removeBulletinCard: (bulletinId: string) => void;
@@ -121,7 +126,9 @@ export function UtilityNotificationsProvider({
 
   const enqueue = useCallback(
     (card: Omit<UtilityNotificationCard, "visible" | "enqueuedAt">) => {
-      if (!prefEnabled || isPublicShare) return;
+      // Pref only gates dock visibility — keep enqueueing so disable/re-enable
+      // preserves and continues notices.
+      if (isPublicShare) return;
 
       setCards((prev) => {
         if (prev.some((c) => c.id === card.id)) return prev;
@@ -136,7 +143,7 @@ export function UtilityNotificationsProvider({
       });
       scheduleVisible(card.id);
     },
-    [prefEnabled, isPublicShare, scheduleVisible],
+    [isPublicShare, scheduleVisible],
   );
 
   const removeCard = useCallback((id: string) => {
@@ -182,14 +189,6 @@ export function UtilityNotificationsProvider({
     fadeTimersRef.current.clear();
     setCards([]);
   }, []);
-
-  useEffect(() => {
-    if (!prefEnabled) {
-      clearAll();
-      seenMentionKeysRef.current = null;
-      seenBulletinIdsRef.current = null;
-    }
-  }, [prefEnabled, clearAll]);
 
   // Watch mention unreads
   useEffect(() => {
@@ -354,12 +353,20 @@ export function UtilityNotificationsProvider({
   const value = useMemo(
     () => ({
       cards,
+      prefEnabled,
       removeCard,
       removeMentionCard,
       removeBulletinCard,
       clearAll,
     }),
-    [cards, removeCard, removeMentionCard, removeBulletinCard, clearAll],
+    [
+      cards,
+      prefEnabled,
+      removeCard,
+      removeMentionCard,
+      removeBulletinCard,
+      clearAll,
+    ],
   );
 
   return (
@@ -374,6 +381,7 @@ export function useUtilityNotifications(): UtilityNotificationsContextValue {
   if (!ctx) {
     return {
       cards: [],
+      prefEnabled: true,
       removeCard: () => {},
       removeMentionCard: () => {},
       removeBulletinCard: () => {},
@@ -390,7 +398,7 @@ function buildMentionCard(args: {
     task_comments: { id: string; task_id: string; body: string; author_profile_id: string | null; created_at?: string }[];
     tasks: { id: string; title: string; project_id: string; notes: string }[];
     projects: Project[];
-    clients: { id: string; name: string }[];
+    clients: { id: string; name: string; color: string }[];
     people: {
       id: string;
       name: string;
@@ -458,12 +466,13 @@ function buildMentionCard(args: {
               }
             : null,
         ),
-        client?.name,
         project.name,
-        snippet.slice(0, 80),
+        snippet.slice(0, 120),
       ]
         .filter(Boolean)
         .join(" · "),
+      clientName: client?.name ?? null,
+      clientColor: client?.color ?? null,
       mentionTarget: target,
     };
   }
@@ -474,13 +483,18 @@ function buildMentionCard(args: {
       ? state.projects.find((p) => p.id === task.project_id)
       : undefined;
     if (!task || !project) return null;
+    const client = project.client_id
+      ? state.clients.find((c) => c.id === project.client_id)
+      : undefined;
     const snippet = notesPlainText(task.notes).replace(/\s+/g, " ").trim();
     return {
       id,
       kind: "mention",
       href: projectHref(project, `task=${task.id}`),
       title: task.title || "Task mention",
-      subtitle: [project.name, snippet.slice(0, 80)].filter(Boolean).join(" · "),
+      subtitle: [project.name, snippet.slice(0, 120)].filter(Boolean).join(" · "),
+      clientName: client?.name ?? null,
+      clientColor: client?.color ?? null,
       mentionTarget: target,
     };
   }
@@ -490,6 +504,9 @@ function buildMentionCard(args: {
     ? state.projects.find((p) => p.id === assignment.project_id)
     : undefined;
   if (!assignment || !project) return null;
+  const client = project.client_id
+    ? state.clients.find((c) => c.id === project.client_id)
+    : undefined;
   const qs = new URLSearchParams({
     person: assignment.person_id,
     assignment: assignment.id,
@@ -502,9 +519,11 @@ function buildMentionCard(args: {
     kind: "mention",
     href: appHref(`/schedule?${qs.toString()}`),
     title: project.name || "Schedule mention",
-    subtitle: ["Schedule note", snippet.slice(0, 80)]
+    subtitle: ["Schedule note", snippet.slice(0, 120)]
       .filter(Boolean)
       .join(" · "),
+    clientName: client?.name ?? null,
+    clientColor: client?.color ?? null,
     mentionTarget: target,
   };
 }
@@ -518,6 +537,7 @@ function buildBulletinCard(args: {
   appHref: (path: string) => string;
   state: {
     projects: Project[];
+    clients: { id: string; name: string; color: string }[];
     people: { profile_id: string | null; name: string }[];
     profiles: { id: string; full_name: string | null; email: string }[];
   };
@@ -528,6 +548,9 @@ function buildBulletinCard(args: {
   const kind: UtilityNotificationKind = inReview ? "in_review" : "bulletin";
   const project = bulletin.project_id
     ? state.projects.find((p) => p.id === bulletin.project_id)
+    : null;
+  const client = project?.client_id
+    ? state.clients.find((c) => c.id === project.client_id)
     : null;
   const href = project
     ? bulletin.task_id
@@ -555,9 +578,11 @@ function buildBulletinCard(args: {
     kind,
     href,
     title: bulletin.title?.trim() || (inReview ? "Ready for review" : "Bulletin"),
-    subtitle: [author, project?.name, snippet.slice(0, 60)]
+    subtitle: [author, project?.name, snippet.slice(0, 120)]
       .filter(Boolean)
       .join(" · "),
+    clientName: client?.name ?? null,
+    clientColor: client?.color ?? null,
     bulletinId: bulletin.id,
   };
 }

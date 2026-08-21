@@ -178,6 +178,34 @@ a.rich-notes-link {
   );
 }
 
+@keyframes notices-count-glow {
+  0% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--status-attention) 70%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--status-attention) 40%, transparent);
+  }
+  40% {
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--status-attention) 45%, transparent),
+      0 0 14px 2px color-mix(in srgb, var(--status-attention) 55%, transparent);
+  }
+  100% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--status-attention) 0%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--status-attention) 0%, transparent);
+  }
+}
+
+.notices-count-glow {
+  animation: notices-count-glow 750ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notices-count-glow {
+    animation: none;
+  }
+}
+
 @keyframes milestone-celebrate {
   0% {
     transform: scale(0.4) rotate(-12deg);

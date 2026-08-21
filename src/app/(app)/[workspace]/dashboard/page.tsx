@@ -1659,7 +1659,7 @@ function TaggedMentionsPanel({
                   onClick={() => onOpen(target)}
                 >
                   {client ? (
-                    <ProjectColorBar color={client.color} size="stretch" />
+                    <ProjectColorBar color={client.color} className="mt-1" />
                   ) : null}
                   <div className="min-w-0 flex-1">
                     <div className="mb-0.5 flex items-center justify-between gap-2 text-[11px] text-[var(--text-muted)]">
@@ -2624,7 +2624,7 @@ function BulletinBoard({
               >
                 <div className="flex gap-2 px-3 py-2">
                   {clientColor ? (
-                    <ProjectColorBar color={clientColor} size="stretch" />
+                    <ProjectColorBar color={clientColor} className="mt-1" />
                   ) : null}
                   <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
