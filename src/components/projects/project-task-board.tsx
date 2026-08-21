@@ -3630,21 +3630,6 @@ function InlineTaskForm({
               ) : null}
             </div>
           </div>
-          {isCreateFlow && assigneeId ? (
-            <div className="grid min-w-0 gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
-              <span className="text-sm text-[var(--text-muted)] sm:invisible">
-                Notify
-              </span>
-              <label className="flex cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
-                <Checkbox
-                  checked={notifyAssignee}
-                  onChange={(e) => setNotifyAssignee(e.target.checked)}
-                  aria-label="Notify the assignee"
-                />
-                Notify the assignee
-              </label>
-            </div>
-          ) : null}
           <div className="grid min-w-0 gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
             <span className="text-sm text-[var(--text-muted)]">Dates</span>
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3712,6 +3697,16 @@ function InlineTaskForm({
             >
               Cancel
             </button>
+            {isCreateFlow && assigneeId ? (
+              <label className="flex cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
+                <Checkbox
+                  checked={notifyAssignee}
+                  onChange={(e) => setNotifyAssignee(e.target.checked)}
+                  aria-label="Notify the Assignee"
+                />
+                Notify the Assignee
+              </label>
+            ) : null}
           </div>
           {onDelete ? (
             <button

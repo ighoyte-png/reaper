@@ -1225,11 +1225,17 @@ export default function DashboardPage() {
         >
           <div
             className={cn(
-              "order-3 grid gap-4 sm:grid-cols-2 lg:order-none",
+              "order-3 grid gap-4 lg:order-none",
+              !showOrgKpis && showPmHealthKpi
+                ? "sm:grid-cols-3"
+                : "sm:grid-cols-2",
               viewerFullyHidden &&
                 "min-h-0 flex-1 items-stretch lg:grid-rows-1",
             )}
           >
+            {!showOrgKpis && showPmHealthKpi ? (
+              <ActiveProjectsHealthCard stats={projectHealthStats} />
+            ) : null}
             <TaggedMentionsPanel
               mentions={taggedMentions}
               onOpen={(target) => {
@@ -1344,10 +1350,7 @@ export default function DashboardPage() {
               </KpiCard>
             </div>
 
-            {/* Members (non-org KPI strip): full-width when this is the only extra KPI. */}
-            {!showOrgKpis && showPmHealthKpi ? (
-              <ActiveProjectsHealthCard stats={projectHealthStats} />
-            ) : null}
+            {/* Members (non-org KPI strip): health card lives beside Mentions / Task Pulse. */}
 
             {showScheduleWidgets ? (
               <TodaySchedule
@@ -2296,7 +2299,7 @@ function TaskPulse({
           </div>
           <h2 className="text-sm font-semibold">Task Pulse</h2>
           {total > 0 ? (
-            <span className="rounded-full bg-[var(--status-healthy)] px-2 py-0.5 text-[11px] font-medium text-white">
+            <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
               {total}
             </span>
           ) : null}
@@ -2445,7 +2448,7 @@ function BulletinBoard({
           </div>
           <h2 className="text-sm font-semibold">Bulletin Board</h2>
           {unreadCount > 0 ? (
-            <span className="rounded-full bg-[var(--status-over)] px-2 py-0.5 text-[11px] font-medium text-white">
+            <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
               {unreadCount}
             </span>
           ) : null}
