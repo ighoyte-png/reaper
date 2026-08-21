@@ -8,6 +8,7 @@ import { isUnreadBulletin } from "@/lib/domain/bulletins";
 import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import { mentionUnreadKey } from "@/lib/mentions";
 import { notesPlainText } from "@/lib/notes-html";
+import { useViewAsOptional } from "@/lib/view-as";
 import {
   ASSIGNMENT_NOTE_MENTION_EVENT,
   BULLETIN_UNREAD_EVENT,
@@ -90,6 +91,7 @@ async function notifyBulletinDesktop(args: {
         : projectHref(linkedProject)
     : appHref("/dashboard");
   const isSuccess = bulletin.tone === "success";
+  const isMilestone = Boolean(bulletin.milestone_id);
   const notifTitle = isSuccess
     ? orgName
     : authorPerson?.name?.trim() ||
@@ -97,7 +99,9 @@ async function notifyBulletinDesktop(args: {
       authorProfile?.email?.trim() ||
       "Bulletin";
   const notifBody = isSuccess
-    ? bulletin.title || snippet || "Milestone approved"
+    ? bulletin.title ||
+      snippet ||
+      (isMilestone ? "Milestone approved" : "Ready for review")
     : [
         orgName,
         bulletin.title
@@ -140,6 +144,7 @@ export function MentionDesktopListener() {
     ensureMentionComments,
     canManage,
   } = useData();
+  const viewAs = useViewAsOptional();
   const router = useRouter();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
@@ -147,14 +152,16 @@ export function MentionDesktopListener() {
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  const notifyPersonId =
+    viewAs?.effectivePersonId ?? myPerson?.id ?? null;
 
   useEffect(() => {
-    if (isPublicShare || !myPerson) {
+    if (isPublicShare || !notifyPersonId) {
       seenMentionKeysRef.current = null;
       return;
     }
     const mine = state.unread_mentions
-      .filter((r) => r.person_id === myPerson.id && !r.read_at)
+      .filter((r) => r.person_id === notifyPersonId && !r.read_at)
       .map((r) => mentionUnreadKey(r))
       .filter(Boolean);
 
@@ -370,7 +377,7 @@ export function MentionDesktopListener() {
     state.unread_mentions,
     state.task_comments,
     state.organization?.name,
-    myPerson,
+    notifyPersonId,
     profile?.id,
     isPublicShare,
     ensureMentionComments,
@@ -381,7 +388,7 @@ export function MentionDesktopListener() {
 
   useEffect(() => {
     if (isPublicShare) return;
-    const personId = myPerson?.id ?? null;
+    const personId = notifyPersonId;
     const myProfileId = profile?.id ?? null;
     if (!personId && !myProfileId) return;
     const orgName = state.organization?.name?.trim() || "Reaper";
@@ -570,7 +577,7 @@ export function MentionDesktopListener() {
     };
   }, [
     isPublicShare,
-    myPerson,
+    notifyPersonId,
     profile?.id,
     state.organization?.name,
     router,
@@ -595,7 +602,7 @@ export function MentionDesktopListener() {
     if (fresh.length === 0) return;
 
     const orgName = state.organization?.name?.trim() || "Reaper";
-    const personId = myPerson?.id ?? null;
+    const personId = notifyPersonId;
     const manageWithoutPerson = canManage && !personId;
     const unreadSet = new Set(mine);
     const profileId = profile.id;
@@ -623,7 +630,7 @@ export function MentionDesktopListener() {
     state.unread_bulletin_ids,
     state.organization?.name,
     state.bulletins,
-    myPerson?.id,
+    notifyPersonId,
     profile,
     canManage,
     isPublicShare,
@@ -636,7 +643,7 @@ export function MentionDesktopListener() {
     if (isPublicShare || !profile || !ready) return;
     const profileId = profile.id;
     const orgName = state.organization?.name?.trim() || "Reaper";
-    const personId = myPerson?.id ?? null;
+    const personId = notifyPersonId;
     const manageWithoutPerson = canManage && !personId;
 
     function onBulletinUnread(ev: Event) {
@@ -683,7 +690,7 @@ export function MentionDesktopListener() {
     ready,
     isPublicShare,
     profile,
-    myPerson?.id,
+    notifyPersonId,
     canManage,
     state.organization?.name,
     router,

@@ -7,6 +7,7 @@ import { addWeeks, format, parseISO } from "date-fns";
 import {
   AlertTriangle,
   AtSign,
+  CalendarClock,
   CalendarOff,
   CalendarRange,
   ClipboardCheck,
@@ -16,6 +17,7 @@ import {
   LayoutGrid,
   Megaphone,
   MessageSquare,
+  Milestone,
   Pencil,
   Pin,
   Plus,
@@ -55,7 +57,9 @@ import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useProjectBurnsMap } from "@/lib/hooks/use-aggregates";
 import {
   bulletinVisibleToPerson,
+  isMilestoneApprovalBulletin,
   isSystemBulletin,
+  isTaskInReviewBulletin,
   isUnreadBulletin,
 } from "@/lib/domain/bulletins";
 import { useViewAs } from "@/lib/view-as";
@@ -98,6 +102,7 @@ import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { isFullyHiddenFromPlanning } from "@/lib/domain/contractor";
 import { utilizationVisiblePeople, personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import {
+  collectPersonDueTodayTasks,
   collectPersonOverdueTasks,
   dueDateToneClass,
   taskUrgency,
@@ -121,13 +126,6 @@ import type {
   Project,
   Task,
 } from "@/lib/types";
-
-const URGENCY_GROUPS: { key: TaskUrgency; label: string }[] = [
-  { key: "today", label: "Due Today" },
-  { key: "tomorrow", label: "Due Tomorrow" },
-  { key: "three_days", label: "Due Soon" },
-  { key: "week", label: "Due this week" },
-];
 
 export default function DashboardPage() {
   const {
@@ -429,6 +427,35 @@ export default function DashboardPage() {
     todayKey,
   ]);
 
+  /** Task Pulse due today — same person-responsibility rules as overdue. */
+  const pulseDueTodayTasks = useMemo(() => {
+    if (isPublicShare && showingAsManager) {
+      return collectPersonDueTodayTasks(
+        pulseTasks,
+        null,
+        state.people,
+        projectById,
+        todayKey,
+      );
+    }
+    return collectPersonDueTodayTasks(
+      state.tasks,
+      personalPersonId,
+      state.people,
+      projectById,
+      todayKey,
+    );
+  }, [
+    isPublicShare,
+    showingAsManager,
+    pulseTasks,
+    state.tasks,
+    state.people,
+    personalPersonId,
+    projectById,
+    todayKey,
+  ]);
+
   const urgentByGroup = useMemo(() => {
     const map = new Map<TaskUrgency, Task[]>();
     for (const t of scopedTasks) {
@@ -447,73 +474,8 @@ export default function DashboardPage() {
     return map;
   }, [scopedTasks, todayKey]);
 
-  const pulseUrgentByGroup = useMemo(() => {
-    const map = new Map<TaskUrgency, Task[]>();
-    for (const t of pulseTasks) {
-      if (t.status === "complete" || !t.due_date || t.due_date < todayKey) {
-        continue;
-      }
-      const urgency = taskUrgency(t.due_date, todayKey);
-      if (urgency === "none" || urgency === "overdue") continue;
-      const list = map.get(urgency) ?? [];
-      list.push(t);
-      map.set(urgency, list);
-    }
-    for (const list of map.values()) {
-      list.sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
-    }
-    return map;
-  }, [pulseTasks, todayKey]);
-
-  const urgentTaskIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const list of urgentByGroup.values()) {
-      for (const t of list) ids.add(t.id);
-    }
-    return ids;
-  }, [urgentByGroup]);
-
-  const pulseUrgentTaskIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const list of pulseUrgentByGroup.values()) {
-      for (const t of list) ids.add(t.id);
-    }
-    return ids;
-  }, [pulseUrgentByGroup]);
-
-  const highPriorityTasks = useMemo(
-    () =>
-      scopedTasks.filter((t) => {
-        if (t.status === "complete") return false;
-        if (t.due_date && t.due_date < todayKey) return false;
-        if (urgentTaskIds.has(t.id)) return false;
-        const project = projectById.get(t.project_id);
-        return Boolean(project && project.priority <= 2);
-      }),
-    [scopedTasks, urgentTaskIds, projectById, todayKey],
-  );
-
-  const pulseHighPriorityTasks = useMemo(
-    () =>
-      pulseTasks.filter((t) => {
-        if (t.status === "complete") return false;
-        if (t.due_date && t.due_date < todayKey) return false;
-        if (pulseUrgentTaskIds.has(t.id)) return false;
-        const project = projectById.get(t.project_id);
-        return Boolean(project && project.priority <= 2);
-      }),
-    [pulseTasks, pulseUrgentTaskIds, projectById, todayKey],
-  );
-
-  const pinnedTotal =
-    overdueTasks.length +
-    [...urgentByGroup.values()].reduce((sum, l) => sum + l.length, 0) +
-    highPriorityTasks.length;
-
   const pulsePinnedTotal =
-    pulseOverdueTasks.length +
-    [...pulseUrgentByGroup.values()].reduce((sum, l) => sum + l.length, 0) +
-    pulseHighPriorityTasks.length;
+    pulseOverdueTasks.length + pulseDueTodayTasks.length;
 
   const bulletins = useMemo(() => {
     const audienceCtx = {
@@ -521,6 +483,7 @@ export default function DashboardPage() {
       podMembers: state.pod_members,
     };
     const dismissed = new Set(state.dismissed_bulletin_ids ?? []);
+    const unread = new Set(state.unread_bulletin_ids ?? []);
     const filtered = (
       showingAsManager
         ? state.bulletins
@@ -528,17 +491,23 @@ export default function DashboardPage() {
             bulletinVisibleToPerson(b, personalPersonId, audienceCtx),
           )
     ).filter((b) => {
+      // Dashboard board: authored bulletins + milestone approvals only.
+      if (isTaskInReviewBulletin(b)) return false;
       // System notices: dismiss hides from board. Regular: dismiss only clears wash.
       if (!dismissed.has(b.id)) return true;
       return !isSystemBulletin(b);
     });
     return [...filtered].sort((a, b) => {
+      const aUnread = unread.has(a.id) ? 0 : 1;
+      const bUnread = unread.has(b.id) ? 0 : 1;
+      if (aUnread !== bUnread) return aUnread - bUnread;
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.created_at.localeCompare(a.created_at);
     });
   }, [
     state.bulletins,
     state.dismissed_bulletin_ids,
+    state.unread_bulletin_ids,
     state.pods,
     state.pod_members,
     showingAsManager,
@@ -928,14 +897,16 @@ export default function DashboardPage() {
       pods: state.pods,
       podMembers: state.pod_members,
     };
-    return state.bulletins.filter((b) =>
-      isUnreadBulletin(
-        b,
-        mentionPersonId,
-        profile?.id ?? null,
-        unreadBulletins,
-        { manageWithoutPerson, ...audienceCtx },
-      ),
+    return state.bulletins.filter(
+      (b) =>
+        !isTaskInReviewBulletin(b) &&
+        isUnreadBulletin(
+          b,
+          mentionPersonId,
+          profile?.id ?? null,
+          unreadBulletins,
+          { manageWithoutPerson, ...audienceCtx },
+        ),
     ).length;
   }, [
     mentionPersonId,
@@ -1091,7 +1062,10 @@ export default function DashboardPage() {
     }
 
     return rows
-      .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+      .sort((a, b) => {
+        if (a.unread !== b.unread) return a.unread ? -1 : 1;
+        return b.dateKey.localeCompare(a.dateKey);
+      })
       .slice(0, 20);
   }, [
     mentionPersonId,
@@ -1273,8 +1247,7 @@ export default function DashboardPage() {
             />
             <TaskPulse
               overdue={pulseOverdueTasks}
-              urgentByGroup={pulseUrgentByGroup}
-              highPriority={pulseHighPriorityTasks}
+              dueToday={pulseDueTodayTasks}
               total={pulsePinnedTotal}
               projectById={projectById}
               clientById={clientById}
@@ -1282,8 +1255,6 @@ export default function DashboardPage() {
               showAssignee={isPublicShare}
               projectHref={projectHref}
               viewAllHref={myTasksHref}
-              pulsePersonId={mentionPersonId}
-              compact
               stretch={viewerFullyHidden}
             />
           </div>
@@ -2266,8 +2237,7 @@ function TodaySchedule({
 
 function TaskPulse({
   overdue,
-  urgentByGroup,
-  highPriority,
+  dueToday,
   total,
   projectById,
   clientById,
@@ -2275,13 +2245,10 @@ function TaskPulse({
   showAssignee,
   projectHref,
   viewAllHref,
-  pulsePersonId,
-  compact = false,
   stretch = false,
 }: {
   overdue: Task[];
-  urgentByGroup: Map<TaskUrgency, Task[]>;
-  highPriority: Task[];
+  dueToday: Task[];
   total: number;
   projectById: Map<string, Project>;
   clientById: Map<string, Client>;
@@ -2289,51 +2256,9 @@ function TaskPulse({
   showAssignee?: boolean;
   projectHref: (project: Pick<Project, "client_id" | "slug">, search?: string) => string;
   viewAllHref: string;
-  /** When set, badge can be cleared for the day via View All. */
-  pulsePersonId?: string | null;
-  compact?: boolean;
   stretch?: boolean;
 }) {
-  const todayKey = format(new Date(), "yyyy-MM-dd");
-  const badgeStorageKey =
-    pulsePersonId != null
-      ? `reaper-pulse-badge:${pulsePersonId}:${todayKey}`
-      : null;
-  const [badgeCleared, setBadgeCleared] = useState(() => {
-    if (!badgeStorageKey || typeof window === "undefined") return false;
-    try {
-      return localStorage.getItem(badgeStorageKey) === "1";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    if (!badgeStorageKey || typeof window === "undefined") {
-      setBadgeCleared(false);
-      return;
-    }
-    try {
-      setBadgeCleared(localStorage.getItem(badgeStorageKey) === "1");
-    } catch {
-      setBadgeCleared(false);
-    }
-  }, [badgeStorageKey]);
-
-  const badgeTotal = badgeCleared ? 0 : total;
-  const hasFeed =
-    overdue.length > 0 ||
-    [...urgentByGroup.values()].some((list) => list.length > 0) ||
-    (!compact && highPriority.length > 0);
-
-  function clearBadgeForToday() {
-    if (!badgeStorageKey) return;
-    try {
-      localStorage.setItem(badgeStorageKey, "1");
-    } catch {
-      /* ignore */
-    }
-    setBadgeCleared(true);
-  }
+  const hasFeed = overdue.length > 0 || dueToday.length > 0;
 
   function row(task: Task, overdueRow: boolean) {
     const assignee = task.assignee_person_id
@@ -2357,10 +2282,6 @@ function TaskPulse({
     );
   }
 
-  const groupsToShow = compact
-    ? URGENCY_GROUPS.filter((g) => g.key !== "week")
-    : URGENCY_GROUPS;
-
   return (
     <section
       className={cn(
@@ -2370,27 +2291,26 @@ function TaskPulse({
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--bg-elevated)] text-[var(--text-muted)]">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]">
             <Pin size={16} strokeWidth={1.75} aria-hidden />
           </div>
           <h2 className="text-sm font-semibold">Task Pulse</h2>
-          {badgeTotal > 0 ? (
-            <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
-              {badgeTotal}
+          {total > 0 ? (
+            <span className="rounded-full bg-[var(--status-healthy)] px-2 py-0.5 text-[11px] font-medium text-white">
+              {total}
             </span>
           ) : null}
         </div>
         <Link
           href={viewAllHref}
           className={buttonClass({ variant: "secondary", size: "sm" })}
-          onClick={clearBadgeForToday}
         >
           View All
         </Link>
       </div>
       {!hasFeed ? (
         <p className="text-sm text-[var(--text-muted)]">
-          Nothing overdue or urgent right now.
+          Nothing overdue or due today.
         </p>
       ) : (
         <div
@@ -2406,37 +2326,19 @@ function TaskPulse({
                 Overdue
               </div>
               <div className="space-y-1.5">
-                {(compact ? overdue.slice(0, 4) : overdue).map((t) =>
-                  row(t, true),
-                )}
+                {overdue.map((t) => row(t, true))}
               </div>
             </div>
           ) : null}
 
-          {groupsToShow.map(({ key, label }) => {
-            const tasks = urgentByGroup.get(key);
-            if (!tasks || tasks.length === 0) return null;
-            return (
-              <div key={key}>
-                <div className="mb-1.5 text-xs font-medium text-[var(--text-muted)]">
-                  {label}
-                </div>
-                <div className="space-y-1.5">
-                  {(compact ? tasks.slice(0, 4) : tasks).map((t) =>
-                    row(t, false),
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {!compact && highPriority.length > 0 ? (
+          {dueToday.length > 0 ? (
             <div>
-              <div className="mb-1.5 text-xs font-medium text-[var(--text-muted)]">
-                High priority
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--status-near)]">
+                <CalendarClock size={12} />
+                Due Today
               </div>
               <div className="space-y-1.5">
-                {highPriority.map((t) => row(t, false))}
+                {dueToday.map((t) => row(t, false))}
               </div>
             </div>
           ) : null}
@@ -2574,9 +2476,19 @@ function BulletinBoard({
             );
             const unread = isUnread?.(b) ?? false;
             const systemNotice = isSystemBulletin(b);
+            const milestoneApproved = isMilestoneApprovalBulletin(b);
+            const inReview = isTaskInReviewBulletin(b);
             const success = b.tone === "success";
-            const tone = success ? "in_review" : "bulletin";
-            const Icon = success ? ClipboardCheck : Megaphone;
+            const tone = milestoneApproved
+              ? "milestone_approved"
+              : inReview || success
+                ? "in_review"
+                : "bulletin";
+            const Icon = milestoneApproved
+              ? Milestone
+              : inReview || success
+                ? ClipboardCheck
+                : Megaphone;
             const isAuthor =
               Boolean(profileId) && b.created_by_profile_id === profileId;
             const washed =

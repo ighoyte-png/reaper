@@ -4,6 +4,7 @@ export type PersistedNotificationKind =
   | "mention"
   | "bulletin"
   | "in_review"
+  | "milestone_approved"
   | "message"
   | "assigned";
 
@@ -27,6 +28,7 @@ const KINDS = new Set<PersistedNotificationKind>([
   "mention",
   "bulletin",
   "in_review",
+  "milestone_approved",
   "message",
   "assigned",
 ]);

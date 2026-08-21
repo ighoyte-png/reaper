@@ -35,6 +35,8 @@
   --status-near: #d97706;
   --status-over: #dc2626;
   --status-unavailable: #6b7280;
+  /* Milestone approval notices (Notification Center + Bulletin Board) */
+  --status-milestone: #7c3aed;
   /* Mentions / unread attention (nav dots, tagged comments) */
   --status-attention: #ea580c;
   --status-attention-wash: color-mix(in srgb, var(--status-attention) 18%, var(--bg));
@@ -83,6 +85,7 @@
   --status-near: #f59e0b;
   --status-over: #ef4444;
   --status-unavailable: #9ca3af;
+  --status-milestone: #a78bfa;
   --status-attention: #f97316;
   --status-attention-wash: color-mix(in srgb, var(--status-attention) 22%, var(--bg));
   --row-hover: rgba(255, 255, 255, 0.03);

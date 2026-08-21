@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useData } from "@/lib/data/store";
-import { isSystemBulletin } from "@/lib/domain/bulletins";
+import { isMilestoneApprovalBulletin, isTaskInReviewBulletin } from "@/lib/domain/bulletins";
 import { taskThreadMessageNotifyPersonId } from "@/lib/domain/tasks";
 import { mentionTargetFromUnread, mentionUnreadKey } from "@/lib/mentions";
 import {
@@ -24,6 +24,7 @@ import { notesPlainText } from "@/lib/notes-html";
 import {
   desktopNotificationPermission,
   notificationPortraitIcon,
+  reaperNotificationBadgeUrl,
   showDesktopNotification,
   TASK_ASSIGNED_EVENT,
   type TaskAssignedBroadcast,
@@ -44,6 +45,7 @@ export type UtilityNotificationKind =
   | "mention"
   | "bulletin"
   | "in_review"
+  | "milestone_approved"
   | "message"
   | "assigned";
 
@@ -125,6 +127,10 @@ export function UtilityNotificationsProvider({
   const seenAssignedCardIdsRef = useRef<Set<string> | null>(null);
   /** After first message-thread pass, new cards also get a desktop push. */
   const messageDesktopSeededRef = useRef(false);
+  /** After first mention pass, new mention cards also get a desktop push. */
+  const mentionDesktopSeededRef = useRef(false);
+  /** After first bulletin pass, new bulletin cards also get a desktop push. */
+  const bulletinDesktopSeededRef = useRef(false);
   const fadeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
@@ -155,6 +161,8 @@ export function UtilityNotificationsProvider({
       seenMessageCommentIdsRef.current = null;
       seenAssignedCardIdsRef.current = null;
       messageDesktopSeededRef.current = false;
+      mentionDesktopSeededRef.current = false;
+      bulletinDesktopSeededRef.current = false;
       setCards([]);
       setStorageReady(false);
       return;
@@ -163,6 +171,8 @@ export function UtilityNotificationsProvider({
     const restored = readNotificationCenterCards(storageKey);
     storageKeyRef.current = storageKey;
     messageDesktopSeededRef.current = false;
+    mentionDesktopSeededRef.current = false;
+    bulletinDesktopSeededRef.current = false;
 
     const mentionSeen = new Set<string>();
     const bulletinSeen = new Set<string>();
@@ -172,7 +182,9 @@ export function UtilityNotificationsProvider({
       if (card.kind === "mention" && card.mentionTarget) {
         mentionSeen.add(`${card.mentionTarget.kind}:${card.mentionTarget.id}`);
       } else if (
-        (card.kind === "bulletin" || card.kind === "in_review") &&
+        (card.kind === "bulletin" ||
+          card.kind === "in_review" ||
+          card.kind === "milestone_approved") &&
         card.bulletinId
       ) {
         bulletinSeen.add(card.bulletinId);
@@ -195,6 +207,22 @@ export function UtilityNotificationsProvider({
     );
     setStorageReady(true);
   }, [storageKey]);
+
+  // Remap legacy in_review cards that are actually milestone approvals.
+  useEffect(() => {
+    if (!storageReady || isPublicShare) return;
+    setCards((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.kind !== "in_review" || !c.bulletinId) return c;
+        const bulletin = state.bulletins.find((b) => b.id === c.bulletinId);
+        if (!bulletin || !isMilestoneApprovalBulletin(bulletin)) return c;
+        changed = true;
+        return { ...c, kind: "milestone_approved" as const };
+      });
+      return changed ? next : prev;
+    });
+  }, [storageReady, isPublicShare, state.bulletins]);
 
   // Persist whenever the list changes (read/unread/dismiss).
   useEffect(() => {
@@ -309,7 +337,9 @@ export function UtilityNotificationsProvider({
       let changed = false;
       const next = prev.map((c) => {
         if (
-          (c.kind !== "bulletin" && c.kind !== "in_review") ||
+          (c.kind !== "bulletin" &&
+            c.kind !== "in_review" &&
+            c.kind !== "milestone_approved") ||
           c.bulletinId !== bulletinId ||
           c.read
         ) {
@@ -358,6 +388,8 @@ export function UtilityNotificationsProvider({
       seenMentionKeysRef.current = new Set();
     }
     const seen = seenMentionKeysRef.current;
+    const pushDesktop = mentionDesktopSeededRef.current;
+    const orgName = state.organization?.name?.trim() || "Reaper";
 
     for (const row of mine) {
       const k = mentionUnreadKey(row);
@@ -374,7 +406,17 @@ export function UtilityNotificationsProvider({
       if (!built) continue;
       seen.add(k);
       enqueue(built);
+      if (pushDesktop) {
+        pushMentionDesktop({
+          target,
+          href: built.href,
+          title: built.title,
+          orgName,
+          state,
+        });
+      }
     }
+    mentionDesktopSeededRef.current = true;
   }, [
     storageReady,
     state.unread_mentions,
@@ -385,6 +427,7 @@ export function UtilityNotificationsProvider({
     state.people,
     state.profiles,
     state.assignments,
+    state.organization?.name,
     mentionPersonId,
     isPublicShare,
     enqueue,
@@ -400,6 +443,8 @@ export function UtilityNotificationsProvider({
       seenBulletinIdsRef.current = new Set();
     }
     const seen = seenBulletinIdsRef.current;
+    const pushDesktop = bulletinDesktopSeededRef.current;
+    const orgName = state.organization?.name?.trim() || "Reaper";
 
     for (const bulletinId of mine) {
       if (seen.has(bulletinId)) continue;
@@ -415,13 +460,25 @@ export function UtilityNotificationsProvider({
       if (!built) continue;
       seen.add(bulletinId);
       enqueue(built);
+      if (pushDesktop) {
+        pushBulletinDesktop({
+          bulletin,
+          href: built.href,
+          orgName,
+          state,
+        });
+      }
     }
+    bulletinDesktopSeededRef.current = true;
   }, [
     storageReady,
     state.unread_bulletin_ids,
     state.bulletins,
     state.projects,
     state.clients,
+    state.people,
+    state.profiles,
+    state.organization?.name,
     profile,
     isPublicShare,
     enqueue,
@@ -640,7 +697,12 @@ export function UtilityNotificationsProvider({
     setCards((prev) => {
       let changed = false;
       const next = prev.map((c) => {
-        if (c.kind !== "bulletin" && c.kind !== "in_review") return c;
+        if (
+          c.kind !== "bulletin" &&
+          c.kind !== "in_review" &&
+          c.kind !== "milestone_approved"
+        )
+          return c;
         if (!c.bulletinId || c.read) return c;
         if (unread.has(c.bulletinId)) return c;
         changed = true;
@@ -877,9 +939,13 @@ function buildBulletinCard(args: {
   };
 }): Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> | null {
   const { bulletin, projectHref, appHref, state } = args;
-  const inReview =
-    isSystemBulletin(bulletin) && bulletin.tone === "success";
-  const kind: UtilityNotificationKind = inReview ? "in_review" : "bulletin";
+  const milestoneApproved = isMilestoneApprovalBulletin(bulletin);
+  const inReview = isTaskInReviewBulletin(bulletin);
+  const kind: UtilityNotificationKind = milestoneApproved
+    ? "milestone_approved"
+    : inReview
+      ? "in_review"
+      : "bulletin";
   const project = bulletin.project_id
     ? state.projects.find((p) => p.id === bulletin.project_id)
     : null;
@@ -904,14 +970,20 @@ function buildBulletinCard(args: {
     authorPerson?.name?.trim() ||
     authorProfile?.full_name?.trim() ||
     authorProfile?.email?.trim() ||
-    (inReview ? "Review" : "Bulletin");
+    (milestoneApproved ? "Milestone" : inReview ? "Review" : "Bulletin");
   const snippet = notesPlainText(bulletin.body).replace(/\s+/g, " ").trim();
 
   return {
     id: bulletinCardId(bulletin.id),
     kind,
     href,
-    title: bulletin.title?.trim() || (inReview ? "Ready for review" : "Bulletin"),
+    title:
+      bulletin.title?.trim() ||
+      (milestoneApproved
+        ? "Milestone approved"
+        : inReview
+          ? "Ready for review"
+          : "Bulletin"),
     subtitle: [author, project?.name, snippet.slice(0, 120)]
       .filter(Boolean)
       .join(" · "),
@@ -993,6 +1065,213 @@ function buildMessageCard(args: {
     taskId: task.id,
     commentId: comment.id,
   };
+}
+
+function pushMentionDesktop(args: {
+  target: MentionTarget;
+  href: string;
+  title: string;
+  orgName: string;
+  state: {
+    task_comments: {
+      id: string;
+      body: string;
+      author_profile_id: string | null;
+    }[];
+    tasks: {
+      id: string;
+      title: string;
+      notes: string;
+      created_by_profile_id?: string | null;
+      edited_by_profile_id?: string | null;
+    }[];
+    assignments: {
+      id: string;
+      notes: string;
+      edited_by_profile_id?: string | null;
+      project_id: string;
+    }[];
+    people: {
+      id: string;
+      name: string;
+      profile_id: string | null;
+      avatar_url?: string | null;
+      avatar_attachment_id?: string | null;
+      avatar_color?: string | null;
+      deleted_at?: string | null;
+    }[];
+    profiles: {
+      id: string;
+      full_name: string | null;
+      email: string;
+    }[];
+    projects: { id: string; name: string }[];
+  };
+}): void {
+  const { target, href, title, orgName, state } = args;
+  let authorProfileId: string | null = null;
+  let bodyLine = title;
+  let tag = `mention-${target.kind}-${target.id}`;
+
+  if (target.kind === "comment") {
+    const comment = state.task_comments.find((c) => c.id === target.id);
+    if (!comment) return;
+    authorProfileId = comment.author_profile_id;
+    const snippet = notesPlainText(comment.body).replace(/\s+/g, " ").trim();
+    bodyLine = [
+      orgName,
+      title ? `Mentioned you in “${title}”` : "Mentioned you in a comment",
+      snippet.slice(0, 140) || null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    tag = `mention-comment-${target.id}`;
+  } else if (target.kind === "task") {
+    const task = state.tasks.find((t) => t.id === target.id);
+    if (!task) return;
+    authorProfileId =
+      task.edited_by_profile_id ?? task.created_by_profile_id ?? null;
+    bodyLine = [
+      orgName,
+      task.title
+        ? `Mentioned in task “${task.title}”`
+        : "Mentioned in a task description",
+    ].join("\n");
+    tag = `mention-task-${target.id}`;
+  } else if (target.kind === "assignment") {
+    const assignment = state.assignments.find((a) => a.id === target.id);
+    if (!assignment) return;
+    authorProfileId = assignment.edited_by_profile_id ?? null;
+    const project = state.projects.find((p) => p.id === assignment.project_id);
+    bodyLine = [
+      orgName,
+      project?.name
+        ? `Mentioned in schedule note · ${project.name}`
+        : "Mentioned in a schedule note",
+    ].join("\n");
+    tag = `mention-assignment-${target.id}`;
+  }
+
+  const authorPerson = authorProfileId
+    ? state.people.find((p) => p.profile_id === authorProfileId)
+    : undefined;
+  const authorProfile = authorProfileId
+    ? state.profiles.find((p) => p.id === authorProfileId)
+    : undefined;
+  const authorName =
+    resolveAuthorLabel(
+      authorProfile
+        ? {
+            full_name: authorProfile.full_name ?? undefined,
+            email: authorProfile.email,
+          }
+        : null,
+      authorPerson
+        ? {
+            name: authorPerson.name,
+            deleted_at: authorPerson.deleted_at ?? null,
+          }
+        : null,
+    ) || "Someone";
+
+  void (async () => {
+    const icon = await notificationPortraitIcon({
+      name: authorName,
+      avatarUrl: authorPerson?.avatar_url,
+      avatarAttachmentId: authorPerson?.avatar_attachment_id,
+      color: authorPerson
+        ? personAvatarColor({
+            id: authorPerson.id,
+            avatar_color: authorPerson.avatar_color ?? null,
+          })
+        : null,
+    });
+    void showDesktopNotification(authorName, {
+      body: bodyLine,
+      tag,
+      icon,
+      href,
+    });
+  })();
+}
+
+function pushBulletinDesktop(args: {
+  bulletin: Bulletin;
+  href: string;
+  orgName: string;
+  state: {
+    people: {
+      id: string;
+      name: string;
+      profile_id: string | null;
+      avatar_url?: string | null;
+      avatar_attachment_id?: string | null;
+      avatar_color?: string | null;
+      deleted_at?: string | null;
+    }[];
+    profiles: {
+      id: string;
+      full_name: string | null;
+      email: string;
+    }[];
+  };
+}): void {
+  const { bulletin, href, orgName, state } = args;
+  const isSuccess = bulletin.tone === "success";
+  const isMilestone = Boolean(bulletin.milestone_id);
+  const authorPerson = bulletin.created_by_profile_id
+    ? state.people.find((p) => p.profile_id === bulletin.created_by_profile_id)
+    : undefined;
+  const authorProfile = bulletin.created_by_profile_id
+    ? state.profiles.find((p) => p.id === bulletin.created_by_profile_id)
+    : undefined;
+  const authorName =
+    resolveAuthorLabel(
+      authorProfile
+        ? {
+            full_name: authorProfile.full_name ?? undefined,
+            email: authorProfile.email,
+          }
+        : null,
+      authorPerson
+        ? {
+            name: authorPerson.name,
+            deleted_at: authorPerson.deleted_at ?? null,
+          }
+        : null,
+    ) || "Bulletin";
+  const snippet = notesPlainText(bulletin.body).slice(0, 140);
+  const notifTitle = isSuccess ? orgName : authorName;
+  const notifBody = isSuccess
+    ? bulletin.title ||
+      snippet ||
+      (isMilestone ? "Milestone approved" : "Ready for review")
+    : [
+        orgName,
+        bulletin.title
+          ? `${bulletin.title}${snippet ? ` — ${snippet}` : ""}`
+          : snippet || "New bulletin",
+      ].join("\n");
+
+  void (async () => {
+    const icon = authorPerson
+      ? await notificationPortraitIcon({
+          name: authorName,
+          avatarUrl: authorPerson.avatar_url,
+          avatarAttachmentId: authorPerson.avatar_attachment_id,
+          color: personAvatarColor({
+            id: authorPerson.id,
+            avatar_color: authorPerson.avatar_color ?? null,
+          }),
+        })
+      : reaperNotificationBadgeUrl();
+    void showDesktopNotification(notifTitle, {
+      body: notifBody,
+      tag: `bulletin-${bulletin.id}`,
+      icon,
+      href,
+    });
+  })();
 }
 
 function pushTaskMessageDesktop(args: {

@@ -279,7 +279,7 @@ export interface Bulletin {
   audience: "all" | "people";
   audience_person_ids: string[];
   audience_pod_ids: string[];
-  /** Visual tone — success = green highlight (e.g. milestone approval). */
+  /** Visual tone — success = celebration (task in-review green, milestone approval purple). */
   tone: BulletinTone;
   created_by_profile_id: string | null;
   created_at: string;

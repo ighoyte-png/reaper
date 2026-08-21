@@ -83,6 +83,32 @@ export function isSystemBulletin(b: Pick<Bulletin, "created_by_profile_id">): bo
   return b.created_by_profile_id == null;
 }
 
+/** Client milestone approval celebration (system + success + milestone link). */
+export function isMilestoneApprovalBulletin(
+  b: Pick<Bulletin, "created_by_profile_id" | "tone" | "milestone_id">,
+): boolean {
+  return (
+    isSystemBulletin(b) &&
+    b.tone === "success" &&
+    Boolean(b.milestone_id)
+  );
+}
+
+/** Assignee submitted a task for review (system + success + task link). */
+export function isTaskInReviewBulletin(
+  b: Pick<
+    Bulletin,
+    "created_by_profile_id" | "tone" | "task_id" | "milestone_id"
+  >,
+): boolean {
+  return (
+    isSystemBulletin(b) &&
+    b.tone === "success" &&
+    Boolean(b.task_id) &&
+    !b.milestone_id
+  );
+}
+
 /** Legacy localStorage keys for bulletin dismissals (pre-unread inbox). */
 export function legacyBulletinDismissStorageKeys(
   personId: string | null,

@@ -10,6 +10,7 @@ export type NoticeCardTone =
   | "mention"
   | "bulletin"
   | "in_review"
+  | "milestone_approved"
   | "message"
   | "assigned";
 
@@ -20,6 +21,7 @@ export function noticeToneClass(
   if (read) return "bg-[var(--bg-elevated)]/60";
   if (tone === "mention") return "bg-[var(--status-attention-wash)]";
   if (tone === "in_review") return "bg-[var(--status-healthy)]/15";
+  if (tone === "milestone_approved") return "bg-[var(--status-milestone)]/15";
   if (tone === "bulletin") return "bg-[var(--status-over)]/15";
   if (tone === "assigned") return "bg-[var(--status-near)]/15";
   return "bg-[var(--accent)]/15";
@@ -32,6 +34,7 @@ export function noticeIconClass(
   if (read) return "text-[var(--text-muted)]";
   if (tone === "mention") return "text-[var(--status-attention)]";
   if (tone === "in_review") return "text-[var(--status-healthy)]";
+  if (tone === "milestone_approved") return "text-[var(--status-milestone)]";
   if (tone === "bulletin") return "text-[var(--status-over)]";
   if (tone === "assigned") return "text-[var(--status-near)]";
   return "text-[var(--accent)]";
@@ -39,6 +42,7 @@ export function noticeIconClass(
 
 export function noticeUnreadDotClass(tone: NoticeCardTone): string {
   if (tone === "in_review") return "bg-[var(--status-healthy)]";
+  if (tone === "milestone_approved") return "bg-[var(--status-milestone)]";
   if (tone === "bulletin") return "bg-[var(--status-over)]";
   if (tone === "assigned") return "bg-[var(--status-near)]";
   if (tone === "message") return "bg-[var(--accent)]";
@@ -144,7 +148,9 @@ export function NoticeCard({
                     ? "bg-[var(--status-over)]/15 text-[var(--status-over)]"
                     : tone === "in_review"
                       ? "bg-[var(--status-healthy)]/15 text-[var(--status-healthy)]"
-                      : tone === "assigned"
+                      : tone === "milestone_approved"
+                        ? "bg-[var(--status-milestone)]/15 text-[var(--status-milestone)]"
+                        : tone === "assigned"
                         ? "bg-[var(--status-near)]/15 text-[var(--status-near)]"
                         : tone === "message"
                           ? "bg-[var(--accent)]/15 text-[var(--accent)]"

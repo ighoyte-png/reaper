@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Megaphone,
   MessageSquare,
+  Milestone,
   UserPlus,
   X,
   type LucideIcon,
@@ -31,6 +32,7 @@ const COUNT_GLOW_MS = 750;
 function kindIcon(kind: UtilityNotificationKind): LucideIcon {
   if (kind === "mention") return AtSign;
   if (kind === "in_review") return ClipboardCheck;
+  if (kind === "milestone_approved") return Milestone;
   if (kind === "message") return MessageSquare;
   if (kind === "assigned") return UserPlus;
   return Megaphone;
@@ -57,7 +59,9 @@ function dismissCard(
   if (card.kind === "mention" && card.mentionTarget && args.personId) {
     args.markMentionRead(card.mentionTarget, args.personId);
   } else if (
-    (card.kind === "bulletin" || card.kind === "in_review") &&
+    (card.kind === "bulletin" ||
+      card.kind === "in_review" ||
+      card.kind === "milestone_approved") &&
     card.bulletinId
   ) {
     args.dismissBulletin(card.bulletinId);
@@ -85,7 +89,9 @@ function acknowledgeCard(
   if (card.kind === "mention" && card.mentionTarget && args.personId) {
     args.markMentionRead(card.mentionTarget, args.personId);
   } else if (
-    (card.kind === "bulletin" || card.kind === "in_review") &&
+    (card.kind === "bulletin" ||
+      card.kind === "in_review" ||
+      card.kind === "milestone_approved") &&
     card.bulletinId
   ) {
     args.dismissBulletin(card.bulletinId);

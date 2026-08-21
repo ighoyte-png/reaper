@@ -196,6 +196,30 @@ export function collectPersonOverdueTasks<T extends Task>(
     .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
 }
 
+/** Due today for a person — same assignee / In Review→assigner rules as overdue. */
+export function collectPersonDueTodayTasks<T extends Task>(
+  tasks: T[],
+  personId: string | null,
+  people: Pick<Person, "id" | "profile_id">[],
+  projectById: Map<string, Pick<Project, "manager_person_id">>,
+  todayKey: string,
+): T[] {
+  return tasks
+    .filter(
+      (t) =>
+        !t.is_divider &&
+        t.status !== "complete" &&
+        t.due_date === todayKey &&
+        taskOnPersonOverdueList(
+          t,
+          personId,
+          people,
+          projectById.get(t.project_id) ?? null,
+        ),
+    )
+    .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+}
+
 export function nextTaskStatus(status: TaskStatus): TaskStatus {
   if (status === "upcoming") return "active";
   if (status === "active") return "complete";
