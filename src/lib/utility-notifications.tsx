@@ -12,7 +12,6 @@ import {
 } from "react";
 import { useData } from "@/lib/data/store";
 import { isMilestoneApprovalBulletin, isTaskInReviewBulletin } from "@/lib/domain/bulletins";
-import { taskThreadMessageNotifyPersonId } from "@/lib/domain/tasks";
 import { mentionTargetFromUnread, mentionUnreadKey } from "@/lib/mentions";
 import {
   clearNotificationCenterCards,
@@ -486,7 +485,8 @@ export function UtilityNotificationsProvider({
     appHref,
   ]);
 
-  // Watch assigner ↔ assignee task-thread replies
+  // Watch task-thread comment unreads → Notification Center + desktop.
+  // Recipients match DB notify set (assigner, assignee, PM, roster, subscribers).
   useEffect(() => {
     if (!storageReady || isPublicShare || !mentionPersonId) return;
 
@@ -500,25 +500,15 @@ export function UtilityNotificationsProvider({
       state.task_comments as TaskComment[]
     ).filter((comment) => {
       if (!unreadTaskIds.has(comment.task_id)) return false;
+      // @mentions get their own mention cards / toasts.
       if (comment.mentioned_person_ids?.includes(mentionPersonId)) {
         return false;
       }
-      const task = state.tasks.find((t) => t.id === comment.task_id);
-      if (!task) return false;
-      const project =
-        state.projects.find((p) => p.id === task.project_id) ?? null;
       const authorPerson = comment.author_profile_id
         ? state.people.find((p) => p.profile_id === comment.author_profile_id)
         : null;
-      if (!authorPerson) return false;
-      return (
-        taskThreadMessageNotifyPersonId(
-          task,
-          authorPerson.id,
-          state.people,
-          project,
-        ) === mentionPersonId
-      );
+      if (!authorPerson || authorPerson.id === mentionPersonId) return false;
+      return true;
     });
 
     if (seenMessageCommentIdsRef.current === null) {

@@ -2,6 +2,7 @@ import type {
   Bulletin,
   Person,
   Project,
+  ProjectMember,
   Task,
   TaskComment,
   TaskList,
@@ -464,8 +465,8 @@ export function taskVisualToneColor(tone: TaskVisualTone): string | null {
 }
 
 /**
- * Assigner and/or assignee who should see a new task-thread comment when
- * someone else writes it (deduped when they are the same person).
+ * Assigner, assignee, and project manager who should see a new task-thread
+ * comment when someone else writes it (deduped).
  */
 export function taskThreadRoleNotifyPersonIds(
   task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,
@@ -483,12 +484,15 @@ export function taskThreadRoleNotifyPersonIds(
   };
   add(task.assignee_person_id);
   add(taskAssignerPersonId(task, people, project));
+  // Always include the PM — even when someone else created/assigned the task.
+  add(project?.manager_person_id);
   return out;
 }
 
 /**
  * Counterpart for Notification Center "message" cards: assigner → assignee
  * or assignee → assigner only (never when a third party comments).
+ * @deprecated Prefer unread-driven message cards / taskThreadNotifyPersonIds.
  */
 export function taskThreadMessageNotifyPersonId(
   task: Pick<Task, "assignee_person_id" | "created_by_profile_id">,
@@ -571,11 +575,12 @@ export function taskThreadSubscriberPersonIds(
 }
 
 /**
- * Full notify set for a new comment: assigner and/or assignee (when not the
- * author) plus thread subscribers (authors / @mentions), excluding the author.
+ * Full notify set for a new comment: assigner, assignee, project manager,
+ * project team roster, plus thread subscribers (authors / @mentions),
+ * excluding the author.
  */
 export function taskThreadNotifyPersonIds(
-  task: Pick<Task, "id" | "assignee_person_id" | "created_by_profile_id">,
+  task: Pick<Task, "id" | "assignee_person_id" | "created_by_profile_id" | "project_id">,
   authorPersonId: string | null,
   people: Pick<Person, "id" | "profile_id">[],
   project: Pick<Project, "manager_person_id"> | null,
@@ -583,6 +588,7 @@ export function taskThreadNotifyPersonIds(
     TaskComment,
     "task_id" | "author_profile_id" | "mentioned_person_ids"
   >[],
+  projectMembers: Pick<ProjectMember, "project_id" | "person_id">[] = [],
 ): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -598,6 +604,9 @@ export function taskThreadNotifyPersonIds(
     project,
   )) {
     add(id);
+  }
+  for (const m of projectMembers) {
+    if (m.project_id === task.project_id) add(m.person_id);
   }
   for (const id of taskThreadSubscriberPersonIds(task.id, comments, people)) {
     add(id);

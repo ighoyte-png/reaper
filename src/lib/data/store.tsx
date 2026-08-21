@@ -4900,6 +4900,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 state.people,
                 project,
                 commentsForNotify,
+                state.project_members,
               )) {
                 addThreadUnread(person_id);
               }
@@ -4943,6 +4944,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             state.people,
             project,
             commentsForNotify,
+            state.project_members,
           );
           if (notifyIds.length > 0) {
             const snippet = notesPlainText(row.body)
