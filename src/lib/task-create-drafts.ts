@@ -9,6 +9,8 @@ export type TaskCreateDraft = {
   due_date: string | null;
   notes: string;
   is_client_review?: boolean;
+  /** Create-only: opt in to notify the assignee (default off). */
+  notify_assignee?: boolean;
 };
 
 type StoredTaskCreateDraft = TaskCreateDraft & { updatedAt: number };
@@ -42,6 +44,8 @@ function parseStored(raw: string | null): StoredTaskCreateDraft | null {
         typeof parsed.start_date === "string" ? parsed.start_date : null,
       due_date: typeof parsed.due_date === "string" ? parsed.due_date : null,
       notes: typeof parsed.notes === "string" ? parsed.notes : "",
+      is_client_review: Boolean(parsed.is_client_review),
+      notify_assignee: Boolean(parsed.notify_assignee),
       updatedAt:
         typeof parsed.updatedAt === "number" ? parsed.updatedAt : Date.now(),
     };

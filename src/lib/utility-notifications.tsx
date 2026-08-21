@@ -25,6 +25,8 @@ import {
   desktopNotificationPermission,
   notificationPortraitIcon,
   showDesktopNotification,
+  TASK_ASSIGNED_EVENT,
+  type TaskAssignedBroadcast,
 } from "@/lib/desktop-notifications";
 import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
@@ -33,7 +35,6 @@ import type {
   Bulletin,
   MentionTarget,
   MentionUnread,
-  Person,
   Project,
   Task,
   TaskComment,
@@ -101,8 +102,8 @@ function messageCardId(commentId: string): string {
   return `message:${commentId}`;
 }
 
-function assignedCardId(task: Pick<Task, "id" | "edited_at" | "created_at">): string {
-  return `assigned:${task.id}:${task.edited_at ?? task.created_at}`;
+function assignedNotifyCardId(taskId: string): string {
+  return `assigned:${taskId}:notify`;
 }
 
 export function UtilityNotificationsProvider({
@@ -122,17 +123,19 @@ export function UtilityNotificationsProvider({
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
   const seenMessageCommentIdsRef = useRef<Set<string> | null>(null);
   const seenAssignedCardIdsRef = useRef<Set<string> | null>(null);
-  /** Last known assignee per task — null until seeded after storage hydrate. */
-  const assigneeSnapshotRef = useRef<Map<string, string | null> | null>(null);
   /** After first message-thread pass, new cards also get a desktop push. */
   const messageDesktopSeededRef = useRef(false);
   const fadeTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
   const storageKeyRef = useRef<string | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const mentionPersonId =
     viewAs?.effectivePersonId ?? myPerson?.id ?? null;
+  const mentionPersonIdRef = useRef(mentionPersonId);
+  mentionPersonIdRef.current = mentionPersonId;
   const orgId = state.organization?.id || null;
   const profileId = profile?.id ?? null;
   const storageKey =
@@ -151,7 +154,6 @@ export function UtilityNotificationsProvider({
       seenBulletinIdsRef.current = null;
       seenMessageCommentIdsRef.current = null;
       seenAssignedCardIdsRef.current = null;
-      assigneeSnapshotRef.current = null;
       messageDesktopSeededRef.current = false;
       setCards([]);
       setStorageReady(false);
@@ -184,7 +186,6 @@ export function UtilityNotificationsProvider({
     seenBulletinIdsRef.current = bulletinSeen;
     seenMessageCommentIdsRef.current = messageSeen;
     seenAssignedCardIdsRef.current = assignedSeen;
-    assigneeSnapshotRef.current = null;
 
     setCards(
       restored.map((c) => ({
@@ -556,72 +557,60 @@ export function UtilityNotificationsProvider({
     projectHref,
   ]);
 
-  // Watch task assignee changes → "assigned to you"
+  // Opt-in "assigned to you" (create task → Notify the assignee).
   useEffect(() => {
-    if (!storageReady || isPublicShare || !mentionPersonId) {
-      assigneeSnapshotRef.current = null;
-      return;
-    }
+    if (!storageReady || isPublicShare) return;
 
-    if (seenAssignedCardIdsRef.current === null) {
-      seenAssignedCardIdsRef.current = new Set();
-    }
-    const seenCards = seenAssignedCardIdsRef.current;
+    function onTaskAssigned(ev: Event) {
+      const personId = mentionPersonIdRef.current;
+      if (!personId) return;
+      const detail = (ev as CustomEvent<TaskAssignedBroadcast>).detail;
+      if (!detail?.personIds?.includes(personId)) return;
 
-    const snapshot = assigneeSnapshotRef.current;
-    if (snapshot === null) {
-      const map = new Map<string, string | null>();
-      for (const task of state.tasks) {
-        map.set(task.id, task.assignee_person_id ?? null);
+      if (seenAssignedCardIdsRef.current === null) {
+        seenAssignedCardIdsRef.current = new Set();
       }
-      assigneeSnapshotRef.current = map;
-      return;
-    }
+      const seenCards = seenAssignedCardIdsRef.current;
+      const cardId = assignedNotifyCardId(detail.taskId);
+      if (seenCards.has(cardId)) return;
 
-    for (const task of state.tasks) {
-      const next = task.assignee_person_id ?? null;
-      const had = snapshot.has(task.id);
-      const prev = had ? (snapshot.get(task.id) ?? null) : undefined;
-      snapshot.set(task.id, next);
-
-      if (next !== mentionPersonId) continue;
-      if (prev === mentionPersonId) continue;
-      // Skip self-assign / self-create (actor is the viewer).
-      if (
-        assignmentActorIsViewer(
-          task,
-          profileId,
-          mentionPersonId,
-          state.people,
-        )
-      ) {
-        continue;
-      }
-
-      const cardId = assignedCardId(task);
-      if (seenCards.has(cardId)) continue;
-      const built = buildAssignedCard({
-        task,
-        state,
+      const snap = stateRef.current;
+      const built = buildAssignedCardFromNotify({
+        detail,
+        state: snap,
         projectHref,
       });
-      if (!built) continue;
+      if (!built) return;
       seenCards.add(cardId);
       enqueue(built);
+
+      const orgName = snap.organization?.name?.trim() || "Reaper";
+      const authorName = detail.authorName?.trim() || "Someone";
+      void (async () => {
+        const icon = await notificationPortraitIcon({
+          name: authorName,
+          avatarUrl: detail.authorAvatarUrl,
+          avatarAttachmentId: detail.authorAvatarAttachmentId,
+          color: detail.authorColor,
+        });
+        void showDesktopNotification(authorName, {
+          body: [
+            orgName,
+            detail.taskTitle?.trim()
+              ? `Assigned you “${detail.taskTitle.trim()}”`
+              : "Assigned you a task",
+          ].join("\n"),
+          tag: `task-assigned-${detail.taskId}`,
+          icon,
+          href: built.href,
+        });
+      })();
     }
-  }, [
-    storageReady,
-    state.tasks,
-    state.projects,
-    state.clients,
-    state.people,
-    state.profiles,
-    mentionPersonId,
-    profileId,
-    isPublicShare,
-    enqueue,
-    projectHref,
-  ]);
+    window.addEventListener(TASK_ASSIGNED_EVENT, onTaskAssigned);
+    return () => {
+      window.removeEventListener(TASK_ASSIGNED_EVENT, onTaskAssigned);
+    };
+  }, [storageReady, isPublicShare, enqueue, projectHref]);
 
   // When unread is cleared elsewhere, mark as read but keep the card.
   useEffect(() => {
@@ -1085,93 +1074,42 @@ function pushTaskMessageDesktop(args: {
   })();
 }
 
-/** True when the person who created/last-edited the task is the notification viewer. */
-function assignmentActorIsViewer(
-  task: Pick<Task, "created_by_profile_id" | "edited_by_profile_id">,
-  viewerProfileId: string | null,
-  viewerPersonId: string,
-  people: Pick<Person, "id" | "profile_id">[],
-): boolean {
-  const actorProfileId =
-    task.edited_by_profile_id ?? task.created_by_profile_id;
-  if (!actorProfileId) return false;
-  if (viewerProfileId && actorProfileId === viewerProfileId) return true;
-  const actorPerson = people.find((p) => p.profile_id === actorProfileId);
-  return actorPerson?.id === viewerPersonId;
-}
-
-function buildAssignedCard(args: {
-  task: Pick<
-    Task,
-    | "id"
-    | "title"
-    | "project_id"
-    | "created_at"
-    | "edited_at"
-    | "created_by_profile_id"
-    | "edited_by_profile_id"
-  >;
+function buildAssignedCardFromNotify(args: {
+  detail: TaskAssignedBroadcast;
   state: {
+    tasks: Pick<Task, "id" | "title" | "project_id">[];
     projects: Project[];
     clients: { id: string; name: string; color: string }[];
-    people: {
-      id: string;
-      name: string;
-      profile_id: string | null;
-      deleted_at?: string | null;
-    }[];
-    profiles: {
-      id: string;
-      full_name: string | null;
-      email: string;
-    }[];
   };
   projectHref: (
     project: Pick<Project, "client_id" | "slug">,
     search?: string,
   ) => string;
 }): Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> | null {
-  const { task, state, projectHref } = args;
-  const project = state.projects.find((p) => p.id === task.project_id);
+  const { detail, state, projectHref } = args;
+  const task = state.tasks.find((t) => t.id === detail.taskId);
+  const project = state.projects.find(
+    (p) => p.id === (task?.project_id ?? detail.projectId),
+  );
   if (!project) return null;
   const client = project.client_id
     ? state.clients.find((c) => c.id === project.client_id)
     : undefined;
-  const actorProfileId =
-    task.edited_by_profile_id ?? task.created_by_profile_id;
-  const actorProfile = actorProfileId
-    ? state.profiles.find((p) => p.id === actorProfileId)
-    : undefined;
-  const actorPerson = actorProfileId
-    ? state.people.find((p) => p.profile_id === actorProfileId)
-    : undefined;
-  const actorLabel = resolveAuthorLabel(
-    actorProfile
-      ? {
-          full_name: actorProfile.full_name ?? undefined,
-          email: actorProfile.email,
-        }
-      : null,
-    actorPerson
-      ? {
-          name: actorPerson.name,
-          deleted_at: actorPerson.deleted_at ?? null,
-        }
-      : null,
-  );
+  const authorName = detail.authorName?.trim() || null;
+  const title = (task?.title ?? detail.taskTitle)?.trim() || "Task assigned";
   return {
-    id: assignedCardId(task),
+    id: assignedNotifyCardId(detail.taskId),
     kind: "assigned",
-    href: projectHref(project, `task=${task.id}`),
-    title: task.title || "Task assigned",
+    href: projectHref(project, `task=${detail.taskId}`),
+    title,
     subtitle: [
-      actorLabel ? `${actorLabel} assigned you` : "Assigned to you",
+      authorName ? `${authorName} assigned you` : "Assigned to you",
       project.name,
     ]
       .filter(Boolean)
       .join(" · "),
     clientName: client?.name ?? null,
     clientColor: client?.color ?? null,
-    taskId: task.id,
+    taskId: detail.taskId,
   };
 }

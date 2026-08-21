@@ -333,6 +333,24 @@ export function dispatchNewComment(detail: NewCommentBroadcast) {
   window.dispatchEvent(new CustomEvent(NEW_COMMENT_EVENT, { detail }));
 }
 
+export type TaskAssignedBroadcast = {
+  personIds: string[];
+  taskId: string;
+  projectId: string;
+  taskTitle: string;
+  authorName: string;
+  authorAvatarUrl?: string | null;
+  authorAvatarAttachmentId?: string | null;
+  authorColor?: string | null;
+};
+
+export const TASK_ASSIGNED_EVENT = "reaper:task-assigned";
+
+export function dispatchTaskAssigned(detail: TaskAssignedBroadcast) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(TASK_ASSIGNED_EVENT, { detail }));
+}
+
 export type BulletinUnreadBroadcast = {
   bulletinId: string;
   profileId: string;

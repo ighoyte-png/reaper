@@ -54,10 +54,12 @@ import {
   dispatchBulletinUnread,
   dispatchCommentReaction,
   dispatchNewComment,
+  dispatchTaskAssigned,
   dispatchTaskNoteMention,
   type AssignmentNoteMentionBroadcast,
   type CommentReactionBroadcast,
   type NewCommentBroadcast,
+  type TaskAssignedBroadcast,
   type TaskNoteMentionBroadcast,
 } from "@/lib/desktop-notifications";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -729,6 +731,7 @@ interface DataContextValue {
    */
   upsertTask: (
     task: Omit<Task, "organization_id"> & { organization_id?: string },
+    opts?: { notifyAssignee?: boolean },
   ) => void;
   deleteTask: (id: string) => void;
   upsertTaskComment: (
@@ -1605,6 +1608,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
             return;
           }
           dispatchNewComment(detail);
+        },
+      )
+      .on(
+        "broadcast",
+        { event: "task-assigned" },
+        ({ payload }) => {
+          const detail = payload as TaskAssignedBroadcast;
+          if (
+            !detail?.personIds?.length ||
+            !detail.taskId ||
+            !detail.projectId
+          ) {
+            return;
+          }
+          dispatchTaskAssigned(detail);
         },
       )
       .subscribe((status) => {
@@ -4516,7 +4534,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           );
         }
       },
-      upsertTask: (task) => {
+      upsertTask: (task, opts) => {
         // Managers/PMs edit details. Members may only change status (RLS+trigger enforce).
         const existing = state.tasks.find((t) => t.id === task.id);
         const project =
@@ -4712,6 +4730,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
             authorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
           sendOrgBroadcast("task-note-mention", payload);
+        }
+
+        // Opt-in assignee notify on create (checkbox on Add task).
+        if (
+          !existing &&
+          opts?.notifyAssignee &&
+          row.assignee_person_id &&
+          row.assignee_person_id !== myPerson?.id
+        ) {
+          const payload: TaskAssignedBroadcast = {
+            personIds: [row.assignee_person_id],
+            taskId: row.id,
+            projectId: row.project_id,
+            taskTitle: row.title,
+            authorName:
+              myPerson?.name?.trim() ||
+              profile?.full_name?.trim() ||
+              profile?.email?.trim() ||
+              "Someone",
+            authorAvatarUrl: myPerson?.avatar_url ?? null,
+            authorAvatarAttachmentId: myPerson?.avatar_attachment_id ?? null,
+            authorColor: myPerson ? personAvatarColor(myPerson) : null,
+          };
+          sendOrgBroadcast("task-assigned", payload);
+          if (mode === "demo") {
+            dispatchTaskAssigned(payload);
+          }
         }
       },
       deleteTask: (id) => {

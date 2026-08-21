@@ -1205,7 +1205,11 @@ export function ProjectTaskBoard({
       sort_order: siblings.length,
       ...emptyTaskAuditFields(),
     };
-    upsertTask(task);
+    upsertTask(task, {
+      notifyAssignee: Boolean(
+        draft.notify_assignee && draft.assignee_person_id,
+      ),
+    });
     if (draft.is_client_review) {
       const crTask: Task = {
         id: newId("task"),
@@ -3425,6 +3429,9 @@ function InlineTaskForm({
   const [isClientReview, setIsClientReview] = useState(
     Boolean(initial?.is_client_review),
   );
+  const [notifyAssignee, setNotifyAssignee] = useState(
+    Boolean(initial?.notify_assignee),
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const onDraftChangeRef = useRef(onDraftChange);
   onDraftChangeRef.current = onDraftChange;
@@ -3443,6 +3450,8 @@ function InlineTaskForm({
   dueDateRef.current = dueDate;
   notesRef.current = notes;
   isClientReviewRef.current = isClientReview;
+
+  const isCreateFlow = Boolean(onDraftChange);
 
   const initialBaselineRef = useRef<{
     title: string;
@@ -3504,8 +3513,14 @@ function InlineTaskForm({
       due_date: dueDate || null,
       notes,
       is_client_review: isClientReview,
+      notify_assignee: notifyAssignee,
     });
-  }, [title, assigneeId, startDate, dueDate, notes, isClientReview]);
+  }, [title, assigneeId, startDate, dueDate, notes, isClientReview, notifyAssignee]);
+
+  // Clear notify when unassigned (create flow).
+  useEffect(() => {
+    if (!assigneeId && notifyAssignee) setNotifyAssignee(false);
+  }, [assigneeId, notifyAssignee]);
 
   async function submit() {
     const trimmed = title.trim();
@@ -3525,6 +3540,7 @@ function InlineTaskForm({
           due_date: dueDate || null,
           notes: finalNotes,
           is_client_review: isClientReview,
+          notify_assignee: isCreateFlow ? notifyAssignee : false,
         },
         draftTaskId,
       );
@@ -3614,6 +3630,21 @@ function InlineTaskForm({
               ) : null}
             </div>
           </div>
+          {isCreateFlow && assigneeId ? (
+            <div className="grid min-w-0 gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
+              <span className="text-sm text-[var(--text-muted)] sm:invisible">
+                Notify
+              </span>
+              <label className="flex cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
+                <Checkbox
+                  checked={notifyAssignee}
+                  onChange={(e) => setNotifyAssignee(e.target.checked)}
+                  aria-label="Notify the assignee"
+                />
+                Notify the assignee
+              </label>
+            </div>
+          ) : null}
           <div className="grid min-w-0 gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
             <span className="text-sm text-[var(--text-muted)]">Dates</span>
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
