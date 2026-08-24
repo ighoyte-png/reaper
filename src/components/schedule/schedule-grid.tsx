@@ -64,6 +64,7 @@ import {
   sumBookedHoursFromDayMap,
   utilizationPct,
 } from "@/lib/domain/capacity";
+import { capacityThresholdsFromSettings } from "@/lib/domain/org-settings";
 import {
   shiftMonth,
   shiftWeek,
@@ -1145,6 +1146,9 @@ export function ScheduleGrid() {
 
   const utilByPersonId = useMemo(() => {
     const map = new Map<string, PersonUtilBand[]>();
+    const capacityThresholds = capacityThresholdsFromSettings(
+      state.organization_settings,
+    );
     for (const person of visiblePeople) {
       const dayHours = bookedHoursByPersonDay.get(person.id);
       map.set(
@@ -1170,7 +1174,12 @@ export function ScheduleGrid() {
             booked,
             available,
             pct,
-            level: capacityLevel(booked, available, available <= 0),
+            level: capacityLevel(
+              booked,
+              available,
+              available <= 0,
+              capacityThresholds,
+            ),
           };
         }),
       );
@@ -1181,6 +1190,7 @@ export function ScheduleGrid() {
     bookedHoursByPersonDay,
     capacityBands,
     state.leave_days,
+    state.organization_settings,
   ]);
 
   const projectsByPersonId = useMemo(() => {
@@ -4571,6 +4581,7 @@ export function ScheduleGrid() {
                   compact
                   hideHeader
                   allowSelect={false}
+                  omitYearFromTaskDates
                   assigneePersonId={
                     canManage ||
                     Boolean(
@@ -4959,6 +4970,7 @@ export function ScheduleGrid() {
                   compact
                   hideHeader
                   allowSelect={false}
+                  omitYearFromTaskDates
                   assigneePersonId={
                     canManage ||
                     Boolean(
@@ -5051,6 +5063,9 @@ export function ScheduleGrid() {
                 leaveDays={state.leave_days}
                 projectsById={projectsById}
                 clientsById={clientsById}
+                capacityThresholds={capacityThresholdsFromSettings(
+                  state.organization_settings,
+                )}
                 onSelectAssignment={selectAssignment}
               />
             )}
@@ -5545,6 +5560,7 @@ function MemberTodaySummary({
   leaveDays,
   projectsById,
   clientsById,
+  capacityThresholds,
   onSelectAssignment,
 }: {
   myPerson: Person | null;
@@ -5553,6 +5569,7 @@ function MemberTodaySummary({
   leaveDays: LeaveDay[];
   projectsById: Map<string, Project>;
   clientsById: Map<string, Client>;
+  capacityThresholds: ReturnType<typeof capacityThresholdsFromSettings>;
   onSelectAssignment: (id: string) => void;
 }) {
   const summary = useMemo(() => {
@@ -5609,7 +5626,12 @@ function MemberTodaySummary({
     summary;
   const dateLabel = format(dayDate, "EEEE, MMM d");
   const fullDayOff = leave != null && isFullDayLeave(leave);
-  const level = capacityLevel(bookedHours, capacity, fullDayOff);
+  const level = capacityLevel(
+    bookedHours,
+    capacity,
+    fullDayOff,
+    capacityThresholds,
+  );
 
   return (
     <div className="space-y-4">

@@ -69,6 +69,91 @@ function ThresholdPreview({
   );
 }
 
+/** People capacity ranges: gray / green / orange / red from Admin thresholds. */
+function CapacityThresholdPreview({
+  lowMaxPct,
+  nearPct,
+  overPct,
+}: {
+  lowMaxPct: number;
+  nearPct: number;
+  overPct: number;
+}) {
+  const scale = Math.max(100, overPct, nearPct, lowMaxPct, 1);
+  const grayEnd = Math.max(0, Math.min(scale, lowMaxPct));
+  const greenEnd = Math.max(grayEnd, Math.min(scale, nearPct));
+  const orangeEnd = Math.max(greenEnd, Math.min(scale, overPct));
+  const toWidth = (start: number, end: number) =>
+    Math.max(0, ((end - start) / scale) * 100);
+  const segments = [
+    {
+      key: "low",
+      width: toWidth(0, grayEnd),
+      className: "bg-[var(--status-unavailable)]",
+      title: `Underutilized below ${Math.round(lowMaxPct)}%`,
+      swatch: "bg-[var(--status-unavailable)]",
+      label: `Underutilized <${Math.round(lowMaxPct)}%`,
+    },
+    {
+      key: "healthy",
+      width: toWidth(grayEnd, greenEnd),
+      className: "bg-[var(--status-healthy)]",
+      title: `Optimal ${Math.round(lowMaxPct)}–${Math.max(Math.round(lowMaxPct), Math.round(nearPct) - 1)}%`,
+      swatch: "bg-[var(--status-healthy)]",
+      label: `Optimal ${Math.round(lowMaxPct)}–${Math.max(Math.round(lowMaxPct), Math.round(nearPct) - 1)}%`,
+    },
+    {
+      key: "near",
+      width: toWidth(greenEnd, orangeEnd),
+      className: "bg-[var(--status-near)]",
+      title: `Near capacity ${Math.round(nearPct)}–${Math.max(Math.round(nearPct), Math.round(overPct) - 1)}%`,
+      swatch: "bg-[var(--status-near)]",
+      label: `Near capacity ${Math.round(nearPct)}–${Math.max(Math.round(nearPct), Math.round(overPct) - 1)}%`,
+    },
+    {
+      key: "over",
+      width: toWidth(orangeEnd, scale),
+      className: "bg-[var(--status-over)]",
+      title: `Overbooked ≥${Math.round(overPct)}%`,
+      swatch: "bg-[var(--status-over)]",
+      label: `Overbooked ≥${Math.round(overPct)}%`,
+    },
+  ].filter((s) => s.width > 0);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex h-3.5 w-full overflow-hidden rounded-full bg-[var(--border)]">
+        {segments.map((s, idx) => (
+          <div
+            key={s.key}
+            className={cn(
+              "h-full shrink-0",
+              s.className,
+              segments.length === 1 && "rounded-full",
+              segments.length > 1 && idx === 0 && "rounded-l-full",
+              segments.length > 1 &&
+                idx === segments.length - 1 &&
+                "rounded-r-full",
+            )}
+            style={{ width: `${s.width}%` }}
+            title={s.title}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--text-muted)]">
+        {segments.map((s) => (
+          <span key={s.key}>
+            <span
+              className={cn("mr-1 inline-block h-2 w-2 rounded-full", s.swatch)}
+            />
+            {s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AdminBudgetSettingsForm({
   initial,
   onSave,
@@ -321,11 +406,16 @@ export function AdminBudgetSettingsForm({
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-sm font-semibold">Capacity Utilization</h3>
+        <h3 className="text-sm font-semibold">People Capacity</h3>
         <p className="text-xs text-[var(--text-muted)]">
           Color breakpoints for people utilization heatmaps and schedule
           capacity.
         </p>
+        <CapacityThresholdPreview
+          lowMaxPct={draft.capacity_low_max_pct}
+          nearPct={draft.capacity_near_pct}
+          overPct={draft.capacity_over_pct}
+        />
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Low below (%)">
             <input

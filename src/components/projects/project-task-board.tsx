@@ -170,10 +170,14 @@ type Props = {
   bindSelectedIds?: ReadonlySet<string>;
   onBindToggleTask?: (taskId: string) => void;
   /**
-   * When set (including empty), only these tasks are shown under PRIORITY TASKS
+   * When set (including empty), only these tasks are shown under Assignment Tasks
    * with no per-list headers.
    */
   priorityOnlyTaskIds?: string[] | null;
+  /**
+   * Schedule Tasks tab: show due dates as "MMM d" (no year) to free title space.
+   */
+  omitYearFromTaskDates?: boolean;
 };
 
 function todayKey() {
@@ -215,6 +219,8 @@ type BoardCtx = {
   onBindToggleTask: ((taskId: string) => void) | null;
   listsEditMode: boolean;
   compact: boolean;
+  /** Schedule Tasks tab: due dates without year. */
+  omitYearFromTaskDates: boolean;
   /** Hide edit/drag/comments (e.g. schedule sidebar). */
   readOnly: boolean;
   /** Click status chip to cycle upcoming → active → complete. */
@@ -409,6 +415,7 @@ export function ProjectTaskBoard({
   bindSelectedIds,
   onBindToggleTask,
   priorityOnlyTaskIds = null,
+  omitYearFromTaskDates = false,
 }: Props) {
   const {
     state,
@@ -2012,6 +2019,7 @@ export function ProjectTaskBoard({
     onBindToggleTask: onBindToggleTask ?? null,
     listsEditMode,
     compact,
+    omitYearFromTaskDates,
     readOnly: readOnly || isPublicShare,
     allowStatusEdit: !isPublicShare && (!readOnly || compact),
     hubTaskHref:
@@ -2960,11 +2968,11 @@ function PriorityTasksSection({
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--divider)] bg-[var(--bg-elevated)]/50 px-2 py-2.5">
         <h4
           className={cn(
-            "min-w-0 flex-1 font-semibold tracking-wide",
+            "min-w-0 flex-1 font-semibold",
             ctx.compact ? "text-xs" : "text-sm",
           )}
         >
-          PRIORITY TASKS
+          Assignment Tasks
         </h4>
       </div>
       <div className="px-1 py-1">
@@ -4486,7 +4494,10 @@ function TaskRow({
                 }),
               )}
             >
-              {format(parseISO(task.due_date), "MMM d, yyyy")}
+              {format(
+                parseISO(task.due_date),
+                ctx.omitYearFromTaskDates ? "MMM d" : "MMM d, yyyy",
+              )}
             </span>
           ) : null}
           {hasNotes ? (
