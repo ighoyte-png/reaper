@@ -326,11 +326,13 @@ export const TaskDescriptionEditor = forwardRef<
   },
   ref,
 ) {
-  const [expanded, setExpanded] = useState(initialExpanded);
+  // Edit mode: start expanded so long descriptions scroll with the page
+  // (sticky toolbar pins to the page scrollport). View expand state is a hint.
+  const [expanded, setExpanded] = useState(true);
   const measureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setExpanded(initialExpanded);
+    if (initialExpanded) setExpanded(true);
   }, [initialExpanded]);
 
   // Full unclipped height — not the collapsed editor viewport (which would

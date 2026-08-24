@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
+import { createPortal } from "react-dom";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import type { Extensions } from "@tiptap/core";
@@ -357,33 +358,36 @@ export const SimpleRichTextEditor = forwardRef<
     };
   }, []);
 
+  // Pin after TipTap mounts (editor null → DOM absent on first paint).
   useLayoutEffect(() => {
-    if (!stickyToolbar) {
+    if (!stickyToolbar || !editor) {
       setToolbarPinned(false);
       setPinStyle(null);
       return;
     }
-    const root = rootRef.current;
-    const toolbar = toolbarRef.current;
-    const sentinel = toolbarSentinelRef.current;
-    if (!root || !toolbar || !sentinel) return;
 
-    const scrollport =
-      root.closest("[data-page-scrollport]") instanceof HTMLElement
-        ? (root.closest("[data-page-scrollport]") as HTMLElement)
-        : nearestVerticalScrollport(root);
-
-    if (!scrollport) return;
+    let cancelled = false;
+    let scrollport: HTMLElement | null = null;
+    let ro: ResizeObserver | null = null;
+    let raf = 0;
 
     const update = () => {
+      if (cancelled) return;
+      const root = rootRef.current;
+      const sentinel = toolbarSentinelRef.current;
+      const measureEl = toolbarRef.current;
+      if (!root || !sentinel || !measureEl || !scrollport) return;
+
       const portRect = scrollport.getBoundingClientRect();
       const sentinelRect = sentinel.getBoundingClientRect();
       const rootRect = root.getBoundingClientRect();
-      const height = toolbar.offsetHeight;
+      const height = measureEl.offsetHeight || toolbarHeight;
       if (height > 0) setToolbarHeight(height);
 
-      const editorVisible = rootRect.bottom > portRect.top + 4;
-      const shouldPin = editorVisible && sentinelRect.top < portRect.top;
+      // Pin while the editor is still on-screen and its top has scrolled under
+      // the page scrollport (main window content area below the nav).
+      const editorVisible = rootRect.bottom > portRect.top + height;
+      const shouldPin = editorVisible && sentinelRect.top <= portRect.top + 0.5;
 
       if (shouldPin) {
         setToolbarPinned(true);
@@ -398,22 +402,45 @@ export const SimpleRichTextEditor = forwardRef<
       }
     };
 
-    update();
-    scrollport.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    const ro = typeof ResizeObserver !== "undefined"
-      ? new ResizeObserver(update)
-      : null;
-    ro?.observe(root);
-    ro?.observe(scrollport);
-    ro?.observe(toolbar);
+    const attach = () => {
+      const root = rootRef.current;
+      if (!root) return false;
+      scrollport =
+        root.closest("[data-page-scrollport]") instanceof HTMLElement
+          ? (root.closest("[data-page-scrollport]") as HTMLElement)
+          : nearestVerticalScrollport(root);
+      if (!scrollport) return false;
+
+      update();
+      scrollport.addEventListener("scroll", update, { passive: true });
+      window.addEventListener("resize", update);
+      ro =
+        typeof ResizeObserver !== "undefined"
+          ? new ResizeObserver(update)
+          : null;
+      ro?.observe(root);
+      ro?.observe(scrollport);
+      if (toolbarRef.current) ro?.observe(toolbarRef.current);
+      return true;
+    };
+
+    if (!attach()) {
+      // Editor just became ready — wait one frame for refs to commit.
+      raf = window.requestAnimationFrame(() => {
+        if (!cancelled) attach();
+      });
+    }
 
     return () => {
-      scrollport.removeEventListener("scroll", update);
+      cancelled = true;
+      if (raf) window.cancelAnimationFrame(raf);
+      scrollport?.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
       ro?.disconnect();
     };
-  }, [stickyToolbar]);
+    // toolbarHeight intentionally omitted — update reads latest via setter
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- remount when editor appears
+  }, [stickyToolbar, editor]);
 
   useEffect(() => {
     if (!attachmentsActive || !attachmentEntityType || !attachmentEntityId) {
@@ -800,165 +827,202 @@ export const SimpleRichTextEditor = forwardRef<
     >
       <div
         ref={toolbarSentinelRef}
-        className="pointer-events-none h-px w-full shrink-0 opacity-0"
+        className="pointer-events-none h-0 w-full shrink-0"
         aria-hidden
       />
-      {toolbarPinned && toolbarHeight > 0 ? (
-        <div
-          className="shrink-0"
-          style={{ height: toolbarHeight }}
-          aria-hidden
-        />
-      ) : null}
-      <div
-        ref={toolbarRef}
-        className={cn(
+      {(() => {
+        const toolbarClass = cn(
           "flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] bg-[var(--bg)] px-1 py-0.5",
-          toolbarPinned && "z-[45] border-[var(--border)] shadow-sm",
-        )}
-        style={
-          toolbarPinned && pinStyle
-            ? {
-                position: "fixed",
-                top: pinStyle.top,
-                left: pinStyle.left,
-                width: pinStyle.width,
-              }
-            : undefined
-        }
-      >
-        <ToolbarButton
-          label="Bold"
-          active={Boolean(toolbar?.bold)}
-          onClick={() =>
-            ed.chain().focus(undefined, { scrollIntoView: false }).toggleBold().run()
-          }
-        >
-          <Bold size={14} strokeWidth={2.5} />
-        </ToolbarButton>
-        <ToolbarButton
-          label="Underline"
-          active={Boolean(toolbar?.underline)}
-          onClick={() =>
-            ed.chain().focus(undefined, { scrollIntoView: false }).toggleUnderline().run()
-          }
-        >
-          <UnderlineIcon size={14} strokeWidth={2.5} />
-        </ToolbarButton>
-        <ToolbarButton
-          label="Heading 1"
-          active={Boolean(toolbar?.h1)}
-          className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
-          onClick={() =>
-            ed
-              .chain()
-              .focus(undefined, { scrollIntoView: false })
-              .toggleHeading({ level: 1 })
-              .run()
-          }
-        >
-          H1
-        </ToolbarButton>
-        <ToolbarButton
-          label="Heading 2"
-          active={Boolean(toolbar?.h2)}
-          className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
-          onClick={() =>
-            ed
-              .chain()
-              .focus(undefined, { scrollIntoView: false })
-              .toggleHeading({ level: 2 })
-              .run()
-          }
-        >
-          H2
-        </ToolbarButton>
-        <ToolbarButton
-          label="Heading 3"
-          active={Boolean(toolbar?.h3)}
-          className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
-          onClick={() =>
-            ed
-              .chain()
-              .focus(undefined, { scrollIntoView: false })
-              .toggleHeading({ level: 3 })
-              .run()
-          }
-        >
-          H3
-        </ToolbarButton>
-        <ToolbarButton
-          label="Bullet list"
-          active={Boolean(toolbar?.bulletList)}
-          onClick={() =>
-            ed.chain().focus(undefined, { scrollIntoView: false }).toggleBulletList().run()
-          }
-        >
-          <List size={14} strokeWidth={2.5} />
-        </ToolbarButton>
-        <ToolbarButton
-          label="Numbered list"
-          active={Boolean(toolbar?.orderedList)}
-          onClick={() =>
-            ed.chain().focus(undefined, { scrollIntoView: false }).toggleOrderedList().run()
-          }
-        >
-          <ListOrdered size={14} strokeWidth={2.5} />
-        </ToolbarButton>
-        <ToolbarButton
-          label="Inline code"
-          active={Boolean(toolbar?.code)}
-          onClick={() =>
-            ed.chain().focus(undefined, { scrollIntoView: false }).toggleCode().run()
-          }
-        >
-          <Code size={14} strokeWidth={2.5} />
-        </ToolbarButton>
-        <ToolbarButton
-          label="Code block"
-          active={Boolean(toolbar?.codeBlock)}
-          onClick={() =>
-            ed
-              .chain()
-              .focus(undefined, { scrollIntoView: false })
-              .toggleCodeBlock()
-              .run()
-          }
-        >
-          <Code2 size={14} strokeWidth={2.5} />
-        </ToolbarButton>
-        <ToolbarButton
-          label="Link"
-          active={Boolean(toolbar?.link)}
-          onClick={openLinkDialog}
-        >
-          <LinkIcon size={14} strokeWidth={2.5} />
-        </ToolbarButton>
-        {attachmentsActive ? (
+        );
+        const toolbarButtons = (
           <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              className="hidden"
-              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  void uploadAttachedFile(file);
-                }
-                e.target.value = "";
-              }}
-            />
             <ToolbarButton
-              label="Attach file"
-              active={false}
-              onClick={() => fileInputRef.current?.click()}
+              label="Bold"
+              active={Boolean(toolbar?.bold)}
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleBold()
+                  .run()
+              }
             >
-              <Paperclip size={14} strokeWidth={2.5} />
+              <Bold size={14} strokeWidth={2.5} />
             </ToolbarButton>
+            <ToolbarButton
+              label="Underline"
+              active={Boolean(toolbar?.underline)}
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleUnderline()
+                  .run()
+              }
+            >
+              <UnderlineIcon size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Heading 1"
+              active={Boolean(toolbar?.h1)}
+              className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleHeading({ level: 1 })
+                  .run()
+              }
+            >
+              H1
+            </ToolbarButton>
+            <ToolbarButton
+              label="Heading 2"
+              active={Boolean(toolbar?.h2)}
+              className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleHeading({ level: 2 })
+                  .run()
+              }
+            >
+              H2
+            </ToolbarButton>
+            <ToolbarButton
+              label="Heading 3"
+              active={Boolean(toolbar?.h3)}
+              className="w-auto min-w-7 px-1.5 text-[10px] font-semibold"
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleHeading({ level: 3 })
+                  .run()
+              }
+            >
+              H3
+            </ToolbarButton>
+            <ToolbarButton
+              label="Bullet list"
+              active={Boolean(toolbar?.bulletList)}
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleBulletList()
+                  .run()
+              }
+            >
+              <List size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Numbered list"
+              active={Boolean(toolbar?.orderedList)}
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleOrderedList()
+                  .run()
+              }
+            >
+              <ListOrdered size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Inline code"
+              active={Boolean(toolbar?.code)}
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleCode()
+                  .run()
+              }
+            >
+              <Code size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Code block"
+              active={Boolean(toolbar?.codeBlock)}
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleCodeBlock()
+                  .run()
+              }
+            >
+              <Code2 size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Link"
+              active={Boolean(toolbar?.link)}
+              onClick={openLinkDialog}
+            >
+              <LinkIcon size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+            {attachmentsActive ? (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      void uploadAttachedFile(file);
+                    }
+                    e.target.value = "";
+                  }}
+                />
+                <ToolbarButton
+                  label="Attach file"
+                  active={false}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip size={14} strokeWidth={2.5} />
+                </ToolbarButton>
+              </>
+            ) : null}
           </>
-        ) : null}
-      </div>
+        );
+
+        return (
+          <>
+            <div
+              ref={toolbarRef}
+              className={cn(toolbarClass, toolbarPinned && "invisible")}
+              aria-hidden={toolbarPinned}
+            >
+              {toolbarButtons}
+            </div>
+            {toolbarPinned &&
+            pinStyle &&
+            typeof document !== "undefined"
+              ? createPortal(
+                  <div
+                    className={cn(
+                      toolbarClass,
+                      "z-[60] border border-t-0 border-[var(--border)] shadow-md",
+                    )}
+                    style={{
+                      position: "fixed",
+                      top: pinStyle.top,
+                      left: pinStyle.left,
+                      width: pinStyle.width,
+                    }}
+                  >
+                    {toolbarButtons}
+                  </div>,
+                  document.body,
+                )
+              : null}
+          </>
+        );
+      })()}
       {uploading ? (
         <p className="border-b border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
           Uploading…
