@@ -486,6 +486,8 @@ export function mapAssignmentBoundTask(
     task_id: String(row.task_id),
     organization_id: String(row.organization_id),
     sort_order: num(row.sort_order),
+    bound_source: row.bound_source === "project" ? "project" : "schedule",
+    out_of_sync: Boolean(row.out_of_sync),
   };
 }
 
@@ -496,13 +498,45 @@ function missingAssignmentBoundTasksTable(message: string, code?: string) {
   );
 }
 
+export type SetAssignmentBoundTaskRowInput = {
+  task_id: string;
+  bound_source?: "project" | "schedule";
+  out_of_sync?: boolean;
+};
+
 /** Replace bound tasks for an assignment (manager write). */
 export async function setAssignmentBoundTaskRows(
   supabase: SupabaseClient,
   assignmentId: string,
   organizationId: string,
-  taskIds: string[],
+  taskIds: string[] | SetAssignmentBoundTaskRowInput[],
 ) {
+  const { data: existingRows, error: existingErr } = await supabase
+    .from("assignment_bound_tasks")
+    .select("task_id, bound_source, out_of_sync")
+    .eq("assignment_id", assignmentId);
+  if (existingErr) {
+    if (missingAssignmentBoundTasksTable(existingErr.message, existingErr.code)) {
+      console.warn(
+        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
+      );
+      return;
+    }
+    throw existingErr;
+  }
+  const existingByTask = new Map(
+    (existingRows ?? []).map((r) => [
+      String((r as { task_id: string }).task_id),
+      {
+        bound_source:
+          (r as { bound_source?: string }).bound_source === "project"
+            ? ("project" as const)
+            : ("schedule" as const),
+        out_of_sync: Boolean((r as { out_of_sync?: boolean }).out_of_sync),
+      },
+    ]),
+  );
+
   const { error: delErr } = await supabase
     .from("assignment_bound_tasks")
     .delete()
@@ -516,15 +550,29 @@ export async function setAssignmentBoundTaskRows(
     }
     throw delErr;
   }
-  const unique = [...new Set(taskIds.filter(Boolean))];
+
+  const inputs: SetAssignmentBoundTaskRowInput[] = taskIds.map((entry) =>
+    typeof entry === "string" ? { task_id: entry } : entry,
+  );
+  const seen = new Set<string>();
+  const unique = inputs.filter((row) => {
+    if (!row.task_id || seen.has(row.task_id)) return false;
+    seen.add(row.task_id);
+    return true;
+  });
   if (unique.length === 0) return;
   const { error } = await supabase.from("assignment_bound_tasks").insert(
-    unique.map((task_id, sort_order) => ({
-      assignment_id: assignmentId,
-      task_id,
-      organization_id: organizationId,
-      sort_order,
-    })),
+    unique.map((row, sort_order) => {
+      const prev = existingByTask.get(row.task_id);
+      return {
+        assignment_id: assignmentId,
+        task_id: row.task_id,
+        organization_id: organizationId,
+        sort_order,
+        bound_source: row.bound_source ?? prev?.bound_source ?? "schedule",
+        out_of_sync: row.out_of_sync ?? prev?.out_of_sync ?? false,
+      };
+    }),
   );
   if (error) {
     if (missingAssignmentBoundTasksTable(error.message, error.code)) {

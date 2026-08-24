@@ -238,6 +238,8 @@ type SimpleRichTextEditorProps = {
   editorOverflowY?: "auto" | "hidden";
   /** Grow with content (comment / new task description). */
   autoGrow?: boolean;
+  /** Keep formatting toolbar visible while scrolling long content. */
+  stickyToolbar?: boolean;
   enableAttachments?: boolean;
   attachmentEntityType?: AttachmentEntityType;
   attachmentEntityId?: string | null;
@@ -260,6 +262,7 @@ export const SimpleRichTextEditor = forwardRef<
     editorMaxHeight,
     editorOverflowY,
     autoGrow = false,
+    stickyToolbar = false,
     enableAttachments = false,
     attachmentEntityType,
     attachmentEntityId = null,
@@ -724,7 +727,12 @@ export const SimpleRichTextEditor = forwardRef<
         className,
       )}
     >
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] px-1 py-0.5">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] px-1 py-0.5",
+          stickyToolbar && "sticky top-0 z-10 bg-[var(--bg)]",
+        )}
+      >
         <ToolbarButton
           label="Bold"
           active={Boolean(toolbar?.bold)}

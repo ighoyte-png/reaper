@@ -34,6 +34,11 @@ import { toDateKey } from "@/lib/domain/dates";
 import { canEditProject } from "@/lib/domain/project-access";
 import { applyMoveTaskList } from "@/lib/domain/move-task-list";
 import {
+  boundTasksNotesHtml,
+  isBoundTasksNotes,
+  tasksRemovedNotesHtml,
+} from "@/lib/domain/assignment-bound-tasks";
+import {
   assigneeSubmittedTaskForReview,
   buildTaskInReviewBulletin,
   emptyTaskAuditFields,
@@ -365,12 +370,21 @@ function loadDemoState(): DemoState {
           }))
         : seed.project_members,
       assignment_bound_tasks: Array.isArray(parsed.assignment_bound_tasks)
-        ? (parsed.assignment_bound_tasks as AssignmentBoundTask[]).filter(
-            (r) =>
-              Boolean(r) &&
-              typeof r.assignment_id === "string" &&
-              typeof r.task_id === "string",
-          )
+        ? (parsed.assignment_bound_tasks as AssignmentBoundTask[])
+            .filter(
+              (r) =>
+                Boolean(r) &&
+                typeof r.assignment_id === "string" &&
+                typeof r.task_id === "string",
+            )
+            .map((r) => ({
+              assignment_id: r.assignment_id,
+              task_id: r.task_id,
+              organization_id: r.organization_id ?? "",
+              sort_order: Number(r.sort_order) || 0,
+              bound_source: r.bound_source === "project" ? "project" : "schedule",
+              out_of_sync: Boolean(r.out_of_sync),
+            }))
         : (seed.assignment_bound_tasks ?? []),
       project_contractor_expenses: Array.isArray(
         parsed.project_contractor_expenses,
@@ -696,10 +710,20 @@ interface DataContextValue {
   /** Replace which tasks are bound to a calendar assignment. */
   setAssignmentBoundTasks: (
     assignmentId: string,
-    taskIds: string[],
+    taskIds: string[] | import("@/lib/supabase/api").SetAssignmentBoundTaskRowInput[],
   ) => Promise<void>;
   /** Clear all task bindings for an assignment (unbind / cut / delete). */
   clearAssignmentBoundTasks: (assignmentId: string) => Promise<void>;
+  /** Copy all bindings from one assignment onto another (cut/split). */
+  copyAssignmentBoundTasks: (
+    fromAssignmentId: string,
+    toAssignmentId: string,
+  ) => Promise<void>;
+  /** Mark bound rows out of sync (or clear) for an assignment. */
+  setAssignmentBoundTasksOutOfSync: (
+    assignmentId: string,
+    outOfSync: boolean,
+  ) => Promise<void>;
   upsertMilestone: (
     milestone: Omit<Milestone, "organization_id"> & {
       organization_id?: string;
@@ -4026,13 +4050,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       setAssignmentBoundTasks: async (assignmentId, taskIds) => {
         const orgId = state.organization.id || ORG_ID;
-        const unique = [...new Set(taskIds.filter(Boolean))];
-        const rows: AssignmentBoundTask[] = unique.map((task_id, sort_order) => ({
-          assignment_id: assignmentId,
-          task_id,
-          organization_id: orgId,
-          sort_order,
-        }));
+        const inputs = taskIds.map((entry) =>
+          typeof entry === "string" ? { task_id: entry } : entry,
+        );
+        const seen = new Set<string>();
+        const unique = inputs.filter((row) => {
+          if (!row.task_id || seen.has(row.task_id)) return false;
+          seen.add(row.task_id);
+          return true;
+        });
+        const existingByTask = new Map(
+          stateRef.current.assignment_bound_tasks
+            .filter((r) => r.assignment_id === assignmentId)
+            .map((r) => [r.task_id, r] as const),
+        );
+        const rows: AssignmentBoundTask[] = unique.map((row, sort_order) => {
+          const prev = existingByTask.get(row.task_id);
+          return {
+            assignment_id: assignmentId,
+            task_id: row.task_id,
+            organization_id: orgId,
+            sort_order,
+            bound_source: row.bound_source ?? prev?.bound_source ?? "schedule",
+            out_of_sync: row.out_of_sync ?? prev?.out_of_sync ?? false,
+          };
+        });
         noteLocalWrite("assignment_bound_tasks", assignmentId);
         patch((prev) => ({
           ...prev,
@@ -4065,6 +4107,75 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (mode === "supabase" && supabaseRef.current) {
           await runRemote(() =>
             clearAssignmentBoundTaskRows(supabaseRef.current!, assignmentId),
+          );
+        }
+      },
+      copyAssignmentBoundTasks: async (fromAssignmentId, toAssignmentId) => {
+        const orgId = state.organization.id || ORG_ID;
+        const source = stateRef.current.assignment_bound_tasks
+          .filter((r) => r.assignment_id === fromAssignmentId)
+          .sort((a, b) => a.sort_order - b.sort_order);
+        if (source.length === 0) return;
+        const rows: AssignmentBoundTask[] = source.map((r, sort_order) => ({
+          ...r,
+          assignment_id: toAssignmentId,
+          organization_id: orgId,
+          sort_order,
+        }));
+        noteLocalWrite("assignment_bound_tasks", toAssignmentId);
+        patch((prev) => ({
+          ...prev,
+          assignment_bound_tasks: [
+            ...prev.assignment_bound_tasks.filter(
+              (r) => r.assignment_id !== toAssignmentId,
+            ),
+            ...rows,
+          ],
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            setAssignmentBoundTaskRows(
+              supabaseRef.current!,
+              toAssignmentId,
+              orgId,
+              rows.map((r) => ({
+                task_id: r.task_id,
+                bound_source: r.bound_source,
+                out_of_sync: r.out_of_sync,
+              })),
+            ),
+          );
+        }
+      },
+      setAssignmentBoundTasksOutOfSync: async (assignmentId, outOfSync) => {
+        const orgId = state.organization.id || ORG_ID;
+        const current = stateRef.current.assignment_bound_tasks
+          .filter((r) => r.assignment_id === assignmentId)
+          .sort((a, b) => a.sort_order - b.sort_order);
+        if (current.length === 0) return;
+        const rows = current.map((r) => ({ ...r, out_of_sync: outOfSync }));
+        noteLocalWrite("assignment_bound_tasks", assignmentId);
+        patch((prev) => ({
+          ...prev,
+          assignment_bound_tasks: [
+            ...prev.assignment_bound_tasks.filter(
+              (r) => r.assignment_id !== assignmentId,
+            ),
+            ...rows,
+          ],
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            setAssignmentBoundTaskRows(
+              supabaseRef.current!,
+              assignmentId,
+              orgId,
+              rows.map((r) => ({
+                task_id: r.task_id,
+                bound_source: r.bound_source,
+                out_of_sync: r.out_of_sync,
+              })),
+            ),
           );
         }
       },
@@ -5003,14 +5114,71 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteTask: (id) => {
+        const prevState = stateRef.current;
+        const removedTaskIds = new Set(
+          prevState.tasks
+            .filter((t) => t.id === id || t.parent_id === id)
+            .map((t) => t.id),
+        );
+        const affectedAssignmentIds = [
+          ...new Set(
+            prevState.assignment_bound_tasks
+              .filter((r) => removedTaskIds.has(r.task_id))
+              .map((r) => r.assignment_id),
+          ),
+        ];
+        const assignmentNotePatches: Assignment[] = [];
+        for (const assignmentId of affectedAssignmentIds) {
+          const assignment = prevState.assignments.find(
+            (a) => a.id === assignmentId,
+          );
+          if (!assignment) continue;
+          if (
+            !isBoundTasksNotes(assignment.notes) &&
+            assignment.notes?.trim()
+          ) {
+            continue;
+          }
+          const remainingBinds = prevState.assignment_bound_tasks.filter(
+            (r) =>
+              r.assignment_id === assignmentId &&
+              !removedTaskIds.has(r.task_id),
+          );
+          if (remainingBinds.length === 0) {
+            assignmentNotePatches.push({
+              ...assignment,
+              notes: tasksRemovedNotesHtml(),
+            });
+          } else {
+            const titles = remainingBinds
+              .sort((a, b) => a.sort_order - b.sort_order)
+              .map(
+                (r) =>
+                  prevState.tasks.find((t) => t.id === r.task_id)?.title ?? "",
+              )
+              .filter(Boolean);
+            const anyOos = remainingBinds.some((r) => r.out_of_sync);
+            assignmentNotePatches.push({
+              ...assignment,
+              notes: boundTasksNotesHtml(
+                titles,
+                anyOos ? "out_of_sync" : "in_sync",
+              ),
+            });
+          }
+        }
         patch((prev) => {
           const nextTasks = prev.tasks.filter(
             (t) => t.id !== id && t.parent_id !== id,
           );
           const remainingTaskIds = new Set(nextTasks.map((t) => t.id));
+          const noteById = new Map(
+            assignmentNotePatches.map((a) => [a.id, a] as const),
+          );
           return {
             ...prev,
             tasks: nextTasks,
+            assignments: prev.assignments.map((a) => noteById.get(a.id) ?? a),
             assignment_bound_tasks: prev.assignment_bound_tasks.filter((r) =>
               remainingTaskIds.has(r.task_id),
             ),
@@ -5039,6 +5207,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", id);
+          for (const a of assignmentNotePatches) {
+            noteLocalWrite("assignments", a.id);
+            runRemoteSoft(() =>
+              upsertAssignmentRow(supabaseRef.current!, a),
+            );
+          }
           // Await attachment sweep before DB delete so child comments/tasks
           // still exist for the tree query (attachments have no FK cascade).
           runRemoteSoft(async () => {

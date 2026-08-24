@@ -13,9 +13,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import {
+  assignmentIsOutOfSync,
+  assignmentLockedOnSchedule,
   boundTasksNotesHtml,
   isBoundTasksNotes,
-  tasksToSyncForAssignmentBind,
+  isGanttTask,
+  nextAvailableScheduleRange,
+  syncNonGanttTaskDatesFromBindings,
 } from "@/lib/domain/assignment-bound-tasks";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
@@ -200,6 +204,8 @@ export function ScheduleGrid() {
     deleteAssignment,
     setAssignmentBoundTasks,
     clearAssignmentBoundTasks,
+    copyAssignmentBoundTasks,
+    setAssignmentBoundTasksOutOfSync,
     upsertTask,
     deleteLeave,
     applyLeaveUndo,
@@ -238,6 +244,7 @@ export function ScheduleGrid() {
     assignment: "",
     tab: "",
     date: "",
+    bindTask: "",
   });
   const zoom = (
     filters.zoom === "week" || filters.zoom === "month" || filters.zoom === "day"
@@ -367,6 +374,15 @@ export function ScheduleGrid() {
     step: "dates" | "overwrite" | "gantt";
     taskIds: string[];
   }>(null);
+  const [ganttMoveLockedNotice, setGanttMoveLockedNotice] = useState(false);
+  const [ganttScheduleMoveNotice, setGanttScheduleMoveNotice] = useState(false);
+  const [cutBoundConfirm, setCutBoundConfirm] = useState<null | {
+    assignmentId: string;
+    cutDate: string;
+  }>(null);
+  /** Pending project-origin bind completed on first assignment save. */
+  const pendingProjectBindTaskIdRef = useRef<string | null>(null);
+  const deepLinkBindTaskRef = useRef<string | null>(null);
   const sidebarPreferMinimizedRef = useRef(true);
   const hoursInputRef = useRef<HTMLInputElement>(null);
   /** When set to an assignment id, focus/select Hours after that form mounts. */
@@ -871,47 +887,39 @@ export function ScheduleGrid() {
       .filter((r) => r.assignment_id === assignment.id)
       .map((r) => r.task_id);
     if (boundIds.length === 0) return;
-    const toSync = tasksToSyncForAssignmentBind(
+    const assignments = state.assignments.map((a) =>
+      a.id === assignment.id ? assignment : a,
+    );
+    const patches = syncNonGanttTaskDatesFromBindings(
+      state.assignment_bound_tasks,
       state.tasks,
       state.task_lists,
+      assignments,
       boundIds,
     );
-    for (const task of toSync) {
-      if (
-        task.start_date === assignment.start_date &&
-        task.due_date === assignment.end_date
-      ) {
-        continue;
-      }
+    for (const patch of patches) {
+      const task = state.tasks.find((t) => t.id === patch.taskId);
+      if (!task) continue;
       upsertTask({
         ...task,
-        start_date: assignment.start_date,
-        due_date: assignment.end_date,
+        start_date: patch.start_date,
+        due_date: patch.due_date,
       });
     }
   }
 
-  async function applyAssignmentBind(taskIds: string[]) {
-    const assignment = editForm ?? selected;
-    if (!assignment || !canManage) return;
-    const unique = [...new Set(taskIds)];
-    const titles = unique
+  function refreshBoundAssignmentNotes(
+    assignment: Assignment,
+    taskIds: string[],
+    outOfSync = false,
+  ) {
+    const titles = taskIds
       .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
       .filter(Boolean);
-    await setAssignmentBoundTasks(assignment.id, unique);
-    const toSync = tasksToSyncForAssignmentBind(
-      state.tasks,
-      state.task_lists,
-      unique,
+    const notes = boundTasksNotesHtml(
+      titles,
+      outOfSync ? "out_of_sync" : "in_sync",
     );
-    for (const task of toSync) {
-      upsertTask({
-        ...task,
-        start_date: assignment.start_date,
-        due_date: assignment.end_date,
-      });
-    }
-    const notes = boundTasksNotesHtml(titles);
     const nextAssignment: Assignment = { ...assignment, notes };
     upsertAssignment(nextAssignment);
     setEditForm((prev) =>
@@ -919,10 +927,73 @@ export function ScheduleGrid() {
         ? { ...prev, notes: nextAssignment.notes }
         : prev,
     );
+    return nextAssignment;
+  }
+
+  async function applyAssignmentBind(
+    taskIds: string[],
+    boundSource: "project" | "schedule" = "schedule",
+  ) {
+    const assignment = editForm ?? selected;
+    if (!assignment || !canManage) return;
+    const unique = [...new Set(taskIds)];
+    await setAssignmentBoundTasks(
+      assignment.id,
+      unique.map((task_id) => ({
+        task_id,
+        bound_source: boundSource,
+        out_of_sync: false,
+      })),
+    );
+    // Assign unassigned tasks to the Schedule person.
+    for (const taskId of unique) {
+      const task = state.tasks.find((t) => t.id === taskId);
+      if (!task) continue;
+      if (!task.assignee_person_id) {
+        upsertTask({
+          ...task,
+          assignee_person_id: assignment.person_id,
+        });
+      }
+    }
+    const assignments = state.assignments.map((a) =>
+      a.id === assignment.id ? assignment : a,
+    );
+    const binds = [
+      ...state.assignment_bound_tasks.filter(
+        (r) => r.assignment_id !== assignment.id,
+      ),
+      ...unique.map((task_id, sort_order) => ({
+        assignment_id: assignment.id,
+        task_id,
+        organization_id: assignment.organization_id,
+        sort_order,
+        bound_source: boundSource,
+        out_of_sync: false,
+      })),
+    ];
+    const patches = syncNonGanttTaskDatesFromBindings(
+      binds,
+      state.tasks,
+      state.task_lists,
+      assignments,
+      unique,
+    );
+    for (const patch of patches) {
+      const task = state.tasks.find((t) => t.id === patch.taskId);
+      if (!task) continue;
+      upsertTask({
+        ...task,
+        start_date: patch.start_date,
+        due_date: patch.due_date,
+      });
+    }
+    refreshBoundAssignmentNotes(assignment, unique, false);
     setBindDraftIds(new Set(unique));
     setBindEditingSelection(false);
     setBindToAssignment(true);
     setBindConfirm(null);
+    pendingProjectBindTaskIdRef.current = null;
     push(
       unique.length === 0
         ? "Assignment unbound from tasks"
@@ -949,7 +1020,78 @@ export function ScheduleGrid() {
 
   function beginBindSave() {
     const taskIds = [...bindDraftIds];
-    setBindConfirm({ step: "dates", taskIds });
+    const assignment = editForm ?? selected;
+    if (!assignment) return;
+    const selectedTasks = taskIds
+      .map((id) => state.tasks.find((t) => t.id === id))
+      .filter((t): t is NonNullable<typeof t> => Boolean(t));
+    const nonGantt = selectedTasks.filter(
+      (t) => !isGanttTask(t, state.task_lists),
+    );
+    const hasGantt = selectedTasks.some((t) =>
+      isGanttTask(t, state.task_lists),
+    );
+
+    // Gantt-only (or mixed with Gantt from Tasks tab): one Got it notice.
+    // Schedule-source binds do not lock; show Gantt notice only for awareness
+    // when any Gantt tasks are in the selection.
+    if (hasGantt && nonGantt.length === 0) {
+      setBindConfirm({ step: "gantt", taskIds });
+      return;
+    }
+    if (hasGantt && nonGantt.length > 0) {
+      // Mixed: show Gantt notice first; dates for non-Gantt handled after.
+      setBindConfirm({ step: "gantt", taskIds });
+      return;
+    }
+
+    // Non-Gantt only: skip no-op date warnings.
+    const bindsPreview = [
+      ...state.assignment_bound_tasks.filter(
+        (r) => r.assignment_id !== assignment.id,
+      ),
+      ...taskIds.map((task_id, sort_order) => ({
+        assignment_id: assignment.id,
+        task_id,
+        organization_id: assignment.organization_id,
+        sort_order,
+        bound_source: "schedule" as const,
+        out_of_sync: false,
+      })),
+    ];
+    const assignments = state.assignments.map((a) =>
+      a.id === assignment.id ? assignment : a,
+    );
+    const wouldChange = nonGantt.some((t) => {
+      const span = syncNonGanttTaskDatesFromBindings(
+        bindsPreview,
+        [t],
+        state.task_lists,
+        assignments,
+        [t.id],
+      );
+      return span.length > 0;
+    });
+    if (!wouldChange) {
+      void applyAssignmentBind(taskIds, "schedule");
+      return;
+    }
+    const hasDifferingExisting = nonGantt.some((t) => {
+      if (!t.start_date && !t.due_date) return false;
+      const patches = syncNonGanttTaskDatesFromBindings(
+        bindsPreview,
+        [t],
+        state.task_lists,
+        assignments,
+        [t.id],
+      );
+      return patches.length > 0;
+    });
+    // Always confirm date update when dates would change.
+    setBindConfirm({
+      step: hasDifferingExisting ? "overwrite" : "dates",
+      taskIds,
+    });
   }
 
   function advanceBindConfirm() {
@@ -958,34 +1100,91 @@ export function ScheduleGrid() {
     const selectedTasks = taskIds
       .map((id) => state.tasks.find((t) => t.id === id))
       .filter((t): t is NonNullable<typeof t> => Boolean(t));
-    const hasExistingDates = selectedTasks.some(
-      (t) => Boolean(t.start_date) || Boolean(t.due_date),
+    const nonGantt = selectedTasks.filter(
+      (t) => !isGanttTask(t, state.task_lists),
     );
-    const hasGantt = selectedTasks.some((t) => {
-      const list = state.task_lists.find((l) => l.id === t.list_id);
-      return Boolean(list?.gantt_enabled);
-    });
+    const hasGantt = selectedTasks.some((t) =>
+      isGanttTask(t, state.task_lists),
+    );
+    const assignment = editForm ?? selected;
+
+    if (step === "gantt") {
+      // After Gantt notice, if there are non-Gantt tasks that need date confirm, continue.
+      if (nonGantt.length > 0 && assignment) {
+        const bindsPreview = [
+          ...state.assignment_bound_tasks.filter(
+            (r) => r.assignment_id !== assignment.id,
+          ),
+          ...taskIds.map((task_id, sort_order) => ({
+            assignment_id: assignment.id,
+            task_id,
+            organization_id: assignment.organization_id,
+            sort_order,
+            bound_source: "schedule" as const,
+            out_of_sync: false,
+          })),
+        ];
+        const assignments = state.assignments.map((a) =>
+          a.id === assignment.id ? assignment : a,
+        );
+        const wouldChange = nonGantt.some((t) => {
+          const patches = syncNonGanttTaskDatesFromBindings(
+            bindsPreview,
+            [t],
+            state.task_lists,
+            assignments,
+            [t.id],
+          );
+          return patches.length > 0;
+        });
+        if (wouldChange) {
+          const hasDifferingExisting = nonGantt.some((t) => {
+            if (!t.start_date && !t.due_date) return false;
+            return (
+              syncNonGanttTaskDatesFromBindings(
+                bindsPreview,
+                [t],
+                state.task_lists,
+                assignments,
+                [t.id],
+              ).length > 0
+            );
+          });
+          setBindConfirm({
+            step: hasDifferingExisting ? "overwrite" : "dates",
+            taskIds,
+          });
+          return;
+        }
+      }
+      void applyAssignmentBind(taskIds, "schedule");
+      return;
+    }
     if (step === "dates") {
-      if (hasExistingDates) {
-        setBindConfirm({ step: "overwrite", taskIds });
-        return;
-      }
-      if (hasGantt) {
-        setBindConfirm({ step: "gantt", taskIds });
-        return;
-      }
-      void applyAssignmentBind(taskIds);
+      // Overwrite step only when dates differ from existing non-matching dates.
+      // beginBindSave already chose overwrite vs dates; continue to apply.
+      void applyAssignmentBind(taskIds, "schedule");
       return;
     }
-    if (step === "overwrite") {
-      if (hasGantt) {
-        setBindConfirm({ step: "gantt", taskIds });
-        return;
-      }
-      void applyAssignmentBind(taskIds);
-      return;
-    }
-    void applyAssignmentBind(taskIds);
+    void applyAssignmentBind(taskIds, "schedule");
+  }
+
+  function isAssignmentScheduleLocked(assignmentId: string): boolean {
+    return assignmentLockedOnSchedule(
+      state.assignment_bound_tasks,
+      state.tasks,
+      state.task_lists,
+      assignmentId,
+    );
+  }
+
+  function assignmentHasScheduleBoundGantt(assignmentId: string): boolean {
+    return state.assignment_bound_tasks.some((r) => {
+      if (r.assignment_id !== assignmentId) return false;
+      if (r.bound_source !== "schedule") return false;
+      const task = state.tasks.find((t) => t.id === r.task_id);
+      return task ? isGanttTask(task, state.task_lists) : false;
+    });
   }
 
   const assignmentMentionPeople = useMemo(() => {
@@ -1591,7 +1790,35 @@ export function ScheduleGrid() {
       });
       return;
     }
-    trackedDelete(editForm.id);
+    const deletedId = editForm.id;
+    const affectedTaskIds = state.assignment_bound_tasks
+      .filter((r) => r.assignment_id === deletedId)
+      .map((r) => r.task_id);
+    trackedDelete(deletedId);
+    if (affectedTaskIds.length > 0) {
+      const remainingBinds = state.assignment_bound_tasks.filter(
+        (r) => r.assignment_id !== deletedId,
+      );
+      const remainingAssignments = state.assignments.filter(
+        (a) => a.id !== deletedId,
+      );
+      const patches = syncNonGanttTaskDatesFromBindings(
+        remainingBinds,
+        state.tasks,
+        state.task_lists,
+        remainingAssignments,
+        affectedTaskIds,
+      );
+      for (const patch of patches) {
+        const task = state.tasks.find((t) => t.id === patch.taskId);
+        if (!task) continue;
+        upsertTask({
+          ...task,
+          start_date: patch.start_date,
+          due_date: patch.due_date,
+        });
+      }
+    }
     selectAssignment(null);
     setEditForm(null);
     setMobilePanelOpen(false);
@@ -1735,6 +1962,82 @@ export function ScheduleGrid() {
     state.assignments,
     setFilters,
     isNarrow,
+  ]);
+
+  // One-shot: /schedule?bindTask=&person=&project=&date= — create assignment + preselect task
+  useEffect(() => {
+    if (!canManage) return;
+    const taskId = filters.bindTask?.trim();
+    if (!taskId) {
+      deepLinkBindTaskRef.current = null;
+      return;
+    }
+    if (deepLinkBindTaskRef.current === taskId) return;
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) {
+      void ensureProjectData(filters.project?.trim() || "");
+      return;
+    }
+    const personId =
+      filters.person?.trim() && filters.person !== "all"
+        ? filters.person.trim()
+        : (task.assignee_person_id ?? "");
+    const projectId =
+      filters.project?.trim() && filters.project !== "all"
+        ? filters.project.trim()
+        : task.project_id;
+    if (!personId || !projectId) return;
+
+    const dateKey = filters.date?.trim();
+    if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      if (dateKey < startKey || dateKey > endKey) {
+        setAnchor(parseISO(dateKey));
+        return;
+      }
+    }
+
+    deepLinkBindTaskRef.current = taskId;
+    const start =
+      task.start_date ||
+      (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
+        ? dateKey
+        : toDateKey(new Date()));
+    const end = task.due_date || start;
+    const available = nextAvailableScheduleRange({
+      personId,
+      projectId,
+      start,
+      end,
+      assignments: state.assignments,
+      leaveDays: state.leave_days,
+    });
+    const rangeStart = available?.start ?? start;
+    const rangeEnd = available?.end ?? end;
+    pendingProjectBindTaskIdRef.current = taskId;
+    setFilters({
+      bindTask: "",
+      date: "",
+      person: personId,
+      project: projectId,
+    });
+    // createAssignment focuses hours and selects the new row.
+    createAssignment(personId, projectId, rangeStart, rangeEnd);
+    setBindToAssignment(true);
+    setBindEditingSelection(true);
+    setBindDraftIds(new Set([taskId]));
+    setSidebarPanelTab("edit");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link
+  }, [
+    filters.bindTask,
+    filters.person,
+    filters.project,
+    filters.date,
+    canManage,
+    startKey,
+    endKey,
+    state.tasks,
+    state.assignments,
+    state.leave_days,
   ]);
 
   function applyRecurrenceChoice(scope: "instance" | "future") {
@@ -2091,6 +2394,27 @@ export function ScheduleGrid() {
 
   function commitAssignment(next: Assignment, toast?: string) {
     let row = next;
+    const before = state.assignments.find((a) => a.id === row.id);
+    if (
+      before &&
+      before.person_id !== row.person_id &&
+      state.assignment_bound_tasks.some((r) => r.assignment_id === row.id)
+    ) {
+      push(
+        "Unbind tasks before changing the assignment’s person",
+        "warning",
+      );
+      return;
+    }
+    if (
+      before &&
+      (before.start_date !== row.start_date ||
+        before.end_date !== row.end_date) &&
+      isAssignmentScheduleLocked(row.id)
+    ) {
+      setGanttMoveLockedNotice(true);
+      return;
+    }
     const checkStart =
       row.start_date < startKey ? row.start_date : startKey;
     const checkEnd = row.end_date > endKey ? row.end_date : endKey;
@@ -2142,16 +2466,21 @@ export function ScheduleGrid() {
         return;
       }
     }
-    trackedUpsert(row, toast);
     const datesChanged =
-      !state.assignments.some((a) => a.id === row.id) ||
-      state.assignments.some(
-        (a) =>
-          a.id === row.id &&
-          (a.start_date !== row.start_date || a.end_date !== row.end_date),
-      );
+      !before ||
+      before.start_date !== row.start_date ||
+      before.end_date !== row.end_date;
+    if (
+      datesChanged &&
+      before &&
+      assignmentHasScheduleBoundGantt(row.id)
+    ) {
+      setGanttScheduleMoveNotice(true);
+    }
+    trackedUpsert(row, toast);
     if (datesChanged) {
       syncBoundTaskDatesFromAssignment(row);
+      void setAssignmentBoundTasksOutOfSync(row.id, false);
     }
     const bounds = assignmentRangeBounds([row]);
     if (
@@ -2171,6 +2500,12 @@ export function ScheduleGrid() {
         edited_at: new Date().toISOString(),
         edited_by_profile_id: profile?.id ?? null,
       });
+    }
+    const pendingBind = pendingProjectBindTaskIdRef.current;
+    if (pendingBind && canManage) {
+      const ids = new Set(boundTaskIdsForActive);
+      ids.add(pendingBind);
+      void applyAssignmentBind([...ids], "project");
     }
   }
 
@@ -2463,7 +2798,11 @@ export function ScheduleGrid() {
 
   // projectsByPersonId replaces per-render projectsForPerson scans.
 
-  function sliceAssignmentAt(assignmentId: string, cutDate: string) {
+  function sliceAssignmentAt(
+    assignmentId: string,
+    cutDate: string,
+    opts?: { confirmed?: boolean },
+  ) {
     const base = state.assignments.find((a) => a.id === assignmentId);
     if (!base || base.start_date >= base.end_date) return;
     if (cutDate < base.start_date || cutDate >= base.end_date) return;
@@ -2471,24 +2810,70 @@ export function ScheduleGrid() {
     if (!days.includes(cutDate)) return;
     const cutIndex = days.indexOf(cutDate);
     if (cutIndex < 0 || cutIndex >= days.length - 1) return;
+    const hasBound = state.assignment_bound_tasks.some(
+      (r) => r.assignment_id === assignmentId,
+    );
+    if (hasBound && !opts?.confirmed) {
+      setCutBoundConfirm({ assignmentId, cutDate });
+      return;
+    }
+    setCutBoundConfirm(null);
     const leftEnd = cutDate;
     const rightStart = days[cutIndex + 1];
-    const clearedNotes = isBoundTasksNotes(base.notes) ? "" : base.notes;
     const left: Assignment = {
       ...base,
       end_date: leftEnd,
-      notes: clearedNotes,
     };
     const right: Assignment = {
       ...base,
       id: newId("asg"),
       start_date: rightStart,
-      notes: clearedNotes,
     };
-    pushUndo({ kind: "restore", assignment: { ...base } });
-    void clearAssignmentBoundTasks(assignmentId);
+    const boundRows = state.assignment_bound_tasks
+      .filter((r) => r.assignment_id === assignmentId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    pushUndo({
+      kind: "assignments",
+      restoreAssignments: [{ ...base }],
+      removeAssignmentIds: [right.id],
+    });
     upsertAssignment(left);
     upsertAssignment(right);
+    if (boundRows.length > 0) {
+      void copyAssignmentBoundTasks(assignmentId, right.id).then(() => {
+        // Left keeps its existing binds; recompute span across both.
+        const nextAssignments = state.assignments
+          .filter((a) => a.id !== base.id)
+          .concat([left, right]);
+        const nextBinds = [
+          ...state.assignment_bound_tasks.filter(
+            (r) => r.assignment_id !== assignmentId,
+          ),
+          ...boundRows,
+          ...boundRows.map((r) => ({
+            ...r,
+            assignment_id: right.id,
+          })),
+        ];
+        const taskIds = [...new Set(boundRows.map((r) => r.task_id))];
+        const patches = syncNonGanttTaskDatesFromBindings(
+          nextBinds,
+          state.tasks,
+          state.task_lists,
+          nextAssignments,
+          taskIds,
+        );
+        for (const patch of patches) {
+          const task = state.tasks.find((t) => t.id === patch.taskId);
+          if (!task) continue;
+          upsertTask({
+            ...task,
+            start_date: patch.start_date,
+            due_date: patch.due_date,
+          });
+        }
+      });
+    }
     selectAssignment(left.id);
     setSliceMode(false);
     push("Assignment sliced");
@@ -3886,6 +4271,10 @@ export function ScheduleGrid() {
                                           sliceAssignmentAt(base.id, dayKey);
                                           return;
                                         }
+                                        if (isAssignmentScheduleLocked(base.id)) {
+                                          setGanttMoveLockedNotice(true);
+                                          return;
+                                        }
                                         const grabDays = workingDaysBetween(
                                           occ.start_date,
                                           occ.end_date,
@@ -3949,7 +4338,20 @@ export function ScheduleGrid() {
                                           className="relative z-[1] ml-0.5 inline-flex shrink-0"
                                         >
                                           <span
-                                            className="inline-flex cursor-default text-white/95"
+                                            className={cn(
+                                              "inline-flex cursor-default",
+                                              isBoundTasksNotes(occ.notes)
+                                                ? assignmentIsOutOfSync(
+                                                    state.assignment_bound_tasks,
+                                                    state.tasks,
+                                                    state.task_lists,
+                                                    state.assignments,
+                                                    occ.assignmentId,
+                                                  )
+                                                  ? "text-[var(--status-near)]"
+                                                  : "text-[var(--status-healthy)]"
+                                                : "text-white/95",
+                                            )}
                                             aria-label="Notes"
                                             onMouseDown={(e) =>
                                               e.stopPropagation()
@@ -3958,6 +4360,11 @@ export function ScheduleGrid() {
                                             <StickyNote
                                               size={13}
                                               strokeWidth={2.5}
+                                              className={
+                                                isBoundTasksNotes(occ.notes)
+                                                  ? "fill-current stroke-white"
+                                                  : undefined
+                                              }
                                             />
                                           </span>
                                         </Tooltip>
@@ -3989,6 +4396,10 @@ export function ScheduleGrid() {
                                                     a.id === occ.assignmentId,
                                                 );
                                               if (!base) return;
+                                              if (isAssignmentScheduleLocked(base.id)) {
+                                                setGanttMoveLockedNotice(true);
+                                                return;
+                                              }
                                               selectAssignment(base.id, {
                                                 start: occ.start_date,
                                                 end: occ.end_date,
@@ -4046,6 +4457,10 @@ export function ScheduleGrid() {
                                                     a.id === occ.assignmentId,
                                                 );
                                               if (!base) return;
+                                              if (isAssignmentScheduleLocked(base.id)) {
+                                                setGanttMoveLockedNotice(true);
+                                                return;
+                                              }
                                               selectAssignment(base.id, {
                                                 start: occ.start_date,
                                                 end: occ.end_date,
@@ -4146,6 +4561,18 @@ export function ScheduleGrid() {
                                   const noteHtmls = overlapping
                                     .map((o) => o.notes)
                                     .filter((n) => notesHasContent(n));
+                                  const boundNoteOcc = overlapping.find((o) =>
+                                    isBoundTasksNotes(o.notes),
+                                  );
+                                  const boundNoteOos = boundNoteOcc
+                                    ? assignmentIsOutOfSync(
+                                        state.assignment_bound_tasks,
+                                        state.tasks,
+                                        state.task_lists,
+                                        state.assignments,
+                                        boundNoteOcc.assignmentId,
+                                      )
+                                    : false;
 
                                   return [
                                     <div
@@ -4188,6 +4615,10 @@ export function ScheduleGrid() {
                                           (a) => a.id === primary.assignmentId,
                                         );
                                         if (!base) return;
+                                        if (isAssignmentScheduleLocked(base.id)) {
+                                          setGanttMoveLockedNotice(true);
+                                          return;
+                                        }
                                         const weeklyInstance =
                                           (base.recurrence ?? "none") ===
                                           "weekly";
@@ -4243,7 +4674,14 @@ export function ScheduleGrid() {
                                           className="relative z-[1] ml-0.5 inline-flex shrink-0"
                                         >
                                           <span
-                                            className="inline-flex cursor-default text-white/95"
+                                            className={cn(
+                                              "inline-flex cursor-default",
+                                              boundNoteOcc
+                                                ? boundNoteOos
+                                                  ? "text-[var(--status-near)]"
+                                                  : "text-[var(--status-healthy)]"
+                                                : "text-white/95",
+                                            )}
                                             aria-label="Notes"
                                             onMouseDown={(e) =>
                                               e.stopPropagation()
@@ -4252,6 +4690,11 @@ export function ScheduleGrid() {
                                             <StickyNote
                                               size={13}
                                               strokeWidth={2.5}
+                                              className={
+                                                boundNoteOcc
+                                                  ? "fill-current stroke-white"
+                                                  : undefined
+                                              }
                                             />
                                           </span>
                                         </Tooltip>
@@ -4582,6 +5025,10 @@ export function ScheduleGrid() {
                   hideHeader
                   allowSelect={false}
                   omitYearFromTaskDates
+                  scheduleBindPersonId={editForm.person_id}
+                  showBoundAssignmentIcon
+                  showAssigneeAvatarInCompact
+                  hideDescriptionIcon
                   assigneePersonId={
                     canManage ||
                     Boolean(
@@ -4598,6 +5045,13 @@ export function ScheduleGrid() {
                   }
                   bindSelectedIds={bindDraftIds}
                   onBindToggleTask={(taskId) => {
+                    const task = state.tasks.find((t) => t.id === taskId);
+                    if (
+                      task?.assignee_person_id &&
+                      task.assignee_person_id !== editForm.person_id
+                    ) {
+                      return;
+                    }
                     setBindDraftIds((prev) => {
                       const next = new Set(prev);
                       if (next.has(taskId)) next.delete(taskId);
@@ -4755,8 +5209,13 @@ export function ScheduleGrid() {
             <div className="grid grid-cols-2 gap-2">
               <Field label="Start">
                 <DateInput
-                  className={inputClass}
+                  className={cn(
+                    inputClass,
+                    isAssignmentScheduleLocked(editForm.id) &&
+                      "opacity-60 cursor-not-allowed",
+                  )}
                   value={editForm.start_date}
+                  disabled={isAssignmentScheduleLocked(editForm.id)}
                   onChange={(e) =>
                     patchEditForm({ start_date: e.target.value })
                   }
@@ -4764,8 +5223,13 @@ export function ScheduleGrid() {
               </Field>
               <Field label="End">
                 <DateInput
-                  className={inputClass}
+                  className={cn(
+                    inputClass,
+                    isAssignmentScheduleLocked(editForm.id) &&
+                      "opacity-60 cursor-not-allowed",
+                  )}
                   value={editForm.end_date}
+                  disabled={isAssignmentScheduleLocked(editForm.id)}
                   onChange={(e) => patchEditForm({ end_date: e.target.value })}
                 />
               </Field>
@@ -5239,23 +5703,64 @@ export function ScheduleGrid() {
         <ConfirmDialog
           title={
             bindConfirm.step === "dates"
-              ? "Update task dates?"
+              ? "Update Task Dates?"
               : bindConfirm.step === "overwrite"
-                ? "Overwrite existing dates?"
-                : "Gantt list tasks"
+                ? "Overwrite Existing Dates?"
+                : "Gant List Tasks"
           }
           message={
             bindConfirm.step === "dates"
-              ? "Selected tasks will use this assignment’s start and end dates (except tasks on Gantt lists, which only change in Gantt)."
+              ? "Selected tasks will use this assignment’s start and end dates."
               : bindConfirm.step === "overwrite"
-                ? "One or more selected tasks already have a start or due date. Binding will overwrite those dates for non-Gantt tasks."
-                : "Some selected tasks are on Gantt-enabled lists. They can be bound as priority tasks, but their dates only change in Gantt view."
+                ? "One or more selected tasks already have a start or due date. Binding will overwrite the dates already assigned in the project."
+                : "Some of the selected Tasks are on Gantt-enabled Lists. They can be bound as Assignment Tasks, but their dates must be changed in the project in Gantt view."
           }
           mode={bindConfirm.step === "gantt" ? "notice" : "confirm"}
           tone="accent"
           confirmLabel={bindConfirm.step === "gantt" ? "Got it" : "Continue"}
           onConfirm={() => advanceBindConfirm()}
           onCancel={() => setBindConfirm(null)}
+        />
+      ) : null}
+      {ganttMoveLockedNotice ? (
+        <ConfirmDialog
+          title="Assignment Locked"
+          message="This assignment is bound to Gantt-controlled tasks. Unbind the tasks or move them in the Gantt to change the Schedule time."
+          mode="notice"
+          tone="accent"
+          confirmLabel="Got it"
+          onConfirm={() => setGanttMoveLockedNotice(false)}
+          onCancel={() => setGanttMoveLockedNotice(false)}
+        />
+      ) : null}
+      {ganttScheduleMoveNotice ? (
+        <ConfirmDialog
+          title="Gantt Task Dates"
+          message="Moving this assignment will not change the Start or End dates of the Tasks. Task dates may only be updated in the Gantt."
+          mode="notice"
+          tone="accent"
+          confirmLabel="Got it"
+          onConfirm={() => setGanttScheduleMoveNotice(false)}
+          onCancel={() => setGanttScheduleMoveNotice(false)}
+        />
+      ) : null}
+      {cutBoundConfirm ? (
+        <ConfirmDialog
+          title="Spread Bound Task Dates?"
+          message="Cutting this assignment will keep the same bound tasks on both pieces. Task start and due dates will span across the resulting assignments."
+          mode="confirm"
+          tone="accent"
+          confirmLabel="Cut Assignment"
+          onConfirm={() => {
+            const pending = cutBoundConfirm;
+            setCutBoundConfirm(null);
+            if (pending) {
+              sliceAssignmentAt(pending.assignmentId, pending.cutDate, {
+                confirmed: true,
+              });
+            }
+          }}
+          onCancel={() => setCutBoundConfirm(null)}
         />
       ) : null}
     </div>

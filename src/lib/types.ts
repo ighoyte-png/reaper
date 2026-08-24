@@ -421,12 +421,19 @@ export interface Assignment {
   edited_by_profile_id: string | null;
 }
 
+/** Where the bind was created — affects Schedule move lock for Gantt tasks. */
+export type AssignmentBoundSource = "project" | "schedule";
+
 /** Tasks highlighted on a calendar assignment (schedule Tasks tab). */
 export interface AssignmentBoundTask {
   assignment_id: string;
   task_id: string;
   organization_id: string;
   sort_order: number;
+  /** project = from task edit (locks Gantt assignment moves); schedule = Tasks tab. */
+  bound_source: AssignmentBoundSource;
+  /** True when a required Schedule update could not complete; binding remains. */
+  out_of_sync: boolean;
 }
 
 /** Per-project contractor compensation mode. */

@@ -206,6 +206,8 @@ export function PublicShareProvider({
       deleteAssignment: () => {},
       setAssignmentBoundTasks: async () => {},
       clearAssignmentBoundTasks: async () => {},
+      copyAssignmentBoundTasks: async () => {},
+      setAssignmentBoundTasksOutOfSync: async () => {},
       upsertMilestone: () => {},
       deleteMilestone: () => {},
       upsertLeave: () => {},

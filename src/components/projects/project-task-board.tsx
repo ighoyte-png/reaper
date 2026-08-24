@@ -46,6 +46,7 @@ import {
   Star,
   StickyNote,
   Trash2,
+  Link2,
 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ProjectTaskCalendar } from "@/components/projects/project-task-calendar";
@@ -68,7 +69,16 @@ import { RichNotesHtml, SimpleRichTextEditor, type SimpleRichTextEditorHandle } 
 import { EntityFileAttachments } from "@/components/ui/file-attachments";
 import { listEntityFileAttachments, syncInlineAttachmentsFromHtml, cleanupEntityAttachmentsClient } from "@/lib/storage/client-upload";
 import { useData } from "@/lib/data/store";
-import { useProjectHref } from "@/lib/hooks/use-app-href";
+import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import {
+  boundTasksNotesHtml,
+  calendarDayDelta,
+  isBoundTasksNotes,
+  isGanttTask,
+  syncNonGanttTaskDatesFromBindings,
+  tryShiftAssignmentByDays,
+} from "@/lib/domain/assignment-bound-tasks";
+import { toDateKey } from "@/lib/domain/dates";
 import { useIsPhone } from "@/lib/hooks/use-media-query";
 import { useViewAsOptional } from "@/lib/view-as";
 import { MILESTONE_PURPLE } from "@/lib/domain/gantt";
@@ -178,6 +188,14 @@ type Props = {
    * Schedule Tasks tab: show due dates as "MMM d" (no year) to free title space.
    */
   omitYearFromTaskDates?: boolean;
+  /** Schedule bind: gray out tasks assigned to a different person. */
+  scheduleBindPersonId?: string | null;
+  /** Show green bound-to-assignment icon on task rows. */
+  showBoundAssignmentIcon?: boolean;
+  /** Compact rows: still show assignee avatar (Schedule Tasks tab). */
+  showAssigneeAvatarInCompact?: boolean;
+  /** Hide the task description StickyNote (Schedule Tasks tab). */
+  hideDescriptionIcon?: boolean;
 };
 
 function todayKey() {
@@ -210,6 +228,8 @@ type BoardCtx = {
   comments: TaskComment[];
   profileId: string | null;
   canManage: boolean;
+  /** Viewer is the assigned project manager. */
+  isProjectManager: boolean;
   myPersonId: string | null;
   manageLists: boolean;
   allowSelect: boolean;
@@ -221,6 +241,14 @@ type BoardCtx = {
   compact: boolean;
   /** Schedule Tasks tab: due dates without year. */
   omitYearFromTaskDates: boolean;
+  scheduleBindPersonId: string | null;
+  showBoundAssignmentIcon: boolean;
+  showAssigneeAvatarInCompact: boolean;
+  hideDescriptionIcon: boolean;
+  /** Bound assignment deep-link for a task (if any). */
+  boundAssignmentHref: ((taskId: string) => string | null) | null;
+  isTaskBound: (taskId: string) => boolean;
+  isTaskGanttControlled: (taskId: string) => boolean;
   /** Hide edit/drag/comments (e.g. schedule sidebar). */
   readOnly: boolean;
   /** Click status chip to cycle upcoming → active → complete. */
@@ -416,6 +444,10 @@ export function ProjectTaskBoard({
   onBindToggleTask,
   priorityOnlyTaskIds = null,
   omitYearFromTaskDates = false,
+  scheduleBindPersonId = null,
+  showBoundAssignmentIcon = false,
+  showAssigneeAvatarInCompact = false,
+  hideDescriptionIcon = false,
 }: Props) {
   const {
     state,
@@ -431,6 +463,10 @@ export function ProjectTaskBoard({
     deleteTask,
     deleteTaskList,
     moveTaskList,
+    clearAssignmentBoundTasks,
+    setAssignmentBoundTasks,
+    setAssignmentBoundTasksOutOfSync,
+    upsertAssignment,
     newId,
     ensureProjectData,
     dataStatus,
@@ -440,6 +476,7 @@ export function ProjectTaskBoard({
   } = useData();
   const { push: toast } = useToast();
   const projectHref = useProjectHref();
+  const appHref = useAppHref();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1225,7 +1262,7 @@ export function ProjectTaskBoard({
 
   function createTaskFromDraft(
     listId: string,
-    draft: InlineTaskDraft,
+    draft: InlineTaskDraft & { bind_to_assignment?: boolean },
     attachmentTaskId?: string,
   ) {
     if (!manageLists || isListGanttLocked(listId)) return;
@@ -1286,6 +1323,17 @@ export function ProjectTaskBoard({
     }
     clearTaskCreateDraft(profile?.id, listId);
     setDraftingListId(null);
+    if (draft.bind_to_assignment && draft.assignee_person_id) {
+      const start =
+        draft.start_date || draft.due_date || toDateKey(new Date());
+      const qs = new URLSearchParams({
+        bindTask: task.id,
+        person: draft.assignee_person_id,
+        project: projectId,
+        date: start,
+      });
+      router.push(appHref(`/schedule?${qs.toString()}`));
+    }
   }
 
   function addDivider(listId: string) {
@@ -1343,26 +1391,76 @@ export function ProjectTaskBoard({
     setEditingTaskId(null);
   }
 
-  function saveEditingTask(taskId: string, draft: InlineTaskDraft) {
+  function unbindTaskFromAssignments(taskId: string) {
+    const byAssignment = new Map<string, string[]>();
+    for (const row of state.assignment_bound_tasks) {
+      const list = byAssignment.get(row.assignment_id) ?? [];
+      list.push(row.task_id);
+      byAssignment.set(row.assignment_id, list);
+    }
+    for (const [assignmentId, taskIds] of byAssignment) {
+      if (!taskIds.includes(taskId)) continue;
+      const remaining = taskIds.filter((id) => id !== taskId);
+      const assignment = state.assignments.find((a) => a.id === assignmentId);
+      if (remaining.length === 0) {
+        void clearAssignmentBoundTasks(assignmentId);
+        if (assignment && isBoundTasksNotes(assignment.notes)) {
+          upsertAssignment({ ...assignment, notes: "" });
+        }
+      } else {
+        void setAssignmentBoundTasks(assignmentId, remaining).then(() => {
+          if (!assignment) return;
+          const titles = remaining
+            .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
+            .filter(Boolean);
+          upsertAssignment({
+            ...assignment,
+            notes: boundTasksNotesHtml(titles),
+          });
+        });
+      }
+    }
+  }
+
+  function saveEditingTask(
+    taskId: string,
+    draft: InlineTaskDraft & { bind_to_assignment?: boolean },
+  ) {
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task || isListGanttLocked(task.list_id)) return;
     const titleLocked = Boolean(task.is_client_review && task.parent_id);
     const title = titleLocked ? task.title : draft.title.trim();
     if (!title) return;
 
+    const wasBound = state.assignment_bound_tasks.some(
+      (r) => r.task_id === taskId,
+    );
+    const assigneeChanged =
+      (task.assignee_person_id ?? "") !== (draft.assignee_person_id ?? "");
+    if (wasBound && assigneeChanged) {
+      unbindTaskFromAssignments(taskId);
+    }
+
     const notifyOpts = {
       notifyAssignee: Boolean(
         draft.notify_assignee && draft.assignee_person_id,
       ),
     };
+    const datesLocked =
+      wasBound &&
+      !assigneeChanged &&
+      !isGanttTask(task, state.task_lists);
+    const nextStart = datesLocked ? task.start_date : draft.start_date;
+    const nextDue = datesLocked ? task.due_date : draft.due_date;
+
     if (task.parent_id) {
       upsertTask(
         {
           ...task,
           title,
           assignee_person_id: draft.assignee_person_id,
-          start_date: draft.start_date,
-          due_date: draft.due_date,
+          start_date: nextStart,
+          due_date: nextDue,
           notes: draft.notes,
           is_client_review: task.is_client_review,
         },
@@ -1374,8 +1472,8 @@ export function ProjectTaskBoard({
           ...task,
           title,
           assignee_person_id: draft.assignee_person_id,
-          start_date: draft.start_date,
-          due_date: draft.due_date,
+          start_date: nextStart,
+          due_date: nextDue,
           notes: draft.notes,
           is_client_review: false,
         },
@@ -1433,12 +1531,91 @@ export function ProjectTaskBoard({
         html: draft.notes,
       });
     }
+    if (draft.bind_to_assignment && draft.assignee_person_id) {
+      const start =
+        nextStart || nextDue || toDateKey(new Date());
+      const qs = new URLSearchParams({
+        bindTask: taskId,
+        person: draft.assignee_person_id,
+        project: projectId,
+        date: start,
+      });
+      router.push(appHref(`/schedule?${qs.toString()}`));
+    }
     // Leave editing open so the row can animate closed, then clear.
   }
 
   function deleteEditingTask(taskId: string) {
     setEditingTaskId(null);
     beginDeleteTasks([taskId]);
+  }
+
+  function handleListUpdate(list: TaskList, patch: Partial<TaskList>) {
+    const enabling =
+      patch.gantt_enabled === true && !list.gantt_enabled;
+    const disabling =
+      patch.gantt_enabled === false && list.gantt_enabled;
+    upsertTaskList({ ...list, ...patch });
+    if (!enabling && !disabling) return;
+
+    const listTasks = state.tasks.filter(
+      (t) => t.list_id === list.id && !t.is_divider,
+    );
+    if (disabling) {
+      const patches = syncNonGanttTaskDatesFromBindings(
+        state.assignment_bound_tasks,
+        listTasks,
+        state.task_lists.map((l) =>
+          l.id === list.id ? { ...l, gantt_enabled: false } : l,
+        ),
+        state.assignments,
+        listTasks.map((t) => t.id),
+      );
+      for (const p of patches) {
+        const task = state.tasks.find((t) => t.id === p.taskId);
+        if (!task) continue;
+        upsertTask({
+          ...task,
+          start_date: p.start_date,
+          due_date: p.due_date,
+        });
+      }
+      return;
+    }
+
+    for (const task of listTasks) {
+      const binds = state.assignment_bound_tasks.filter(
+        (r) => r.task_id === task.id,
+      );
+      if (binds.length === 0 || !task.start_date) continue;
+      for (const bind of binds) {
+        const assignment = state.assignments.find(
+          (a) => a.id === bind.assignment_id,
+        );
+        if (!assignment) continue;
+        const delta = calendarDayDelta(
+          assignment.start_date,
+          task.start_date,
+        );
+        if (delta === 0) continue;
+        const result = tryShiftAssignmentByDays({
+          assignment,
+          calendarDayDelta: delta,
+          assignments: state.assignments,
+          leaveDays: state.leave_days,
+        });
+        if (result.ok) {
+          upsertAssignment({
+            ...assignment,
+            start_date: result.start,
+            end_date: result.end,
+          });
+          void setAssignmentBoundTasksOutOfSync(assignment.id, false);
+        } else {
+          void setAssignmentBoundTasksOutOfSync(assignment.id, true);
+        }
+      }
+    }
   }
 
   function cycleStatus(task: Task) {
@@ -2011,6 +2188,7 @@ export function ProjectTaskBoard({
     comments: state.task_comments,
     profileId: profile?.id ?? null,
     canManage: viewerCanManage,
+    isProjectManager: isPm,
     myPersonId: viewerPersonId,
     manageLists,
     allowSelect,
@@ -2020,6 +2198,42 @@ export function ProjectTaskBoard({
     listsEditMode,
     compact,
     omitYearFromTaskDates,
+    scheduleBindPersonId,
+    showBoundAssignmentIcon:
+      showBoundAssignmentIcon || !compact || Boolean(scheduleBindPersonId),
+    showAssigneeAvatarInCompact,
+    hideDescriptionIcon,
+    boundAssignmentHref: (taskId: string) => {
+      const binds = state.assignment_bound_tasks.filter(
+        (r) => r.task_id === taskId,
+      );
+      if (binds.length === 0) return null;
+      const assignments = binds
+        .map((b) => state.assignments.find((a) => a.id === b.assignment_id))
+        .filter((a): a is NonNullable<typeof a> => Boolean(a))
+        .sort((a, b) =>
+          a.start_date < b.start_date
+            ? -1
+            : a.start_date > b.start_date
+              ? 1
+              : 0,
+        );
+      if (assignments.length === 0) return null;
+      const today = toDateKey(new Date());
+      const preferred =
+        assignments.find(
+          (a) => a.start_date <= today && a.end_date >= today,
+        ) ?? assignments[0];
+      return appHref(
+        `/schedule?assignment=${encodeURIComponent(preferred.id)}&tab=tasks&date=${encodeURIComponent(preferred.start_date)}`,
+      );
+    },
+    isTaskBound: (taskId: string) =>
+      state.assignment_bound_tasks.some((r) => r.task_id === taskId),
+    isTaskGanttControlled: (taskId: string) => {
+      const task = state.tasks.find((t) => t.id === taskId);
+      return task ? isGanttTask(task, state.task_lists) : false;
+    },
     readOnly: readOnly || isPublicShare,
     allowStatusEdit: !isPublicShare && (!readOnly || compact),
     hubTaskHref:
@@ -2574,9 +2788,7 @@ export function ProjectTaskBoard({
                   }}
                   onCopy={() => requestCopyList(list.id)}
                   onMove={() => openMoveList(list.id)}
-                  onUpdateList={(patch) =>
-                    upsertTaskList({ ...list, ...patch })
-                  }
+                  onUpdateList={(patch) => handleListUpdate(list, patch)}
                   showGanttControls={Boolean(project?.manager_person_id)}
                 />
               );
@@ -2701,9 +2913,7 @@ export function ProjectTaskBoard({
                       }}
                       onCopy={() => requestCopyList(list.id)}
                       onMove={() => openMoveList(list.id)}
-                      onUpdateList={(patch) =>
-                        upsertTaskList({ ...list, ...patch })
-                      }
+                      onUpdateList={(patch) => handleListUpdate(list, patch)}
                       showGanttControls={Boolean(project?.manager_person_id)}
                     />
                   );
@@ -3409,6 +3619,10 @@ function ListSection({
                   status="upcoming"
                   submitLabel="Add task"
                   allowClientReview
+                  isProjectManager={ctx.isProjectManager}
+                  canBindToAssignment={Boolean(
+                    ctx.canManage && ctx.isProjectManager,
+                  )}
                   onDraftChange={(draft) =>
                     writeTaskCreateDraft(ctx.profileId, list.id, draft)
                   }
@@ -3510,6 +3724,11 @@ function InlineTaskForm({
   storageMode = "demo",
   newId,
   onAttachmentError,
+  canBindToAssignment = false,
+  isBoundToAssignment = false,
+  datesScheduleControlled = false,
+  scheduleDatesHref = null,
+  isProjectManager = false,
 }: {
   people: Person[];
   allPeople?: Person[];
@@ -3518,7 +3737,10 @@ function InlineTaskForm({
   status?: TaskStatus;
   submitLabel: string;
   onCancel: () => void;
-  onSubmit: (draft: InlineTaskDraft, attachmentTaskId?: string) => void;
+  onSubmit: (
+    draft: InlineTaskDraft & { bind_to_assignment?: boolean },
+    attachmentTaskId?: string,
+  ) => void;
   onDelete?: () => void;
   /** When set (create flow), persist field changes as a local draft. */
   onDraftChange?: (draft: InlineTaskDraft) => void;
@@ -3533,6 +3755,11 @@ function InlineTaskForm({
   storageMode?: "demo" | "supabase";
   newId?: (prefix: string) => string;
   onAttachmentError?: (msg: string) => void;
+  canBindToAssignment?: boolean;
+  isBoundToAssignment?: boolean;
+  datesScheduleControlled?: boolean;
+  scheduleDatesHref?: string | null;
+  isProjectManager?: boolean;
 }) {
   const [draftTaskId] = useState(
     () => taskIdForAttachments ?? newId?.("task") ?? crypto.randomUUID(),
@@ -3551,7 +3778,11 @@ function InlineTaskForm({
   const [notifyAssignee, setNotifyAssignee] = useState(
     alreadyNotified || Boolean(initial?.notify_assignee),
   );
+  const [bindToAssignment, setBindToAssignment] = useState(
+    Boolean(initial?.bind_to_assignment),
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmUnbindAssignee, setConfirmUnbindAssignee] = useState(false);
   const onDraftChangeRef = useRef(onDraftChange);
   onDraftChangeRef.current = onDraftChange;
   const notesEditorRef = useRef<SimpleRichTextEditorHandle>(null);
@@ -3631,42 +3862,69 @@ function InlineTaskForm({
       notes,
       is_client_review: isClientReview,
       notify_assignee: notifyAssignee,
+      bind_to_assignment: bindToAssignment,
     });
-  }, [title, assigneeId, startDate, dueDate, notes, isClientReview, notifyAssignee]);
+  }, [
+    title,
+    assigneeId,
+    startDate,
+    dueDate,
+    notes,
+    isClientReview,
+    notifyAssignee,
+    bindToAssignment,
+  ]);
 
   // Clear notify when unassigned (create flow).
   useEffect(() => {
     if (!assigneeId && notifyAssignee) setNotifyAssignee(false);
-  }, [assigneeId, notifyAssignee]);
+    if (!assigneeId && bindToAssignment) setBindToAssignment(false);
+  }, [assigneeId, notifyAssignee, bindToAssignment]);
+
+  function doSubmit() {
+    void (async () => {
+      const trimmed = title.trim();
+      if (!trimmed || savingNotes) return;
+      setSavingNotes(true);
+      try {
+        let finalNotes = notes;
+        if (storageMode === "supabase" && notesEditorRef.current) {
+          finalNotes = await notesEditorRef.current.flushPendingInlineUploads();
+          setNotes(finalNotes);
+        }
+        onSubmit(
+          {
+            title: trimmed,
+            assignee_person_id: assigneeId || null,
+            start_date: startDate || null,
+            due_date: dueDate || null,
+            notes: finalNotes,
+            is_client_review: isClientReview,
+            notify_assignee:
+              alreadyNotified ? false : Boolean(notifyAssignee && assigneeId),
+            bind_to_assignment: Boolean(
+              bindToAssignment && canBindToAssignment && !isBoundToAssignment,
+            ),
+          },
+          draftTaskId,
+        );
+      } catch {
+        // Error already reported via onAttachmentError.
+      } finally {
+        setSavingNotes(false);
+      }
+    })();
+  }
 
   async function submit() {
-    const trimmed = title.trim();
-    if (!trimmed || savingNotes) return;
-    setSavingNotes(true);
-    try {
-      let finalNotes = notes;
-      if (storageMode === "supabase" && notesEditorRef.current) {
-        finalNotes = await notesEditorRef.current.flushPendingInlineUploads();
-        setNotes(finalNotes);
-      }
-      onSubmit(
-        {
-          title: trimmed,
-          assignee_person_id: assigneeId || null,
-          start_date: startDate || null,
-          due_date: dueDate || null,
-          notes: finalNotes,
-          is_client_review: isClientReview,
-          notify_assignee:
-            alreadyNotified ? false : Boolean(notifyAssignee && assigneeId),
-        },
-        draftTaskId,
-      );
-    } catch {
-      // Error already reported via onAttachmentError.
-    } finally {
-      setSavingNotes(false);
+    const assigneeChanged =
+      isBoundToAssignment &&
+      (initial?.assignee_person_id ?? "") !== (assigneeId || "");
+    if (assigneeChanged) {
+      setConfirmUnbindAssignee(true);
+      return;
     }
+    doSubmit();
   }
 
   function cancel() {
@@ -3736,8 +3994,26 @@ function InlineTaskForm({
                   })),
                 ]}
               />
+              {assigneeId ? (
+                <label
+                  className={cn(
+                    "flex shrink-0 items-center gap-1.5 text-sm text-[var(--text-muted)]",
+                    alreadyNotified
+                      ? "cursor-not-allowed opacity-60"
+                      : "cursor-pointer",
+                  )}
+                >
+                  <Checkbox
+                    checked={alreadyNotified || notifyAssignee}
+                    disabled={alreadyNotified}
+                    onChange={(e) => setNotifyAssignee(e.target.checked)}
+                    aria-label="Notify the Assignee"
+                  />
+                  Notify the Assignee
+                </label>
+              ) : null}
               {allowClientReview ? (
-                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
+                <label className="ml-auto flex shrink-0 cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
                   <Checkbox
                     checked={isClientReview}
                     onChange={(e) => setIsClientReview(e.target.checked)}
@@ -3750,28 +4026,58 @@ function InlineTaskForm({
           </div>
           <div className="grid min-w-0 gap-1.5 sm:grid-cols-[6.5rem_minmax(0,1fr)] sm:items-center sm:gap-3">
             <span className="text-sm text-[var(--text-muted)]">Dates</span>
-            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-              <label className="min-w-0">
-                <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
-                  Start
+            {datesScheduleControlled ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-[var(--text)]">
+                <span>
+                  {startDate
+                    ? format(parseISO(startDate), "MMM d, yyyy")
+                    : "—"}
+                  {" – "}
+                  {dueDate ? format(parseISO(dueDate), "MMM d, yyyy") : "—"}
                 </span>
-                <DateInput
-                  className={cn(inputClass, "mt-0 h-8 min-w-0 max-w-full")}
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </label>
-              <label className="min-w-0">
-                <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
-                  End
-                </span>
-                <DateInput
-                  className={cn(inputClass, "mt-0 h-8 min-w-0 max-w-full")}
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-              </label>
-            </div>
+                {scheduleDatesHref ? (
+                  <Tooltip content="Dates are controlled by the Schedule, open the Schedule page to make changes">
+                    <Link
+                      href={scheduleDatesHref}
+                      className="inline-flex text-[var(--status-healthy)] hover:opacity-80"
+                      aria-label="Open Schedule assignment"
+                    >
+                      <Link2 size={16} strokeWidth={2} />
+                    </Link>
+                  </Tooltip>
+                ) : (
+                  <span
+                    className="inline-flex text-[var(--status-healthy)]"
+                    title="Dates are controlled by the Schedule, open the Schedule page to make changes"
+                  >
+                    <Link2 size={16} strokeWidth={2} />
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="min-w-0">
+                  <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                    Start
+                  </span>
+                  <DateInput
+                    className={cn(inputClass, "mt-0 h-8 min-w-0 max-w-full")}
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </label>
+                <label className="min-w-0">
+                  <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
+                    End
+                  </span>
+                  <DateInput
+                    className={cn(inputClass, "mt-0 h-8 min-w-0 max-w-full")}
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                  />
+                </label>
+              </div>
+            )}
           </div>
           {onDelete ? (
             <TaskDescriptionEditor
@@ -3815,22 +4121,22 @@ function InlineTaskForm({
             >
               Cancel
             </button>
-            {assigneeId ? (
-              <label
-                className={cn(
-                  "flex items-center gap-1.5 text-sm text-[var(--text-muted)]",
-                  alreadyNotified
-                    ? "cursor-not-allowed opacity-60"
-                    : "cursor-pointer",
-                )}
-              >
+            {isBoundToAssignment ? (
+              <span className="text-sm text-[var(--status-healthy)]">
+                Task Bound to Schedule Assignment
+              </span>
+            ) : canBindToAssignment &&
+              isProjectManager &&
+              assigneeId &&
+              !assigneeOptions.find((p) => p.id === assigneeId)
+                ?.hide_from_schedule ? (
+              <label className="flex cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
                 <Checkbox
-                  checked={alreadyNotified || notifyAssignee}
-                  disabled={alreadyNotified}
-                  onChange={(e) => setNotifyAssignee(e.target.checked)}
-                  aria-label="Notify the Assignee"
+                  checked={bindToAssignment}
+                  onChange={(e) => setBindToAssignment(e.target.checked)}
+                  aria-label="Bind to Assignment"
                 />
-                Notify the Assignee
+                Bind to Assignment
               </label>
             ) : null}
           </div>
@@ -3854,6 +4160,19 @@ function InlineTaskForm({
           onConfirm={() => {
             setConfirmDelete(false);
             onDelete();
+          }}
+        />
+      ) : null}
+      {confirmUnbindAssignee ? (
+        <ConfirmDialog
+          title="Change Assignee?"
+          message="Changing the assignee will remove the Schedule binding. The Schedule assignment will stay in place."
+          confirmLabel="Change Assignee"
+          tone="accent"
+          onCancel={() => setConfirmUnbindAssignee(false)}
+          onConfirm={() => {
+            setConfirmUnbindAssignee(false);
+            doSubmit();
           }}
         />
       ) : null}
@@ -4312,6 +4631,19 @@ function TaskRow({
           taskIdForAttachments={task.id}
           storageMode={ctx.mode}
           onAttachmentError={ctx.onAttachmentError}
+          isBoundToAssignment={ctx.isTaskBound(task.id)}
+          datesScheduleControlled={
+            ctx.isTaskBound(task.id) && !ctx.isTaskGanttControlled(task.id)
+          }
+          scheduleDatesHref={ctx.boundAssignmentHref?.(task.id) ?? null}
+          isProjectManager={ctx.isProjectManager}
+          canBindToAssignment={Boolean(
+            ctx.canManage &&
+              ctx.isProjectManager &&
+              task.assignee_person_id &&
+              !ctx.allPeople.find((p) => p.id === task.assignee_person_id)
+                ?.hide_from_schedule,
+          )}
           onCancel={() => requestCloseEdit()}
           onSubmit={(draft) => {
             ctx.saveEditingTask(task.id, draft);
@@ -4519,6 +4851,7 @@ function TaskRow({
                 ctx.isPhone ? "line-clamp-2" : "truncate",
                 "hover:underline",
               )}
+              title={task.title}
               onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
             >
@@ -4541,11 +4874,17 @@ function TaskRow({
                 isClientReviewApproved(task) &&
                   "text-[var(--status-healthy)] line-through",
               )}
+              title={task.title}
             >
               {task.title}
             </span>
           )}
           {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
+          {ctx.compact &&
+          ctx.showAssigneeAvatarInCompact &&
+          assignee ? (
+            <InitialsAvatar person={assignee} />
+          ) : null}
           {!ctx.readOnly &&
           (taskComments.length > 0 ||
             ctx.unreadTaskThreadIds.has(task.id)) ? (
@@ -4570,7 +4909,29 @@ function TaskRow({
               )}
             </span>
           ) : null}
-          {hasNotes ? (
+          {ctx.showBoundAssignmentIcon && ctx.isTaskBound(task.id) ? (
+            <Tooltip content="Task Bound to Schedule Assignment">
+              {ctx.boundAssignmentHref?.(task.id) ? (
+                <Link
+                  href={ctx.boundAssignmentHref(task.id)!}
+                  className="inline-flex shrink-0 text-[var(--status-healthy)] hover:opacity-80"
+                  aria-label="Task Bound to Schedule Assignment"
+                  onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Link2 size={16} strokeWidth={2} />
+                </Link>
+              ) : (
+                <span
+                  className="inline-flex shrink-0 text-[var(--status-healthy)]"
+                  aria-label="Task Bound to Schedule Assignment"
+                >
+                  <Link2 size={16} strokeWidth={2} />
+                </span>
+              )}
+            </Tooltip>
+          ) : null}
+          {hasNotes && !ctx.hideDescriptionIcon ? (
             <Tooltip
               align={ctx.compact && ctx.readOnly ? "end" : "center"}
               content={
@@ -4651,9 +5012,23 @@ function TaskRow({
         {ctx.allowSelect ? (
           <Checkbox
             checked={isSelected}
+            disabled={
+              ctx.bindSelectMode &&
+              Boolean(ctx.scheduleBindPersonId) &&
+              Boolean(task.assignee_person_id) &&
+              task.assignee_person_id !== ctx.scheduleBindPersonId
+            }
             onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => {
+              if (
+                ctx.bindSelectMode &&
+                ctx.scheduleBindPersonId &&
+                task.assignee_person_id &&
+                task.assignee_person_id !== ctx.scheduleBindPersonId
+              ) {
+                return;
+              }
               const shiftKey =
                 "shiftKey" in e.nativeEvent
                   ? Boolean(e.nativeEvent.shiftKey)
@@ -4661,6 +5036,14 @@ function TaskRow({
               ctx.toggleSelect(task.id, shiftKey);
             }}
             aria-label={`Select ${task.title}`}
+            title={
+              ctx.bindSelectMode &&
+              ctx.scheduleBindPersonId &&
+              task.assignee_person_id &&
+              task.assignee_person_id !== ctx.scheduleBindPersonId
+                ? "Assigned to someone else"
+                : undefined
+            }
           />
         ) : null}
       </div>

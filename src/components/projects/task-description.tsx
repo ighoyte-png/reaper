@@ -373,6 +373,7 @@ export const TaskDescriptionEditor = forwardRef<
         editorMaxHeight={editorMaxHeight}
         editorOverflowY={expanded ? undefined : "auto"}
         autoGrow={expanded}
+        stickyToolbar
         enableAttachments={enableAttachments}
         attachmentEntityType="task_note"
         attachmentEntityId={taskId ?? null}

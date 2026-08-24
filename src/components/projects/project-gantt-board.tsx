@@ -37,6 +37,11 @@ import { TaskStatusTag } from "@/components/tasks/task-status-tag";
 import { useData } from "@/lib/data/store";
 import { cn } from "@/lib/cn";
 import {
+  boundTasksNotesHtml,
+  calendarDayDelta,
+  tryShiftAssignmentByDays,
+} from "@/lib/domain/assignment-bound-tasks";
+import {
   parseDateKey,
   shiftWeek,
   shiftWorkingDays,
@@ -959,6 +964,8 @@ export function ProjectGanttBoard({
     upsertTaskList,
     upsertMilestone,
     upsertProject,
+    upsertAssignment,
+    setAssignmentBoundTasksOutOfSync,
     deleteTask,
     myPerson,
   } = useData();
@@ -1036,6 +1043,13 @@ export function ProjectGanttBoard({
     if (isPhone) setViewportExpanded(true);
   }, [isPhone]);
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const [boundMovePrompt, setBoundMovePrompt] = useState<null | {
+    phase: "ask" | "conflict";
+    calendarDelta: number;
+    taskIds: string[];
+    assignmentIds: string[];
+    applyGantt: () => void;
+  }>(null);
 
   const today = todayKey();
   const baseDayW = containerNarrow ? GANTT_DAY_W_NARROW : GANTT_DAY_W_DESKTOP;
@@ -1585,6 +1599,97 @@ export function ProjectGanttBoard({
     return () => window.removeEventListener("keydown", onKey);
   }, [readOnly]);
 
+  const applyBoundAssignmentShifts = useCallback(
+    (
+      assignmentIds: string[],
+      calendarDelta: number,
+      opts?: { dryRun?: boolean },
+    ): { moved: string[]; conflicts: string[] } => {
+      const moved: string[] = [];
+      const conflicts: string[] = [];
+      let workingAssignments = [...state.assignments];
+      const planned: { id: string; start: string; end: string }[] = [];
+      for (const id of assignmentIds) {
+        const assignment = workingAssignments.find((a) => a.id === id);
+        if (!assignment) continue;
+        const result = tryShiftAssignmentByDays({
+          assignment,
+          calendarDayDelta: calendarDelta,
+          assignments: workingAssignments,
+          leaveDays: state.leave_days,
+        });
+        if (!result.ok) {
+          conflicts.push(id);
+          continue;
+        }
+        planned.push({ id, start: result.start, end: result.end });
+        // Reserve the planned slot so later assignments in this batch see it.
+        workingAssignments = workingAssignments.map((a) =>
+          a.id === id
+            ? { ...a, start_date: result.start, end_date: result.end }
+            : a,
+        );
+        moved.push(id);
+      }
+      if (opts?.dryRun) {
+        return { moved, conflicts };
+      }
+      workingAssignments = [...state.assignments];
+      for (const plan of planned) {
+        const assignment = workingAssignments.find((a) => a.id === plan.id);
+        if (!assignment) continue;
+        const next = {
+          ...assignment,
+          start_date: plan.start,
+          end_date: plan.end,
+        };
+        upsertAssignment(next);
+        workingAssignments = workingAssignments.map((a) =>
+          a.id === plan.id ? next : a,
+        );
+        void setAssignmentBoundTasksOutOfSync(plan.id, false);
+      }
+      for (const id of conflicts) {
+        void setAssignmentBoundTasksOutOfSync(id, true);
+        const assignment = workingAssignments.find((a) => a.id === id);
+        if (!assignment) continue;
+        const taskIds = state.assignment_bound_tasks
+          .filter((r) => r.assignment_id === id)
+          .map((r) => r.task_id);
+        const titles = taskIds
+          .map((tid) => state.tasks.find((t) => t.id === tid)?.title ?? "")
+          .filter(Boolean);
+        if (titles.length > 0) {
+          upsertAssignment({
+            ...assignment,
+            notes: boundTasksNotesHtml(titles, "out_of_sync"),
+          });
+        }
+      }
+      return { moved, conflicts };
+    },
+    [
+      state.assignments,
+      state.leave_days,
+      state.assignment_bound_tasks,
+      state.tasks,
+      upsertAssignment,
+      setAssignmentBoundTasksOutOfSync,
+    ],
+  );
+
+  const collectBoundAssignmentIds = useCallback(
+    (taskIds: string[]) => {
+      const idSet = new Set(taskIds);
+      const assignmentIds = new Set<string>();
+      for (const row of state.assignment_bound_tasks) {
+        if (idSet.has(row.task_id)) assignmentIds.add(row.assignment_id);
+      }
+      return [...assignmentIds];
+    },
+    [state.assignment_bound_tasks],
+  );
+
   const commitDrag = useCallback(() => {
     const snap = dragRef.current;
     const previewMap = snap?.previewMap ?? new Map<string, GanttBarDates>();
@@ -1642,112 +1747,159 @@ export function ProjectGanttBoard({
       return;
     }
 
+    const finish = () => setDragVersion((v) => v + 1);
+
     if (snap.target.kind === "list") {
       const listId = snap.target.listId;
       const list = ganttLists.find((l) => l.id === listId);
       if (!list) {
-        setDragVersion((v) => v + 1);
+        finish();
         return;
       }
       const listDates = clampDateRange(snap.previewStart, snap.previewEnd);
-      const undoLists: TaskList[] = [cloneTaskList(list)];
-      const undoMilestones: Milestone[] = [];
-      const undoTasks: Task[] = [];
-      if (snap.mode === "move") {
-        for (const [otherId] of snap.cascadeListOrigins) {
-          const other = ganttLists.find((l) => l.id === otherId);
-          if (other) undoLists.push(cloneTaskList(other));
+      const affectedTaskIds = [...snap.listTaskOrigins.keys()];
+      const calendarDelta =
+        snap.mode === "move"
+          ? calendarDayDelta(snap.originStart, listDates.startKey)
+          : 0;
+      const assignmentIds =
+        calendarDelta !== 0
+          ? collectBoundAssignmentIds(affectedTaskIds)
+          : [];
+
+      const applyGantt = () => {
+        const undoLists: TaskList[] = [cloneTaskList(list)];
+        const undoMilestones: Milestone[] = [];
+        const undoTasks: Task[] = [];
+        if (snap.mode === "move") {
+          for (const [otherId] of snap.cascadeListOrigins) {
+            const other = ganttLists.find((l) => l.id === otherId);
+            if (other) undoLists.push(cloneTaskList(other));
+          }
+          for (const [msId] of snap.cascadeMilestoneOrigins) {
+            const ms = projectMilestones.find((m) => m.id === msId);
+            if (ms) undoMilestones.push(cloneMilestone(ms));
+          }
         }
-        for (const [msId] of snap.cascadeMilestoneOrigins) {
-          const ms = projectMilestones.find((m) => m.id === msId);
-          if (ms) undoMilestones.push(cloneMilestone(ms));
+        for (const [taskId] of snap.listTaskOrigins) {
+          const task = projectTasks.find((t) => t.id === taskId);
+          if (task) undoTasks.push(cloneTask(task));
         }
-      }
-      for (const [taskId] of snap.listTaskOrigins) {
-        const task = projectTasks.find((t) => t.id === taskId);
-        if (task) undoTasks.push(cloneTask(task));
-      }
-      pushUndo({
-        taskLists: undoLists,
-        milestones: undoMilestones,
-        tasks: undoTasks,
-      });
-      upsertTaskList({
-        ...list,
-        start_date: listDates.startKey,
-        end_date: listDates.endKey,
-      });
-      if (snap.mode === "move") {
-        for (const [otherId, orig] of snap.cascadeListOrigins) {
-          const preview = previewMap.get(`list:${otherId}`);
-          const other = ganttLists.find((l) => l.id === otherId);
-          if (!other || !preview) continue;
-          upsertTaskList({
-            ...other,
+        pushUndo({
+          taskLists: undoLists,
+          milestones: undoMilestones,
+          tasks: undoTasks,
+        });
+        upsertTaskList({
+          ...list,
+          start_date: listDates.startKey,
+          end_date: listDates.endKey,
+        });
+        if (snap.mode === "move") {
+          for (const [otherId, orig] of snap.cascadeListOrigins) {
+            const preview = previewMap.get(`list:${otherId}`);
+            const other = ganttLists.find((l) => l.id === otherId);
+            if (!other || !preview) continue;
+            upsertTaskList({
+              ...other,
+              start_date:
+                other.start_date != null || preview.startKey !== orig.startKey
+                  ? preview.startKey
+                  : null,
+              end_date:
+                other.end_date != null || preview.endKey !== orig.endKey
+                  ? preview.endKey
+                  : null,
+            });
+          }
+          for (const [msId, orig] of snap.cascadeMilestoneOrigins) {
+            const preview = previewMap.get(`milestone:${msId}`);
+            const ms = projectMilestones.find((m) => m.id === msId);
+            if (!ms || !preview) continue;
+            if (
+              preview.startKey === orig.startKey &&
+              preview.endKey === orig.endKey
+            ) {
+              continue;
+            }
+            upsertMilestone({
+              ...ms,
+              start_date: preview.startKey,
+              due_date: preview.endKey,
+            });
+          }
+        }
+        for (const [taskId, orig] of snap.listTaskOrigins) {
+          const preview = previewMap.get(taskId);
+          if (!preview) continue;
+          const task = projectTasks.find((t) => t.id === taskId);
+          if (!task) continue;
+          upsertTask({
+            ...task,
             start_date:
-              other.start_date != null || preview.startKey !== orig.startKey
+              task.start_date != null || preview.startKey !== orig.startKey
                 ? preview.startKey
                 : null,
-            end_date:
-              other.end_date != null || preview.endKey !== orig.endKey
+            due_date:
+              task.due_date != null || preview.endKey !== orig.endKey
                 ? preview.endKey
                 : null,
           });
         }
-        for (const [msId, orig] of snap.cascadeMilestoneOrigins) {
-          const preview = previewMap.get(`milestone:${msId}`);
-          const ms = projectMilestones.find((m) => m.id === msId);
-          if (!ms || !preview) continue;
-          if (
-            preview.startKey === orig.startKey &&
-            preview.endKey === orig.endKey
-          ) {
-            continue;
-          }
-          upsertMilestone({
-            ...ms,
-            start_date: preview.startKey,
-            due_date: preview.endKey,
-          });
-        }
-      }
-      for (const [taskId, orig] of snap.listTaskOrigins) {
-        const preview = previewMap.get(taskId);
-        if (!preview) continue;
-        const task = projectTasks.find((t) => t.id === taskId);
-        if (!task) continue;
-        upsertTask({
-          ...task,
-          start_date:
-            task.start_date != null || preview.startKey !== orig.startKey
-              ? preview.startKey
-              : null,
-          due_date:
-            task.due_date != null || preview.endKey !== orig.endKey
-              ? preview.endKey
-              : null,
+        finish();
+      };
+
+      if (assignmentIds.length > 0) {
+        setBoundMovePrompt({
+          phase: "ask",
+          calendarDelta,
+          taskIds: affectedTaskIds,
+          assignmentIds,
+          applyGantt,
         });
+        return;
       }
-      setDragVersion((v) => v + 1);
+      applyGantt();
       return;
     }
 
-    const undoTasks = snap.taskIds
-      .map((taskId) => projectTasks.find((t) => t.id === taskId))
-      .filter((t): t is Task => Boolean(t))
-      .map(cloneTask);
-    pushUndo({ tasks: undoTasks });
-    for (const taskId of snap.taskIds) {
-      const preview = previewMap.get(taskId);
-      const task = projectTasks.find((t) => t.id === taskId);
-      if (!task || !preview) continue;
-      upsertTask({
-        ...task,
-        start_date: preview.startKey,
-        due_date: preview.endKey,
+    // Task bar drag
+    const calendarDelta =
+      snap.mode === "move"
+        ? calendarDayDelta(snap.originStart, snap.previewStart)
+        : 0;
+    const assignmentIds =
+      calendarDelta !== 0 ? collectBoundAssignmentIds(snap.taskIds) : [];
+    const applyGantt = () => {
+      const undoTasks = snap.taskIds
+        .map((taskId) => projectTasks.find((t) => t.id === taskId))
+        .filter((t): t is Task => Boolean(t))
+        .map(cloneTask);
+      pushUndo({ tasks: undoTasks });
+      for (const taskId of snap.taskIds) {
+        const preview = previewMap.get(taskId);
+        const task = projectTasks.find((t) => t.id === taskId);
+        if (!task || !preview) continue;
+        upsertTask({
+          ...task,
+          start_date: preview.startKey,
+          due_date: preview.endKey,
+        });
+      }
+      finish();
+    };
+
+    if (assignmentIds.length > 0) {
+      setBoundMovePrompt({
+        phase: "ask",
+        calendarDelta,
+        taskIds: snap.taskIds,
+        assignmentIds,
+        applyGantt,
       });
+      return;
     }
-    setDragVersion((v) => v + 1);
+    applyGantt();
   }, [
     ganttLists,
     projectTasks,
@@ -1761,6 +1913,7 @@ export function ProjectGanttBoard({
     showDrawer,
     readOnly,
     pushUndo,
+    collectBoundAssignmentIds,
   ]);
 
   const startDrag = useCallback(
@@ -3078,13 +3231,76 @@ export function ProjectGanttBoard({
     );
   }
 
+  const boundMoveDialogs =
+    boundMovePrompt ? (
+      boundMovePrompt.phase === "ask" ? (
+        <ConfirmDialog
+          title="Move Bound Assignments?"
+          message="Some moved Gantt tasks are bound to Schedule assignments. Move those assignments by the same number of days?"
+          confirmLabel="Move Assignments"
+          cancelLabel="Gantt Only"
+          tone="accent"
+          onConfirm={() => {
+            const pending = boundMovePrompt;
+            const { conflicts } = applyBoundAssignmentShifts(
+              pending.assignmentIds,
+              pending.calendarDelta,
+              { dryRun: true },
+            );
+            if (conflicts.length > 0) {
+              setBoundMovePrompt({ ...pending, phase: "conflict" });
+              return;
+            }
+            applyBoundAssignmentShifts(
+              pending.assignmentIds,
+              pending.calendarDelta,
+            );
+            setBoundMovePrompt(null);
+            pending.applyGantt();
+          }}
+          onCancel={() => {
+            const pending = boundMovePrompt;
+            setBoundMovePrompt(null);
+            pending.applyGantt();
+          }}
+        />
+      ) : (
+        <ConfirmDialog
+          title="Schedule Conflict"
+          message="One or more bound Schedule assignments cannot be moved due to an overlap. Proceed with the Gantt move and mark those assignments Out of Sync for manual review?"
+          confirmLabel="Proceed with Gantt"
+          cancelLabel="Cancel"
+          tone="accent"
+          onConfirm={() => {
+            const pending = boundMovePrompt;
+            applyBoundAssignmentShifts(
+              pending.assignmentIds,
+              pending.calendarDelta,
+            );
+            setBoundMovePrompt(null);
+            pending.applyGantt();
+          }}
+          onCancel={() => {
+            setBoundMovePrompt(null);
+            setDragVersion((v) => v + 1);
+          }}
+        />
+      )
+    ) : null;
+
   if (viewportExpanded) {
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-[var(--bg)] p-3">
         {boardInner}
+        {boundMoveDialogs}
       </div>
     );
   }
 
-  return boardInner;
+  return (
+    <>
+      {boardInner}
+      {boundMoveDialogs}
+    </>
+  );
 }

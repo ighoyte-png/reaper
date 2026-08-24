@@ -13,6 +13,8 @@ export type TaskCreateDraft = {
   notify_assignee?: boolean;
   /** ISO timestamp if Notify the Assignee already fired. */
   assignee_notified_at?: string | null;
+  /** Create/edit: after save, open Schedule to bind this task. */
+  bind_to_assignment?: boolean;
 };
 
 type StoredTaskCreateDraft = TaskCreateDraft & { updatedAt: number };
