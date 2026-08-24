@@ -1571,7 +1571,7 @@ function TaggedMentionsPanel({
     <section
       className={cn(
         panelClass(),
-        "min-w-0 overflow-hidden",
+        "max-md:min-w-0 max-md:overflow-hidden",
         stretch && "flex min-h-0 flex-1 flex-col",
       )}
     >
@@ -1597,7 +1597,7 @@ function TaggedMentionsPanel({
       ) : (
         <ul
           className={cn(
-            "min-w-0 space-y-2 overflow-x-hidden",
+            "space-y-2 max-md:min-w-0 max-md:overflow-x-hidden",
             stretch
               ? "min-h-0 flex-1 overflow-y-auto"
               : cn("max-h-72 overflow-y-auto", !compact && "max-h-96"),
@@ -2287,7 +2287,7 @@ function TaskPulse({
     <section
       className={cn(
         panelClass(),
-        "min-w-0 overflow-hidden",
+        "max-md:min-w-0 max-md:overflow-hidden",
         stretch && "flex min-h-0 flex-1 flex-col",
       )}
     >
@@ -2317,7 +2317,7 @@ function TaskPulse({
       ) : (
         <div
           className={cn(
-            "min-w-0 space-y-3 overflow-x-hidden overflow-y-auto",
+            "space-y-3 overflow-y-auto max-md:min-w-0 max-md:overflow-x-hidden",
             stretch ? "min-h-0 flex-1" : "max-h-72",
           )}
         >

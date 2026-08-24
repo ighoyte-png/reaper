@@ -622,12 +622,20 @@ export function ProjectTaskBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot on ready
   }, [projectDataReady, projectId, manageLists]);
 
+  const pointerSensor = useSensor(PointerSensor, {
+    activationConstraint: { distance: 4 },
+  });
+  const touchSensor = useSensor(TouchSensor, {
+    activationConstraint: { delay: 250, tolerance: 5 },
+  });
+  const keyboardSensor = useSensor(KeyboardSensor, {
+    coordinateGetter: sortableKeyboardCoordinates,
+  });
+  // Touch long-press is phone-only; desktop/tablet keep pointer distance activation.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    pointerSensor,
+    ...(isPhone ? [touchSensor] : []),
+    keyboardSensor,
   );
 
   const allLists = useMemo(
@@ -4080,7 +4088,7 @@ function InlineTaskForm({
                 )}
               </div>
             ) : (
-              <div className="grid min-w-0 grid-cols-2 gap-2">
+              <div className="grid min-w-0 grid-cols-1 gap-2 max-md:grid-cols-2 sm:grid-cols-2">
                 <label className="min-w-0">
                   <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
                     Start
@@ -4885,8 +4893,8 @@ function TaskRow({
             <Link
               href={ctx.hubTaskHref(task.id)}
               className={cn(
-                "min-w-0 flex-1",
-                ctx.isPhone ? "line-clamp-2" : "truncate",
+                "min-w-0",
+                ctx.isPhone ? "flex-1 line-clamp-2" : "truncate",
                 "hover:underline",
               )}
               title={task.title}
@@ -4906,8 +4914,8 @@ function TaskRow({
           ) : (
             <span
               className={cn(
-                "min-w-0 flex-1",
-                ctx.isPhone ? "line-clamp-2" : "truncate",
+                "min-w-0",
+                ctx.isPhone ? "flex-1 line-clamp-2" : "truncate",
                 task.status === "complete" && "line-through",
                 isClientReviewApproved(task) &&
                   "text-[var(--status-healthy)] line-through",
