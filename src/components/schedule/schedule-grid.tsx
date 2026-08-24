@@ -363,6 +363,10 @@ export function ScheduleGrid() {
   const [editForm, setEditForm] = useState<Assignment | null>(null);
   const [gridDragging, setGridDragging] = useState(false);
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  /** Phone: brief delay before sheet opens so the finger can lift off the tap. */
+  const mobilePanelOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   /** User's preferred minimized state (restored after temporary expand for editing). */
   const [sidebarPreferMinimized, setSidebarPreferMinimized] = useState(true);
   const [sidebarMinimized, setSidebarMinimized] = useState(true);
@@ -495,6 +499,15 @@ export function ScheduleGrid() {
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   }, [isPhone, zoom, LABEL_PX]);
+
+  useEffect(() => {
+    return () => {
+      if (mobilePanelOpenTimerRef.current != null) {
+        clearTimeout(mobilePanelOpenTimerRef.current);
+        mobilePanelOpenTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const { columns, totalWidth: tw, rangeLabel } = useMemo(
     () =>
@@ -1915,7 +1928,7 @@ export function ScheduleGrid() {
     }
     selectAssignment(null);
     setEditForm(null);
-    setMobilePanelOpen(false);
+    closeMobilePanel();
     push("Assignment deleted");
   }
   deleteSelectedAssignmentRef.current = deleteSelectedAssignment;
@@ -1934,7 +1947,7 @@ export function ScheduleGrid() {
       );
       selectAssignment(null);
       setEditForm(null);
-      setMobilePanelOpen(false);
+      closeMobilePanel();
       return;
     }
     // This and all future: trim series so past weeks remain, and remove
@@ -1983,6 +1996,32 @@ export function ScheduleGrid() {
     }
     selectAssignment(null);
     setEditForm(null);
+    closeMobilePanel();
+  }
+
+  function clearMobilePanelOpenTimer() {
+    if (mobilePanelOpenTimerRef.current != null) {
+      clearTimeout(mobilePanelOpenTimerRef.current);
+      mobilePanelOpenTimerRef.current = null;
+    }
+  }
+
+  /** Open the narrow assignment/leave sheet. Phones wait 200ms (matches sheet animation). */
+  function openMobilePanel(opts?: { immediate?: boolean }) {
+    if (!isNarrow) return;
+    clearMobilePanelOpenTimer();
+    if (opts?.immediate || !isPhone) {
+      setMobilePanelOpen(true);
+      return;
+    }
+    mobilePanelOpenTimerRef.current = setTimeout(() => {
+      mobilePanelOpenTimerRef.current = null;
+      setMobilePanelOpen(true);
+    }, 200);
+  }
+
+  function closeMobilePanel() {
+    clearMobilePanelOpenTimer();
     setMobilePanelOpen(false);
   }
 
@@ -2001,10 +2040,12 @@ export function ScheduleGrid() {
       if (hasBoundTasks) setSidebarPanelTab("tasks");
     }
     if (id) {
-      if (isNarrow) setMobilePanelOpen(true);
+      if (isNarrow) openMobilePanel();
       else setSidebarMinimized(false);
     } else if (!isNarrow) {
       setSidebarMinimized(sidebarPreferMinimizedRef.current);
+    } else {
+      clearMobilePanelOpenTimer();
     }
   }
 
@@ -2326,7 +2367,7 @@ export function ScheduleGrid() {
     setSelectedLeaveBlockId(null);
     setLeaveEditForm(null);
     setDragPreview(null);
-    if (isNarrow) setMobilePanelOpen(false);
+    if (isNarrow) closeMobilePanel();
     else setSidebarMinimized(sidebarPreferMinimizedRef.current);
   }
 
@@ -2363,6 +2404,7 @@ export function ScheduleGrid() {
     if (!block) {
       setSelectedLeaveBlockId(null);
       setLeaveEditForm(null);
+      clearMobilePanelOpenTimer();
       if (!isNarrow) setSidebarMinimized(sidebarPreferMinimizedRef.current);
       return;
     }
@@ -2379,7 +2421,7 @@ export function ScheduleGrid() {
       notes: block.notes,
       dayIds: block.dayIds,
     });
-    if (isNarrow) setMobilePanelOpen(true);
+    if (isNarrow) openMobilePanel();
     else setSidebarMinimized(false);
   }
 
@@ -2390,7 +2432,7 @@ export function ScheduleGrid() {
     setSelectedLeaveBlockId(null);
     setLeaveEditForm(null);
     if (isNarrow) {
-      setMobilePanelOpen(false);
+      closeMobilePanel();
       return;
     }
     setSidebarPreferMinimized(true);
@@ -2411,7 +2453,7 @@ export function ScheduleGrid() {
     setDraft(null);
     setLeaveDraft(null);
     setFilters({ project: "all", person: "all" });
-    setMobilePanelOpen(false);
+    closeMobilePanel();
     setSidebarMinimized(sidebarPreferMinimizedRef.current);
     dragSnapshot.current = null;
   }
@@ -2703,7 +2745,7 @@ export function ScheduleGrid() {
       notes: "",
       dayIds: rows.map((r) => r.id),
     });
-    if (isNarrow) setMobilePanelOpen(true);
+    if (isNarrow) openMobilePanel();
     else setSidebarMinimized(false);
   }
 
@@ -3246,7 +3288,7 @@ export function ScheduleGrid() {
               <button
                 type="button"
                 className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-                onClick={() => setMobilePanelOpen(true)}
+                onClick={() => openMobilePanel({ immediate: true })}
               >
                 {sidebarExpandLabel}
               </button>

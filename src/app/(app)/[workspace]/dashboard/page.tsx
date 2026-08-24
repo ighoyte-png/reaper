@@ -1176,7 +1176,7 @@ export default function DashboardPage() {
         >
           <div
             className={cn(
-              "order-3 grid gap-4 sm:grid-cols-2 lg:order-none",
+              "order-3 grid min-w-0 gap-4 sm:grid-cols-2 lg:order-none",
               viewerFullyHidden &&
                 "min-h-0 flex-1 items-stretch lg:grid-rows-1",
             )}
@@ -1292,14 +1292,17 @@ export default function DashboardPage() {
               </KpiCard>
             </div>
             ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
               {showPmHealthKpi ? (
-                <ActiveProjectsHealthCard stats={projectHealthStats} />
+                <div className="max-md:order-2">
+                  <ActiveProjectsHealthCard stats={projectHealthStats} />
+                </div>
               ) : null}
               <div
                 className={cn(
                   "grid grid-cols-2 gap-3",
                   !showPmHealthKpi && "col-span-2",
+                  showPmHealthKpi && "max-md:order-1",
                 )}
               >
                 <KpiCard
@@ -1568,6 +1571,7 @@ function TaggedMentionsPanel({
     <section
       className={cn(
         panelClass(),
+        "min-w-0 overflow-hidden",
         stretch && "flex min-h-0 flex-1 flex-col",
       )}
     >
@@ -1593,7 +1597,7 @@ function TaggedMentionsPanel({
       ) : (
         <ul
           className={cn(
-            "space-y-2",
+            "min-w-0 space-y-2 overflow-x-hidden",
             stretch
               ? "min-h-0 flex-1 overflow-y-auto"
               : cn("max-h-72 overflow-y-auto", !compact && "max-h-96"),
@@ -2283,6 +2287,7 @@ function TaskPulse({
     <section
       className={cn(
         panelClass(),
+        "min-w-0 overflow-hidden",
         stretch && "flex min-h-0 flex-1 flex-col",
       )}
     >
@@ -2312,7 +2317,7 @@ function TaskPulse({
       ) : (
         <div
           className={cn(
-            "space-y-3 overflow-y-auto",
+            "min-w-0 space-y-3 overflow-x-hidden overflow-y-auto",
             stretch ? "min-h-0 flex-1" : "max-h-72",
           )}
         >

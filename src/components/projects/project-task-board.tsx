@@ -7,6 +7,7 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   closestCenter,
   closestCorners,
   useDroppable,
@@ -280,7 +281,7 @@ type BoardCtx = {
   clearFocusTask: () => void;
   /** Clear deep-link highlight when interacting with a different task. */
   clearFocusIfOtherTask: (taskId: string) => void;
-  /** Phone: skip row/list drag so vertical scroll is not stolen. */
+  /** Phone: list reorder stays off; task drag uses long-press TouchSensor. */
   allowDrag: boolean;
   isPhone: boolean;
   selected: Set<string>;
@@ -622,6 +623,9 @@ export function ProjectTaskBoard({
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -2269,7 +2273,7 @@ export function ProjectTaskBoard({
     focusCommentId,
     clearFocusTask,
     clearFocusIfOtherTask,
-    allowDrag: manageLists && !isPhone && !bindSelectMode,
+    allowDrag: manageLists && !bindSelectMode,
     isPhone,
     selected: bindSelectMode ? new Set(bindIds) : selected,
     toggleSelect,
@@ -4088,7 +4092,7 @@ function InlineTaskForm({
                 )}
               </div>
             ) : (
-              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-2 gap-2">
                 <label className="min-w-0">
                   <span className="mb-0.5 block text-[11px] text-[var(--text-muted)]">
                     Start
@@ -4770,7 +4774,10 @@ function TaskRow({
       <div
         ref={setNodeRef}
         className={cn(
-          "group flex items-center gap-1.5 px-2 py-1 text-sm",
+          "group px-2 py-1 text-sm",
+          ctx.isPhone
+            ? "flex flex-col gap-0.5"
+            : "flex items-center gap-1.5",
           task.status === "complete" && "text-[var(--task-complete-fg)]",
           isSelected && "bg-[var(--accent)]/10",
           multiSelectDrag
@@ -4790,103 +4797,107 @@ function TaskRow({
               }
         }
       >
-        {listManage && ctx.allowDrag && !task.is_client_review ? (
-          <button
-            type="button"
-            className={cn(
-              "touch-none p-0.5 text-[var(--text-muted)]",
-              multiSelectDrag
-                ? "cursor-grab opacity-100"
-                : ctx.isPhone
-                  ? "cursor-grab opacity-100"
-                  : "cursor-grab opacity-0 group-hover:opacity-100",
-              depth > 0 && "-translate-x-2",
-            )}
-            aria-label="Drag to reorder, nest, or move to another list"
-            title={
-              multiSelectDrag
-                ? "Drag to move all selected tasks"
-                : "Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
-            }
-            {...(multiSelectDrag ? {} : { ...attributes, ...listeners })}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripVertical size={14} />
-          </button>
-        ) : listManage ? (
-          <span className="w-[18px] shrink-0" aria-hidden />
-        ) : null}
-        {isClientReviewOpen(task) || isClientReviewApproved(task) ? (
-          <button
-            type="button"
-            className={cn(
-              "inline-flex shrink-0 cursor-pointer items-center justify-center",
-              !canEditStatus && "cursor-not-allowed opacity-60",
-            )}
-            title={
-              isClientReviewApproved(task)
-                ? "Client Review approved"
-                : "Client Review open"
-            }
-            aria-label={
-              isClientReviewApproved(task)
-                ? "Client Review approved. Click to reopen."
-                : "Client Review open. Click to approve."
-            }
-            disabled={!canEditStatus}
-            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!canEditStatus) return;
-              ctx.cycleStatus(task);
-            }}
-          >
-            <Star
-              size={10}
-              className={cn(
-                "h-2.5 w-2.5",
-                isClientReviewApproved(task)
-                  ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
-                  : "fill-[#f59e0b] text-[#f59e0b]",
-              )}
-              aria-hidden
-            />
-          </button>
-        ) : tone === "downstream_locked" ? (
-          <span
-            className="h-2.5 w-2.5 shrink-0 cursor-not-allowed rounded-sm bg-[#f59e0b] opacity-60"
-            title="Blocked by open Client Review above"
-            aria-label="Blocked by open Client Review above"
-          />
-        ) : (
-          <button
-            type="button"
-            className={cn(
-              "h-2.5 w-2.5 shrink-0 cursor-pointer rounded-sm",
-              task.status === "complete"
-                ? "bg-[var(--task-complete-fg)]"
-                : task.status === "active"
-                  ? "bg-[var(--task-active-fg)]"
-                  : "bg-[var(--task-upcoming-fg)]",
-              !canEditStatus && "cursor-not-allowed opacity-60",
-            )}
-            title={taskStatusLabel(task.status)}
-            aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
-            disabled={!canEditStatus}
-            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!canEditStatus) return;
-              ctx.cycleStatus(task);
-            }}
-          />
-        )}
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {ctx.hubTaskHref ? (
+        {(() => {
+          const dragHandle =
+            listManage && ctx.allowDrag && !task.is_client_review ? (
+              <button
+                type="button"
+                className={cn(
+                  "touch-none p-0.5 text-[var(--text-muted)]",
+                  multiSelectDrag
+                    ? "cursor-grab opacity-100"
+                    : ctx.isPhone
+                      ? "cursor-grab opacity-100"
+                      : "cursor-grab opacity-0 group-hover:opacity-100",
+                  depth > 0 && "-translate-x-2",
+                )}
+                aria-label="Drag to reorder, nest, or move to another list"
+                title={
+                  multiSelectDrag
+                    ? "Drag to move all selected tasks"
+                    : "Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
+                }
+                {...(multiSelectDrag ? {} : { ...attributes, ...listeners })}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <GripVertical size={14} />
+              </button>
+            ) : listManage ? (
+              <span className="w-[18px] shrink-0" aria-hidden />
+            ) : null;
+
+          const statusControl =
+            isClientReviewOpen(task) || isClientReviewApproved(task) ? (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex shrink-0 cursor-pointer items-center justify-center",
+                  !canEditStatus && "cursor-not-allowed opacity-60",
+                )}
+                title={
+                  isClientReviewApproved(task)
+                    ? "Client Review approved"
+                    : "Client Review open"
+                }
+                aria-label={
+                  isClientReviewApproved(task)
+                    ? "Client Review approved. Click to reopen."
+                    : "Client Review open. Click to approve."
+                }
+                disabled={!canEditStatus}
+                onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!canEditStatus) return;
+                  ctx.cycleStatus(task);
+                }}
+              >
+                <Star
+                  size={10}
+                  className={cn(
+                    "h-2.5 w-2.5",
+                    isClientReviewApproved(task)
+                      ? "fill-[var(--status-healthy)] text-[var(--status-healthy)]"
+                      : "fill-[#f59e0b] text-[#f59e0b]",
+                  )}
+                  aria-hidden
+                />
+              </button>
+            ) : tone === "downstream_locked" ? (
+              <span
+                className="h-2.5 w-2.5 shrink-0 cursor-not-allowed rounded-sm bg-[#f59e0b] opacity-60"
+                title="Blocked by open Client Review above"
+                aria-label="Blocked by open Client Review above"
+              />
+            ) : (
+              <button
+                type="button"
+                className={cn(
+                  "h-2.5 w-2.5 shrink-0 cursor-pointer rounded-sm",
+                  task.status === "complete"
+                    ? "bg-[var(--task-complete-fg)]"
+                    : task.status === "active"
+                      ? "bg-[var(--task-active-fg)]"
+                      : "bg-[var(--task-upcoming-fg)]",
+                  !canEditStatus && "cursor-not-allowed opacity-60",
+                )}
+                title={taskStatusLabel(task.status)}
+                aria-label={`Status: ${taskStatusLabel(task.status)}. Click to change.`}
+                disabled={!canEditStatus}
+                onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!canEditStatus) return;
+                  ctx.cycleStatus(task);
+                }}
+              />
+            );
+
+          const titleEl = ctx.hubTaskHref ? (
             <Link
               href={ctx.hubTaskHref(task.id)}
               className={cn(
-                "min-w-0",
+                "min-w-0 flex-1",
                 ctx.isPhone ? "line-clamp-2" : "truncate",
                 "hover:underline",
               )}
@@ -4907,7 +4918,7 @@ function TaskRow({
           ) : (
             <span
               className={cn(
-                "min-w-0",
+                "min-w-0 flex-1",
                 ctx.isPhone ? "line-clamp-2" : "truncate",
                 task.status === "complete" && "line-through",
                 isClientReviewApproved(task) &&
@@ -4917,103 +4928,110 @@ function TaskRow({
             >
               {task.title}
             </span>
-          )}
-          {!ctx.compact && assignee ? <InitialsAvatar person={assignee} /> : null}
-          {ctx.compact &&
-          ctx.showAssigneeAvatarInCompact &&
-          assignee ? (
-            <InitialsAvatar person={assignee} />
-          ) : null}
-          {!ctx.readOnly &&
-          (taskComments.length > 0 ||
-            ctx.unreadTaskThreadIds.has(task.id)) ? (
-            <TaskCommentIndicator
-              unread={ctx.unreadTaskThreadIds.has(task.id)}
-              count={taskComments.length}
-              expanded={isExpanded}
-            />
-          ) : null}
-          {hasNotes && !ctx.hideDescriptionIcon ? (
-            <Tooltip
-              align={ctx.compact && ctx.readOnly ? "end" : "center"}
-              content={
-                <span className="whitespace-pre-wrap">
-                  {notesPreviewText(task.notes, 20)}
-                </span>
-              }
-            >
-              <StickyNote
-                size={16}
-                className="ml-1 mr-0.5 shrink-0 text-[var(--text-muted)]"
-                aria-label="Task description"
+          );
+
+          const avatarEl =
+            (!ctx.compact && assignee) ||
+            (ctx.compact && ctx.showAssigneeAvatarInCompact && assignee) ? (
+              <InitialsAvatar person={assignee!} />
+            ) : null;
+
+          const commentEl =
+            !ctx.readOnly &&
+            (taskComments.length > 0 ||
+              ctx.unreadTaskThreadIds.has(task.id)) ? (
+              <TaskCommentIndicator
+                unread={ctx.unreadTaskThreadIds.has(task.id)}
+                count={taskComments.length}
+                expanded={isExpanded}
               />
-            </Tooltip>
-          ) : null}
-          {ctx.showBoundAssignmentIcon && ctx.isTaskBound(task.id) ? (
-            (() => {
-              const boundOos = ctx.isTaskBoundOutOfSync(task.id);
-              const href =
-                ctx.boundAssignmentLinkEnabled &&
-                ctx.boundAssignmentHref?.(task.id)
-                  ? ctx.boundAssignmentHref(task.id)
-                  : null;
-              const canSync =
-                boundOos &&
-                ctx.onSyncBoundTaskDate &&
-                !ctx.isTaskGanttControlled(task.id);
-              const tooltip = canSync
-                ? "Sync Project Task Date to Schedule Assignment Date"
-                : boundOos && ctx.isTaskGanttControlled(task.id)
-                  ? "Task dates are controlled by Gantt; update dates in Gantt view"
-                  : "Task Bound to Schedule Assignment";
-              const iconClass = cn(
-                "inline-flex shrink-0",
-                boundLinkColorClass(boundOos),
-                (href || canSync) && "hover:opacity-80",
-              );
-              const icon = <Link2 size={16} strokeWidth={2} />;
-              return (
-                <Tooltip
-                  align={ctx.compact && ctx.readOnly ? "end" : "center"}
-                  content={tooltip}
-                >
-                  {canSync ? (
-                    <button
-                      type="button"
-                      className={cn(iconClass, "cursor-pointer")}
-                      aria-label={tooltip}
-                      onPointerDown={(e) =>
-                        multiSelectDrag && e.stopPropagation()
-                      }
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        ctx.onSyncBoundTaskDate?.(task.id);
-                      }}
+            ) : null;
+
+          const descriptionEl =
+            hasNotes && !ctx.hideDescriptionIcon ? (
+              <Tooltip
+                align={ctx.compact && ctx.readOnly ? "end" : "center"}
+                content={
+                  <span className="whitespace-pre-wrap">
+                    {notesPreviewText(task.notes, 20)}
+                  </span>
+                }
+              >
+                <StickyNote
+                  size={16}
+                  className="ml-1 mr-0.5 shrink-0 text-[var(--text-muted)]"
+                  aria-label="Task description"
+                />
+              </Tooltip>
+            ) : null;
+
+          const boundEl =
+            ctx.showBoundAssignmentIcon && ctx.isTaskBound(task.id)
+              ? (() => {
+                  const boundOos = ctx.isTaskBoundOutOfSync(task.id);
+                  const href =
+                    ctx.boundAssignmentLinkEnabled &&
+                    ctx.boundAssignmentHref?.(task.id)
+                      ? ctx.boundAssignmentHref(task.id)
+                      : null;
+                  const canSync =
+                    boundOos &&
+                    ctx.onSyncBoundTaskDate &&
+                    !ctx.isTaskGanttControlled(task.id);
+                  const tooltip = canSync
+                    ? "Sync Project Task Date to Schedule Assignment Date"
+                    : boundOos && ctx.isTaskGanttControlled(task.id)
+                      ? "Task dates are controlled by Gantt; update dates in Gantt view"
+                      : "Task Bound to Schedule Assignment";
+                  const iconClass = cn(
+                    "inline-flex shrink-0",
+                    boundLinkColorClass(boundOos),
+                    (href || canSync) && "hover:opacity-80",
+                  );
+                  const icon = <Link2 size={16} strokeWidth={2} />;
+                  return (
+                    <Tooltip
+                      align={ctx.compact && ctx.readOnly ? "end" : "center"}
+                      content={tooltip}
                     >
-                      {icon}
-                    </button>
-                  ) : href ? (
-                    <Link
-                      href={href}
-                      className={iconClass}
-                      aria-label="Task Bound to Schedule Assignment"
-                      onPointerDown={(e) =>
-                        multiSelectDrag && e.stopPropagation()
-                      }
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {icon}
-                    </Link>
-                  ) : (
-                    <span className={iconClass} aria-label={tooltip}>
-                      {icon}
-                    </span>
-                  )}
-                </Tooltip>
-              );
-            })()
-          ) : null}
-          {task.due_date && !ctx.isPhone ? (
+                      {canSync ? (
+                        <button
+                          type="button"
+                          className={cn(iconClass, "cursor-pointer")}
+                          aria-label={tooltip}
+                          onPointerDown={(e) =>
+                            multiSelectDrag && e.stopPropagation()
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            ctx.onSyncBoundTaskDate?.(task.id);
+                          }}
+                        >
+                          {icon}
+                        </button>
+                      ) : href ? (
+                        <Link
+                          href={href}
+                          className={iconClass}
+                          aria-label="Task Bound to Schedule Assignment"
+                          onPointerDown={(e) =>
+                            multiSelectDrag && e.stopPropagation()
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {icon}
+                        </Link>
+                      ) : (
+                        <span className={iconClass} aria-label={tooltip}>
+                          {icon}
+                        </span>
+                      )}
+                    </Tooltip>
+                  );
+                })()
+              : null;
+
+          const dueDateEl = task.due_date ? (
             <span
               className={cn(
                 "shrink-0 text-xs",
@@ -5024,50 +5042,59 @@ function TaskRow({
             >
               {format(
                 parseISO(task.due_date),
-                ctx.omitYearFromTaskDates ? "MMM d" : "MMM d, yyyy",
+                ctx.isPhone || ctx.omitYearFromTaskDates
+                  ? "MMM d"
+                  : "MMM d, yyyy",
               )}
             </span>
-          ) : null}
-          {ctx.canManage && !ctx.readOnly && listManage ? (
-            <button
-              type="button"
-              className={cn(
-                "inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-                ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-              )}
-              onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                ctx.setEditingTask(task);
-              }}
-              aria-label="Edit task"
-              title="Edit task"
-            >
-              <Pencil size={14} />
-            </button>
-          ) : null}
-        </div>
-        {listManage && depth === 0 ? (
-          <button
-            type="button"
-            className={cn(
-              "inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-              ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-            )}
-            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              ctx.addSubtask(task.list_id, task.id);
-            }}
-            aria-label="Add subtask"
-            title="Add subtask"
-          >
-            <Plus size={14} />
-          </button>
-        ) : null}
-        {!ctx.compact ? (
-          <>
-            {isFocused ? (
+          ) : null;
+
+          const editEl =
+            ctx.canManage && !ctx.readOnly && listManage ? (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                  ctx.isPhone
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100",
+                )}
+                onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ctx.setEditingTask(task);
+                }}
+                aria-label="Edit task"
+                title="Edit task"
+              >
+                <Pencil size={14} />
+              </button>
+            ) : null;
+
+          const addSubtaskEl =
+            listManage && depth === 0 ? (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                  ctx.isPhone
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100",
+                )}
+                onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ctx.addSubtask(task.list_id, task.id);
+                }}
+                aria-label="Add subtask"
+                title="Add subtask"
+              >
+                <Plus size={14} />
+              </button>
+            ) : null;
+
+          const eyeEl =
+            !ctx.compact && isFocused ? (
               <button
                 type="button"
                 className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--accent)] hover:bg-[var(--accent)]/15 hover:text-[var(--accent)]"
@@ -5081,52 +5108,107 @@ function TaskRow({
               >
                 <Eye size={14} />
               </button>
-            ) : null}
+            ) : null;
+
+          const chipEl = !ctx.compact ? (
             <TaskStatusTag
               status={task.status}
               isClientReview={task.is_client_review}
               isDownstreamHold={tone === "downstream_locked"}
               className="shrink-0"
             />
-          </>
-        ) : null}
-        {ctx.allowSelect ? (
-          <Checkbox
-            checked={isSelected}
-            disabled={
-              ctx.bindSelectMode &&
-              Boolean(ctx.scheduleBindPersonId) &&
-              Boolean(task.assignee_person_id) &&
-              task.assignee_person_id !== ctx.scheduleBindPersonId
-            }
-            onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => {
-              if (
+          ) : null;
+
+          const checkboxEl = ctx.allowSelect ? (
+            <Checkbox
+              checked={isSelected}
+              disabled={
+                ctx.bindSelectMode &&
+                Boolean(ctx.scheduleBindPersonId) &&
+                Boolean(task.assignee_person_id) &&
+                task.assignee_person_id !== ctx.scheduleBindPersonId
+              }
+              onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                if (
+                  ctx.bindSelectMode &&
+                  ctx.scheduleBindPersonId &&
+                  task.assignee_person_id &&
+                  task.assignee_person_id !== ctx.scheduleBindPersonId
+                ) {
+                  return;
+                }
+                const shiftKey =
+                  "shiftKey" in e.nativeEvent
+                    ? Boolean(e.nativeEvent.shiftKey)
+                    : false;
+                ctx.toggleSelect(task.id, shiftKey);
+              }}
+              aria-label={`Select ${task.title}`}
+              title={
                 ctx.bindSelectMode &&
                 ctx.scheduleBindPersonId &&
                 task.assignee_person_id &&
                 task.assignee_person_id !== ctx.scheduleBindPersonId
-              ) {
-                return;
+                  ? "Assigned to someone else"
+                  : undefined
               }
-              const shiftKey =
-                "shiftKey" in e.nativeEvent
-                  ? Boolean(e.nativeEvent.shiftKey)
-                  : false;
-              ctx.toggleSelect(task.id, shiftKey);
-            }}
-            aria-label={`Select ${task.title}`}
-            title={
-              ctx.bindSelectMode &&
-              ctx.scheduleBindPersonId &&
-              task.assignee_person_id &&
-              task.assignee_person_id !== ctx.scheduleBindPersonId
-                ? "Assigned to someone else"
-                : undefined
-            }
-          />
-        ) : null}
+            />
+          ) : null;
+
+          if (ctx.isPhone) {
+            return (
+              <>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {dragHandle}
+                  {statusControl}
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    {titleEl}
+                    {avatarEl}
+                  </div>
+                  {chipEl}
+                  {checkboxEl}
+                </div>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {listManage ? (
+                    <span className="w-[18px] shrink-0" aria-hidden />
+                  ) : null}
+                  <span className="w-2.5 shrink-0" aria-hidden />
+                  {dueDateEl}
+                  <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                    {commentEl}
+                    {descriptionEl}
+                    {boundEl}
+                    {editEl}
+                    {addSubtaskEl}
+                    {eyeEl}
+                  </div>
+                </div>
+              </>
+            );
+          }
+
+          return (
+            <>
+              {dragHandle}
+              {statusControl}
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                {titleEl}
+                {avatarEl}
+                {commentEl}
+                {descriptionEl}
+                {boundEl}
+                {dueDateEl}
+                {editEl}
+              </div>
+              {addSubtaskEl}
+              {eyeEl}
+              {chipEl}
+              {checkboxEl}
+            </>
+          );
+        })()}
       </div>
       {!ctx.readOnly ? (
         <ExpandPanel open={isExpanded}>
