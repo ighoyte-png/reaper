@@ -2263,10 +2263,7 @@ export function ProjectGanttBoard({
               </div>
               <div className="flex">
                 <div
-                  className={cn(
-                    "sticky left-0 z-40 flex shrink-0 items-center border-r border-[var(--border)] bg-[var(--bg)] transition-[width] duration-200 ease-out",
-                    labelsCollapsed ? "justify-center px-0" : "justify-start pl-2",
-                  )}
+                  className="sticky left-0 z-40 flex shrink-0 items-center justify-end border-r border-[var(--border)] bg-[var(--bg)] pr-2 transition-[width] duration-200 ease-out"
                   style={{ width: labelPx, height: 28 }}
                 >
                   <button

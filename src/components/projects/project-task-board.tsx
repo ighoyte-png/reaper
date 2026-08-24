@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -1433,7 +1433,7 @@ export function ProjectTaskBoard({
         html: draft.notes,
       });
     }
-    setEditingTaskId(null);
+    // Leave editing open so the row can animate closed, then clear.
   }
 
   function deleteEditingTask(taskId: string) {
@@ -4212,6 +4212,11 @@ function TaskRow({
   const isFocused = hasDeepLink && !ctx.focusCommentId;
   const isEditing = ctx.editingTaskId === task.id && !isExiting;
   const [descExpanded, setDescExpanded] = useState(false);
+  const [editClosing, setEditClosing] = useState(false);
+  /** Delayed so ExpandPanel mounts closed then opens (same as task expand). */
+  const [editPanelOpen, setEditPanelOpen] = useState(false);
+  const scrollAfterEditCloseRef = useRef(false);
+  const showEditPanel = isEditing || editClosing;
   const ordered =
     ctx.orderedListTasksByListId.get(task.list_id) ?? [];
   const tone = taskVisualTone(task, ordered);
@@ -4224,13 +4229,63 @@ function TaskRow({
         nestIndent
       : 0;
 
-  if (isEditing) {
-    return (
-      <div
-        id={`task-row-${task.id}`}
-        className="relative my-0.5 py-0.5"
-        style={nestIndent ? { marginLeft: nestIndent } : undefined}
-      >
+  useLayoutEffect(() => {
+    if (isEditing && !editClosing) {
+      setEditClosing(false);
+      // Mount at 0fr, then open so height animates like ExpandPanel task details.
+      setEditPanelOpen(false);
+      const reduceMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reduceMotion) {
+        setEditPanelOpen(true);
+        return;
+      }
+      const id = window.requestAnimationFrame(() => setEditPanelOpen(true));
+      return () => window.cancelAnimationFrame(id);
+    }
+    if (editClosing) {
+      setEditPanelOpen(false);
+    }
+  }, [isEditing, editClosing]);
+
+  function scrollToTaskTitle() {
+    const el = document.getElementById(`task-row-${task.id}`);
+    if (!el) return;
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "nearest",
+    });
+  }
+
+  function finishEditClose() {
+    setEditClosing(false);
+    setEditPanelOpen(false);
+    if (ctx.editingTaskId === task.id) {
+      ctx.setEditingTask(null);
+    }
+    if (scrollAfterEditCloseRef.current) {
+      scrollAfterEditCloseRef.current = false;
+      scrollToTaskTitle();
+    }
+  }
+
+  function requestCloseEdit(opts?: { scrollToTitle?: boolean }) {
+    scrollAfterEditCloseRef.current = Boolean(opts?.scrollToTitle);
+    if (!isEditing && !editClosing) {
+      ctx.setEditingTask(null);
+      return;
+    }
+    setEditClosing(true);
+    setEditPanelOpen(false);
+  }
+
+  const editForm = showEditPanel ? (
+    <ExpandPanel open={editPanelOpen} onClosed={finishEditClose}>
+      <div className="py-0.5">
         <InlineTaskForm
           people={ctx.people}
           allPeople={ctx.allPeople}
@@ -4257,10 +4312,25 @@ function TaskRow({
           taskIdForAttachments={task.id}
           storageMode={ctx.mode}
           onAttachmentError={ctx.onAttachmentError}
-          onCancel={() => ctx.setEditingTask(null)}
-          onSubmit={(draft) => ctx.saveEditingTask(task.id, draft)}
+          onCancel={() => requestCloseEdit()}
+          onSubmit={(draft) => {
+            ctx.saveEditingTask(task.id, draft);
+            requestCloseEdit({ scrollToTitle: true });
+          }}
           onDelete={() => ctx.deleteEditingTask(task.id)}
         />
+      </div>
+    </ExpandPanel>
+  ) : null;
+
+  if (showEditPanel) {
+    return (
+      <div
+        id={`task-row-${task.id}`}
+        className="relative my-0.5 py-0.5"
+        style={nestIndent ? { marginLeft: nestIndent } : undefined}
+      >
+        {editForm}
         {depth === 0 && kids.length > 0 ? (
           <SortableContext
             items={kids.map((k) => k.id)}

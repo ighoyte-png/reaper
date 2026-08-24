@@ -30,9 +30,9 @@ export const TASK_DESCRIPTION_COLLAPSED_LINES = 6;
 export const TASK_DESCRIPTION_COLLAPSED_MAX_PX =
   TASK_DESCRIPTION_LINE_HEIGHT_PX * TASK_DESCRIPTION_COLLAPSED_LINES;
 
-/** Match task-row-exit (280ms) for expand/collapse height. */
+/** Match ExpandPanel (200ms) / task open-close for expand/collapse height. */
 const DESC_HEIGHT_TRANSITION =
-  "transition-[max-height] duration-[280ms] ease-out motion-reduce:transition-none";
+  "transition-[max-height] duration-200 ease-out motion-reduce:transition-none";
 
 function ExpandToggle({
   expanded,
@@ -217,13 +217,13 @@ export function TaskDescriptionView({
   ]);
 
   const showCollapsed = exceeds && !expanded;
-  // Only clamp while collapsed. When short / expanded, avoid locking maxHeight
-  // to a stale pre-image measure (attachment imgs resolve after first paint).
-  const animMaxHeight = showCollapsed
-    ? TASK_DESCRIPTION_COLLAPSED_MAX_PX
-    : exceeds && fullHeight > 0
-      ? fullHeight
-      : undefined;
+  // Keep maxHeight numeric while long so expand/collapse always transitions
+  // (same duration family as ExpandPanel / task-row-exit).
+  const animMaxHeight = exceeds
+    ? expanded
+      ? Math.max(fullHeight, TASK_DESCRIPTION_COLLAPSED_MAX_PX)
+      : TASK_DESCRIPTION_COLLAPSED_MAX_PX
+    : undefined;
 
   function expandFromBody(e: MouseEvent | KeyboardEvent) {
     if (!showCollapsed) return;

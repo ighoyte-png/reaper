@@ -14,19 +14,26 @@ export function ExpandPanel({
   open,
   children,
   className,
+  onClosed,
 }: {
   open: boolean;
   children: ReactNode;
   className?: string;
+  /** Fired once the close height transition finishes (or immediately if reduced motion). */
+  onClosed?: () => void;
 }) {
   const [showContent, setShowContent] = useState(open);
   const [expanded, setExpanded] = useState(open);
   const panelRef = useRef<HTMLDivElement>(null);
+  const onClosedRef = useRef(onClosed);
+  onClosedRef.current = onClosed;
+  const closedNotifiedRef = useRef(!open);
 
   // Open: mount content first (still at 0fr), then expand after layout.
   // Close: collapse first, then unmount after the height transition.
   useLayoutEffect(() => {
     if (open) {
+      closedNotifiedRef.current = false;
       setShowContent(true);
       return;
     }
@@ -40,6 +47,12 @@ export function ExpandPanel({
     setExpanded(true);
   }, [open, showContent, expanded]);
 
+  function notifyClosed() {
+    if (closedNotifiedRef.current) return;
+    closedNotifiedRef.current = true;
+    onClosedRef.current?.();
+  }
+
   useEffect(() => {
     if (open || expanded || !showContent) return;
     const reduceMotion =
@@ -47,9 +60,13 @@ export function ExpandPanel({
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduceMotion) {
       setShowContent(false);
+      notifyClosed();
       return;
     }
-    const t = window.setTimeout(() => setShowContent(false), 280);
+    const t = window.setTimeout(() => {
+      setShowContent(false);
+      notifyClosed();
+    }, 220);
     return () => clearTimeout(t);
   }, [open, expanded, showContent]);
 
@@ -65,7 +82,10 @@ export function ExpandPanel({
       onTransitionEnd={(e) => {
         if (e.target !== panelRef.current) return;
         if (e.propertyName !== "grid-template-rows") return;
-        if (!open) setShowContent(false);
+        if (!open) {
+          setShowContent(false);
+          notifyClosed();
+        }
       }}
     >
       <div className="min-h-0 overflow-hidden">
