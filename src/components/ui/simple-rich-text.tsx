@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, forwardRef } from "react";
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import type { Extensions } from "@tiptap/core";
@@ -19,6 +19,7 @@ import {
   Underline as UnderlineIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { nearestVerticalScrollport } from "@/lib/scroll-into-nearest";
 import {
   extractAttachmentIdsFromNotesHtml,
   notesToEditorHtml,
@@ -238,7 +239,7 @@ type SimpleRichTextEditorProps = {
   editorOverflowY?: "auto" | "hidden";
   /** Grow with content (comment / new task description). */
   autoGrow?: boolean;
-  /** Keep formatting toolbar visible while scrolling long content. */
+  /** Pin formatting toolbar to the page scrollport while editing long content. */
   stickyToolbar?: boolean;
   enableAttachments?: boolean;
   attachmentEntityType?: AttachmentEntityType;
@@ -311,6 +312,16 @@ export const SimpleRichTextEditor = forwardRef<
     .join(",");
 
   const edRef = useRef<Editor | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const toolbarSentinelRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarPinned, setToolbarPinned] = useState(false);
+  const [pinStyle, setPinStyle] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
 
   function syncFileAttachments(next: EntityFileAttachment[]) {
     setFileAttachments(next);
@@ -345,6 +356,64 @@ export const SimpleRichTextEditor = forwardRef<
       pendingFilesRef.current.clear();
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (!stickyToolbar) {
+      setToolbarPinned(false);
+      setPinStyle(null);
+      return;
+    }
+    const root = rootRef.current;
+    const toolbar = toolbarRef.current;
+    const sentinel = toolbarSentinelRef.current;
+    if (!root || !toolbar || !sentinel) return;
+
+    const scrollport =
+      root.closest("[data-page-scrollport]") instanceof HTMLElement
+        ? (root.closest("[data-page-scrollport]") as HTMLElement)
+        : nearestVerticalScrollport(root);
+
+    if (!scrollport) return;
+
+    const update = () => {
+      const portRect = scrollport.getBoundingClientRect();
+      const sentinelRect = sentinel.getBoundingClientRect();
+      const rootRect = root.getBoundingClientRect();
+      const height = toolbar.offsetHeight;
+      if (height > 0) setToolbarHeight(height);
+
+      const editorVisible = rootRect.bottom > portRect.top + 4;
+      const shouldPin = editorVisible && sentinelRect.top < portRect.top;
+
+      if (shouldPin) {
+        setToolbarPinned(true);
+        setPinStyle({
+          top: portRect.top,
+          left: rootRect.left,
+          width: rootRect.width,
+        });
+      } else {
+        setToolbarPinned(false);
+        setPinStyle(null);
+      }
+    };
+
+    update();
+    scrollport.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    const ro = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(update)
+      : null;
+    ro?.observe(root);
+    ro?.observe(scrollport);
+    ro?.observe(toolbar);
+
+    return () => {
+      scrollport.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      ro?.disconnect();
+    };
+  }, [stickyToolbar]);
 
   useEffect(() => {
     if (!attachmentsActive || !attachmentEntityType || !attachmentEntityId) {
@@ -721,6 +790,8 @@ export const SimpleRichTextEditor = forwardRef<
 
   return (
     <div
+      ref={rootRef}
+      data-reaper-rich-text-root=""
       className={cn(
         "mt-1 rounded-md border border-[var(--border)] bg-[var(--bg)]",
         !autoGrow && !editorMaxHeight && "overflow-hidden",
@@ -728,10 +799,33 @@ export const SimpleRichTextEditor = forwardRef<
       )}
     >
       <div
+        ref={toolbarSentinelRef}
+        className="pointer-events-none h-px w-full shrink-0 opacity-0"
+        aria-hidden
+      />
+      {toolbarPinned && toolbarHeight > 0 ? (
+        <div
+          className="shrink-0"
+          style={{ height: toolbarHeight }}
+          aria-hidden
+        />
+      ) : null}
+      <div
+        ref={toolbarRef}
         className={cn(
-          "flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] px-1 py-0.5",
-          stickyToolbar && "sticky top-0 z-10 bg-[var(--bg)]",
+          "flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] bg-[var(--bg)] px-1 py-0.5",
+          toolbarPinned && "z-[45] border-[var(--border)] shadow-sm",
         )}
+        style={
+          toolbarPinned && pinStyle
+            ? {
+                position: "fixed",
+                top: pinStyle.top,
+                left: pinStyle.left,
+                width: pinStyle.width,
+              }
+            : undefined
+        }
       >
         <ToolbarButton
           label="Bold"

@@ -48,6 +48,7 @@ export function PageContainer({
         withoutOverflow,
       )}
       tabIndex={-1}
+      data-page-scrollport=""
     >
       {chrome}
       {body.length > 0 ? (

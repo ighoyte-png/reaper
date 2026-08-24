@@ -4137,7 +4137,7 @@ function InlineTaskForm({
             />
           )}
         </div>
-        <div className="mt-3 flex sticky bottom-0 flex-wrap items-center justify-between gap-2 bg-[var(--bg)] py-1">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 py-1">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -4612,7 +4612,7 @@ function TaskRow({
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({
+    scrollIntoNearest(el, {
       behavior: reduceMotion ? "auto" : "smooth",
       block: "nearest",
     });
@@ -4683,7 +4683,7 @@ function TaskRow({
               !ctx.allPeople.find((p) => p.id === task.assignee_person_id)
                 ?.hide_from_schedule,
           )}
-          onCancel={() => requestCloseEdit()}
+          onCancel={() => requestCloseEdit({ scrollToTitle: true })}
           onSubmit={(draft) => {
             ctx.saveEditingTask(task.id, draft);
             requestCloseEdit({ scrollToTitle: true });
