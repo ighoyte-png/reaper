@@ -18,6 +18,7 @@ export function emptyTaskAuditFields(): Pick<
   | "edited_by_profile_id"
   | "status_changed_at"
   | "status_changed_by_profile_id"
+  | "assignee_notified_at"
 > {
   return {
     created_at: new Date().toISOString(),
@@ -26,6 +27,7 @@ export function emptyTaskAuditFields(): Pick<
     edited_by_profile_id: null,
     status_changed_at: null,
     status_changed_by_profile_id: null,
+    assignee_notified_at: null,
   };
 }
 

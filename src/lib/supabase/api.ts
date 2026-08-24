@@ -229,6 +229,9 @@ export function mapTask(row: Record<string, unknown>): Task {
     status_changed_by_profile_id: row.status_changed_by_profile_id
       ? String(row.status_changed_by_profile_id)
       : null,
+    assignee_notified_at: row.assignee_notified_at
+      ? String(row.assignee_notified_at)
+      : null,
   };
 }
 
@@ -598,6 +601,7 @@ function emptyWorkspace(): DemoState {
     dismissed_bulletin_ids: [],
     unread_mentions: [],
     unread_task_threads: [],
+    unread_assigned_tasks: [],
     project_favorites: [],
     pods: [],
     pod_members: [],
@@ -1158,7 +1162,7 @@ export async function loadOrgBootstrap(
               read_at: r.read_at != null ? String(r.read_at) : null,
             };
           })
-          .filter((r) => r.comment_id && r.person_id);
+          .filter((r) => r.comment_id && r.person_id && !r.read_at);
       }
     }
   } else {
@@ -1185,6 +1189,7 @@ export async function loadOrgBootstrap(
       .filter(
         (r) =>
           r.person_id &&
+          !r.read_at &&
           ((r.comment_id ? 1 : 0) +
             (r.task_id ? 1 : 0) +
             (r.assignment_id ? 1 : 0) ===
@@ -1221,6 +1226,34 @@ export async function loadOrgBootstrap(
       );
     } else {
       unread_task_threads = (threadUnreadsRes.data ?? [])
+        .map((row) => ({
+          task_id: String((row as { task_id: unknown }).task_id),
+          person_id: String((row as { person_id: unknown }).person_id),
+        }))
+        .filter((r) => r.task_id && r.person_id);
+    }
+  }
+  let unread_assigned_tasks: { task_id: string; person_id: string }[] = [];
+  if (sessionPersonId) {
+    const assignedUnreadsRes = await supabase
+      .from("task_assigned_unreads")
+      .select("task_id, person_id")
+      .eq("organization_id", orgId)
+      .eq("person_id", sessionPersonId);
+    if (assignedUnreadsRes.error) {
+      if (
+        !/relation .*task_assigned_unreads.* does not exist/i.test(
+          assignedUnreadsRes.error.message,
+        ) &&
+        assignedUnreadsRes.error.code !== "42P01"
+      ) {
+        throw assignedUnreadsRes.error;
+      }
+      console.warn(
+        "task_assigned_unreads missing — apply supabase/migrations/105_task_assigned_notify.sql",
+      );
+    } else {
+      unread_assigned_tasks = (assignedUnreadsRes.data ?? [])
         .map((row) => ({
           task_id: String((row as { task_id: unknown }).task_id),
           person_id: String((row as { person_id: unknown }).person_id),
@@ -1358,6 +1391,7 @@ export async function loadOrgBootstrap(
     dismissed_bulletin_ids,
     unread_mentions,
     unread_task_threads,
+    unread_assigned_tasks,
     project_favorites,
     pods,
     pod_members,
@@ -1486,6 +1520,53 @@ export async function loadMentionTasks(
     .in("id", ids);
   if (error) throw error;
   return (data ?? []).map((row) => mapTask(row as Record<string, unknown>));
+}
+
+/** Comments (with extras) for unread task-thread inbox hydration. */
+export async function loadCommentsForTaskIds(
+  supabase: SupabaseClient,
+  orgId: string,
+  taskIds: string[],
+): Promise<{ tasks: Task[]; task_comments: TaskComment[] }> {
+  const ids = [...new Set(taskIds.filter(Boolean))];
+  if (ids.length === 0) {
+    return { tasks: [], task_comments: [] };
+  }
+
+  const [commentsRes, mentionsRes, reactionsRes, tasksRes] = await Promise.all([
+    supabase
+      .from("task_comments")
+      .select("*")
+      .eq("organization_id", orgId)
+      .in("task_id", ids),
+    supabase
+      .from("task_comment_mentions")
+      .select("*")
+      .eq("organization_id", orgId),
+    supabase
+      .from("task_comment_reactions")
+      .select("*")
+      .eq("organization_id", orgId),
+    supabase.from("tasks").select("*").eq("organization_id", orgId).in("id", ids),
+  ]);
+
+  if (commentsRes.error) throw commentsRes.error;
+  if (tasksRes.error) throw tasksRes.error;
+
+  const task_commentsRaw = (commentsRes.data ?? []).map((row) =>
+    mapTaskComment(row as Record<string, unknown>),
+  );
+  const task_comments = attachCommentExtras(
+    task_commentsRaw,
+    mentionsRes,
+    reactionsRes,
+  );
+  return {
+    tasks: (tasksRes.data ?? []).map((row) =>
+      mapTask(row as Record<string, unknown>),
+    ),
+    task_comments,
+  };
 }
 
 /** Fetch assignments by id for assignment-note mention inbox rows. */
@@ -3396,6 +3477,7 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     edited_by_profile_id: task.edited_by_profile_id,
     status_changed_at: task.status_changed_at,
     status_changed_by_profile_id: task.status_changed_by_profile_id,
+    assignee_notified_at: task.assignee_notified_at,
   };
   const { data, error: updateError } = await supabase
     .from("tasks")
@@ -3417,6 +3499,23 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     if (!retry.error && retry.data && retry.data.length > 0) {
       console.warn(
         "tasks.is_client_review missing — apply supabase/migrations/074_task_client_review.sql",
+      );
+      return;
+    }
+    if (retry.error) throw retry.error;
+  } else if (
+    updateError &&
+    /assignee_notified_at/i.test(updateError.message)
+  ) {
+    const { assignee_notified_at: _n, ...withoutNotified } = payload;
+    const retry = await supabase
+      .from("tasks")
+      .update(withoutNotified)
+      .eq("id", task.id)
+      .select("id");
+    if (!retry.error && retry.data && retry.data.length > 0) {
+      console.warn(
+        "tasks.assignee_notified_at missing — apply supabase/migrations/105_task_assigned_notify.sql",
       );
       return;
     }
@@ -3451,6 +3550,18 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     if (!error) {
       console.warn(
         "tasks.is_divider missing — apply supabase/migrations/066_task_dividers.sql",
+      );
+    }
+  }
+  if (
+    error &&
+    /assignee_notified_at/i.test(error.message)
+  ) {
+    const { assignee_notified_at: _n, ...withoutNotified } = payload;
+    ({ error } = await supabase.from("tasks").insert(withoutNotified));
+    if (!error) {
+      console.warn(
+        "tasks.assignee_notified_at missing — apply supabase/migrations/105_task_assigned_notify.sql",
       );
     }
   }
@@ -3853,6 +3964,61 @@ export async function deleteTaskThreadUnreadRow(
   throw error;
 }
 
+function missingAssignedUnreadsTable(message: string, code?: string) {
+  return (
+    /relation .*task_assigned_unreads.* does not exist/i.test(message) ||
+    code === "42P01"
+  );
+}
+
+export async function upsertTaskAssignedUnreadRow(
+  supabase: SupabaseClient,
+  row: {
+    task_id: string;
+    person_id: string;
+    organization_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase.from("task_assigned_unreads").upsert(
+    {
+      task_id: row.task_id,
+      person_id: row.person_id,
+      organization_id: row.organization_id,
+    },
+    { onConflict: "task_id,person_id", ignoreDuplicates: true },
+  );
+  if (!error) return true;
+  if (missingAssignedUnreadsTable(error.message, error.code)) {
+    console.warn(
+      "task_assigned_unreads missing — apply supabase/migrations/105_task_assigned_notify.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
+export async function deleteTaskAssignedUnreadRow(
+  supabase: SupabaseClient,
+  row: {
+    task_id: string;
+    person_id: string;
+  },
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("task_assigned_unreads")
+    .delete()
+    .eq("task_id", row.task_id)
+    .eq("person_id", row.person_id);
+  if (!error) return true;
+  if (missingAssignedUnreadsTable(error.message, error.code)) {
+    console.warn(
+      "task_assigned_unreads missing — apply supabase/migrations/105_task_assigned_notify.sql",
+    );
+    return false;
+  }
+  throw error;
+}
+
 /** Upsert a task-thread unread row (e.g. emoji reaction → comment author). */
 export async function upsertTaskThreadUnreadRow(
   supabase: SupabaseClient,
@@ -3916,7 +4082,7 @@ export async function deleteMentionUnreadRow(
   throw error;
 }
 
-/** Clear orange unread on a mention; card stays until dismiss. */
+/** Delete the mention unread row (subtractive inbox). */
 export async function markMentionReadRow(
   supabase: SupabaseClient,
   row: {
@@ -3924,32 +4090,7 @@ export async function markMentionReadRow(
     person_id: string;
   },
 ): Promise<boolean> {
-  const readAt = new Date().toISOString();
-  let q = supabase
-    .from("mention_unreads")
-    .update({ read_at: readAt })
-    .eq("person_id", row.person_id);
-  if (row.target.kind === "comment") {
-    q = q.eq("comment_id", row.target.id);
-  } else if (row.target.kind === "task") {
-    q = q.eq("task_id", row.target.id);
-  } else {
-    q = q.eq("assignment_id", row.target.id);
-  }
-  const { error } = await q;
-  if (!error) return true;
-  if (
-    /relation .*mention_unreads.* does not exist/i.test(error.message) ||
-    error.code === "42P01" ||
-    /Could not find the 'read_at' column/i.test(error.message) ||
-    (error.code === "PGRST204" && /read_at/i.test(error.message))
-  ) {
-    console.warn(
-      "mention_unreads.read_at missing — apply supabase/migrations/079_mention_read_at.sql",
-    );
-    return false;
-  }
-  throw error;
+  return deleteMentionUnreadRow(supabase, row);
 }
 
 /** One-time: drop mention unreads that were dismissed in legacy localStorage. */
@@ -4290,6 +4431,7 @@ export async function applyProjectTemplateRows(
       edited_by_profile_id: null as string | null,
       status_changed_at: null as string | null,
       status_changed_by_profile_id: null as string | null,
+      assignee_notified_at: null as string | null,
     })),
   );
 

@@ -1343,26 +1343,37 @@ export function ProjectTaskBoard({
     const title = titleLocked ? task.title : draft.title.trim();
     if (!title) return;
 
+    const notifyOpts = {
+      notifyAssignee: Boolean(
+        draft.notify_assignee && draft.assignee_person_id,
+      ),
+    };
     if (task.parent_id) {
-      upsertTask({
-        ...task,
-        title,
-        assignee_person_id: draft.assignee_person_id,
-        start_date: draft.start_date,
-        due_date: draft.due_date,
-        notes: draft.notes,
-        is_client_review: task.is_client_review,
-      });
+      upsertTask(
+        {
+          ...task,
+          title,
+          assignee_person_id: draft.assignee_person_id,
+          start_date: draft.start_date,
+          due_date: draft.due_date,
+          notes: draft.notes,
+          is_client_review: task.is_client_review,
+        },
+        notifyOpts,
+      );
     } else {
-      upsertTask({
-        ...task,
-        title,
-        assignee_person_id: draft.assignee_person_id,
-        start_date: draft.start_date,
-        due_date: draft.due_date,
-        notes: draft.notes,
-        is_client_review: false,
-      });
+      upsertTask(
+        {
+          ...task,
+          title,
+          assignee_person_id: draft.assignee_person_id,
+          start_date: draft.start_date,
+          due_date: draft.due_date,
+          notes: draft.notes,
+          is_client_review: false,
+        },
+        notifyOpts,
+      );
 
       const children = state.tasks.filter(
         (t) => t.parent_id === task.id && !t.is_divider,
@@ -3528,8 +3539,9 @@ function InlineTaskForm({
   const [isClientReview, setIsClientReview] = useState(
     Boolean(initial?.is_client_review),
   );
+  const alreadyNotified = Boolean(initial?.assignee_notified_at);
   const [notifyAssignee, setNotifyAssignee] = useState(
-    Boolean(initial?.notify_assignee),
+    alreadyNotified || Boolean(initial?.notify_assignee),
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const onDraftChangeRef = useRef(onDraftChange);
@@ -3549,8 +3561,6 @@ function InlineTaskForm({
   dueDateRef.current = dueDate;
   notesRef.current = notes;
   isClientReviewRef.current = isClientReview;
-
-  const isCreateFlow = Boolean(onDraftChange);
 
   const initialBaselineRef = useRef<{
     title: string;
@@ -3639,7 +3649,8 @@ function InlineTaskForm({
           due_date: dueDate || null,
           notes: finalNotes,
           is_client_review: isClientReview,
-          notify_assignee: isCreateFlow ? notifyAssignee : false,
+          notify_assignee:
+            alreadyNotified ? false : Boolean(notifyAssignee && assigneeId),
         },
         draftTaskId,
       );
@@ -3796,10 +3807,18 @@ function InlineTaskForm({
             >
               Cancel
             </button>
-            {isCreateFlow && assigneeId ? (
-              <label className="flex cursor-pointer items-center gap-1.5 text-sm text-[var(--text-muted)]">
+            {assigneeId ? (
+              <label
+                className={cn(
+                  "flex items-center gap-1.5 text-sm text-[var(--text-muted)]",
+                  alreadyNotified
+                    ? "cursor-not-allowed opacity-60"
+                    : "cursor-pointer",
+                )}
+              >
                 <Checkbox
-                  checked={notifyAssignee}
+                  checked={alreadyNotified || notifyAssignee}
+                  disabled={alreadyNotified}
                   onChange={(e) => setNotifyAssignee(e.target.checked)}
                   aria-label="Notify the Assignee"
                 />
@@ -4217,6 +4236,7 @@ function TaskRow({
             start_date: task.start_date,
             due_date: task.due_date,
             notes: task.notes,
+            assignee_notified_at: task.assignee_notified_at,
             is_client_review: !task.parent_id
               ? (ctx.childrenMap.get(task.id) ?? []).some(
                   (c) => c.is_client_review && !c.is_divider,

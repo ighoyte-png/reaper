@@ -894,6 +894,7 @@ export function createDemoSeed(): DemoState {
         t.status === "upcoming" ? null : dt(-2, week),
       status_changed_by_profile_id:
         t.status === "upcoming" ? null : ("profile-manager" as string | null),
+      assignee_notified_at: null as string | null,
     })) as DemoState["tasks"],
     task_comments: [
       {
@@ -1134,6 +1135,7 @@ export function createDemoSeed(): DemoState {
     dismissed_bulletin_ids: [],
     unread_mentions: [],
     unread_task_threads: [],
+    unread_assigned_tasks: [],
     project_favorites: [],
     pods: [],
     pod_members: [],

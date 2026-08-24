@@ -52,6 +52,7 @@ function dismissCard(
     ) => void;
     dismissBulletin: (bulletinId: string) => void;
     dismissTaskThreadUnread: (taskId: string, personId: string) => void;
+    dismissAssignedUnread: (taskId: string, personId: string) => void;
     personId: string | null | undefined;
   },
 ) {
@@ -67,6 +68,8 @@ function dismissCard(
     args.dismissBulletin(card.bulletinId);
   } else if (card.kind === "message" && card.taskId && args.personId) {
     args.dismissTaskThreadUnread(card.taskId, args.personId);
+  } else if (card.kind === "assigned" && card.taskId && args.personId) {
+    args.dismissAssignedUnread(card.taskId, args.personId);
   }
 }
 
@@ -78,8 +81,8 @@ function acknowledgeCard(
       target: NonNullable<UtilityNotificationCard["mentionTarget"]>,
       personId: string,
     ) => void;
-    dismissBulletin: (bulletinId: string) => void;
     dismissTaskThreadUnread: (taskId: string, personId: string) => void;
+    dismissAssignedUnread: (taskId: string, personId: string) => void;
     personId: string | null | undefined;
   },
 ) {
@@ -88,15 +91,10 @@ function acknowledgeCard(
   if (!wasUnread) return;
   if (card.kind === "mention" && card.mentionTarget && args.personId) {
     args.markMentionRead(card.mentionTarget, args.personId);
-  } else if (
-    (card.kind === "bulletin" ||
-      card.kind === "in_review" ||
-      card.kind === "milestone_approved") &&
-    card.bulletinId
-  ) {
-    args.dismissBulletin(card.bulletinId);
   } else if (card.kind === "message" && card.taskId && args.personId) {
     args.dismissTaskThreadUnread(card.taskId, args.personId);
+  } else if (card.kind === "assigned" && card.taskId && args.personId) {
+    args.dismissAssignedUnread(card.taskId, args.personId);
   }
 }
 
@@ -110,6 +108,7 @@ export function NotificationCenter() {
     markMentionRead,
     dismissBulletin,
     dismissTaskThreadUnread,
+    dismissAssignedUnread,
     myPerson,
     isPublicShare,
     profile,
@@ -167,6 +166,7 @@ export function NotificationCenter() {
     markMentionRead,
     dismissBulletin,
     dismissTaskThreadUnread,
+    dismissAssignedUnread,
     personId: myPerson?.id,
   };
 
@@ -174,8 +174,8 @@ export function NotificationCenter() {
     acknowledgeCard(card, {
       markCardRead,
       markMentionRead,
-      dismissBulletin,
       dismissTaskThreadUnread,
+      dismissAssignedUnread,
       personId: myPerson?.id,
     });
     closeCenter();

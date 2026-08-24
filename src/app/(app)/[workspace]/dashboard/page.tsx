@@ -842,55 +842,6 @@ export default function DashboardPage() {
     dismissBulletinFromBoard,
   ]);
 
-  // Each dashboard visit: clear orange unread dots for regular bulletins
-  // (wash stays until X). Runs once shortly after mount with latest state.
-  const bulletinDotClearRef = useRef({
-    bulletins,
-    unreadBulletins,
-    mentionPersonId,
-    manageWithoutPerson,
-    pods: state.pods,
-    podMembers: state.pod_members,
-    dismissBulletin,
-  });
-  bulletinDotClearRef.current = {
-    bulletins,
-    unreadBulletins,
-    mentionPersonId,
-    manageWithoutPerson,
-    pods: state.pods,
-    podMembers: state.pod_members,
-    dismissBulletin,
-  };
-  useEffect(() => {
-    if (isPublicShare || !profile?.id) return;
-    const profileId = profile.id;
-    const timer = window.setTimeout(() => {
-      const snap = bulletinDotClearRef.current;
-      const audienceCtx = {
-        pods: snap.pods,
-        podMembers: snap.podMembers,
-      };
-      for (const b of snap.bulletins) {
-        if (b.tone !== "default") continue;
-        if (
-          !isUnreadBulletin(
-            b,
-            snap.mentionPersonId,
-            profileId,
-            snap.unreadBulletins,
-            { manageWithoutPerson: snap.manageWithoutPerson, ...audienceCtx },
-          )
-        ) {
-          continue;
-        }
-        snap.dismissBulletin(b.id);
-        removeBulletinCard(b.id);
-      }
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, [isPublicShare, profile?.id]);
-
   const unreadBulletinCount = useMemo(() => {
     if (!mentionPersonId && !manageWithoutPerson) return 0;
     const audienceCtx = {

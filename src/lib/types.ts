@@ -239,6 +239,8 @@ export interface Task {
   status_changed_at: string | null;
   /** Profile that made the latest status change. */
   status_changed_by_profile_id: string | null;
+  /** When "Notify the Assignee" was sent; greys out the checkbox. */
+  assignee_notified_at: string | null;
 }
 
 export interface TaskComment {
@@ -545,10 +547,12 @@ export interface DemoState {
   unread_bulletin_ids: string[];
   /** System bulletin ids hidden from this profile's board. */
   dismissed_bulletin_ids: string[];
-  /** Mention inbox rows. Orange unread when read_at is null. Exactly one source id. */
+  /** Outstanding mention inbox rows (deleted when read). Exactly one source id. */
   unread_mentions: MentionUnread[];
   /** Tasks with unread assigner ↔ assignee comment thread for a person. */
   unread_task_threads: { task_id: string; person_id: string }[];
+  /** Outstanding "assigned to you" notices (deleted when read/dismissed). */
+  unread_assigned_tasks: { task_id: string; person_id: string }[];
   /** Current profile's starred projects (sort_order = nav tab order). */
   project_favorites: ProjectFavorite[];
   pods: Pod[];

@@ -27,6 +27,7 @@ function makeTask(partial: Partial<Task> & Pick<Task, "id">): Task {
     edited_by_profile_id: null,
     status_changed_at: null,
     status_changed_by_profile_id: null,
+    assignee_notified_at: null,
     ...partial,
   };
 }
@@ -154,6 +155,7 @@ describe("isTrueLocalEcho", () => {
           edited_by_profile_id: "other",
           status_changed_at: null,
           status_changed_by_profile_id: null,
+          assignee_notified_at: null,
         },
         null,
       ),

@@ -48,7 +48,8 @@ export function taskRealtimeEqual(a: Task, b: Task): boolean {
     a.edited_at === b.edited_at &&
     a.edited_by_profile_id === b.edited_by_profile_id &&
     a.status_changed_at === b.status_changed_at &&
-    a.status_changed_by_profile_id === b.status_changed_by_profile_id
+    a.status_changed_by_profile_id === b.status_changed_by_profile_id &&
+    a.assignee_notified_at === b.assignee_notified_at
   );
 }
 
@@ -131,10 +132,27 @@ export function realtimeEchoId(
     const tid = row.task_id;
     return tid != null ? String(tid) : null;
   }
+  if (table === "task_assigned_unreads") {
+    const tid = row.task_id;
+    return tid != null ? String(tid) : null;
+  }
+  if (table === "bulletin_dismissals") {
+    const bid = row.bulletin_id;
+    return bid != null ? String(bid) : null;
+  }
   if (table === "mention_unreads") {
-    const cid = row.comment_id;
     const pid = row.person_id;
-    return cid != null && pid != null ? `${String(cid)}:${String(pid)}` : null;
+    if (pid == null) return null;
+    if (row.comment_id != null && row.comment_id !== "") {
+      return `${String(row.comment_id)}:${String(pid)}`;
+    }
+    if (row.task_id != null && row.task_id !== "") {
+      return `task:${String(row.task_id)}:${String(pid)}`;
+    }
+    if (row.assignment_id != null && row.assignment_id !== "") {
+      return `assignment:${String(row.assignment_id)}:${String(pid)}`;
+    }
+    return null;
   }
   if (table === "pod_members") {
     const podId = row.pod_id;
@@ -470,6 +488,64 @@ export function applyRealtimeTableEvent(
         ],
       };
     }
+    case "task_assigned_unreads": {
+      const taskId = String(source.task_id ?? "");
+      const personId = String(source.person_id ?? "");
+      if (!taskId || !personId) return state;
+      const sessionPersonId =
+        state.people.find((p) => p.profile_id === state.sessionProfileId)
+          ?.id ?? null;
+      if (sessionPersonId && personId !== sessionPersonId) return state;
+      if (isDelete) {
+        const next = state.unread_assigned_tasks.filter(
+          (r) => !(r.task_id === taskId && r.person_id === personId),
+        );
+        return next.length === state.unread_assigned_tasks.length
+          ? state
+          : { ...state, unread_assigned_tasks: next };
+      }
+      if (
+        state.unread_assigned_tasks.some(
+          (r) => r.task_id === taskId && r.person_id === personId,
+        )
+      ) {
+        return state;
+      }
+      return {
+        ...state,
+        unread_assigned_tasks: [
+          ...state.unread_assigned_tasks,
+          { task_id: taskId, person_id: personId },
+        ],
+      };
+    }
+    case "bulletin_dismissals": {
+      const bulletinId = String(source.bulletin_id ?? "");
+      const profileId = String(source.profile_id ?? "");
+      if (!bulletinId || !profileId) return state;
+      if (
+        state.sessionProfileId &&
+        profileId !== state.sessionProfileId
+      ) {
+        return state;
+      }
+      if (isDelete) {
+        const next = state.dismissed_bulletin_ids.filter(
+          (id) => id !== bulletinId,
+        );
+        return next.length === state.dismissed_bulletin_ids.length
+          ? state
+          : { ...state, dismissed_bulletin_ids: next };
+      }
+      if (state.dismissed_bulletin_ids.includes(bulletinId)) return state;
+      return {
+        ...state,
+        dismissed_bulletin_ids: [
+          ...state.dismissed_bulletin_ids,
+          bulletinId,
+        ],
+      };
+    }
     case "mention_unreads": {
       const commentId =
         source.comment_id != null && source.comment_id !== ""
@@ -493,22 +569,16 @@ export function applyRealtimeTableEvent(
         r.task_id === taskId &&
         r.assignment_id === assignmentId;
 
-      if (isDelete) {
+      const markedRead =
+        source.read_at != null && String(source.read_at).length > 0;
+      if (isDelete || markedRead) {
         const next = state.unread_mentions.filter((r) => !sameRow(r));
         return next.length === state.unread_mentions.length
           ? state
           : { ...state, unread_mentions: next };
       }
       if (state.unread_mentions.some(sameRow)) {
-        return {
-          ...state,
-          unread_mentions: state.unread_mentions.map((r) => {
-            if (!sameRow(r)) return r;
-            const readAt =
-              source.read_at != null ? String(source.read_at) : null;
-            return { ...r, read_at: readAt };
-          }),
-        };
+        return state;
       }
       return {
         ...state,
@@ -519,8 +589,7 @@ export function applyRealtimeTableEvent(
             task_id: taskId,
             assignment_id: assignmentId,
             person_id: personId,
-            read_at:
-              source.read_at != null ? String(source.read_at) : null,
+            read_at: null,
             created_at:
               source.created_at != null
                 ? String(source.created_at)

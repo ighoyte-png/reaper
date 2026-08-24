@@ -9,8 +9,10 @@ export type TaskCreateDraft = {
   due_date: string | null;
   notes: string;
   is_client_review?: boolean;
-  /** Create-only: opt in to notify the assignee (default off). */
+  /** Create or edit: opt in to notify the assignee (default off). */
   notify_assignee?: boolean;
+  /** ISO timestamp if Notify the Assignee already fired. */
+  assignee_notified_at?: string | null;
 };
 
 type StoredTaskCreateDraft = TaskCreateDraft & { updatedAt: number };

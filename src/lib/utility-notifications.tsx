@@ -604,7 +604,46 @@ export function UtilityNotificationsProvider({
     projectHref,
   ]);
 
-  // Opt-in "assigned to you" (create task → Notify the assignee).
+  // Opt-in "assigned to you" — hydrate from unread inbox (cross-device) + live broadcast toast.
+  useEffect(() => {
+    if (!storageReady || isPublicShare || !mentionPersonId) return;
+
+    const mine = (state.unread_assigned_tasks ?? []).filter(
+      (r) => r.person_id === mentionPersonId,
+    );
+
+    if (seenAssignedCardIdsRef.current === null) {
+      seenAssignedCardIdsRef.current = new Set();
+    }
+    const seen = seenAssignedCardIdsRef.current;
+
+    for (const row of mine) {
+      const cardId = assignedNotifyCardId(row.task_id);
+      if (seen.has(cardId)) continue;
+      const built = buildAssignedCardFromTaskId({
+        taskId: row.task_id,
+        state,
+        projectHref,
+      });
+      if (!built) continue;
+      seen.add(cardId);
+      enqueue(built);
+    }
+  }, [
+    storageReady,
+    state.unread_assigned_tasks,
+    state.tasks,
+    state.projects,
+    state.clients,
+    state.people,
+    state.profiles,
+    mentionPersonId,
+    isPublicShare,
+    enqueue,
+    projectHref,
+  ]);
+
+  // Live toast when already online (broadcast). Card may already exist from unread hydrate.
   useEffect(() => {
     if (!storageReady || isPublicShare) return;
 
@@ -619,8 +658,6 @@ export function UtilityNotificationsProvider({
       }
       const seenCards = seenAssignedCardIdsRef.current;
       const cardId = assignedNotifyCardId(detail.taskId);
-      if (seenCards.has(cardId)) return;
-
       const snap = stateRef.current;
       const built = buildAssignedCardFromNotify({
         detail,
@@ -628,8 +665,10 @@ export function UtilityNotificationsProvider({
         projectHref,
       });
       if (!built) return;
-      seenCards.add(cardId);
-      enqueue(built);
+      if (!seenCards.has(cardId)) {
+        seenCards.add(cardId);
+        enqueue(built);
+      }
 
       const orgName = snap.organization?.name?.trim() || "Reaper";
       const authorName = detail.authorName?.trim() || "Someone";
@@ -720,6 +759,25 @@ export function UtilityNotificationsProvider({
       return changed ? next : prev;
     });
   }, [storageReady, state.unread_task_threads, mentionPersonId]);
+
+  useEffect(() => {
+    if (!storageReady || !mentionPersonId) return;
+    const unreadTasks = new Set(
+      (state.unread_assigned_tasks ?? [])
+        .filter((r) => r.person_id === mentionPersonId)
+        .map((r) => r.task_id),
+    );
+    setCards((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        if (c.kind !== "assigned" || !c.taskId || c.read) return c;
+        if (unreadTasks.has(c.taskId)) return c;
+        changed = true;
+        return { ...c, read: true };
+      });
+      return changed ? next : prev;
+    });
+  }, [storageReady, state.unread_assigned_tasks, mentionPersonId]);
 
   const value = useMemo(
     () => ({
@@ -1341,6 +1399,76 @@ function pushTaskMessageDesktop(args: {
       href,
     });
   })();
+}
+
+function buildAssignedCardFromTaskId(args: {
+  taskId: string;
+  state: {
+    tasks: Pick<Task, "id" | "title" | "project_id" | "created_by_profile_id">[];
+    projects: Project[];
+    clients: { id: string; name: string; color: string }[];
+    people: {
+      id: string;
+      name: string;
+      profile_id: string | null;
+      deleted_at?: string | null;
+    }[];
+    profiles: {
+      id: string;
+      full_name?: string | null;
+      email?: string | null;
+    }[];
+  };
+  projectHref: (
+    project: Pick<Project, "client_id" | "slug">,
+    search?: string,
+  ) => string;
+}): Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> | null {
+  const { taskId, state, projectHref } = args;
+  const task = state.tasks.find((t) => t.id === taskId);
+  if (!task) return null;
+  const project = state.projects.find((p) => p.id === task.project_id);
+  if (!project) return null;
+  const client = project.client_id
+    ? state.clients.find((c) => c.id === project.client_id)
+    : undefined;
+  const authorPerson = task.created_by_profile_id
+    ? (state.people.find((p) => p.profile_id === task.created_by_profile_id) ??
+      null)
+    : null;
+  const authorProfile = task.created_by_profile_id
+    ? (state.profiles.find((p) => p.id === task.created_by_profile_id) ?? null)
+    : null;
+  const authorName = resolveAuthorLabel(
+    authorProfile
+      ? {
+          full_name: authorProfile.full_name ?? undefined,
+          email: authorProfile.email ?? undefined,
+        }
+      : null,
+    authorPerson
+      ? {
+          name: authorPerson.name,
+          deleted_at: authorPerson.deleted_at ?? null,
+        }
+      : null,
+  );
+  const title = task.title?.trim() || "Task assigned";
+  return {
+    id: assignedNotifyCardId(taskId),
+    kind: "assigned",
+    href: projectHref(project, `task=${taskId}`),
+    title,
+    subtitle: [
+      authorName ? `${authorName} assigned you` : "Assigned to you",
+      project.name,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    clientName: client?.name ?? null,
+    clientColor: client?.color ?? null,
+    taskId,
+  };
 }
 
 function buildAssignedCardFromNotify(args: {

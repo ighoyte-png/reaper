@@ -96,6 +96,7 @@ import {
   loadMentionAssignments,
   loadMentionComments,
   loadMentionTasks,
+  loadCommentsForTaskIds,
   loadOrgTasks,
   loadOrgMilestones,
   loadOrgBootstrap,
@@ -122,6 +123,8 @@ import {
   syncTaskNoteMentionUnreads,
   deleteTaskThreadUnreadRow,
   upsertTaskThreadUnreadRow,
+  upsertTaskAssignedUnreadRow,
+  deleteTaskAssignedUnreadRow,
   seedBulletinUnreadRows,
   upsertClientRow,
   upsertHolidayCalendarDayRow,
@@ -389,6 +392,10 @@ function loadDemoState(): DemoState {
         is_client_review: Boolean(
           (t as Task).is_client_review,
         ),
+        assignee_notified_at:
+          typeof (t as Task).assignee_notified_at === "string"
+            ? (t as Task).assignee_notified_at
+            : null,
       })),
       task_comments: (parsed.task_comments ?? seed.task_comments).map((c) => ({
         ...c,
@@ -455,6 +462,7 @@ function loadDemoState(): DemoState {
             })
             .filter(
               (r) =>
+                !r.read_at &&
                 ((r.comment_id ? 1 : 0) +
                   (r.task_id ? 1 : 0) +
                   (r.assignment_id ? 1 : 0)) ===
@@ -470,6 +478,15 @@ function loadDemoState(): DemoState {
               typeof (r as { person_id?: unknown }).person_id === "string",
           )
         : (seed.unread_task_threads ?? []),
+      unread_assigned_tasks: Array.isArray(parsed.unread_assigned_tasks)
+        ? parsed.unread_assigned_tasks.filter(
+            (r): r is { task_id: string; person_id: string } =>
+              Boolean(r) &&
+              typeof r === "object" &&
+              typeof (r as { task_id?: unknown }).task_id === "string" &&
+              typeof (r as { person_id?: unknown }).person_id === "string",
+          )
+        : (seed.unread_assigned_tasks ?? []),
       project_favorites: Array.isArray(parsed.project_favorites)
         ? parsed.project_favorites.filter(
             (f): f is ProjectFavorite =>
@@ -528,6 +545,7 @@ function emptySupabaseState(): DemoState {
     dismissed_bulletin_ids: [],
     unread_mentions: [],
     unread_task_threads: [],
+    unread_assigned_tasks: [],
     project_favorites: [],
     pods: [],
     pod_members: [],
@@ -782,6 +800,8 @@ interface DataContextValue {
   markMentionsReadForTask: (taskId: string, personId: string) => void;
   /** Mark assigner ↔ assignee task thread as read (opening the task). */
   dismissTaskThreadUnread: (taskId: string, personId: string) => void;
+  /** Clear outstanding "assigned to you" unread (read or dismiss). */
+  dismissAssignedUnread: (taskId: string, personId: string) => void;
   upsertProjectTemplate: (
     template: Omit<ProjectTemplate, "organization_id"> & {
       organization_id?: string;
@@ -957,6 +977,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     task_comments: import("@/lib/types").TaskComment[];
     assignments: import("@/lib/types").Assignment[];
   }> | null>(null);
+  const notificationInboxInflight = useRef<Promise<void> | null>(null);
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
   const scheduleRangeInflight = useRef<Promise<{
     leaveDays: LeaveDay[];
@@ -1539,6 +1560,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         enqueueRealtimeChange("task_thread_unreads"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "task_assigned_unreads",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        enqueueRealtimeChange("task_assigned_unreads"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "bulletin_dismissals",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        enqueueRealtimeChange("bulletin_dismissals"),
       )
       .on(
         "postgres_changes",
@@ -2158,6 +2199,89 @@ export function DataProvider({ children }: { children: ReactNode }) {
       state.assignments,
     ],
   );
+
+  const ensureNotificationInboxData = useCallback(async () => {
+    await ensureMentionComments();
+    if (mode !== "supabase") return;
+    const client = supabaseRef.current ?? createClient();
+    const organizationId = state.organization.id;
+    if (!organizationId) return;
+
+    const threadTaskIds = [
+      ...new Set(state.unread_task_threads.map((r) => r.task_id)),
+    ];
+    const assignedTaskIds = [
+      ...new Set(state.unread_assigned_tasks.map((r) => r.task_id)),
+    ];
+    const missingThreadTasks = threadTaskIds.filter(
+      (id) => !state.task_comments.some((c) => c.task_id === id),
+    );
+    const missingAssigned = assignedTaskIds.filter(
+      (id) => !state.tasks.some((t) => t.id === id),
+    );
+    if (missingThreadTasks.length === 0 && missingAssigned.length === 0) {
+      return;
+    }
+    if (notificationInboxInflight.current) {
+      await notificationInboxInflight.current;
+      return;
+    }
+
+    const run = (async () => {
+      try {
+        const [threadBundle, assignedTasks] = await Promise.all([
+          missingThreadTasks.length > 0
+            ? loadCommentsForTaskIds(
+                client,
+                organizationId,
+                missingThreadTasks,
+              )
+            : Promise.resolve({
+                tasks: [] as Task[],
+                task_comments: [] as TaskComment[],
+              }),
+          missingAssigned.length > 0
+            ? loadMentionTasks(client, organizationId, missingAssigned)
+            : Promise.resolve([] as Task[]),
+        ]);
+        setState((prev) => {
+          const tasksById = new Map(prev.tasks.map((t) => [t.id, t]));
+          for (const t of threadBundle.tasks) tasksById.set(t.id, t);
+          for (const t of assignedTasks) tasksById.set(t.id, t);
+          const commentsById = new Map(
+            prev.task_comments.map((c) => [c.id, c]),
+          );
+          for (const c of threadBundle.task_comments) {
+            commentsById.set(c.id, c);
+          }
+          return {
+            ...prev,
+            tasks: [...tasksById.values()],
+            task_comments: [...commentsById.values()],
+          };
+        });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        notificationInboxInflight.current = null;
+      }
+    })();
+    notificationInboxInflight.current = run;
+    return run;
+  }, [
+    ensureMentionComments,
+    mode,
+    state.organization.id,
+    state.unread_task_threads,
+    state.unread_assigned_tasks,
+    state.task_comments,
+    state.tasks,
+  ]);
+
+  useEffect(() => {
+    if (!ready) return;
+    void ensureNotificationInboxData();
+  }, [ready, ensureNotificationInboxData]);
 
   useEffect(() => {
     notifyReactionInsertRef.current = (row) => {
@@ -4659,6 +4783,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             status_changed_at: row.status_changed_at ?? null,
             status_changed_by_profile_id:
               row.status_changed_by_profile_id ?? null,
+            assignee_notified_at: row.assignee_notified_at ?? null,
           };
         } else {
           const statusChanged = existing.status !== row.status;
@@ -4679,7 +4804,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
               : (existing.status_changed_by_profile_id ??
                 row.status_changed_by_profile_id ??
                 null),
+            assignee_notified_at:
+              existing.assignee_notified_at ?? row.assignee_notified_at ?? null,
           };
+        }
+        const shouldNotifyAssignee = Boolean(
+          opts?.notifyAssignee &&
+            row.assignee_person_id &&
+            row.assignee_person_id !== myPerson?.id &&
+            !row.assignee_notified_at,
+        );
+        if (shouldNotifyAssignee) {
+          row = { ...row, assignee_notified_at: now };
         }
         const prevMentionIds = extractMentionPersonIds(
           existing?.notes ?? "",
@@ -4722,11 +4858,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ? prev.tasks.map((t) => (t.id === row.id ? row : t))
               : [...prev.tasks, row],
             unread_mentions,
+            unread_assigned_tasks:
+              shouldNotifyAssignee && row.assignee_person_id
+                ? prev.unread_assigned_tasks.some(
+                    (r) =>
+                      r.task_id === row.id &&
+                      r.person_id === row.assignee_person_id,
+                  )
+                  ? prev.unread_assigned_tasks
+                  : [
+                      ...prev.unread_assigned_tasks,
+                      {
+                        task_id: row.id,
+                        person_id: row.assignee_person_id,
+                      },
+                    ]
+                : prev.unread_assigned_tasks,
           };
         });
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", row.id);
           noteLocalWrite("mention_unreads", `task:${row.id}`);
+          if (shouldNotifyAssignee) {
+            noteLocalWrite("task_assigned_unreads", row.id);
+          }
           runRemoteSoft(async () => {
             await upsertTaskRow(supabaseRef.current!, row);
             await syncTaskNoteMentionUnreads(supabaseRef.current!, {
@@ -4735,6 +4890,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
               person_ids: nextMentionIds,
               newly_person_ids: newlyMentionedLocal,
             });
+            if (shouldNotifyAssignee && row.assignee_person_id) {
+              await upsertTaskAssignedUnreadRow(supabaseRef.current!, {
+                task_id: row.id,
+                person_id: row.assignee_person_id,
+                organization_id: row.organization_id,
+              });
+            }
           });
         }
         // Demo: notify assigner when assignee moves Active → In Review (supabase uses DB trigger).
@@ -4818,13 +4980,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           sendOrgBroadcast("task-note-mention", payload);
         }
 
-        // Opt-in assignee notify on create (checkbox on Add task).
-        if (
-          !existing &&
-          opts?.notifyAssignee &&
-          row.assignee_person_id &&
-          row.assignee_person_id !== myPerson?.id
-        ) {
+        // Opt-in assignee notify (create or first edit save).
+        if (shouldNotifyAssignee && row.assignee_person_id) {
           const payload: TaskAssignedBroadcast = {
             personIds: [row.assignee_person_id],
             taskId: row.id,
@@ -4861,6 +5018,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
               remainingTaskIds.has(c.task_id),
             ),
             unread_task_threads: prev.unread_task_threads.filter((r) =>
+              remainingTaskIds.has(r.task_id),
+            ),
+            unread_assigned_tasks: prev.unread_assigned_tasks.filter((r) =>
               remainingTaskIds.has(r.task_id),
             ),
             unread_mentions: prev.unread_mentions.filter((r) => {
@@ -5365,18 +5525,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       markMentionRead: (target, personId) => {
         if (!target?.id || !personId) return;
-        const readAt = new Date().toISOString();
         patch((prev) => {
-          let changed = false;
-          const next = prev.unread_mentions.map((r) => {
-            if (!mentionUnreadMatchesTarget(r, target, personId)) {
-              return r;
-            }
-            if (r.read_at) return r;
-            changed = true;
-            return { ...r, read_at: readAt };
-          });
-          if (!changed) return prev;
+          const next = prev.unread_mentions.filter(
+            (r) => !mentionUnreadMatchesTarget(r, target, personId),
+          );
+          if (next.length === prev.unread_mentions.length) return prev;
           return { ...prev, unread_mentions: next };
         });
         if (mode === "supabase" && supabaseRef.current) {
@@ -5385,7 +5538,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             `${target.kind}:${target.id}:${personId}`,
           );
           runRemoteSoft(async () => {
-            await markMentionReadRow(supabaseRef.current!, {
+            await deleteMentionUnreadRow(supabaseRef.current!, {
               target,
               person_id: personId,
             });
@@ -5394,7 +5547,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       },
       markMentionsReadForTask: (taskId, personId) => {
         if (!taskId || !personId) return;
-        const readAt = new Date().toISOString();
         const remoteByKey = new Map<string, MentionTarget>();
         patch((prev) => {
           const commentIdsOnTask = new Set(
@@ -5402,21 +5554,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
               .filter((c) => c.task_id === taskId)
               .map((c) => c.id),
           );
-          let changed = false;
-          const next = prev.unread_mentions.map((r) => {
-            if (r.person_id !== personId || r.read_at) return r;
+          const next = prev.unread_mentions.filter((r) => {
+            if (r.person_id !== personId) return true;
             let target: MentionTarget | null = null;
             if (r.task_id === taskId) {
               target = { kind: "task", id: taskId };
             } else if (r.comment_id && commentIdsOnTask.has(r.comment_id)) {
               target = { kind: "comment", id: r.comment_id };
             }
-            if (!target) return r;
-            changed = true;
+            if (!target) return true;
             remoteByKey.set(`${target.kind}:${target.id}`, target);
-            return { ...r, read_at: readAt };
+            return false;
           });
-          if (!changed) return prev;
+          if (next.length === prev.unread_mentions.length) return prev;
           return { ...prev, unread_mentions: next };
         });
         if (mode === "supabase" && supabaseRef.current && remoteByKey.size > 0) {
@@ -5426,7 +5576,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
               `${target.kind}:${target.id}:${personId}`,
             );
             runRemoteSoft(async () => {
-              await markMentionReadRow(supabaseRef.current!, {
+              await deleteMentionUnreadRow(supabaseRef.current!, {
                 target,
                 person_id: personId,
               });
@@ -5447,6 +5597,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
           noteLocalWrite("task_thread_unreads", taskId);
           runRemoteSoft(async () => {
             await deleteTaskThreadUnreadRow(supabaseRef.current!, {
+              task_id: taskId,
+              person_id: personId,
+            });
+          });
+        }
+      },
+      dismissAssignedUnread: (taskId, personId) => {
+        if (!taskId || !personId) return;
+        patch((prev) => {
+          const next = prev.unread_assigned_tasks.filter(
+            (r) => !(r.task_id === taskId && r.person_id === personId),
+          );
+          if (next.length === prev.unread_assigned_tasks.length) return prev;
+          return { ...prev, unread_assigned_tasks: next };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          noteLocalWrite("task_assigned_unreads", taskId);
+          runRemoteSoft(async () => {
+            await deleteTaskAssignedUnreadRow(supabaseRef.current!, {
               task_id: taskId,
               person_id: personId,
             });

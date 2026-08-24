@@ -31,6 +31,7 @@ function task(
     edited_by_profile_id: null,
     status_changed_at: null,
     status_changed_by_profile_id: null,
+    assignee_notified_at: null,
     ...partial,
   };
 }

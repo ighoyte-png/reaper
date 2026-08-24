@@ -76,6 +76,7 @@ export function portalPayloadToDemoState(
     edited_by_profile_id: null,
     status_changed_at: null,
     status_changed_by_profile_id: null,
+    assignee_notified_at: null,
   }));
 
   const milestones: Milestone[] = portal.milestones.map((m) => ({
@@ -217,6 +218,7 @@ export function portalPayloadToDemoState(
     dismissed_bulletin_ids: [],
     unread_mentions: [],
     unread_task_threads: [],
+    unread_assigned_tasks: [],
     project_favorites: [],
   };
 }
@@ -315,6 +317,7 @@ function buildPortalGanttContext(
     markMentionRead: () => {},
     markMentionsReadForTask: () => {},
     dismissTaskThreadUnread: () => {},
+    dismissAssignedUnread: () => {},
     toggleProjectFavorite: () => {},
     reorderProjectFavorites: () => {},
     upsertProjectTemplate: () => {},

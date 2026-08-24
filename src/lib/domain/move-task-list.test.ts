@@ -41,6 +41,7 @@ function makeTask(
     edited_by_profile_id: "prof",
     status_changed_at: "2026-01-02T00:00:00.000Z",
     status_changed_by_profile_id: "prof",
+    assignee_notified_at: null,
     ...partial,
   };
 }
