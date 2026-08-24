@@ -358,90 +358,6 @@ export const SimpleRichTextEditor = forwardRef<
     };
   }, []);
 
-  // Pin after TipTap mounts (editor null → DOM absent on first paint).
-  useLayoutEffect(() => {
-    if (!stickyToolbar || !editor) {
-      setToolbarPinned(false);
-      setPinStyle(null);
-      return;
-    }
-
-    let cancelled = false;
-    let scrollport: HTMLElement | null = null;
-    let ro: ResizeObserver | null = null;
-    let raf = 0;
-
-    const update = () => {
-      if (cancelled) return;
-      const root = rootRef.current;
-      const sentinel = toolbarSentinelRef.current;
-      const measureEl = toolbarRef.current;
-      if (!root || !sentinel || !measureEl || !scrollport) return;
-
-      const portRect = scrollport.getBoundingClientRect();
-      const sentinelRect = sentinel.getBoundingClientRect();
-      const rootRect = root.getBoundingClientRect();
-      const height = measureEl.offsetHeight || toolbarHeight;
-      if (height > 0) setToolbarHeight(height);
-
-      // Pin while the editor is still on-screen and its top has scrolled under
-      // the page scrollport (main window content area below the nav).
-      const editorVisible = rootRect.bottom > portRect.top + height;
-      const shouldPin = editorVisible && sentinelRect.top <= portRect.top + 0.5;
-
-      if (shouldPin) {
-        setToolbarPinned(true);
-        setPinStyle({
-          top: portRect.top,
-          left: rootRect.left,
-          width: rootRect.width,
-        });
-      } else {
-        setToolbarPinned(false);
-        setPinStyle(null);
-      }
-    };
-
-    const attach = () => {
-      const root = rootRef.current;
-      if (!root) return false;
-      scrollport =
-        root.closest("[data-page-scrollport]") instanceof HTMLElement
-          ? (root.closest("[data-page-scrollport]") as HTMLElement)
-          : nearestVerticalScrollport(root);
-      if (!scrollport) return false;
-
-      update();
-      scrollport.addEventListener("scroll", update, { passive: true });
-      window.addEventListener("resize", update);
-      ro =
-        typeof ResizeObserver !== "undefined"
-          ? new ResizeObserver(update)
-          : null;
-      ro?.observe(root);
-      ro?.observe(scrollport);
-      if (toolbarRef.current) ro?.observe(toolbarRef.current);
-      return true;
-    };
-
-    if (!attach()) {
-      // Editor just became ready — wait one frame for refs to commit.
-      raf = window.requestAnimationFrame(() => {
-        if (!cancelled) attach();
-      });
-    }
-
-    return () => {
-      cancelled = true;
-      if (raf) window.cancelAnimationFrame(raf);
-      scrollport?.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-      ro?.disconnect();
-    };
-    // toolbarHeight intentionally omitted — update reads latest via setter
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- remount when editor appears
-  }, [stickyToolbar, editor]);
-
   useEffect(() => {
     if (!attachmentsActive || !attachmentEntityType || !attachmentEntityId) {
       syncFileAttachments([]);
@@ -709,6 +625,90 @@ export const SimpleRichTextEditor = forwardRef<
     },
     [extensions, attachmentsActive],
   );
+
+  // Pin after TipTap mounts (editor null → DOM absent on first paint).
+  useLayoutEffect(() => {
+    if (!stickyToolbar || !editor) {
+      setToolbarPinned(false);
+      setPinStyle(null);
+      return;
+    }
+
+    let cancelled = false;
+    let scrollport: HTMLElement | null = null;
+    let ro: ResizeObserver | null = null;
+    let raf = 0;
+
+    const update = () => {
+      if (cancelled) return;
+      const root = rootRef.current;
+      const sentinel = toolbarSentinelRef.current;
+      const measureEl = toolbarRef.current;
+      if (!root || !sentinel || !measureEl || !scrollport) return;
+
+      const portRect = scrollport.getBoundingClientRect();
+      const sentinelRect = sentinel.getBoundingClientRect();
+      const rootRect = root.getBoundingClientRect();
+      const height = measureEl.offsetHeight || toolbarHeight;
+      if (height > 0) setToolbarHeight(height);
+
+      // Pin while the editor is still on-screen and its top has scrolled under
+      // the page scrollport (main window content area below the nav).
+      const editorVisible = rootRect.bottom > portRect.top + height;
+      const shouldPin = editorVisible && sentinelRect.top <= portRect.top + 0.5;
+
+      if (shouldPin) {
+        setToolbarPinned(true);
+        setPinStyle({
+          top: portRect.top,
+          left: rootRect.left,
+          width: rootRect.width,
+        });
+      } else {
+        setToolbarPinned(false);
+        setPinStyle(null);
+      }
+    };
+
+    const attach = () => {
+      const root = rootRef.current;
+      if (!root) return false;
+      scrollport =
+        root.closest("[data-page-scrollport]") instanceof HTMLElement
+          ? (root.closest("[data-page-scrollport]") as HTMLElement)
+          : nearestVerticalScrollport(root);
+      if (!scrollport) return false;
+
+      update();
+      scrollport.addEventListener("scroll", update, { passive: true });
+      window.addEventListener("resize", update);
+      ro =
+        typeof ResizeObserver !== "undefined"
+          ? new ResizeObserver(update)
+          : null;
+      ro?.observe(root);
+      ro?.observe(scrollport);
+      if (toolbarRef.current) ro?.observe(toolbarRef.current);
+      return true;
+    };
+
+    if (!attach()) {
+      // Editor just became ready — wait one frame for refs to commit.
+      raf = window.requestAnimationFrame(() => {
+        if (!cancelled) attach();
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      if (raf) window.cancelAnimationFrame(raf);
+      scrollport?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      ro?.disconnect();
+    };
+    // toolbarHeight intentionally omitted — update reads latest via setter
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- remount when editor appears
+  }, [stickyToolbar, editor]);
 
   useEffect(() => {
     edRef.current = editor;

@@ -76,6 +76,7 @@ import {
   calendarDayDelta,
   isBoundTasksNotes,
   isGanttTask,
+  preferredBoundAssignmentForTask,
   syncNonGanttTaskDatesFromBindings,
   taskIsBoundOutOfSync,
   tryShiftAssignmentByDays,
@@ -2225,26 +2226,13 @@ export function ProjectTaskBoard({
     hideDescriptionIcon,
     boundAssignmentLinkEnabled,
     boundAssignmentHref: (taskId: string) => {
-      const binds = state.assignment_bound_tasks.filter(
-        (r) => r.task_id === taskId,
+      const task = state.tasks.find((t) => t.id === taskId);
+      const preferred = preferredBoundAssignmentForTask(
+        state.assignment_bound_tasks,
+        state.assignments,
+        task ?? { id: taskId, start_date: null, due_date: null },
       );
-      if (binds.length === 0) return null;
-      const assignments = binds
-        .map((b) => state.assignments.find((a) => a.id === b.assignment_id))
-        .filter((a): a is NonNullable<typeof a> => Boolean(a))
-        .sort((a, b) =>
-          a.start_date < b.start_date
-            ? -1
-            : a.start_date > b.start_date
-              ? 1
-              : 0,
-        );
-      if (assignments.length === 0) return null;
-      const today = toDateKey(new Date());
-      const preferred =
-        assignments.find(
-          (a) => a.start_date <= today && a.end_date >= today,
-        ) ?? assignments[0];
+      if (!preferred) return null;
       return appHref(
         `/schedule?assignment=${encodeURIComponent(preferred.id)}&tab=tasks&date=${encodeURIComponent(preferred.start_date)}&person=${encodeURIComponent(preferred.person_id)}&project=${encodeURIComponent(preferred.project_id)}`,
       );

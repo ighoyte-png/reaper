@@ -37,6 +37,7 @@ import {
   assignmentIsOutOfSync,
   boundTasksNotesHtml,
   isBoundTasksNotes,
+  isTasksRemovedNote,
   tasksRemovedNotesHtml,
 } from "@/lib/domain/assignment-bound-tasks";
 import {
@@ -4980,7 +4981,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
               const assignment = assignments.find(
                 (a) => a.id === assignmentId,
               );
-              if (assignment && isBoundTasksNotes(assignment.notes)) {
+              if (
+                assignment &&
+                (isBoundTasksNotes(assignment.notes) ||
+                  isTasksRemovedNote(assignment.notes) ||
+                  !assignment.notes?.trim())
+              ) {
                 const boundIds = assignment_bound_tasks
                   .filter((r) => r.assignment_id === assignmentId)
                   .map((r) => r.task_id);
@@ -5218,70 +5224,71 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       },
       deleteTask: (id) => {
-        const prevState = stateRef.current;
-        const removedTaskIds = new Set(
-          prevState.tasks
-            .filter((t) => t.id === id || t.parent_id === id)
-            .map((t) => t.id),
-        );
-        const affectedAssignmentIds = [
-          ...new Set(
-            prevState.assignment_bound_tasks
-              .filter((r) => removedTaskIds.has(r.task_id))
-              .map((r) => r.assignment_id),
-          ),
-        ];
-        const assignmentNotePatches: Assignment[] = [];
-        for (const assignmentId of affectedAssignmentIds) {
-          const assignment = prevState.assignments.find(
-            (a) => a.id === assignmentId,
-          );
-          if (!assignment) continue;
-          const remainingBinds = prevState.assignment_bound_tasks.filter(
-            (r) =>
-              r.assignment_id === assignmentId &&
-              !removedTaskIds.has(r.task_id),
-          );
-          if (remainingBinds.length === 0) {
-            assignmentNotePatches.push({
-              ...assignment,
-              notes: tasksRemovedNotesHtml(),
-            });
-          } else if (
-            isBoundTasksNotes(assignment.notes) ||
-            !assignment.notes?.trim()
-          ) {
-            const titles = remainingBinds
-              .sort((a, b) => a.sort_order - b.sort_order)
-              .map(
-                (r) =>
-                  prevState.tasks.find((t) => t.id === r.task_id)?.title ?? "",
-              )
-              .filter(Boolean);
-            const assignments = prevState.assignments;
-            const oos = assignmentIsOutOfSync(
-              remainingBinds,
-              prevState.tasks.filter((t) => !removedTaskIds.has(t.id)),
-              prevState.task_lists,
-              assignments,
-              assignmentId,
-            );
-            assignmentNotePatches.push({
-              ...assignment,
-              notes: boundTasksNotesHtml(
-                titles,
-                oos ? "out_of_sync" : "in_sync",
-              ),
-            });
-          }
-        }
+        let assignmentNotePatches: Assignment[] = [];
         patch((prev) => {
+          const removedTaskIds = new Set(
+            prev.tasks
+              .filter((t) => t.id === id || t.parent_id === id)
+              .map((t) => t.id),
+          );
+          const affectedAssignmentIds = [
+            ...new Set(
+              prev.assignment_bound_tasks
+                .filter((r) => removedTaskIds.has(r.task_id))
+                .map((r) => r.assignment_id),
+            ),
+          ];
+          const notePatches: Assignment[] = [];
+          for (const assignmentId of affectedAssignmentIds) {
+            const assignment = prev.assignments.find(
+              (a) => a.id === assignmentId,
+            );
+            if (!assignment) continue;
+            const remainingBinds = prev.assignment_bound_tasks.filter(
+              (r) =>
+                r.assignment_id === assignmentId &&
+                !removedTaskIds.has(r.task_id),
+            );
+            if (remainingBinds.length === 0) {
+              notePatches.push({
+                ...assignment,
+                notes: tasksRemovedNotesHtml(),
+              });
+            } else if (
+              isBoundTasksNotes(assignment.notes) ||
+              isTasksRemovedNote(assignment.notes) ||
+              !assignment.notes?.trim()
+            ) {
+              const titles = remainingBinds
+                .sort((a, b) => a.sort_order - b.sort_order)
+                .map(
+                  (r) =>
+                    prev.tasks.find((t) => t.id === r.task_id)?.title ?? "",
+                )
+                .filter(Boolean);
+              const oos = assignmentIsOutOfSync(
+                remainingBinds,
+                prev.tasks.filter((t) => !removedTaskIds.has(t.id)),
+                prev.task_lists,
+                prev.assignments,
+                assignmentId,
+              );
+              notePatches.push({
+                ...assignment,
+                notes: boundTasksNotesHtml(
+                  titles,
+                  oos ? "out_of_sync" : "in_sync",
+                ),
+              });
+            }
+          }
+          assignmentNotePatches = notePatches;
           const nextTasks = prev.tasks.filter(
             (t) => t.id !== id && t.parent_id !== id,
           );
           const remainingTaskIds = new Set(nextTasks.map((t) => t.id));
           const noteById = new Map(
-            assignmentNotePatches.map((a) => [a.id, a] as const),
+            notePatches.map((a) => [a.id, a] as const),
           );
           return {
             ...prev,

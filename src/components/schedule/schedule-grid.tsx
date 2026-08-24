@@ -929,24 +929,24 @@ export function ScheduleGrid() {
     if (!assignment || !canManage) return;
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task || isGanttTask(task, state.task_lists)) return;
-    const patches = syncNonGanttTaskDatesFromBindings(
-      state.assignment_bound_tasks,
-      state.tasks,
-      state.task_lists,
-      state.assignments,
-      [taskId],
+    // Apply this assignment's calendar dates to the project task (not the
+    // multi-assignment span), then clear OOS even if dates already matched.
+    const start = assignment.start_date;
+    const end = assignment.end_date;
+    const datesChanged =
+      task.start_date !== start || task.due_date !== end;
+    if (datesChanged) {
+      upsertTask({
+        ...task,
+        start_date: start,
+        due_date: end,
+      });
+    }
+    const assignments = state.assignments.map((a) =>
+      a.id === assignment.id ? assignment : a,
     );
-    if (patches.length === 0) return;
-    const patch = patches[0];
-    upsertTask({
-      ...task,
-      start_date: patch.start_date,
-      due_date: patch.due_date,
-    });
     const nextTasks = state.tasks.map((t) =>
-      t.id === taskId
-        ? { ...t, start_date: patch.start_date, due_date: patch.due_date }
-        : t,
+      t.id === taskId ? { ...t, start_date: start, due_date: end } : t,
     );
     const boundIds = state.assignment_bound_tasks
       .filter((r) => r.assignment_id === assignment.id)
@@ -955,7 +955,7 @@ export function ScheduleGrid() {
       state.assignment_bound_tasks,
       nextTasks,
       state.task_lists,
-      state.assignments,
+      assignments,
       assignment.id,
     );
     void setAssignmentBoundTasksOutOfSync(assignment.id, oos);
@@ -968,7 +968,8 @@ export function ScheduleGrid() {
     assignmentId: string,
   ): string {
     if (isTasksRemovedNote(notes)) {
-      return "text-[var(--text-muted)]";
+      // Stroke color (fill set separately on StickyNote).
+      return "text-white";
     }
     if (isBoundTasksNotes(notes)) {
       return assignmentIsOutOfSync(
@@ -982,6 +983,18 @@ export function ScheduleGrid() {
         : "text-[var(--status-healthy)]";
     }
     return "text-white/95";
+  }
+
+  function assignmentNoteStickyClass(
+    notes: string | null | undefined,
+  ): string | undefined {
+    if (isTasksRemovedNote(notes)) {
+      return "fill-[var(--text-muted)] stroke-white";
+    }
+    if (isBoundTasksNotes(notes)) {
+      return "fill-current stroke-white";
+    }
+    return undefined;
   }
 
   function refreshBoundAssignmentNotes(
@@ -2059,7 +2072,13 @@ export function ScheduleGrid() {
     if (deepLinkAssignmentRef.current === assignmentId) return;
 
     const a = state.assignments.find((x) => x.id === assignmentId);
-    if (!a) return;
+    if (!a) {
+      const projectId = filters.project?.trim();
+      if (projectId && projectId !== "all") {
+        void ensureProjectData(projectId);
+      }
+      return;
+    }
 
     const dateKey = filters.date?.trim();
     if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
@@ -2102,11 +2121,13 @@ export function ScheduleGrid() {
     filters.assignment,
     filters.tab,
     filters.date,
+    filters.project,
     startKey,
     endKey,
     state.assignments,
     setFilters,
     isNarrow,
+    ensureProjectData,
   ]);
 
   // One-shot: /schedule?bindTask=&person=&project=&date= — create assignment + preselect task
@@ -2625,21 +2646,34 @@ export function ScheduleGrid() {
     }
     trackedUpsert(row, toast);
     if (datesChanged) {
-      syncBoundTaskDatesFromAssignment(row);
       const assignments = state.assignments.map((a) =>
         a.id === row.id ? row : a,
       );
-      const oos = assignmentIsOutOfSync(
+      const boundIds = state.assignment_bound_tasks
+        .filter((r) => r.assignment_id === row.id)
+        .map((r) => r.task_id);
+      const datePatches = syncNonGanttTaskDatesFromBindings(
         state.assignment_bound_tasks,
         state.tasks,
+        state.task_lists,
+        assignments,
+        boundIds,
+      );
+      syncBoundTaskDatesFromAssignment(row);
+      const nextTasks = state.tasks.map((t) => {
+        const patch = datePatches.find((p) => p.taskId === t.id);
+        return patch
+          ? { ...t, start_date: patch.start_date, due_date: patch.due_date }
+          : t;
+      });
+      const oos = assignmentIsOutOfSync(
+        state.assignment_bound_tasks,
+        nextTasks,
         state.task_lists,
         assignments,
         row.id,
       );
       void setAssignmentBoundTasksOutOfSync(row.id, oos);
-      const boundIds = state.assignment_bound_tasks
-        .filter((r) => r.assignment_id === row.id)
-        .map((r) => r.task_id);
       if (boundIds.length > 0) {
         refreshBoundAssignmentNotes(row, boundIds, oos);
       }
@@ -4515,11 +4549,9 @@ export function ScheduleGrid() {
                                             <StickyNote
                                               size={13}
                                               strokeWidth={2.5}
-                                              className={
-                                                isBoundTasksNotes(occ.notes)
-                                                  ? "fill-current stroke-white"
-                                                  : undefined
-                                              }
+                                              className={assignmentNoteStickyClass(
+                                                occ.notes,
+                                              )}
                                             />
                                           </span>
                                         </Tooltip>
@@ -4840,11 +4872,10 @@ export function ScheduleGrid() {
                                               size={13}
                                               strokeWidth={2.5}
                                               className={
-                                                boundNoteOcc &&
-                                                isBoundTasksNotes(
-                                                  boundNoteOcc.notes,
-                                                )
-                                                  ? "fill-current stroke-white"
+                                                boundNoteOcc
+                                                  ? assignmentNoteStickyClass(
+                                                      boundNoteOcc.notes,
+                                                    )
                                                   : undefined
                                               }
                                             />

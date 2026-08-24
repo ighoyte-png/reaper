@@ -7,6 +7,7 @@ import {
   calendarDayDelta,
   isBoundTasksNotes,
   nextAvailableScheduleRange,
+  preferredBoundAssignmentForTask,
   spanDatesForBoundTask,
   syncNonGanttTaskDatesFromBindings,
   taskBoundDatesMatchSpan,
@@ -222,6 +223,55 @@ describe("assignment-bound-tasks", () => {
     expect(
       taskBoundDatesMatchSpan("t1", binds, tasks, assignments),
     ).toBe(false);
+  });
+
+  it("treats missing assignments with bind rows as out of sync", () => {
+    const tasks = [
+      task({
+        id: "t1",
+        list_id: "l1",
+        start_date: "2026-03-02",
+        due_date: "2026-03-04",
+      }),
+    ];
+    const binds = [bind({ assignment_id: "a1", task_id: "t1" })];
+    expect(taskBoundDatesMatchSpan("t1", binds, tasks, [])).toBe(false);
+    expect(taskIsBoundOutOfSync("t1", binds, tasks, [])).toBe(true);
+  });
+
+  it("prefers the bound assignment that overlaps the task dates", () => {
+    const assignments = [
+      asg({ id: "a1", start_date: "2026-01-05", end_date: "2026-01-09" }),
+      asg({ id: "a2", start_date: "2026-03-02", end_date: "2026-03-06" }),
+    ];
+    const binds = [
+      bind({ assignment_id: "a1", task_id: "t1" }),
+      bind({ assignment_id: "a2", task_id: "t1" }),
+    ];
+    const t = task({
+      id: "t1",
+      list_id: "l1",
+      start_date: "2026-03-02",
+      due_date: "2026-03-06",
+    });
+    expect(
+      preferredBoundAssignmentForTask(binds, assignments, t, "2026-08-24")?.id,
+    ).toBe("a2");
+  });
+
+  it("prefers upcoming over earliest past when task has no dates", () => {
+    const assignments = [
+      asg({ id: "a1", start_date: "2026-01-05", end_date: "2026-01-09" }),
+      asg({ id: "a2", start_date: "2026-09-01", end_date: "2026-09-05" }),
+    ];
+    const binds = [
+      bind({ assignment_id: "a1", task_id: "t1" }),
+      bind({ assignment_id: "a2", task_id: "t1" }),
+    ];
+    const t = task({ id: "t1", list_id: "l1" });
+    expect(
+      preferredBoundAssignmentForTask(binds, assignments, t, "2026-08-24")?.id,
+    ).toBe("a2");
   });
 
   it("locks schedule move for synced Gantt binds only", () => {

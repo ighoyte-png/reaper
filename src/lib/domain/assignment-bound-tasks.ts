@@ -111,6 +111,54 @@ export function boundAssignmentsForTask(
     );
 }
 
+/**
+ * Pick which bound assignment a task link should open on Schedule.
+ * Prefer date overlap with the task, then current/upcoming, never the
+ * earliest past assignment when a later match exists.
+ */
+export function preferredBoundAssignmentForTask(
+  binds: Pick<AssignmentBoundTask, "assignment_id" | "task_id">[],
+  assignments: Assignment[],
+  task: Pick<Task, "id" | "start_date" | "due_date"> | null | undefined,
+  todayKey: string = toDateKey(new Date()),
+): Assignment | null {
+  const bound = boundAssignmentsForTask(
+    binds,
+    assignments,
+    task?.id ?? "",
+  );
+  if (bound.length === 0) return null;
+  if (bound.length === 1) return bound[0];
+
+  const taskStart = task?.start_date ?? null;
+  const taskEnd = task?.due_date ?? null;
+  if (taskStart || taskEnd) {
+    const overlap = bound.find((a) => {
+      const start = taskStart ?? taskEnd!;
+      const end = taskEnd ?? taskStart!;
+      return a.start_date <= end && a.end_date >= start;
+    });
+    if (overlap) return overlap;
+    if (taskStart && taskEnd && taskStart === taskEnd) {
+      const exact = bound.find(
+        (a) => a.start_date === taskStart && a.end_date === taskEnd,
+      );
+      if (exact) return exact;
+    }
+  }
+
+  const current = bound.find(
+    (a) => a.start_date <= todayKey && a.end_date >= todayKey,
+  );
+  if (current) return current;
+
+  const upcoming = bound.find((a) => a.start_date >= todayKey);
+  if (upcoming) return upcoming;
+
+  // Most recent past (bound is sorted earliest-first).
+  return bound[bound.length - 1];
+}
+
 /** Earliest start + latest end across all assignments bound to the task. */
 export function spanDatesForBoundTask(
   binds: Pick<AssignmentBoundTask, "assignment_id" | "task_id">[],
@@ -157,9 +205,19 @@ export function taskBoundDatesMatchSpan(
 ): boolean {
   const task = tasks.find((t) => t.id === taskId);
   if (!task) return true;
-  const span = spanDatesForBoundTask(binds, assignments, taskId);
-  if (!span) return true;
-  return task.start_date === span.start && task.due_date === span.end;
+  const hasBinds = binds.some((b) => b.task_id === taskId);
+  if (!hasBinds) return true;
+  const bound = boundAssignmentsForTask(binds, assignments, taskId);
+  // Bind rows exist but assignments are not loaded — treat as mismatched so
+  // the UI does not show a false "synced" (green) state.
+  if (bound.length === 0) return false;
+  let start = bound[0].start_date;
+  let end = bound[0].end_date;
+  for (const a of bound) {
+    if (a.start_date < start) start = a.start_date;
+    if (a.end_date > end) end = a.end_date;
+  }
+  return task.start_date === start && task.due_date === end;
 }
 
 /** Task shows OOS when any bind row is flagged or dates diverge from span. */
