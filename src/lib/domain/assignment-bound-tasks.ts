@@ -148,7 +148,34 @@ export function assignmentLockedOnSchedule(
   return false;
 }
 
-/** Assignment shows OOS when any join row is flagged, or non-Gantt dates diverge. */
+/** True when task dates match the bound assignment span (Gantt and non-Gantt). */
+export function taskBoundDatesMatchSpan(
+  taskId: string,
+  binds: Pick<AssignmentBoundTask, "assignment_id" | "task_id">[],
+  tasks: Pick<Task, "id" | "start_date" | "due_date">[],
+  assignments: Assignment[],
+): boolean {
+  const task = tasks.find((t) => t.id === taskId);
+  if (!task) return true;
+  const span = spanDatesForBoundTask(binds, assignments, taskId);
+  if (!span) return true;
+  return task.start_date === span.start && task.due_date === span.end;
+}
+
+/** Task shows OOS when any bind row is flagged or dates diverge from span. */
+export function taskIsBoundOutOfSync(
+  taskId: string,
+  binds: AssignmentBoundTask[],
+  tasks: Pick<Task, "id" | "start_date" | "due_date">[],
+  assignments: Assignment[],
+): boolean {
+  const rows = binds.filter((b) => b.task_id === taskId);
+  if (rows.length === 0) return false;
+  if (rows.some((r) => r.out_of_sync)) return true;
+  return !taskBoundDatesMatchSpan(taskId, binds, tasks, assignments);
+}
+
+/** Assignment shows OOS when any join row is flagged, or bound task dates diverge. */
 export function assignmentIsOutOfSync(
   binds: AssignmentBoundTask[],
   tasks: Pick<Task, "id" | "list_id" | "start_date" | "due_date">[],
@@ -160,15 +187,40 @@ export function assignmentIsOutOfSync(
   if (rows.length === 0) return false;
   if (rows.some((r) => r.out_of_sync)) return true;
   for (const row of rows) {
-    const task = tasks.find((t) => t.id === row.task_id);
-    if (!task || isGanttTask(task, taskLists)) continue;
-    const span = spanDatesForBoundTask(binds, assignments, task.id);
-    if (!span) continue;
-    if (task.start_date !== span.start || task.due_date !== span.end) {
+    if (
+      !taskBoundDatesMatchSpan(row.task_id, binds, tasks, assignments)
+    ) {
       return true;
     }
   }
   return false;
+}
+
+/**
+ * True when a synced bound Gantt assignment must not move on the Schedule.
+ * OOS Gantt binds remain movable regardless of bind origin.
+ */
+export function assignmentScheduleMoveLocked(
+  binds: AssignmentBoundTask[],
+  tasks: Pick<Task, "id" | "list_id" | "start_date" | "due_date">[],
+  taskLists: Pick<TaskList, "id" | "gantt_enabled">[],
+  assignments: Assignment[],
+  assignmentId: string,
+): boolean {
+  const rows = binds.filter((b) => b.assignment_id === assignmentId);
+  if (rows.length === 0) return false;
+  const hasGantt = rows.some((row) => {
+    const task = tasks.find((t) => t.id === row.task_id);
+    return task ? isGanttTask(task, taskLists) : false;
+  });
+  if (!hasGantt) return false;
+  return !assignmentIsOutOfSync(
+    binds,
+    tasks,
+    taskLists,
+    assignments,
+    assignmentId,
+  );
 }
 
 export type SyncTaskDatePatch = {

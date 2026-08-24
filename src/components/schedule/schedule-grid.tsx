@@ -14,12 +14,14 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { ProjectTaskBoard } from "@/components/projects/project-task-board";
 import {
   assignmentIsOutOfSync,
-  assignmentLockedOnSchedule,
+  assignmentScheduleMoveLocked,
   boundTasksNotesHtml,
   isBoundTasksNotes,
   isGanttTask,
+  isTasksRemovedNote,
   nextAvailableScheduleRange,
   syncNonGanttTaskDatesFromBindings,
+  taskBoundDatesMatchSpan,
 } from "@/lib/domain/assignment-bound-tasks";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
 import { useUrlFilters } from "@/lib/hooks/use-url-filters";
@@ -132,6 +134,7 @@ import {
 import { leaveBlocksInRange, type LeaveBlock } from "@/lib/domain/leave-blocks";
 import type {
   Assignment,
+  AssignmentBoundTask,
   AssignmentStatus,
   Client,
   LeaveDay,
@@ -908,6 +911,66 @@ export function ScheduleGrid() {
     }
   }
 
+  function syncBoundTaskDateForTask(taskId: string) {
+    const assignment = editForm ?? selected;
+    if (!assignment || !canManage) return;
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task || isGanttTask(task, state.task_lists)) return;
+    const patches = syncNonGanttTaskDatesFromBindings(
+      state.assignment_bound_tasks,
+      state.tasks,
+      state.task_lists,
+      state.assignments,
+      [taskId],
+    );
+    if (patches.length === 0) return;
+    const patch = patches[0];
+    upsertTask({
+      ...task,
+      start_date: patch.start_date,
+      due_date: patch.due_date,
+    });
+    const nextTasks = state.tasks.map((t) =>
+      t.id === taskId
+        ? { ...t, start_date: patch.start_date, due_date: patch.due_date }
+        : t,
+    );
+    const boundIds = state.assignment_bound_tasks
+      .filter((r) => r.assignment_id === assignment.id)
+      .map((r) => r.task_id);
+    const oos = assignmentIsOutOfSync(
+      state.assignment_bound_tasks,
+      nextTasks,
+      state.task_lists,
+      state.assignments,
+      assignment.id,
+    );
+    void setAssignmentBoundTasksOutOfSync(assignment.id, oos);
+    refreshBoundAssignmentNotes(assignment, boundIds, oos);
+    push("Task date synced to assignment");
+  }
+
+  function assignmentNoteIconClass(
+    notes: string | null | undefined,
+    assignmentId: string,
+  ): string {
+    if (isTasksRemovedNote(notes)) {
+      return "text-[var(--text-muted)]";
+    }
+    if (isBoundTasksNotes(notes)) {
+      return assignmentIsOutOfSync(
+        state.assignment_bound_tasks,
+        state.tasks,
+        state.task_lists,
+        state.assignments,
+        assignmentId,
+      )
+        ? "text-[var(--status-near)]"
+        : "text-[var(--status-healthy)]";
+    }
+    return "text-white/95";
+  }
+
   function refreshBoundAssignmentNotes(
     assignment: Assignment,
     taskIds: string[],
@@ -937,29 +1000,10 @@ export function ScheduleGrid() {
     const assignment = editForm ?? selected;
     if (!assignment || !canManage) return;
     const unique = [...new Set(taskIds)];
-    await setAssignmentBoundTasks(
-      assignment.id,
-      unique.map((task_id) => ({
-        task_id,
-        bound_source: boundSource,
-        out_of_sync: false,
-      })),
-    );
-    // Assign unassigned tasks to the Schedule person.
-    for (const taskId of unique) {
-      const task = state.tasks.find((t) => t.id === taskId);
-      if (!task) continue;
-      if (!task.assignee_person_id) {
-        upsertTask({
-          ...task,
-          assignee_person_id: assignment.person_id,
-        });
-      }
-    }
     const assignments = state.assignments.map((a) =>
       a.id === assignment.id ? assignment : a,
     );
-    const binds = [
+    const bindsPreview = [
       ...state.assignment_bound_tasks.filter(
         (r) => r.assignment_id !== assignment.id,
       ),
@@ -973,12 +1017,40 @@ export function ScheduleGrid() {
       })),
     ];
     const patches = syncNonGanttTaskDatesFromBindings(
-      binds,
+      bindsPreview,
       state.tasks,
       state.task_lists,
       assignments,
       unique,
     );
+    const tasksAfterSync = state.tasks.map((t) => {
+      const patch = patches.find((p) => p.taskId === t.id);
+      return patch
+        ? { ...t, start_date: patch.start_date, due_date: patch.due_date }
+        : t;
+    });
+    const bindRows = unique.map((task_id) => ({
+      task_id,
+      bound_source: boundSource,
+      out_of_sync: !taskBoundDatesMatchSpan(
+        task_id,
+        bindsPreview,
+        tasksAfterSync,
+        assignments,
+      ),
+    }));
+    await setAssignmentBoundTasks(assignment.id, bindRows);
+    // Assign unassigned tasks to the Schedule person.
+    for (const taskId of unique) {
+      const task = state.tasks.find((t) => t.id === taskId);
+      if (!task) continue;
+      if (!task.assignee_person_id) {
+        upsertTask({
+          ...task,
+          assignee_person_id: assignment.person_id,
+        });
+      }
+    }
     for (const patch of patches) {
       const task = state.tasks.find((t) => t.id === patch.taskId);
       if (!task) continue;
@@ -988,7 +1060,28 @@ export function ScheduleGrid() {
         due_date: patch.due_date,
       });
     }
-    refreshBoundAssignmentNotes(assignment, unique, false);
+    const finalBinds: AssignmentBoundTask[] = [
+      ...state.assignment_bound_tasks.filter(
+        (r) => r.assignment_id !== assignment.id,
+      ),
+      ...unique.map((task_id, sort_order) => ({
+        assignment_id: assignment.id,
+        task_id,
+        organization_id: assignment.organization_id,
+        sort_order,
+        bound_source: boundSource,
+        out_of_sync:
+          bindRows.find((r) => r.task_id === task_id)?.out_of_sync ?? false,
+      })),
+    ];
+    const outOfSync = assignmentIsOutOfSync(
+      finalBinds,
+      tasksAfterSync,
+      state.task_lists,
+      assignments,
+      assignment.id,
+    );
+    refreshBoundAssignmentNotes(assignment, unique, outOfSync);
     setBindDraftIds(new Set(unique));
     setBindEditingSelection(false);
     setBindToAssignment(true);
@@ -1170,10 +1263,11 @@ export function ScheduleGrid() {
   }
 
   function isAssignmentScheduleLocked(assignmentId: string): boolean {
-    return assignmentLockedOnSchedule(
+    return assignmentScheduleMoveLocked(
       state.assignment_bound_tasks,
       state.tasks,
       state.task_lists,
+      state.assignments,
       assignmentId,
     );
   }
@@ -1923,18 +2017,29 @@ export function ScheduleGrid() {
     }
     if (deepLinkAssignmentRef.current === assignmentId) return;
 
+    const a = state.assignments.find((x) => x.id === assignmentId);
+    if (!a) return;
+
     const dateKey = filters.date?.trim();
     if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
       if (dateKey < startKey || dateKey > endKey) {
+        setFilters({
+          person: a.person_id,
+          project: a.project_id,
+        });
         setAnchor(parseISO(dateKey));
         return;
       }
     }
 
-    const a = state.assignments.find((x) => x.id === assignmentId);
-    if (!a) return;
-
     deepLinkAssignmentRef.current = assignmentId;
+    setFilters({
+      assignment: "",
+      tab: "",
+      date: "",
+      person: a.person_id,
+      project: a.project_id,
+    });
     selectAssignment(a.id, { start: a.start_date, end: a.end_date });
     const tabRaw = filters.tab?.trim().toLowerCase();
     if (tabRaw === "tasks") {
@@ -1952,7 +2057,6 @@ export function ScheduleGrid() {
       );
       setSidebarPanelTab(hasBound ? "tasks" : "edit");
     }
-    setFilters({ assignment: "", tab: "", date: "" });
   }, [
     filters.assignment,
     filters.tab,
@@ -2480,7 +2584,23 @@ export function ScheduleGrid() {
     trackedUpsert(row, toast);
     if (datesChanged) {
       syncBoundTaskDatesFromAssignment(row);
-      void setAssignmentBoundTasksOutOfSync(row.id, false);
+      const assignments = state.assignments.map((a) =>
+        a.id === row.id ? row : a,
+      );
+      const oos = assignmentIsOutOfSync(
+        state.assignment_bound_tasks,
+        state.tasks,
+        state.task_lists,
+        assignments,
+        row.id,
+      );
+      void setAssignmentBoundTasksOutOfSync(row.id, oos);
+      const boundIds = state.assignment_bound_tasks
+        .filter((r) => r.assignment_id === row.id)
+        .map((r) => r.task_id);
+      if (boundIds.length > 0) {
+        refreshBoundAssignmentNotes(row, boundIds, oos);
+      }
     }
     const bounds = assignmentRangeBounds([row]);
     if (
@@ -4340,17 +4460,10 @@ export function ScheduleGrid() {
                                           <span
                                             className={cn(
                                               "inline-flex cursor-default",
-                                              isBoundTasksNotes(occ.notes)
-                                                ? assignmentIsOutOfSync(
-                                                    state.assignment_bound_tasks,
-                                                    state.tasks,
-                                                    state.task_lists,
-                                                    state.assignments,
-                                                    occ.assignmentId,
-                                                  )
-                                                  ? "text-[var(--status-near)]"
-                                                  : "text-[var(--status-healthy)]"
-                                                : "text-white/95",
+                                              assignmentNoteIconClass(
+                                                occ.notes,
+                                                occ.assignmentId,
+                                              ),
                                             )}
                                             aria-label="Notes"
                                             onMouseDown={(e) =>
@@ -4561,18 +4674,11 @@ export function ScheduleGrid() {
                                   const noteHtmls = overlapping
                                     .map((o) => o.notes)
                                     .filter((n) => notesHasContent(n));
-                                  const boundNoteOcc = overlapping.find((o) =>
-                                    isBoundTasksNotes(o.notes),
+                                  const boundNoteOcc = overlapping.find(
+                                    (o) =>
+                                      isBoundTasksNotes(o.notes) ||
+                                      isTasksRemovedNote(o.notes),
                                   );
-                                  const boundNoteOos = boundNoteOcc
-                                    ? assignmentIsOutOfSync(
-                                        state.assignment_bound_tasks,
-                                        state.tasks,
-                                        state.task_lists,
-                                        state.assignments,
-                                        boundNoteOcc.assignmentId,
-                                      )
-                                    : false;
 
                                   return [
                                     <div
@@ -4677,9 +4783,10 @@ export function ScheduleGrid() {
                                             className={cn(
                                               "inline-flex cursor-default",
                                               boundNoteOcc
-                                                ? boundNoteOos
-                                                  ? "text-[var(--status-near)]"
-                                                  : "text-[var(--status-healthy)]"
+                                                ? assignmentNoteIconClass(
+                                                    boundNoteOcc.notes,
+                                                    boundNoteOcc.assignmentId,
+                                                  )
                                                 : "text-white/95",
                                             )}
                                             aria-label="Notes"
@@ -4691,7 +4798,10 @@ export function ScheduleGrid() {
                                               size={13}
                                               strokeWidth={2.5}
                                               className={
-                                                boundNoteOcc
+                                                boundNoteOcc &&
+                                                isBoundTasksNotes(
+                                                  boundNoteOcc.notes,
+                                                )
                                                   ? "fill-current stroke-white"
                                                   : undefined
                                               }
@@ -5027,6 +5137,8 @@ export function ScheduleGrid() {
                   omitYearFromTaskDates
                   scheduleBindPersonId={editForm.person_id}
                   showBoundAssignmentIcon
+                  boundAssignmentLinkEnabled={false}
+                  onSyncBoundTaskDate={syncBoundTaskDateForTask}
                   showAssigneeAvatarInCompact
                   hideDescriptionIcon
                   assigneePersonId={

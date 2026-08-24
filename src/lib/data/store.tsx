@@ -34,6 +34,7 @@ import { toDateKey } from "@/lib/domain/dates";
 import { canEditProject } from "@/lib/domain/project-access";
 import { applyMoveTaskList } from "@/lib/domain/move-task-list";
 import {
+  assignmentIsOutOfSync,
   boundTasksNotesHtml,
   isBoundTasksNotes,
   tasksRemovedNotesHtml,
@@ -4937,8 +4938,85 @@ export function DataProvider({ children }: { children: ReactNode }) {
           nextMentionIds,
           myPerson?.id,
         );
+        const datesChanged = Boolean(
+          existing &&
+            (existing.start_date !== row.start_date ||
+              existing.due_date !== row.due_date),
+        );
+        type BoundSyncRemote = {
+          assignmentId: string;
+          bindRows: AssignmentBoundTask[];
+          assignment?: Assignment;
+        };
+        const boundRemoteSync: BoundSyncRemote[] = [];
         patch((prev) => {
           const exists = prev.tasks.some((t) => t.id === row.id);
+          const nextTasks = exists
+            ? prev.tasks.map((t) => (t.id === row.id ? row : t))
+            : [...prev.tasks, row];
+          let assignment_bound_tasks = prev.assignment_bound_tasks;
+          let assignments = prev.assignments;
+
+          if (datesChanged) {
+            const bindRows = prev.assignment_bound_tasks.filter(
+              (r) => r.task_id === row.id,
+            );
+            const assignmentIds = [
+              ...new Set(bindRows.map((r) => r.assignment_id)),
+            ];
+            for (const assignmentId of assignmentIds) {
+              const oos = assignmentIsOutOfSync(
+                assignment_bound_tasks,
+                nextTasks,
+                prev.task_lists,
+                assignments,
+                assignmentId,
+              );
+              assignment_bound_tasks = assignment_bound_tasks.map((r) =>
+                r.assignment_id === assignmentId
+                  ? { ...r, out_of_sync: oos }
+                  : r,
+              );
+              const assignment = assignments.find(
+                (a) => a.id === assignmentId,
+              );
+              if (assignment && isBoundTasksNotes(assignment.notes)) {
+                const boundIds = assignment_bound_tasks
+                  .filter((r) => r.assignment_id === assignmentId)
+                  .map((r) => r.task_id);
+                const titles = boundIds
+                  .map(
+                    (id) => nextTasks.find((t) => t.id === id)?.title ?? "",
+                  )
+                  .filter(Boolean);
+                const nextAssignment: Assignment = {
+                  ...assignment,
+                  notes: boundTasksNotesHtml(
+                    titles,
+                    oos ? "out_of_sync" : "in_sync",
+                  ),
+                };
+                assignments = assignments.map((a) =>
+                  a.id === assignmentId ? nextAssignment : a,
+                );
+                boundRemoteSync.push({
+                  assignmentId,
+                  bindRows: assignment_bound_tasks.filter(
+                    (r) => r.assignment_id === assignmentId,
+                  ),
+                  assignment: nextAssignment,
+                });
+              } else {
+                boundRemoteSync.push({
+                  assignmentId,
+                  bindRows: assignment_bound_tasks.filter(
+                    (r) => r.assignment_id === assignmentId,
+                  ),
+                });
+              }
+            }
+          }
+
           let unread_mentions = prev.unread_mentions.filter(
             (r) =>
               r.task_id !== row.id || nextMentionIds.includes(r.person_id),
@@ -4965,9 +5043,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
           return {
             ...prev,
-            tasks: exists
-              ? prev.tasks.map((t) => (t.id === row.id ? row : t))
-              : [...prev.tasks, row],
+            tasks: nextTasks,
+            assignment_bound_tasks,
+            assignments,
             unread_mentions,
             unread_assigned_tasks:
               shouldNotifyAssignee && row.assignee_person_id
@@ -4987,6 +5065,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 : prev.unread_assigned_tasks,
           };
         });
+        if (mode === "supabase" && supabaseRef.current && boundRemoteSync.length) {
+          for (const item of boundRemoteSync) {
+            noteLocalWrite("assignment_bound_tasks", item.assignmentId);
+            if (item.assignment) {
+              noteLocalWrite("assignments", item.assignmentId);
+            }
+          }
+          runRemoteSoft(async () => {
+            const sb = supabaseRef.current!;
+            for (const item of boundRemoteSync) {
+              await setAssignmentBoundTaskRows(
+                sb,
+                item.assignmentId,
+                row.organization_id,
+                item.bindRows.map((r) => ({
+                  task_id: r.task_id,
+                  bound_source: r.bound_source,
+                  out_of_sync: r.out_of_sync,
+                })),
+              );
+              if (item.assignment) {
+                await upsertAssignmentRow(sb, item.assignment);
+              }
+            }
+          });
+        }
         if (mode === "supabase" && supabaseRef.current) {
           noteLocalWrite("tasks", row.id);
           noteLocalWrite("mention_unreads", `task:${row.id}`);
@@ -5133,12 +5237,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
             (a) => a.id === assignmentId,
           );
           if (!assignment) continue;
-          if (
-            !isBoundTasksNotes(assignment.notes) &&
-            assignment.notes?.trim()
-          ) {
-            continue;
-          }
           const remainingBinds = prevState.assignment_bound_tasks.filter(
             (r) =>
               r.assignment_id === assignmentId &&
@@ -5149,7 +5247,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ...assignment,
               notes: tasksRemovedNotesHtml(),
             });
-          } else {
+          } else if (
+            isBoundTasksNotes(assignment.notes) ||
+            !assignment.notes?.trim()
+          ) {
             const titles = remainingBinds
               .sort((a, b) => a.sort_order - b.sort_order)
               .map(
@@ -5157,12 +5258,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   prevState.tasks.find((t) => t.id === r.task_id)?.title ?? "",
               )
               .filter(Boolean);
-            const anyOos = remainingBinds.some((r) => r.out_of_sync);
+            const assignments = prevState.assignments;
+            const oos = assignmentIsOutOfSync(
+              remainingBinds,
+              prevState.tasks.filter((t) => !removedTaskIds.has(t.id)),
+              prevState.task_lists,
+              assignments,
+              assignmentId,
+            );
             assignmentNotePatches.push({
               ...assignment,
               notes: boundTasksNotesHtml(
                 titles,
-                anyOos ? "out_of_sync" : "in_sync",
+                oos ? "out_of_sync" : "in_sync",
               ),
             });
           }

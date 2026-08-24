@@ -76,6 +76,7 @@ import {
   isBoundTasksNotes,
   isGanttTask,
   syncNonGanttTaskDatesFromBindings,
+  taskIsBoundOutOfSync,
   tryShiftAssignmentByDays,
 } from "@/lib/domain/assignment-bound-tasks";
 import { toDateKey } from "@/lib/domain/dates";
@@ -147,6 +148,12 @@ const EMPTY_BIND_IDS: ReadonlySet<string> = new Set();
 const GANTT_STRUCTURAL_EDIT_MSG =
   "Changing order or deleting Gantt items should be done in Gantt view.";
 
+function boundLinkColorClass(outOfSync: boolean): string {
+  return outOfSync
+    ? "text-[var(--status-near)]"
+    : "text-[var(--status-healthy)]";
+}
+
 type Props = {
   projectId: string;
   /** When true, no create/reorder/edit - status toggle still allowed for own tasks. */
@@ -196,6 +203,10 @@ type Props = {
   showAssigneeAvatarInCompact?: boolean;
   /** Hide the task description StickyNote (Schedule Tasks tab). */
   hideDescriptionIcon?: boolean;
+  /** When false, bound Link2 icon is not a navigation link (Schedule Tasks tab). */
+  boundAssignmentLinkEnabled?: boolean;
+  /** Schedule Tasks tab: click OOS non-Gantt icon to sync task dates to assignment. */
+  onSyncBoundTaskDate?: (taskId: string) => void;
 };
 
 function todayKey() {
@@ -245,10 +256,13 @@ type BoardCtx = {
   showBoundAssignmentIcon: boolean;
   showAssigneeAvatarInCompact: boolean;
   hideDescriptionIcon: boolean;
+  boundAssignmentLinkEnabled: boolean;
   /** Bound assignment deep-link for a task (if any). */
   boundAssignmentHref: ((taskId: string) => string | null) | null;
   isTaskBound: (taskId: string) => boolean;
+  isTaskBoundOutOfSync: (taskId: string) => boolean;
   isTaskGanttControlled: (taskId: string) => boolean;
+  onSyncBoundTaskDate: ((taskId: string) => void) | null;
   /** Hide edit/drag/comments (e.g. schedule sidebar). */
   readOnly: boolean;
   /** Click status chip to cycle upcoming → active → complete. */
@@ -448,6 +462,8 @@ export function ProjectTaskBoard({
   showBoundAssignmentIcon = false,
   showAssigneeAvatarInCompact = false,
   hideDescriptionIcon = false,
+  boundAssignmentLinkEnabled = true,
+  onSyncBoundTaskDate,
 }: Props) {
   const {
     state,
@@ -2203,6 +2219,7 @@ export function ProjectTaskBoard({
       showBoundAssignmentIcon || !compact || Boolean(scheduleBindPersonId),
     showAssigneeAvatarInCompact,
     hideDescriptionIcon,
+    boundAssignmentLinkEnabled,
     boundAssignmentHref: (taskId: string) => {
       const binds = state.assignment_bound_tasks.filter(
         (r) => r.task_id === taskId,
@@ -2225,15 +2242,23 @@ export function ProjectTaskBoard({
           (a) => a.start_date <= today && a.end_date >= today,
         ) ?? assignments[0];
       return appHref(
-        `/schedule?assignment=${encodeURIComponent(preferred.id)}&tab=tasks&date=${encodeURIComponent(preferred.start_date)}`,
+        `/schedule?assignment=${encodeURIComponent(preferred.id)}&tab=tasks&date=${encodeURIComponent(preferred.start_date)}&person=${encodeURIComponent(preferred.person_id)}&project=${encodeURIComponent(preferred.project_id)}`,
       );
     },
     isTaskBound: (taskId: string) =>
       state.assignment_bound_tasks.some((r) => r.task_id === taskId),
+    isTaskBoundOutOfSync: (taskId: string) =>
+      taskIsBoundOutOfSync(
+        taskId,
+        state.assignment_bound_tasks,
+        state.tasks,
+        state.assignments,
+      ),
     isTaskGanttControlled: (taskId: string) => {
       const task = state.tasks.find((t) => t.id === taskId);
       return task ? isGanttTask(task, state.task_lists) : false;
     },
+    onSyncBoundTaskDate: onSyncBoundTaskDate ?? null,
     readOnly: readOnly || isPublicShare,
     allowStatusEdit: !isPublicShare && (!readOnly || compact),
     hubTaskHref:
@@ -3726,6 +3751,7 @@ function InlineTaskForm({
   onAttachmentError,
   canBindToAssignment = false,
   isBoundToAssignment = false,
+  isBoundOutOfSync = false,
   datesScheduleControlled = false,
   scheduleDatesHref = null,
   isProjectManager = false,
@@ -3757,6 +3783,7 @@ function InlineTaskForm({
   onAttachmentError?: (msg: string) => void;
   canBindToAssignment?: boolean;
   isBoundToAssignment?: boolean;
+  isBoundOutOfSync?: boolean;
   datesScheduleControlled?: boolean;
   scheduleDatesHref?: string | null;
   isProjectManager?: boolean;
@@ -4039,7 +4066,10 @@ function InlineTaskForm({
                   <Tooltip content="Dates are controlled by the Schedule, open the Schedule page to make changes">
                     <Link
                       href={scheduleDatesHref}
-                      className="inline-flex text-[var(--status-healthy)] hover:opacity-80"
+                      className={cn(
+                        "inline-flex hover:opacity-80",
+                        boundLinkColorClass(isBoundOutOfSync),
+                      )}
                       aria-label="Open Schedule assignment"
                     >
                       <Link2 size={16} strokeWidth={2} />
@@ -4047,7 +4077,10 @@ function InlineTaskForm({
                   </Tooltip>
                 ) : (
                   <span
-                    className="inline-flex text-[var(--status-healthy)]"
+                    className={cn(
+                      "inline-flex",
+                      boundLinkColorClass(isBoundOutOfSync),
+                    )}
                     title="Dates are controlled by the Schedule, open the Schedule page to make changes"
                   >
                     <Link2 size={16} strokeWidth={2} />
@@ -4122,7 +4155,12 @@ function InlineTaskForm({
               Cancel
             </button>
             {isBoundToAssignment ? (
-              <span className="text-sm text-[var(--status-healthy)]">
+              <span
+                className={cn(
+                  "text-sm",
+                  boundLinkColorClass(isBoundOutOfSync),
+                )}
+              >
                 Task Bound to Schedule Assignment
               </span>
             ) : canBindToAssignment &&
@@ -4632,6 +4670,7 @@ function TaskRow({
           storageMode={ctx.mode}
           onAttachmentError={ctx.onAttachmentError}
           isBoundToAssignment={ctx.isTaskBound(task.id)}
+          isBoundOutOfSync={ctx.isTaskBoundOutOfSync(task.id)}
           datesScheduleControlled={
             ctx.isTaskBound(task.id) && !ctx.isTaskGanttControlled(task.id)
           }
@@ -4894,43 +4933,6 @@ function TaskRow({
               expanded={isExpanded}
             />
           ) : null}
-          {task.due_date && !ctx.isPhone ? (
-            <span
-              className={cn(
-                "shrink-0 text-xs",
-                dueDateToneClass(task.due_date, todayKey(), {
-                  complete: task.status === "complete",
-                }),
-              )}
-            >
-              {format(
-                parseISO(task.due_date),
-                ctx.omitYearFromTaskDates ? "MMM d" : "MMM d, yyyy",
-              )}
-            </span>
-          ) : null}
-          {ctx.showBoundAssignmentIcon && ctx.isTaskBound(task.id) ? (
-            <Tooltip content="Task Bound to Schedule Assignment">
-              {ctx.boundAssignmentHref?.(task.id) ? (
-                <Link
-                  href={ctx.boundAssignmentHref(task.id)!}
-                  className="inline-flex shrink-0 text-[var(--status-healthy)] hover:opacity-80"
-                  aria-label="Task Bound to Schedule Assignment"
-                  onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Link2 size={16} strokeWidth={2} />
-                </Link>
-              ) : (
-                <span
-                  className="inline-flex shrink-0 text-[var(--status-healthy)]"
-                  aria-label="Task Bound to Schedule Assignment"
-                >
-                  <Link2 size={16} strokeWidth={2} />
-                </span>
-              )}
-            </Tooltip>
-          ) : null}
           {hasNotes && !ctx.hideDescriptionIcon ? (
             <Tooltip
               align={ctx.compact && ctx.readOnly ? "end" : "center"}
@@ -4946,6 +4948,85 @@ function TaskRow({
                 aria-label="Task description"
               />
             </Tooltip>
+          ) : null}
+          {ctx.showBoundAssignmentIcon && ctx.isTaskBound(task.id) ? (
+            (() => {
+              const boundOos = ctx.isTaskBoundOutOfSync(task.id);
+              const href =
+                ctx.boundAssignmentLinkEnabled &&
+                ctx.boundAssignmentHref?.(task.id)
+                  ? ctx.boundAssignmentHref(task.id)
+                  : null;
+              const canSync =
+                boundOos &&
+                ctx.onSyncBoundTaskDate &&
+                !ctx.isTaskGanttControlled(task.id);
+              const tooltip = canSync
+                ? "Sync Project Task Date to Schedule Assignment Date"
+                : boundOos && ctx.isTaskGanttControlled(task.id)
+                  ? "Task dates are controlled by Gantt; update dates in Gantt view"
+                  : "Task Bound to Schedule Assignment";
+              const iconClass = cn(
+                "inline-flex shrink-0",
+                boundLinkColorClass(boundOos),
+                (href || canSync) && "hover:opacity-80",
+              );
+              const icon = <Link2 size={16} strokeWidth={2} />;
+              return (
+                <Tooltip
+                  align={ctx.compact && ctx.readOnly ? "end" : "center"}
+                  content={tooltip}
+                >
+                  {canSync ? (
+                    <button
+                      type="button"
+                      className={cn(iconClass, "cursor-pointer")}
+                      aria-label={tooltip}
+                      onPointerDown={(e) =>
+                        multiSelectDrag && e.stopPropagation()
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        ctx.onSyncBoundTaskDate?.(task.id);
+                      }}
+                    >
+                      {icon}
+                    </button>
+                  ) : href ? (
+                    <Link
+                      href={href}
+                      className={iconClass}
+                      aria-label="Task Bound to Schedule Assignment"
+                      onPointerDown={(e) =>
+                        multiSelectDrag && e.stopPropagation()
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {icon}
+                    </Link>
+                  ) : (
+                    <span className={iconClass} aria-label={tooltip}>
+                      {icon}
+                    </span>
+                  )}
+                </Tooltip>
+              );
+            })()
+          ) : null}
+          {task.due_date && !ctx.isPhone ? (
+            <span
+              className={cn(
+                "shrink-0 text-xs",
+                dueDateToneClass(task.due_date, todayKey(), {
+                  complete: task.status === "complete",
+                }),
+              )}
+            >
+              {format(
+                parseISO(task.due_date),
+                ctx.omitYearFromTaskDates ? "MMM d" : "MMM d, yyyy",
+              )}
+            </span>
           ) : null}
           {ctx.canManage && !ctx.readOnly && listManage ? (
             <button

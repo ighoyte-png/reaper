@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   assignmentIsOutOfSync,
   assignmentLockedOnSchedule,
+  assignmentScheduleMoveLocked,
   boundTasksNotesHtml,
   calendarDayDelta,
   isBoundTasksNotes,
   nextAvailableScheduleRange,
   spanDatesForBoundTask,
   syncNonGanttTaskDatesFromBindings,
+  taskBoundDatesMatchSpan,
+  taskIsBoundOutOfSync,
   tryShiftAssignmentByDays,
 } from "@/lib/domain/assignment-bound-tasks";
 import type {
@@ -194,6 +197,71 @@ describe("assignment-bound-tasks", () => {
         "a1",
       ),
     ).toBe(true);
+  });
+
+  it("detects Gantt date mismatch as out of sync", () => {
+    const lists = [{ id: "l1", gantt_enabled: true }];
+    const tasks = [
+      task({
+        id: "t1",
+        list_id: "l1",
+        start_date: "2026-03-01",
+        due_date: "2026-03-10",
+      }),
+    ];
+    const assignments = [
+      asg({ id: "a1", start_date: "2026-03-02", end_date: "2026-03-04" }),
+    ];
+    const binds = [bind({ assignment_id: "a1", task_id: "t1" })];
+    expect(
+      assignmentIsOutOfSync(binds, tasks, lists, assignments, "a1"),
+    ).toBe(true);
+    expect(
+      taskIsBoundOutOfSync("t1", binds, tasks, assignments),
+    ).toBe(true);
+    expect(
+      taskBoundDatesMatchSpan("t1", binds, tasks, assignments),
+    ).toBe(false);
+  });
+
+  it("locks schedule move for synced Gantt binds only", () => {
+    const lists = [{ id: "l1", gantt_enabled: true }];
+    const inSyncTask = task({
+      id: "t1",
+      list_id: "l1",
+      start_date: "2026-03-02",
+      due_date: "2026-03-04",
+    });
+    const oosTask = task({
+      id: "t2",
+      list_id: "l1",
+      start_date: "2026-03-01",
+      due_date: "2026-03-10",
+    });
+    const assignments = [
+      asg({ id: "a1", start_date: "2026-03-02", end_date: "2026-03-04" }),
+      asg({ id: "a2", start_date: "2026-03-02", end_date: "2026-03-04" }),
+    ];
+    const syncedBinds = [bind({ assignment_id: "a1", task_id: "t1" })];
+    const oosBinds = [bind({ assignment_id: "a2", task_id: "t2" })];
+    expect(
+      assignmentScheduleMoveLocked(
+        syncedBinds,
+        [inSyncTask],
+        lists,
+        assignments,
+        "a1",
+      ),
+    ).toBe(true);
+    expect(
+      assignmentScheduleMoveLocked(
+        oosBinds,
+        [oosTask],
+        lists,
+        assignments,
+        "a2",
+      ),
+    ).toBe(false);
   });
 
   it("finds next available range after leave", () => {
