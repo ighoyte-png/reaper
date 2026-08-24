@@ -30,7 +30,7 @@ import { PersonAvatar } from "@/components/people/person-avatar";
 import { buttonClass } from "@/components/ui/button";
 import { DateInput, Field, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
-import { useIsPhone } from "@/lib/hooks/use-media-query";
+import { PHONE_MEDIA_QUERY, useIsPhone } from "@/lib/hooks/use-media-query";
 import { RichNotesHtml } from "@/components/ui/simple-rich-text";
 import { ScheduleRowHitLayer } from "@/components/schedule/schedule-row-hit-layer";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
@@ -1025,8 +1025,11 @@ export function ProjectGanttBoard({
   const [containerNarrow, setContainerNarrow] = useState(false);
   const [halfZoom, setHalfZoom] = useState(false);
   const [viewportExpanded, setViewportExpanded] = useState(false);
-  /** Task-list name column — collapsed by default so the timeline is easier to see. */
-  const [labelsCollapsed, setLabelsCollapsed] = useState(true);
+  /** Task-list name column — open on desktop; collapsed on phone (same query as useIsPhone). */
+  const [labelsCollapsed, setLabelsCollapsed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return window.matchMedia(PHONE_MEDIA_QUERY).matches;
+  });
   const labelPx = labelsCollapsed ? GANTT_LABEL_COLLAPSED_PX : GANTT_LABEL_PX;
   // Phone: open in fullscreen pan mode by default (and when entering Gantt).
   useEffect(() => {
@@ -2185,20 +2188,6 @@ export function ProjectGanttBoard({
             </div>
             <p className="text-sm font-medium">{rangeLabel}</p>
             <div className="ml-auto flex items-center gap-1">
-              <NavBtn
-                onClick={() => setLabelsCollapsed((v) => !v)}
-                label={
-                  labelsCollapsed
-                    ? "Show task list names"
-                    : "Hide task list names"
-                }
-              >
-                {labelsCollapsed ? (
-                  <PanelLeftOpen size={16} />
-                ) : (
-                  <PanelLeftClose size={16} />
-                )}
-              </NavBtn>
               {!readOnly ? (
                 <button
                   type="button"
@@ -2241,10 +2230,13 @@ export function ProjectGanttBoard({
             className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             onScroll={syncBodyFromHeader}
           >
-            <div style={{ minWidth: labelPx + totalWidth }}>
+            <div
+              className="transition-[min-width] duration-200 ease-out"
+              style={{ minWidth: labelPx + totalWidth }}
+            >
               <div className="flex border-b border-[var(--border)]">
                 <div
-                  className="sticky left-0 z-40 flex shrink-0 items-center justify-center border-r border-[var(--border)] bg-[var(--bg)]"
+                  className="sticky left-0 z-40 flex shrink-0 items-center justify-center border-r border-[var(--border)] bg-[var(--bg)] transition-[width] duration-200 ease-out"
                   style={{ width: labelPx, height: 24 }}
                 />
                 <div className="flex min-w-0">
@@ -2271,9 +2263,29 @@ export function ProjectGanttBoard({
               </div>
               <div className="flex">
                 <div
-                  className="sticky left-0 z-40 flex shrink-0 items-center justify-center border-r border-[var(--border)] bg-[var(--bg)]"
+                  className={cn(
+                    "sticky left-0 z-40 flex shrink-0 items-center border-r border-[var(--border)] bg-[var(--bg)] transition-[width] duration-200 ease-out",
+                    labelsCollapsed ? "justify-center px-0" : "justify-start pl-2",
+                  )}
                   style={{ width: labelPx, height: 28 }}
-                />
+                >
+                  <button
+                    type="button"
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                    onClick={() => setLabelsCollapsed((v) => !v)}
+                    aria-label={
+                      labelsCollapsed
+                        ? "Show task list names"
+                        : "Hide task list names"
+                    }
+                  >
+                    {labelsCollapsed ? (
+                      <PanelLeftOpen size={14} />
+                    ) : (
+                      <PanelLeftClose size={14} />
+                    )}
+                  </button>
+                </div>
                 <div className="flex min-w-0">
                   {columns.map((col) => {
                     const holidayName = holidayByDate.get(col.startKey);
@@ -2331,7 +2343,10 @@ export function ProjectGanttBoard({
           )}
           onScroll={syncHeaderFromBody}
         >
-          <div style={{ minWidth: labelPx + totalWidth }}>
+          <div
+            className="transition-[min-width] duration-200 ease-out"
+            style={{ minWidth: labelPx + totalWidth }}
+          >
             {/* Body rows */}
             <div className="relative" style={{ height: totalBodyHeight }}>
               {holidayByDate.size > 0 ? (
@@ -2420,7 +2435,7 @@ export function ProjectGanttBoard({
                     >
                       <div
                         className={cn(
-                          "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] bg-[var(--bg)]",
+                          "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] bg-[var(--bg)] transition-[width] duration-200 ease-out",
                           labelsCollapsed ? "justify-center px-0" : "px-2",
                         )}
                         style={{
@@ -2540,7 +2555,7 @@ export function ProjectGanttBoard({
                     >
                       <div
                         className={cn(
-                          "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)]",
+                          "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] transition-[width] duration-200 ease-out",
                           labelsCollapsed ? "justify-center gap-0 px-0" : "gap-1 px-2",
                         )}
                         style={{
@@ -2721,7 +2736,7 @@ export function ProjectGanttBoard({
                       >
                         <div
                           className={cn(
-                            "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)]",
+                            "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] transition-[width] duration-200 ease-out",
                             labelsCollapsed
                               ? "justify-center gap-0 px-0"
                               : "gap-1 pl-8 pr-2",
@@ -2913,7 +2928,7 @@ export function ProjectGanttBoard({
                       >
                         <div
                           className={cn(
-                            "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)]",
+                            "sticky left-0 z-20 flex shrink-0 items-center border-r border-b border-[var(--border)] transition-[width] duration-200 ease-out",
                             labelsCollapsed
                               ? "justify-center gap-0 px-0"
                               : "gap-1 pl-8 pr-2",
