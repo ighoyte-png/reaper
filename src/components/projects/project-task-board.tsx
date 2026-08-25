@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -300,6 +300,11 @@ type BoardCtx = {
   clearFocusIfOtherTask: (taskId: string) => void;
   /** Phone: list reorder stays off; task drag uses long-press TouchSensor. */
   allowDrag: boolean;
+  /** Phone: which list has reorder armed (null = none). */
+  mobileReorderListId: string | null;
+  toggleMobileListReorder: (listId: string) => void;
+  /** Whether list + task drag is enabled for this list. */
+  listDragEnabled: (listId: string) => boolean;
   isPhone: boolean;
   selected: Set<string>;
   toggleSelect: (id: string, shiftKey?: boolean) => void;
@@ -357,6 +362,22 @@ type ListDragData = { type: "list" };
 type ListDropData = { type: "list-drop"; listId: string };
 
 const INDENT_DRAG_PX = 36;
+
+/** Press feedback on phone drag grips (long-press before dnd-kit activates). */
+function usePhoneDragGripPress(enabled: boolean) {
+  const [pressing, setPressing] = useState(false);
+  const pressProps = enabled
+    ? {
+        onPointerDown: (e: PointerEvent) => {
+          if (e.pointerType === "touch") setPressing(true);
+        },
+        onPointerUp: () => setPressing(false),
+        onPointerCancel: () => setPressing(false),
+        onPointerLeave: () => setPressing(false),
+      }
+    : {};
+  return { pressing, pressProps };
+}
 
 function sortByOrder(tasks: Task[]): Task[] {
   return [...tasks].sort(
@@ -585,6 +606,9 @@ export function ProjectTaskBoard({
   const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
+  const [mobileReorderListId, setMobileReorderListId] = useState<string | null>(
+    null,
+  );
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const didRestoreCreateDraft = useRef(false);
   const [exitingTaskIds, setExitingTaskIds] = useState<Set<string>>(new Set());
@@ -621,6 +645,33 @@ export function ProjectTaskBoard({
   const bindIds = bindSelectedIds ?? EMPTY_BIND_IDS;
 
   useEffect(() => {
+    if (!isPhone) setMobileReorderListId(null);
+  }, [isPhone]);
+
+  useEffect(() => {
+    if (bindSelectMode) setMobileReorderListId(null);
+  }, [bindSelectMode]);
+
+  const listDragEnabled = useCallback(
+    (listId: string) => {
+      if (!manageLists || bindSelectMode) return false;
+      if (!isPhone) return true;
+      return mobileReorderListId === listId;
+    },
+    [manageLists, bindSelectMode, isPhone, mobileReorderListId],
+  );
+
+  const toggleMobileListReorder = useCallback(
+    (listId: string) => {
+      if (!isPhone || !manageLists || bindSelectMode) return;
+      setMultiDragIds(null);
+      setListDragActiveId(null);
+      setMobileReorderListId((prev) => (prev === listId ? null : listId));
+    },
+    [isPhone, manageLists, bindSelectMode],
+  );
+
+  useEffect(() => {
     if (!projectDataReady || !projectId || !manageLists) return;
     if (orphanCrCleanedForProject.current === projectId) return;
     orphanCrCleanedForProject.current = projectId;
@@ -642,7 +693,7 @@ export function ProjectTaskBoard({
     activationConstraint: { distance: 4 },
   });
   const touchSensor = useSensor(TouchSensor, {
-    activationConstraint: { delay: 250, tolerance: 5 },
+    activationConstraint: { delay: 400, tolerance: 8 },
   });
   const keyboardSensor = useSensor(KeyboardSensor, {
     coordinateGetter: sortableKeyboardCoordinates,
@@ -2286,6 +2337,9 @@ export function ProjectTaskBoard({
     clearFocusTask,
     clearFocusIfOtherTask,
     allowDrag: manageLists && !bindSelectMode,
+    mobileReorderListId,
+    toggleMobileListReorder,
+    listDragEnabled,
     isPhone,
     selected: bindSelectMode ? new Set(bindIds) : selected,
     toggleSelect,
@@ -2763,7 +2817,7 @@ export function ProjectTaskBoard({
           <SortableContext
             items={activeLists.map((l) => l.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!manageLists || isPhone || bindSelectMode}
+            disabled={!manageLists || bindSelectMode}
           >
             {activeLists.map((list) => {
               const listTasks = tasksForList(visibleTasks, list.id);
@@ -3296,12 +3350,15 @@ function ListSection({
 }) {
   const listLocked = ctx.isListGanttLocked(list.id);
   const listManage = ctx.manageLists && !listLocked;
+  const listReorderOn = ctx.listDragEnabled(list.id);
   const [confirmEnableGantt, setConfirmEnableGantt] = useState(false);
+  const { pressing: listGripPressing, pressProps: listGripPressProps } =
+    usePhoneDragGripPress(ctx.isPhone && listReorderOn);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: list.id,
       data: { type: "list" } satisfies ListDragData,
-      disabled: !listManage || !ctx.allowDrag,
+      disabled: !listManage || !listReorderOn,
     });
 
   const selectableIds = parents.flatMap((p) =>
@@ -3338,17 +3395,50 @@ function ListSection({
         )}
         style={list.color ? { backgroundColor: list.color } : undefined}
       >
-        {ctx.allowDrag ? (
-          <button
-            type="button"
-            className="cursor-grab touch-none text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="Drag list to reorder"
-            disabled={!listManage}
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical size={14} />
-          </button>
+        {listManage && ctx.allowDrag ? (
+          ctx.isPhone ? (
+            listReorderOn ? (
+              <button
+                type="button"
+                className={cn(
+                  "cursor-grab touch-none select-none rounded p-0.5 text-[var(--accent)]",
+                  listGripPressing &&
+                    "scale-95 ring-1 ring-[var(--accent)]/40",
+                )}
+                aria-label={`Reorder mode on for ${list.name}. Tap to turn off; press and hold to drag.`}
+                title="Tap to turn off reorder; press and hold to drag list"
+                {...listGripPressProps}
+                {...attributes}
+                {...listeners}
+                aria-pressed={true}
+                onClick={() => ctx.toggleMobileListReorder(list.id)}
+              >
+                <GripVertical size={14} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                aria-label={`Enable reorder for ${list.name}`}
+                aria-pressed={false}
+                title="Enable reorder"
+                onClick={() => ctx.toggleMobileListReorder(list.id)}
+              >
+                <GripVertical size={14} />
+              </button>
+            )
+          ) : (
+            <button
+              type="button"
+              className="cursor-grab touch-none text-[var(--text-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Drag list to reorder"
+              disabled={!listManage}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical size={14} />
+            </button>
+          )
         ) : ctx.manageLists ? (
           <span className="w-3.5 shrink-0" aria-hidden />
         ) : null}
@@ -3589,7 +3679,7 @@ function ListSection({
             <SortableContext
               items={parents.map((t) => t.id)}
               strategy={verticalListSortingStrategy}
-              disabled={!listManage || !ctx.allowDrag}
+              disabled={!listManage || !ctx.listDragEnabled(list.id)}
             >
               {parents.map((t) =>
                 t.is_divider ? (
@@ -4299,6 +4389,9 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftColor, setDraftColor] = useState(task.notes);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listReorderOn = ctx.listDragEnabled(task.list_id);
+  const { pressing: dividerGripPressing, pressProps: dividerGripPressProps } =
+    usePhoneDragGripPress(ctx.isPhone && listReorderOn);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
@@ -4308,7 +4401,8 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
         listId: task.list_id,
         parentId: null,
       } satisfies TaskDragData,
-      disabled: !ctx.manageLists || !ctx.allowDrag || editing || isExiting,
+      disabled:
+        !ctx.manageLists || !listReorderOn || editing || isExiting,
     });
 
   useEffect(() => {
@@ -4383,21 +4477,29 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
           ctx.onTaskExitComplete(task.id);
         }}
       >
-        {ctx.allowDrag ? (
+        {listReorderOn ? (
           <button
             type="button"
             className={cn(
-              "cursor-grab touch-none p-0.5 text-[var(--text-muted)]",
-              ctx.isPhone ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              "cursor-grab touch-none select-none p-0.5 text-[var(--text-muted)]",
+              ctx.isPhone
+                ? "opacity-100"
+                : "opacity-0 group-hover:opacity-100",
+              ctx.isPhone &&
+                dividerGripPressing &&
+                "scale-95 ring-1 ring-[var(--accent)]/40",
             )}
             aria-label="Drag to reorder divider"
-            title="Drag to reorder"
+            title="Press and hold to drag"
+            {...dividerGripPressProps}
             {...attributes}
             {...listeners}
             onClick={(e) => e.stopPropagation()}
           >
             <GripVertical size={14} />
           </button>
+        ) : ctx.manageLists ? (
+          <span className="w-[18px] shrink-0" aria-hidden />
         ) : null}
         {editing ? (
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
@@ -4557,6 +4659,9 @@ function TaskRow({
   const isExiting = ctx.exitingTaskIds.has(task.id);
   const listLocked = ctx.isListGanttLocked(task.list_id);
   const listManage = ctx.manageLists && !listLocked;
+  const listReorderOn = ctx.listDragEnabled(task.list_id);
+  const { pressing: taskGripPressing, pressProps: taskGripPressProps } =
+    usePhoneDragGripPress(ctx.isPhone && listReorderOn);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: task.id,
@@ -4567,7 +4672,7 @@ function TaskRow({
       } satisfies TaskDragData,
       disabled:
         !listManage ||
-        !ctx.allowDrag ||
+        !listReorderOn ||
         ctx.editingTaskId === task.id ||
         isExiting ||
         task.is_client_review,
@@ -4596,7 +4701,7 @@ function TaskRow({
   const isExpanded = ctx.expanded.has(task.id);
   const isSelected = ctx.selected.has(task.id);
   const multiSelectDrag =
-    listManage && ctx.selected.size > 1 && isSelected;
+    listManage && listReorderOn && ctx.selected.size > 1 && isSelected;
   const canEditStatus = ctx.allowStatusEdit;
   const hasDeepLink = ctx.focusTaskId === task.id;
   const isFocused = hasDeepLink && !ctx.focusCommentId;
@@ -4739,7 +4844,7 @@ function TaskRow({
           <SortableContext
             items={kids.map((k) => k.id)}
             strategy={verticalListSortingStrategy}
-            disabled={!listManage || !ctx.allowDrag}
+            disabled={!listManage || !listReorderOn}
           >
             {kids.map((k) => (
               <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />
@@ -4817,7 +4922,7 @@ function TaskRow({
         title={
           multiSelectDrag ? "Drag to move all selected tasks" : undefined
         }
-        {...(multiSelectDrag && ctx.allowDrag ? { ...attributes, ...listeners } : {})}
+        {...(multiSelectDrag && listReorderOn ? { ...attributes, ...listeners } : {})}
         onClick={
           ctx.readOnly || multiSelectDrag
             ? undefined
@@ -4828,24 +4933,30 @@ function TaskRow({
       >
         {(() => {
           const dragHandle =
-            listManage && ctx.allowDrag && !task.is_client_review ? (
+            listManage && listReorderOn && !task.is_client_review ? (
               <button
                 type="button"
                 className={cn(
-                  "touch-none p-0.5 text-[var(--text-muted)]",
+                  "touch-none select-none p-0.5 text-[var(--text-muted)]",
                   multiSelectDrag
                     ? "cursor-grab opacity-100"
                     : ctx.isPhone
                       ? "cursor-grab opacity-100"
                       : "cursor-grab opacity-0 group-hover:opacity-100",
+                  ctx.isPhone &&
+                    taskGripPressing &&
+                    "scale-95 ring-1 ring-[var(--accent)]/40",
                   depth > 0 && "-translate-x-2",
                 )}
                 aria-label="Drag to reorder, nest, or move to another list"
                 title={
                   multiSelectDrag
                     ? "Drag to move all selected tasks"
-                    : "Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
+                    : ctx.isPhone
+                      ? "Press and hold to drag"
+                      : "Drag vertically to reorder or move lists. Drag right to nest, left to un-nest."
                 }
+                {...taskGripPressProps}
                 {...(multiSelectDrag ? {} : { ...attributes, ...listeners })}
                 onClick={(e) => e.stopPropagation()}
               >
@@ -5091,10 +5202,8 @@ function TaskRow({
               <button
                 type="button"
                 className={cn(
-                  "inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-                  ctx.isPhone
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100",
+                  "inline-flex shrink-0 cursor-pointer rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                  ctx.isPhone ? "p-1 opacity-100" : "p-0.5 opacity-0 group-hover:opacity-100",
                 )}
                 onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
                 onClick={(e) => {
@@ -5113,10 +5222,8 @@ function TaskRow({
               <button
                 type="button"
                 className={cn(
-                  "inline-flex cursor-pointer rounded p-0.5 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-                  ctx.isPhone
-                    ? "opacity-100"
-                    : "opacity-0 group-hover:opacity-100",
+                  "inline-flex cursor-pointer rounded text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                  ctx.isPhone ? "p-1 opacity-100" : "p-0.5 opacity-0 group-hover:opacity-100",
                 )}
                 onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
                 onClick={(e) => {
@@ -5134,7 +5241,10 @@ function TaskRow({
             !ctx.compact && isFocused ? (
               <button
                 type="button"
-                className="inline-flex shrink-0 cursor-pointer rounded p-0.5 text-[var(--accent)] hover:bg-[var(--accent)]/15 hover:text-[var(--accent)]"
+                className={cn(
+                  "inline-flex shrink-0 cursor-pointer rounded text-[var(--accent)] hover:bg-[var(--accent)]/15 hover:text-[var(--accent)]",
+                  ctx.isPhone ? "p-1" : "p-0.5",
+                )}
                 onPointerDown={(e) => multiSelectDrag && e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -5197,23 +5307,23 @@ function TaskRow({
           if (ctx.isPhone) {
             return (
               <>
-                <div className="flex min-w-0 items-center gap-1.5">
+                <div className="flex min-w-0 items-center gap-3">
                   {dragHandle}
                   {statusControl}
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     {titleEl}
                     {avatarEl}
                   </div>
                   {chipEl}
                   {checkboxEl}
                 </div>
-                <div className="flex min-w-0 items-center gap-1.5">
+                <div className="flex min-w-0 items-center gap-3">
                   {listManage ? (
                     <span className="w-[18px] shrink-0" aria-hidden />
                   ) : null}
                   <span className="w-2.5 shrink-0" aria-hidden />
                   {dueDateEl}
-                  <div className="ml-auto flex shrink-0 items-center gap-0.5">
+                  <div className="ml-auto flex shrink-0 items-center gap-1">
                     {commentEl}
                     {descriptionEl}
                     {boundEl}
@@ -5290,7 +5400,7 @@ function TaskRow({
         <SortableContext
           items={kids.map((k) => k.id)}
           strategy={verticalListSortingStrategy}
-          disabled={!ctx.manageLists || !ctx.allowDrag}
+          disabled={!ctx.manageLists || !ctx.listDragEnabled(task.list_id)}
         >
           {kids.map((k) => (
             <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />
