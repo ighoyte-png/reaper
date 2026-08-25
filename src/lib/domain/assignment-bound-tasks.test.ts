@@ -5,6 +5,7 @@ import {
   assignmentScheduleMoveLocked,
   boundTasksNotesHtml,
   calendarDayDelta,
+  desiredRangeCollidesOnProjectRow,
   isBoundTasksNotes,
   nextAvailableScheduleRange,
   preferredBoundAssignmentForTask,
@@ -448,5 +449,56 @@ describe("assignment-bound-tasks", () => {
   it("computes calendar day delta", () => {
     expect(calendarDayDelta("2026-03-02", "2026-03-07")).toBe(5);
     expect(calendarDayDelta("2026-03-07", "2026-03-02")).toBe(-5);
+  });
+});
+
+describe("desiredRangeCollidesOnProjectRow", () => {
+  it("returns false when the range is free", () => {
+    expect(
+      desiredRangeCollidesOnProjectRow({
+        personId: "p1",
+        projectId: "proj",
+        start: "2026-03-02",
+        end: "2026-03-03",
+        assignments: [],
+        leaveDays: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true when the origin day is occupied", () => {
+    const blocker = asg({
+      id: "a1",
+      start_date: "2026-03-02",
+      end_date: "2026-03-04",
+    });
+    expect(
+      desiredRangeCollidesOnProjectRow({
+        personId: "p1",
+        projectId: "proj",
+        start: "2026-03-02",
+        end: "2026-03-02",
+        assignments: [blocker],
+        leaveDays: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("returns true when only part of a multi-day range is free", () => {
+    const blocker = asg({
+      id: "a1",
+      start_date: "2026-03-03",
+      end_date: "2026-03-03",
+    });
+    expect(
+      desiredRangeCollidesOnProjectRow({
+        personId: "p1",
+        projectId: "proj",
+        start: "2026-03-02",
+        end: "2026-03-04",
+        assignments: [blocker],
+        leaveDays: [],
+      }),
+    ).toBe(true);
   });
 });

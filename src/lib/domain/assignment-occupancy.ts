@@ -238,6 +238,56 @@ function assignmentSpanDays(a: Assignment): number {
 }
 
 /**
+ * Punch holes in same person+project row assignments for each working day in
+ * the insert range (same model as leave on weekly PM blocks).
+ */
+export function punchProjectRowForInsertRange(
+  assignments: Assignment[],
+  personId: string,
+  projectId: string,
+  rangeStart: string,
+  rangeEnd: string,
+  newId: (prefix: string) => string,
+): { upserts: Assignment[]; deletes: string[] } {
+  const days = workingDaysBetween(rangeStart, rangeEnd);
+  let current = [...assignments];
+  const allUpserts = new Map<string, Assignment>();
+  const allDeletes = new Set<string>();
+
+  for (const day of days) {
+    const rowAssignments = current.filter(
+      (a) =>
+        a.person_id === personId &&
+        a.project_id === projectId &&
+        !allDeletes.has(a.id),
+    );
+    for (const assignment of rowAssignments) {
+      const occs = expandAssignmentInRange(assignment, day, day);
+      if (!occs.some((o) => occurrenceCoversDay(o, day))) continue;
+      const result = punchAssignmentOnDate(assignment, day, newId);
+      for (const id of result.deletes) {
+        allDeletes.add(id);
+        allUpserts.delete(id);
+        current = current.filter((a) => a.id !== id);
+      }
+      for (const row of result.upserts) {
+        allDeletes.delete(row.id);
+        allUpserts.set(row.id, row);
+        const idx = current.findIndex((a) => a.id === row.id);
+        if (idx >= 0) current[idx] = row;
+        else current.push(row);
+      }
+    }
+  }
+
+  const deleteSet = new Set(allDeletes);
+  return {
+    upserts: [...allUpserts.values()].filter((a) => !deleteSet.has(a.id)),
+    deletes: [...deleteSet],
+  };
+}
+
+/**
  * Remove same-person + same-project day overlaps in `range`. Keeps the
  * longer contiguous span (then stable id); punches/deletes underlappers.
  */

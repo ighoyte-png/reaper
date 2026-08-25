@@ -77,6 +77,7 @@ import {
   isBoundTasksNotes,
   isGanttTask,
   preferredBoundAssignmentForTask,
+  spanDatesForBoundTask,
   syncNonGanttTaskDatesFromBindings,
   taskIsBoundOutOfSync,
   tryShiftAssignmentByDays,
@@ -2308,8 +2309,18 @@ export function ProjectTaskBoard({
         task ?? { id: taskId, start_date: null, due_date: null },
       );
       if (!preferred) return null;
+      const span = spanDatesForBoundTask(
+        state.assignment_bound_tasks,
+        state.assignments,
+        taskId,
+      );
+      const linkDate =
+        task?.start_date ||
+        task?.due_date ||
+        span?.start ||
+        preferred.start_date;
       return appHref(
-        `/schedule?assignment=${encodeURIComponent(preferred.id)}&tab=tasks&date=${encodeURIComponent(preferred.start_date)}&person=${encodeURIComponent(preferred.person_id)}&project=${encodeURIComponent(preferred.project_id)}`,
+        `/schedule?assignment=${encodeURIComponent(preferred.id)}&tab=tasks&date=${encodeURIComponent(linkDate)}&person=${encodeURIComponent(preferred.person_id)}&project=${encodeURIComponent(preferred.project_id)}`,
       );
     },
     isTaskBound: (taskId: string) =>

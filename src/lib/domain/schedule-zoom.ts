@@ -218,6 +218,16 @@ export function columnOffsetPx(
   return left;
 }
 
+/** Index of the column whose date range contains `dateKey`, or -1. */
+export function columnIndexForDateKey(
+  columns: ScheduleColumn[],
+  dateKey: string,
+): number {
+  return columns.findIndex(
+    (col) => dateKey >= col.startKey && dateKey <= col.endKey,
+  );
+}
+
 /** Resolve which column contains a pixel offset within the row canvas. */
 export function columnAtOffsetPx(
   columns: ScheduleColumn[],

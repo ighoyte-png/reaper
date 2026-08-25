@@ -322,6 +322,39 @@ export function syncNonGanttTaskDatesFromBindings(
 }
 
 /**
+ * True when the desired span cannot be placed at its origin on this person+project
+ * row (occupied origin or clipped shorter than requested).
+ */
+export function desiredRangeCollidesOnProjectRow(args: {
+  personId: string;
+  projectId: string;
+  start: string;
+  end: string;
+  assignments: Assignment[];
+  leaveDays: LeaveDay[];
+  excludeAssignmentId?: string | null;
+}): boolean {
+  const lo = args.start <= args.end ? args.start : args.end;
+  const hi = args.start <= args.end ? args.end : args.start;
+  const desiredDays = workingDaysBetween(lo, hi);
+  if (desiredDays.length === 0) return false;
+
+  const clipped = clipRangeToFreeDays(
+    args.personId,
+    args.projectId,
+    desiredDays[0]!,
+    lo,
+    hi,
+    args.assignments,
+    args.excludeAssignmentId,
+    args.leaveDays,
+  );
+  if (!clipped) return true;
+  const clippedDays = workingDaysBetween(clipped.start, clipped.end);
+  return clippedDays.length < desiredDays.length;
+}
+
+/**
  * Find the next available contiguous working-day range for a Schedule
  * assignment. Does not mutate Gantt/task dates — Schedule only.
  */

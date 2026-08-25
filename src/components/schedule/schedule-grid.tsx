@@ -20,6 +20,7 @@ import {
   isGanttTask,
   isTasksRemovedNote,
   nextAvailableScheduleRange,
+  desiredRangeCollidesOnProjectRow,
   syncNonGanttTaskDatesFromBindings,
   taskBoundDatesMatchSpan,
 } from "@/lib/domain/assignment-bound-tasks";
@@ -84,7 +85,7 @@ import {
   readUserViewPrefs,
   scheduleAnchorForOffset,
 } from "@/lib/user-view-prefs";
-import { expandAssignmentsInRange, occurrenceCoversDay, assignmentOverlapsDateRange, weeklySeriesEndDate, type AssignmentOccurrence } from "@/lib/domain/recurrence";
+import { expandAssignmentInRange, expandAssignmentsInRange, occurrenceCoversDay, assignmentOverlapsDateRange, weeklySeriesEndDate, type AssignmentOccurrence } from "@/lib/domain/recurrence";
 import {
   endWeeklySeriesBeforeOccurrence,
   splitWeeklySeriesForFuture,
@@ -103,9 +104,11 @@ import {
   cleanupOverlappingAssignments,
   clipRangeToFreeDays,
   occupiedDaysForRow,
+  punchProjectRowForInsertRange,
 } from "@/lib/domain/assignment-occupancy";
 import {
   buildScheduleColumns,
+  columnIndexForDateKey,
   columnOffsetPx,
   columnsOverlapRange,
   overlapWorkingDays,
@@ -341,13 +344,20 @@ export function ScheduleGrid() {
   useLayoutEffect(() => {
     if (scheduleOffsetAppliedRef.current) return;
     if (!profile?.id) return;
-    setAnchor(
-      scheduleAnchorForOffset(
-        readUserViewPrefs(profile.id).scheduleViewOffset,
-      ),
-    );
+    const hasDeepLink =
+      Boolean(filters.assignment?.trim()) ||
+      Boolean(filters.bindTask?.trim()) ||
+      (filters.date?.trim() &&
+        /^\d{4}-\d{2}-\d{2}$/.test(filters.date.trim()));
+    if (!hasDeepLink) {
+      setAnchor(
+        scheduleAnchorForOffset(
+          readUserViewPrefs(profile.id).scheduleViewOffset,
+        ),
+      );
+    }
     scheduleOffsetAppliedRef.current = true;
-  }, [profile?.id]);
+  }, [profile?.id, filters.assignment, filters.bindTask, filters.date]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLeaveBlockId, setSelectedLeaveBlockId] = useState<
@@ -391,6 +401,13 @@ export function ScheduleGrid() {
     cutDate: string;
     occurrenceStart?: string;
     occurrenceEnd?: string;
+  }>(null);
+  const [bindCollisionConfirm, setBindCollisionConfirm] = useState<null | {
+    taskId: string;
+    personId: string;
+    projectId: string;
+    desiredStart: string;
+    desiredEnd: string;
   }>(null);
   /** Pending project-origin bind completed on first assignment save. */
   const pendingProjectBindTaskIdRef = useRef<string | null>(null);
@@ -488,6 +505,7 @@ export function ScheduleGrid() {
   const assignmentsRef = useRef(state.assignments);
   assignmentsRef.current = state.assignments;
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollDateRef = useRef<string | null>(null);
   const weekSwipeRef = useRef<{ x: number; y: number } | null>(null);
   const ignoreNextScheduleClickRef = useRef(false);
   const todayKey = toDateKey(new Date());
@@ -528,6 +546,35 @@ export function ScheduleGrid() {
   );
   const startKey = columns[0]?.startKey ?? todayKey;
   const endKey = columns[columns.length - 1]?.endKey ?? todayKey;
+
+  function scrollScheduleToDateKey(dateKey: string) {
+    if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+    if (dateKey < startKey || dateKey > endKey) {
+      pendingScrollDateRef.current = dateKey;
+      setAnchor(parseISO(dateKey));
+      return;
+    }
+    pendingScrollDateRef.current = null;
+    const idx = columnIndexForDateKey(columns, dateKey);
+    if (idx < 0 || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = Math.max(
+      0,
+      columnOffsetPx(columns, idx) - dayW * 2,
+    );
+  }
+
+  useLayoutEffect(() => {
+    const key = pendingScrollDateRef.current;
+    if (!key) return;
+    if (key < startKey || key > endKey) return;
+    pendingScrollDateRef.current = null;
+    const idx = columnIndexForDateKey(columns, key);
+    if (idx < 0 || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = Math.max(
+      0,
+      columnOffsetPx(columns, idx) - dayW * 2,
+    );
+  }, [columns, startKey, endKey, dayW]);
 
   useEffect(() => {
     if (!state.organization.id) return;
@@ -2080,6 +2127,13 @@ export function ScheduleGrid() {
 
     const a = state.assignments.find((x) => x.id === assignmentId);
     if (!a) {
+      const dateKey = filters.date?.trim();
+      if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+        void ensureScheduleRange(
+          toDateKey(subWeeks(parseISO(dateKey), 2)),
+          toDateKey(addWeeks(parseISO(dateKey), 2)),
+        );
+      }
       const projectId = filters.project?.trim();
       if (projectId && projectId !== "all") {
         void ensureProjectData(projectId);
@@ -2100,6 +2154,10 @@ export function ScheduleGrid() {
     }
 
     deepLinkAssignmentRef.current = assignmentId;
+    const targetDate =
+      dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? dateKey : a.start_date;
+    const occs = expandAssignmentInRange(a, targetDate, targetDate);
+    const occ = occs.find((o) => occurrenceCoversDay(o, targetDate));
     setFilters({
       assignment: "",
       tab: "",
@@ -2107,7 +2165,12 @@ export function ScheduleGrid() {
       person: a.person_id,
       project: a.project_id,
     });
-    selectAssignment(a.id, { start: a.start_date, end: a.end_date });
+    selectAssignment(
+      a.id,
+      occ
+        ? { start: occ.start_date, end: occ.end_date }
+        : { start: a.start_date, end: a.end_date },
+    );
     const tabRaw = filters.tab?.trim().toLowerCase();
     if (tabRaw === "tasks") {
       setSidebarPanelTab("tasks");
@@ -2124,6 +2187,7 @@ export function ScheduleGrid() {
       );
       setSidebarPanelTab(hasBound ? "tasks" : "edit");
     }
+    scrollScheduleToDateKey(targetDate);
   }, [
     filters.assignment,
     filters.tab,
@@ -2135,83 +2199,10 @@ export function ScheduleGrid() {
     setFilters,
     isNarrow,
     ensureProjectData,
+    ensureScheduleRange,
   ]);
 
-  // One-shot: /schedule?bindTask=&person=&project=&date= — create assignment + preselect task
-  useEffect(() => {
-    if (!canManage) return;
-    const taskId = filters.bindTask?.trim();
-    if (!taskId) {
-      deepLinkBindTaskRef.current = null;
-      return;
-    }
-    if (deepLinkBindTaskRef.current === taskId) return;
-    const task = state.tasks.find((t) => t.id === taskId);
-    if (!task) {
-      void ensureProjectData(filters.project?.trim() || "");
-      return;
-    }
-    const personId =
-      filters.person?.trim() && filters.person !== "all"
-        ? filters.person.trim()
-        : (task.assignee_person_id ?? "");
-    const projectId =
-      filters.project?.trim() && filters.project !== "all"
-        ? filters.project.trim()
-        : task.project_id;
-    if (!personId || !projectId) return;
-
-    const dateKey = filters.date?.trim();
-    if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
-      if (dateKey < startKey || dateKey > endKey) {
-        setAnchor(parseISO(dateKey));
-        return;
-      }
-    }
-
-    deepLinkBindTaskRef.current = taskId;
-    const start =
-      task.start_date ||
-      (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
-        ? dateKey
-        : toDateKey(new Date()));
-    const end = task.due_date || start;
-    const available = nextAvailableScheduleRange({
-      personId,
-      projectId,
-      start,
-      end,
-      assignments: state.assignments,
-      leaveDays: state.leave_days,
-    });
-    const rangeStart = available?.start ?? start;
-    const rangeEnd = available?.end ?? end;
-    pendingProjectBindTaskIdRef.current = taskId;
-    setFilters({
-      bindTask: "",
-      date: "",
-      person: personId,
-      project: projectId,
-    });
-    // createAssignment focuses hours and selects the new row.
-    createAssignment(personId, projectId, rangeStart, rangeEnd);
-    setBindToAssignment(true);
-    setBindEditingSelection(true);
-    setBindDraftIds(new Set([taskId]));
-    setSidebarPanelTab("edit");
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link
-  }, [
-    filters.bindTask,
-    filters.person,
-    filters.project,
-    filters.date,
-    canManage,
-    startKey,
-    endKey,
-    state.tasks,
-    state.assignments,
-    state.leave_days,
-  ]);
+  // bindTask deep-link effect is below createAssignment (uses finishProjectBindFlow).
 
   function applyRecurrenceChoice(scope: "instance" | "future") {
     const pending = recurrencePrompt;
@@ -2565,6 +2556,170 @@ export function ScheduleGrid() {
     setSidebarPanelTab("edit");
     selectAssignment(row.id);
   }
+
+  function finishProjectBindFlow(
+    taskId: string,
+    personId: string,
+    projectId: string,
+    rangeStart: string,
+    rangeEnd: string,
+  ) {
+    pendingProjectBindTaskIdRef.current = taskId;
+    setFilters({
+      bindTask: "",
+      date: "",
+      person: personId,
+      project: projectId,
+    });
+    createAssignment(personId, projectId, rangeStart, rangeEnd);
+    setBindToAssignment(true);
+    setBindEditingSelection(true);
+    setBindDraftIds(new Set([taskId]));
+    setSidebarPanelTab("edit");
+    scrollScheduleToDateKey(rangeStart);
+  }
+
+  function applyProjectRowPunchForInsert(
+    personId: string,
+    projectId: string,
+    rangeStart: string,
+    rangeEnd: string,
+  ) {
+    const { upserts, deletes } = punchProjectRowForInsertRange(
+      state.assignments,
+      personId,
+      projectId,
+      rangeStart,
+      rangeEnd,
+      newId,
+    );
+    if (deletes.length === 0 && upserts.length === 0) return;
+    for (const id of deletes) {
+      deleteAssignment(id);
+    }
+    for (const row of upserts) {
+      upsertAssignment(row);
+    }
+    assignmentsRef.current = (() => {
+      let next = assignmentsRef.current.filter((a) => !deletes.includes(a.id));
+      for (const row of upserts) {
+        const exists = next.some((a) => a.id === row.id);
+        next = exists
+          ? next.map((a) => (a.id === row.id ? row : a))
+          : [...next, row];
+      }
+      return next;
+    })();
+  }
+
+  // One-shot: /schedule?bindTask=&person=&project=&date= — create assignment + preselect task
+  useEffect(() => {
+    if (!canManage || bindCollisionConfirm) return;
+    const taskId = filters.bindTask?.trim();
+    if (!taskId) {
+      deepLinkBindTaskRef.current = null;
+      return;
+    }
+    if (deepLinkBindTaskRef.current === taskId) return;
+    const task = state.tasks.find((t) => t.id === taskId);
+    if (!task) {
+      void ensureProjectData(filters.project?.trim() || "");
+      return;
+    }
+    const personId =
+      filters.person?.trim() && filters.person !== "all"
+        ? filters.person.trim()
+        : (task.assignee_person_id ?? "");
+    const projectId =
+      filters.project?.trim() && filters.project !== "all"
+        ? filters.project.trim()
+        : task.project_id;
+    if (!personId || !projectId) return;
+
+    const dateKey = filters.date?.trim();
+    if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+      if (dateKey < startKey || dateKey > endKey) {
+        setAnchor(parseISO(dateKey));
+        return;
+      }
+    }
+
+    const hasPredefinedDates = Boolean(task.start_date || task.due_date);
+    if (hasPredefinedDates) {
+      const desiredStart = task.start_date || task.due_date!;
+      const desiredEnd = task.due_date || task.start_date!;
+      const collides = desiredRangeCollidesOnProjectRow({
+        personId,
+        projectId,
+        start: desiredStart,
+        end: desiredEnd,
+        assignments: state.assignments,
+        leaveDays: state.leave_days,
+      });
+      deepLinkBindTaskRef.current = taskId;
+      if (collides) {
+        setFilters({
+          bindTask: "",
+          date: "",
+          person: personId,
+          project: projectId,
+        });
+        setBindCollisionConfirm({
+          taskId,
+          personId,
+          projectId,
+          desiredStart,
+          desiredEnd,
+        });
+        scrollScheduleToDateKey(desiredStart);
+        return;
+      }
+      finishProjectBindFlow(
+        taskId,
+        personId,
+        projectId,
+        desiredStart,
+        desiredEnd,
+      );
+      return;
+    }
+
+    deepLinkBindTaskRef.current = taskId;
+    const start =
+      task.start_date ||
+      (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
+        ? dateKey
+        : toDateKey(new Date()));
+    const end = task.due_date || start;
+    const available = nextAvailableScheduleRange({
+      personId,
+      projectId,
+      start,
+      end,
+      assignments: state.assignments,
+      leaveDays: state.leave_days,
+    });
+    finishProjectBindFlow(
+      taskId,
+      personId,
+      projectId,
+      available?.start ?? start,
+      available?.end ?? end,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link
+  }, [
+    filters.bindTask,
+    filters.person,
+    filters.project,
+    filters.date,
+    canManage,
+    bindCollisionConfirm,
+    startKey,
+    endKey,
+    state.tasks,
+    state.assignments,
+    state.leave_days,
+  ]);
 
   function commitAssignment(next: Assignment, toast?: string) {
     let row = next;
@@ -6065,6 +6220,59 @@ export function ScheduleGrid() {
             }
           }}
           onCancel={() => setCutBoundConfirm(null)}
+        />
+      ) : null}
+      {bindCollisionConfirm ? (
+        <ConfirmDialog
+          title="Assignment Already Booked"
+          message="An existing assignment blocks this task's chosen dates. You can slice the existing assignment to insert at those dates (the series continues before and after, like time off on a weekly block), use the next available slot, or cancel."
+          mode="confirm"
+          tone="accent"
+          confirmLabel="Slice and insert"
+          altConfirmLabel="Use next available"
+          onConfirm={() => {
+            const pending = bindCollisionConfirm;
+            setBindCollisionConfirm(null);
+            if (!pending) return;
+            applyProjectRowPunchForInsert(
+              pending.personId,
+              pending.projectId,
+              pending.desiredStart,
+              pending.desiredEnd,
+            );
+            finishProjectBindFlow(
+              pending.taskId,
+              pending.personId,
+              pending.projectId,
+              pending.desiredStart,
+              pending.desiredEnd,
+            );
+          }}
+          onAltConfirm={() => {
+            const pending = bindCollisionConfirm;
+            setBindCollisionConfirm(null);
+            if (!pending) return;
+            const available = nextAvailableScheduleRange({
+              personId: pending.personId,
+              projectId: pending.projectId,
+              start: pending.desiredStart,
+              end: pending.desiredEnd,
+              assignments: state.assignments,
+              leaveDays: state.leave_days,
+            });
+            finishProjectBindFlow(
+              pending.taskId,
+              pending.personId,
+              pending.projectId,
+              available?.start ?? pending.desiredStart,
+              available?.end ?? pending.desiredEnd,
+            );
+          }}
+          onCancel={() => {
+            setBindCollisionConfirm(null);
+            deepLinkBindTaskRef.current = null;
+            pendingProjectBindTaskIdRef.current = null;
+          }}
         />
       ) : null}
     </div>
