@@ -120,8 +120,15 @@ export function UtilityNotificationsProvider({
 }: {
   children: ReactNode;
 }) {
-  const { state, myPerson, profile, isPublicShare, mode, markNotificationFeedRead } =
-    useData();
+  const {
+    state,
+    myPerson,
+    profile,
+    isPublicShare,
+    mode,
+    markNotificationFeedRead,
+    removeNotificationFeedRows,
+  } = useData();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const viewAs = useViewAsOptional();
@@ -321,14 +328,31 @@ export function UtilityNotificationsProvider({
     [markFeedReadOnServer, markNotificationFeedRead],
   );
 
-  const removeCard = useCallback((id: string) => {
-    const t = fadeTimersRef.current.get(id);
-    if (t) {
-      clearTimeout(t);
-      fadeTimersRef.current.delete(id);
-    }
-    setCards((prev) => prev.filter((c) => c.id !== id));
-  }, []);
+  const removeCard = useCallback(
+    (id: string) => {
+      const t = fadeTimersRef.current.get(id);
+      if (t) {
+        clearTimeout(t);
+        fadeTimersRef.current.delete(id);
+      }
+      setCards((prev) => prev.filter((c) => c.id !== id));
+      if (!id.startsWith("feed:")) return;
+      const feedId = id.slice("feed:".length);
+      removeNotificationFeedRows([feedId]);
+      if (mode === "supabase") {
+        void createClient()
+          .from("notifications")
+          .delete()
+          .eq("id", feedId)
+          .then(({ error }) => {
+            if (error) {
+              console.warn("delete notification failed", error.message);
+            }
+          });
+      }
+    },
+    [mode, removeNotificationFeedRows],
+  );
 
   const removeMentionCard = useCallback(
     (target: MentionTarget) => {
@@ -390,85 +414,104 @@ export function UtilityNotificationsProvider({
   const clearAll = useCallback(() => {
     for (const t of fadeTimersRef.current.values()) clearTimeout(t);
     fadeTimersRef.current.clear();
-    const feedIds = cards
-      .filter((c) => c.id.startsWith("feed:"))
-      .map((c) => c.id.slice("feed:".length));
     setCards([]);
     if (storageKeyRef.current) {
       clearNotificationCenterCards(storageKeyRef.current);
     }
-    markNotificationFeedRead("all");
-    if (mode === "supabase") {
-      if (feedIds.length > 0) {
-        markFeedReadOnServer(feedIds);
-      }
+    removeNotificationFeedRows("all");
+    if (mode === "supabase" && profileId) {
       void createClient()
-        .rpc("mark_all_notifications_read")
+        .from("notifications")
+        .delete()
+        .eq("recipient_profile_id", profileId)
         .then(({ error }) => {
           if (error) {
-            console.warn("mark_all_notifications_read failed", error.message);
+            console.warn("clear notifications failed", error.message);
           }
         });
     }
-  }, [cards, mode, markFeedReadOnServer, markNotificationFeedRead]);
+  }, [mode, profileId, removeNotificationFeedRows]);
 
   const openCenter = useCallback(() => setCenterOpen(true), []);
   const closeCenter = useCallback(() => setCenterOpen(false), []);
   const toggleCenter = useCallback(() => setCenterOpen((v) => !v), []);
 
-  // Durable server/demo feed → Notification Center (+ OS only when tab is hidden).
+  // Durable feed → Notification Center (full reconcile so devices stay in sync).
   useEffect(() => {
     if (!storageReady || isPublicShare || !profileId) return;
     const feed = ((state.notifications ?? []) as NotificationRow[]).filter(
       (n) => n.recipient_profile_id === profileId,
     );
-    if (seenFeedIdsRef.current === null) {
-      seenFeedIdsRef.current = new Set(feed.map((n) => n.id));
+    const feedIds = new Set(feed.map((n) => n.id));
+
+    const prevSeen = seenFeedIdsRef.current;
+    const isFirst = prevSeen === null;
+    const newlyArrived: NotificationRow[] = [];
+    if (isFirst) {
+      seenFeedIdsRef.current = new Set(feedIds);
+    } else {
+      const seen = prevSeen;
       for (const row of feed) {
-        const built = mapNotificationRowToCard(row);
-        enqueue({
-          id: built.id,
-          kind: built.kind,
-          href: built.href,
-          title: built.title,
-          subtitle: built.subtitle,
-          bulletinId: built.bulletinId,
-          taskId: built.taskId,
-          commentId: built.commentId,
-          enqueuedAt: built.enqueuedAt,
-          read: built.read,
-        });
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        newlyArrived.push(row);
       }
-      return;
+      for (const id of [...seen]) {
+        if (!feedIds.has(id)) seen.delete(id);
+      }
     }
 
-    const seen = seenFeedIdsRef.current;
-    for (const row of feed) {
-      if (seen.has(row.id)) {
-        if (row.read_at) {
-          setCards((prev) =>
-            prev.map((c) =>
-              c.id === `feed:${row.id}` && !c.read ? { ...c, read: true } : c,
-            ),
-          );
-        }
-        continue;
-      }
-      seen.add(row.id);
-      const built = mapNotificationRowToCard(row);
-      enqueue({
-        id: built.id,
-        kind: built.kind,
-        href: built.href,
-        title: built.title,
-        subtitle: built.subtitle,
-        bulletinId: built.bulletinId,
-        taskId: built.taskId,
-        commentId: built.commentId,
-        enqueuedAt: built.enqueuedAt,
-        read: built.read,
+    setCards((prev) => {
+      const byFeedId = new Map(
+        prev
+          .filter((c) => c.id.startsWith("feed:"))
+          .map((c) => [c.id.slice("feed:".length), c] as const),
+      );
+      const nextFeed: UtilityNotificationCard[] = feed.map((row) => {
+        const built = mapNotificationRowToCard(row);
+        const existing = byFeedId.get(row.id);
+        return {
+          ...built,
+          // New cards start invisible briefly for enter animation when not first hydrate.
+          visible: existing
+            ? existing.visible
+            : isFirst || Boolean(built.read),
+          clientName: existing?.clientName,
+          clientColor: existing?.clientColor,
+          mentionTarget: existing?.mentionTarget,
+        };
       });
-      // Prefer Web Push when no focused tab; local OS only if this tab is open but hidden.
+      const legacy =
+        mode === "supabase"
+          ? []
+          : prev.filter((c) => !c.id.startsWith("feed:"));
+      const next = [...nextFeed, ...legacy].sort(
+        (a, b) => b.enqueuedAt - a.enqueuedAt,
+      );
+
+      if (
+        next.length === prev.length &&
+        next.every((c, i) => {
+          const p = prev[i];
+          return (
+            p &&
+            p.id === c.id &&
+            p.read === c.read &&
+            p.title === c.title &&
+            p.subtitle === c.subtitle &&
+            p.href === c.href &&
+            p.kind === c.kind &&
+            p.visible === c.visible
+          );
+        })
+      ) {
+        return prev;
+      }
+      return next;
+    });
+
+    for (const row of newlyArrived) {
+      scheduleVisible(`feed:${row.id}`);
       if (
         typeof document !== "undefined" &&
         document.visibilityState === "hidden" &&
@@ -485,8 +528,9 @@ export function UtilityNotificationsProvider({
     storageReady,
     isPublicShare,
     profileId,
+    mode,
     state.notifications,
-    enqueue,
+    scheduleVisible,
   ]);
 
   // Watch mention unreads
@@ -502,6 +546,8 @@ export function UtilityNotificationsProvider({
     const seen = seenMentionKeysRef.current;
     const pushDesktop = mentionDesktopSeededRef.current;
     const orgName = state.organization?.name?.trim() || "Reaper";
+    /** Live mode: center is feed-driven; feature unreads only drive OS toasts. */
+    const centerFromFeed = mode === "supabase";
 
     for (const row of mine) {
       const k = mentionUnreadKey(row);
@@ -517,7 +563,7 @@ export function UtilityNotificationsProvider({
       });
       if (!built) continue;
       seen.add(k);
-      enqueue(built);
+      if (!centerFromFeed) enqueue(built);
       if (pushDesktop) {
         pushMentionDesktop({
           target,
@@ -531,6 +577,7 @@ export function UtilityNotificationsProvider({
     mentionDesktopSeededRef.current = true;
   }, [
     storageReady,
+    mode,
     state.unread_mentions,
     state.task_comments,
     state.tasks,
@@ -557,6 +604,7 @@ export function UtilityNotificationsProvider({
     const seen = seenBulletinIdsRef.current;
     const pushDesktop = bulletinDesktopSeededRef.current;
     const orgName = state.organization?.name?.trim() || "Reaper";
+    const centerFromFeed = mode === "supabase";
 
     for (const bulletinId of mine) {
       if (seen.has(bulletinId)) continue;
@@ -571,7 +619,7 @@ export function UtilityNotificationsProvider({
       });
       if (!built) continue;
       seen.add(bulletinId);
-      enqueue(built);
+      if (!centerFromFeed) enqueue(built);
       if (pushDesktop) {
         pushBulletinDesktop({
           bulletin,
@@ -584,6 +632,7 @@ export function UtilityNotificationsProvider({
     bulletinDesktopSeededRef.current = true;
   }, [
     storageReady,
+    mode,
     state.unread_bulletin_ids,
     state.bulletins,
     state.projects,
@@ -642,6 +691,7 @@ export function UtilityNotificationsProvider({
     const seen = seenMessageCommentIdsRef.current;
     const pushDesktop = messageDesktopSeededRef.current;
     const orgName = state.organization?.name?.trim() || "Reaper";
+    const centerFromFeed = mode === "supabase";
     const byTask = new Map<string, TaskComment[]>();
     for (const comment of qualifyingComments) {
       const list = byTask.get(comment.task_id) ?? [];
@@ -659,7 +709,7 @@ export function UtilityNotificationsProvider({
         projectHref,
       });
       if (!built) return;
-      enqueue(built);
+      if (!centerFromFeed) enqueue(built);
       if (opts.desktop) {
         pushTaskMessageDesktop({
           comment,
@@ -703,6 +753,7 @@ export function UtilityNotificationsProvider({
     messageDesktopSeededRef.current = true;
   }, [
     storageReady,
+    mode,
     state.unread_task_threads,
     state.task_comments,
     state.tasks,
@@ -720,6 +771,7 @@ export function UtilityNotificationsProvider({
   // Opt-in "assigned to you" — hydrate from unread inbox (cross-device) + live broadcast toast.
   useEffect(() => {
     if (!storageReady || isPublicShare || !mentionPersonId) return;
+    if (mode === "supabase") return; // center is feed-driven
 
     const mine = (state.unread_assigned_tasks ?? []).filter(
       (r) => r.person_id === mentionPersonId,
@@ -744,6 +796,7 @@ export function UtilityNotificationsProvider({
     }
   }, [
     storageReady,
+    mode,
     state.unread_assigned_tasks,
     state.tasks,
     state.projects,
@@ -778,7 +831,7 @@ export function UtilityNotificationsProvider({
         projectHref,
       });
       if (!built) return;
-      if (!seenCards.has(cardId)) {
+      if (mode !== "supabase" && !seenCards.has(cardId)) {
         seenCards.add(cardId);
         enqueue(built);
       }
@@ -809,7 +862,7 @@ export function UtilityNotificationsProvider({
     return () => {
       window.removeEventListener(TASK_ASSIGNED_EVENT, onTaskAssigned);
     };
-  }, [storageReady, isPublicShare, enqueue, projectHref]);
+  }, [storageReady, isPublicShare, mode, enqueue, projectHref]);
 
   // Comment reactions — OS toast only (same path as former MentionDesktopListener).
   useEffect(() => {

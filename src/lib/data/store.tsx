@@ -839,6 +839,8 @@ interface DataContextValue {
   markMentionsReadForTask: (taskId: string, personId: string) => void;
   /** Mark durable notification feed rows read locally (and demo mirror). */
   markNotificationFeedRead: (ids: string[] | "all") => void;
+  /** Remove durable feed rows locally (dismiss / clear; demo + optimistic). */
+  removeNotificationFeedRows: (ids: string[] | "all") => void;
   /** Mark assigner ↔ assignee task thread as read (opening the task). */
   dismissTaskThreadUnread: (taskId: string, personId: string) => void;
   /** Clear outstanding "assigned to you" unread (read or dismiss). */
@@ -1521,6 +1523,56 @@ export function DataProvider({ children }: { children: ReactNode }) {
     pendingOrgBroadcastsRef.current.push({ event, payload });
   }, []);
 
+  const refetchNotifications = useCallback(async () => {
+    if (mode !== "supabase") return;
+    const client = supabaseRef.current;
+    const snap = stateRef.current;
+    const organizationId = snap.organization.id;
+    const profileId = snap.sessionProfileId;
+    if (!client || !organizationId || !profileId) return;
+    try {
+      const { data, error } = await client
+        .from("notifications")
+        .select(
+          "id, organization_id, recipient_profile_id, kind, title, body, href, entity_type, entity_id, actor_person_id, read_at, created_at",
+        )
+        .eq("organization_id", organizationId)
+        .eq("recipient_profile_id", profileId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error || !data) return;
+      const rows = data.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          id: String(r.id),
+          organization_id: String(r.organization_id),
+          recipient_profile_id: String(r.recipient_profile_id),
+          kind: r.kind as import("@/lib/domain/notifications").NotificationKind,
+          title: String(r.title ?? ""),
+          body: String(r.body ?? ""),
+          href: String(r.href ?? "/"),
+          entity_type: r.entity_type != null ? String(r.entity_type) : null,
+          entity_id: r.entity_id != null ? String(r.entity_id) : null,
+          actor_person_id:
+            r.actor_person_id != null ? String(r.actor_person_id) : null,
+          read_at: r.read_at != null ? String(r.read_at) : null,
+          created_at: String(r.created_at ?? new Date().toISOString()),
+        };
+      });
+      setState((prev) => {
+        const others = prev.notifications.filter(
+          (n) => n.recipient_profile_id !== profileId,
+        );
+        return { ...prev, notifications: [...rows, ...others] };
+      });
+    } catch (err) {
+      console.warn("refetchNotifications failed", err);
+    }
+  }, [mode]);
+
+  const refetchNotificationsRef = useRef(refetchNotifications);
+  refetchNotificationsRef.current = refetchNotifications;
+
   // Live sync: org shell stays mounted for the org session.
   useEffect(() => {
     if (mode !== "supabase" || !ready) return;
@@ -1618,7 +1670,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           event: "*",
           schema: "public",
           table: "notifications",
-          filter: `organization_id=eq.${organizationId}`,
+          filter: state.sessionProfileId
+            ? `recipient_profile_id=eq.${state.sessionProfileId}`
+            : `organization_id=eq.${organizationId}`,
         },
         enqueueRealtimeChange("notifications"),
       )
@@ -1758,6 +1812,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
             payload: msg.payload,
           });
         }
+        // Heal any notification rows missed while disconnected.
+        void refetchNotificationsRef.current?.();
       });
 
     orgChannelRef.current = orgChannel;
@@ -1771,7 +1827,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       orgChannelRef.current = null;
       void client.removeChannel(orgChannel);
     };
-  }, [mode, ready, state.organization.id, enqueueRealtimeChange]);
+  }, [
+    mode,
+    ready,
+    state.organization.id,
+    state.sessionProfileId,
+    enqueueRealtimeChange,
+  ]);
 
   // Project task traffic: add/remove channels without tearing down the org channel.
   useEffect(() => {
@@ -1867,10 +1929,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       for (const projectId of activeRealtimeProjectIdsRef.current) {
         void catchUpProjectRealtimeData(projectId);
       }
+      void refetchNotificationsRef.current?.();
     };
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onVisibility);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onVisibility);
     };
   }, [mode, ready, catchUpProjectRealtimeData]);
 
@@ -6169,6 +6234,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
             return { ...n, read_at: now };
           });
           return changed ? { ...prev, notifications } : prev;
+        });
+      },
+      removeNotificationFeedRows: (ids) => {
+        const profileId = profile?.id;
+        patch((prev) => {
+          const next = prev.notifications.filter((n) => {
+            if (profileId && n.recipient_profile_id !== profileId) return true;
+            if (ids === "all") return false;
+            return !ids.includes(n.id);
+          });
+          return next.length === prev.notifications.length
+            ? prev
+            : { ...prev, notifications: next };
         });
       },
       dismissTaskThreadUnread: (taskId, personId) => {

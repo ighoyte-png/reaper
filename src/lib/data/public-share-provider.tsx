@@ -237,6 +237,7 @@ export function PublicShareProvider({
       markMentionRead: () => {},
       markMentionsReadForTask: () => {},
       markNotificationFeedRead: () => {},
+      removeNotificationFeedRows: () => {},
       dismissTaskThreadUnread: () => {},
       dismissAssignedUnread: () => {},
       toggleProjectFavorite: () => {},
