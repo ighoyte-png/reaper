@@ -1647,6 +1647,7 @@ function TaggedMentionsPanel({
                   clientName={client?.name}
                   title={title}
                   subtitle={location}
+                  timestamp={dateKey || null}
                   onActivate={() => {
                     onOpen(target);
                     router.push(href);
@@ -2519,7 +2520,6 @@ function BulletinBoard({
               (systemNotice || (washed && !isAuthor));
             const canAuthorEdit = isAuthor && !systemNotice;
             const subtitle = [
-              b.created_at.slice(0, 10),
               resolveAuthorLabel(
                 author
                   ? {
@@ -2548,6 +2548,7 @@ function BulletinBoard({
                   clientName={client?.name}
                   title={b.title}
                   subtitle={subtitle}
+                  timestamp={b.created_at}
                   metaExtra={
                     b.pinned ? (
                       <Pin

@@ -336,6 +336,7 @@ function NotificationCenterCard({
       clientName={card.clientName}
       title={card.title}
       subtitle={card.subtitle}
+      timestamp={card.enqueuedAt}
       onActivate={onActivate}
       actions={
         <button
