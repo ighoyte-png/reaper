@@ -102,6 +102,7 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
     project_favorites: [],
     pods: [],
     pod_members: [],
+    organization_emojis: [],
     leave_days: [],
     project_templates: [],
     template_milestones: [],

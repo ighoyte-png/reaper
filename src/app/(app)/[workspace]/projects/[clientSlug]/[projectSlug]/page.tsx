@@ -626,7 +626,7 @@ export default function ProjectDetailPage() {
                 <h2 className="text-sm font-semibold">
                   {projectProgressCardTitle(isRetainer)}
                 </h2>
-                {canEdit ? (
+                {canEdit && milestones.length > 0 ? (
                   <button
                     type="button"
                     className={cn(
@@ -668,7 +668,8 @@ export default function ProjectDetailPage() {
                     <h3 className="text-xs font-semibold text-[var(--text-muted)]">
                       Milestones
                     </h3>
-                    {canEdit && progressEditMode ? (
+                    {canEdit &&
+                    (progressEditMode || milestones.length === 0) ? (
                       <button
                         type="button"
                         className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
@@ -930,7 +931,7 @@ export default function ProjectDetailPage() {
                 <h2 className="text-sm font-semibold">
                   {projectProgressCardTitle(isRetainer)}
                 </h2>
-                {canEdit ? (
+                {canEdit && milestones.length > 0 ? (
                   <button
                     type="button"
                     className={cn(
@@ -972,7 +973,8 @@ export default function ProjectDetailPage() {
                     <h3 className="text-xs font-semibold text-[var(--text-muted)]">
                       Milestones
                     </h3>
-                    {canEdit && progressEditMode ? (
+                    {canEdit &&
+                    (progressEditMode || milestones.length === 0) ? (
                       <button
                         type="button"
                         className="inline-flex cursor-pointer rounded p-1 text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"

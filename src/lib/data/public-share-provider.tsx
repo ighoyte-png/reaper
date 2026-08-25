@@ -202,6 +202,8 @@ export function PublicShareProvider({
       deletePod: async () => {},
       setPodMembers: async () => {},
       setPersonPods: async () => {},
+      upsertOrganizationEmoji: async () => {},
+      deleteOrganizationEmoji: async () => {},
       upsertAssignment: () => {},
       deleteAssignment: () => {},
       setAssignmentBoundTasks: async () => {},

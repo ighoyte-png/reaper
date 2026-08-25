@@ -529,6 +529,18 @@ export type MentionUnread = {
   created_at?: string;
 };
 
+/** Workspace custom emoji (Slack-style :name:). */
+export type OrganizationEmoji = {
+  id: string;
+  organization_id: string;
+  name: string;
+  attachment_id: string;
+  created_by_profile_id: string | null;
+  created_at: string;
+  /** Demo-only data URL for preview/insert (not persisted). */
+  src?: string | null;
+};
+
 export interface DemoState {
   organization: Organization;
   /** Admin rates / budget & capacity thresholds for this workspace. */
@@ -568,6 +580,8 @@ export interface DemoState {
   project_favorites: ProjectFavorite[];
   pods: Pod[];
   pod_members: PodMember[];
+  /** Workspace custom emoji catalog (:name: shortcodes). */
+  organization_emojis: OrganizationEmoji[];
   project_templates: ProjectTemplate[];
   template_milestones: TemplateMilestone[];
   template_task_lists: TemplateTaskList[];

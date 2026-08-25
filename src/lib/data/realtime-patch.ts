@@ -4,6 +4,7 @@ import {
   mapBulletin,
   mapLeaveDay,
   mapMilestone,
+  mapOrganizationEmoji,
   mapPod,
   mapPodMember,
   mapProjectAsset,
@@ -647,6 +648,24 @@ export function applyRealtimeTableEvent(
       return {
         ...state,
         pod_members: [...state.pod_members, row],
+      };
+    }
+    case "organization_emojis": {
+      if (isDelete) {
+        const id = String(oldRecord?.id ?? "");
+        if (!id) return state;
+        const next = state.organization_emojis.filter((e) => e.id !== id);
+        return next.length === state.organization_emojis.length
+          ? state
+          : { ...state, organization_emojis: next };
+      }
+      const mapped = mapOrganizationEmoji(
+        newRecord as Record<string, unknown>,
+      );
+      if (!mapped.id || !mapped.name) return state;
+      return {
+        ...state,
+        organization_emojis: upsertById(state.organization_emojis, mapped),
       };
     }
     case "notifications": {

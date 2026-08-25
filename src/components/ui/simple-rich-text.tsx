@@ -28,6 +28,12 @@ import {
 } from "@/lib/notes-html";
 import type { MentionPerson } from "@/lib/mentions";
 import { createMentionSuggestion } from "@/components/ui/mention-suggestion";
+import {
+  CustomEmoji,
+  CustomEmojiSuggestion,
+} from "@/components/ui/custom-emoji-extension";
+import { useData } from "@/lib/data/store";
+import { organizationEmojiSrc } from "@/lib/domain/organization-emojis";
 import { ensureDesktopNotificationPermission } from "@/lib/desktop-notifications";
 import { Field, Modal, inputClass, ConfirmDialog } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
@@ -69,6 +75,7 @@ const editorContentClass = cn(
   "[&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-2",
   "[&_.mention]:rounded [&_.mention]:px-0.5 [&_.mention]:font-medium [&_.mention]:text-[var(--accent)]",
   "[&_img]:my-2 [&_img]:cursor-zoom-in [&_img]:max-w-full [&_img]:rounded-md",
+  "[&_img.custom-emoji]:my-0 [&_img.custom-emoji]:inline [&_img.custom-emoji]:h-[1.25em] [&_img.custom-emoji]:w-[1.25em] [&_img.custom-emoji]:cursor-default [&_img.custom-emoji]:rounded-none [&_img.custom-emoji]:align-[-0.2em] [&_img.custom-emoji]:object-contain",
   "[&_code]:rounded [&_code]:bg-[var(--bg-elevated)] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]",
   "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-[var(--bg-elevated)] [&_pre]:px-2.5 [&_pre]:py-2 [&_pre]:font-mono [&_pre]:text-[0.85em] [&_pre]:leading-relaxed",
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
@@ -106,6 +113,13 @@ function scrollSelectionIntoEditor(view: {
 }
 
 const AttachmentImage = Image.extend({
+  parseHTML() {
+    return [
+      {
+        tag: 'img[src]:not([data-type="custom-emoji"])',
+      },
+    ];
+  },
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -274,6 +288,13 @@ export const SimpleRichTextEditor = forwardRef<
   },
   ref,
 ) {
+  const { state } = useData();
+  const customEmojis = state.organization_emojis ?? [];
+  const emojiKey = customEmojis
+    .map((e) => `${e.id}:${e.name}:${organizationEmojiSrc(e)}`)
+    .sort()
+    .join(",");
+
   const [linkOpen, setLinkOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [fileAttachments, setFileAttachments] = useState<
@@ -528,6 +549,7 @@ export const SimpleRichTextEditor = forwardRef<
         },
       }),
       Underline,
+      CustomEmoji,
     ];
 
     if (attachmentsActive) {
@@ -542,34 +564,43 @@ export const SimpleRichTextEditor = forwardRef<
       );
     }
 
-    if (!mentionPeople || mentionPeople.length === 0) return base;
+    if (customEmojis.length > 0) {
+      base.push(
+        CustomEmojiSuggestion.configure({
+          emojis: customEmojis,
+        }),
+      );
+    }
 
-    return [
-      ...base,
-      Mention.configure({
-        HTMLAttributes: {
-          class:
-            "mention rounded px-0.5 font-medium text-[var(--accent)]",
-        },
-        renderText: ({ node }) =>
-          `@${node.attrs.label ?? node.attrs.id ?? ""}`,
-        renderHTML: ({ node }) => [
-          "span",
-          {
-            "data-type": "mention",
-            "data-id": node.attrs.id,
-            "data-label": node.attrs.label,
+    if (mentionPeople && mentionPeople.length > 0) {
+      base.push(
+        Mention.configure({
+          HTMLAttributes: {
             class:
               "mention rounded px-0.5 font-medium text-[var(--accent)]",
           },
-          `@${node.attrs.label ?? node.attrs.id ?? ""}`,
-        ],
-        suggestion: createMentionSuggestion(mentionPeople),
-      }),
-    ];
-    // peopleKey captures identity of the list without unstable array refs
+          renderText: ({ node }) =>
+            `@${node.attrs.label ?? node.attrs.id ?? ""}`,
+          renderHTML: ({ node }) => [
+            "span",
+            {
+              "data-type": "mention",
+              "data-id": node.attrs.id,
+              "data-label": node.attrs.label,
+              class:
+                "mention rounded px-0.5 font-medium text-[var(--accent)]",
+            },
+            `@${node.attrs.label ?? node.attrs.id ?? ""}`,
+          ],
+          suggestion: createMentionSuggestion(mentionPeople),
+        }),
+      );
+    }
+
+    return base;
+    // peopleKey / emojiKey capture identity without unstable array refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peopleKey, attachmentsActive]);
+  }, [peopleKey, emojiKey, attachmentsActive]);
 
   const editor = useEditor(
     {
@@ -1266,6 +1297,7 @@ export function RichNotesHtml({
         className={cn(
           "rich-notes block leading-relaxed [&_a]:pointer-events-auto",
           "[&_img]:my-2 [&_img]:max-h-80 [&_img]:max-w-full [&_img]:cursor-zoom-in [&_img]:rounded-md",
+          "[&_img.custom-emoji]:my-0 [&_img.custom-emoji]:inline [&_img.custom-emoji]:h-[1.25em] [&_img.custom-emoji]:w-[1.25em] [&_img.custom-emoji]:max-h-none [&_img.custom-emoji]:cursor-default [&_img.custom-emoji]:rounded-none [&_img.custom-emoji]:align-[-0.2em] [&_img.custom-emoji]:object-contain",
           "[&_img.rich-notes-img-pending]:cursor-default [&_img.rich-notes-img-pending]:min-h-32 [&_img.rich-notes-img-pending]:w-full [&_img.rich-notes-img-pending]:max-w-md [&_img.rich-notes-img-pending]:animate-pulse [&_img.rich-notes-img-pending]:object-cover [&_img.rich-notes-img-pending]:bg-[color-mix(in_srgb,var(--text-muted)_14%,transparent)]",
           "[&_p]:m-0 [&_p+p]:mt-2",
           "[&_h1]:m-0 [&_h1]:mt-3 [&_h1]:text-lg [&_h1]:font-semibold [&_h1]:leading-snug",

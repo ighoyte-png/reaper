@@ -54,7 +54,8 @@ export async function POST(request: Request) {
   if (
     entityType !== "profile_picture" &&
     entityType !== "comment" &&
-    entityType !== "task_note"
+    entityType !== "task_note" &&
+    entityType !== "custom_emoji"
   ) {
     return NextResponse.json({ error: "Invalid entityType" }, { status: 400 });
   }
@@ -67,9 +68,17 @@ export async function POST(request: Request) {
 
   const placement: AttachmentPlacement =
     body.placement === "attached" ? "attached" : "inline";
-  if (entityType === "profile_picture" && placement !== "inline") {
+  if (
+    (entityType === "profile_picture" || entityType === "custom_emoji") &&
+    placement !== "inline"
+  ) {
     return NextResponse.json(
-      { error: "Profile pictures must be inline" },
+      {
+        error:
+          entityType === "custom_emoji"
+            ? "Custom emojis must be inline"
+            : "Profile pictures must be inline",
+      },
       { status: 400 },
     );
   }
@@ -108,7 +117,10 @@ export async function POST(request: Request) {
     mimeType,
     sizeBytes,
     magicBytes,
-    imagesOnly: Boolean(body.imagesOnly) || entityType === "profile_picture",
+    imagesOnly:
+      Boolean(body.imagesOnly) ||
+      entityType === "profile_picture" ||
+      entityType === "custom_emoji",
     maxImageBytes: limits.maxImageBytes,
     maxDocumentBytes: limits.maxDocumentBytes,
   });

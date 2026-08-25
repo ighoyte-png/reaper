@@ -2,6 +2,10 @@
 export function notesPlainText(html: string): string {
   return decodeHtmlEntities(
     html
+      .replace(/<img\b[^>]*\bdata-type=["']custom-emoji["'][^>]*>/gi, (tag) => {
+        const m = /\bdata-name=["']([^"']+)["']/i.exec(tag);
+        return m?.[1] ? `:${m[1]}:` : "";
+      })
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/p>/gi, "\n")
       .replace(/<\/h[1-6]>/gi, "\n")
@@ -18,6 +22,7 @@ export function notesHasContent(html: string | null | undefined): boolean {
   if (!html) return false;
   if (/data-attachment-id=["'][0-9a-f-]{36}["']/i.test(html)) return true;
   if (/data-pending-id=["'][0-9a-f-]{36}["']/i.test(html)) return true;
+  if (/data-type=["']custom-emoji["']/i.test(html)) return true;
   return Boolean(notesPlainText(html));
 }
 
@@ -126,6 +131,18 @@ const UUID_RE =
 function isAttachmentUuid(value: string | null | undefined): boolean {
   if (!value) return false;
   return UUID_RE.test(value.trim());
+}
+
+function sanitizeCustomEmojiSrc(
+  name: string,
+  src: string | null | undefined,
+): string {
+  const apiSrc = `/api/emojis/${encodeURIComponent(name)}`;
+  if (!src) return apiSrc;
+  const t = src.trim();
+  if (/^data:image\/(png|gif|webp|jpeg|jpg);/i.test(t)) return t;
+  if (/^\/api\/emojis\//i.test(t)) return apiSrc;
+  return apiSrc;
 }
 
 function sanitizeAttachmentSrc(src: string | null | undefined): string | null {
@@ -265,6 +282,17 @@ function renderNodes(nodes: WalkNode[]): string {
         return `<a href="${escapeAttr(href)}" target="${target}"${rel} class="rich-notes-link">${inner}</a>`;
       }
       if (tag === "IMG") {
+        if (node.attrs?.["data-type"] === "custom-emoji") {
+          const name = String(node.attrs?.["data-name"] ?? "")
+            .trim()
+            .toLowerCase();
+          if (!/^[a-z0-9_]{2,32}$/.test(name)) return "";
+          const safeSrc = sanitizeCustomEmojiSrc(
+            name,
+            node.attrs?.src ?? null,
+          );
+          return `<img data-type="custom-emoji" data-name="${escapeAttr(name)}" src="${escapeAttr(safeSrc)}" alt=":${escapeAttr(name)}:" class="custom-emoji" />`;
+        }
         const attachmentId = node.attrs?.["data-attachment-id"];
         if (!isAttachmentUuid(attachmentId)) return "";
         const safeSrc = sanitizeAttachmentSrc(node.attrs?.src ?? null);

@@ -28,6 +28,7 @@ import type {
   ProjectContractorExpense,
   Pod,
   PodMember,
+  OrganizationEmoji,
   ProjectTemplate,
   Task,
   TaskComment,
@@ -301,6 +302,21 @@ export function mapPod(row: Record<string, unknown>): Pod {
       ? String(row.manager_person_id)
       : null,
     sort_order: num(row.sort_order),
+  };
+}
+
+export function mapOrganizationEmoji(
+  row: Record<string, unknown>,
+): OrganizationEmoji {
+  return {
+    id: String(row.id),
+    organization_id: String(row.organization_id),
+    name: String(row.name ?? ""),
+    attachment_id: String(row.attachment_id ?? ""),
+    created_by_profile_id: row.created_by_profile_id
+      ? String(row.created_by_profile_id)
+      : null,
+    created_at: String(row.created_at ?? ""),
   };
 }
 
@@ -654,6 +670,7 @@ function emptyWorkspace(): DemoState {
     project_favorites: [],
     pods: [],
     pod_members: [],
+    organization_emojis: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -954,6 +971,7 @@ export async function loadOrgBootstrap(
     projectFavoritesRes,
     podsRes,
     podMembersRes,
+    organizationEmojisRes,
     projectTemplatesRes,
     templateMilestonesRes,
     templateTaskListsRes,
@@ -1019,6 +1037,11 @@ export async function loadOrgBootstrap(
         }),
     supabase.from("pods").select("*").eq("organization_id", orgId),
     supabase.from("pod_members").select("*").eq("organization_id", orgId),
+    supabase
+      .from("organization_emojis")
+      .select("*")
+      .eq("organization_id", orgId)
+      .order("name", { ascending: true }),
     supabase
       .from("project_templates")
       .select("*")
@@ -1400,6 +1423,23 @@ export async function loadOrgBootstrap(
       mapPodMember(row as Record<string, unknown>),
     );
   }
+  let organization_emojis: OrganizationEmoji[] = [];
+  if (organizationEmojisRes.error) {
+    if (
+      /relation .*organization_emojis.* does not exist/i.test(
+        organizationEmojisRes.error.message,
+      ) ||
+      organizationEmojisRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "organization_emojis missing — apply supabase/migrations/110_organization_emojis.sql",
+      );
+    }
+  } else {
+    organization_emojis = (organizationEmojisRes.data ?? []).map((row) =>
+      mapOrganizationEmoji(row as Record<string, unknown>),
+    );
+  }
   const project_templates: ProjectTemplate[] = projectTemplatesRes.error
     ? []
     : (projectTemplatesRes.data ?? []).map((row) =>
@@ -1486,6 +1526,7 @@ export async function loadOrgBootstrap(
     project_favorites,
     pods,
     pod_members,
+    organization_emojis,
     project_templates,
     template_milestones,
     template_task_lists,
@@ -2724,6 +2765,55 @@ export async function deletePodRow(supabase: SupabaseClient, id: string) {
   if (error) {
     if (missingPodsTable(error.message, error.code)) {
       console.warn("pods missing — apply supabase/migrations/052_pods.sql");
+      return;
+    }
+    throw error;
+  }
+}
+
+function missingOrganizationEmojisTable(message: string, code?: string) {
+  return (
+    /relation .*organization_emojis.* does not exist/i.test(message) ||
+    code === "42P01"
+  );
+}
+
+export async function upsertOrganizationEmojiRow(
+  supabase: SupabaseClient,
+  emoji: OrganizationEmoji,
+) {
+  const { error } = await supabase.from("organization_emojis").upsert({
+    id: emoji.id,
+    organization_id: emoji.organization_id,
+    name: emoji.name,
+    attachment_id: emoji.attachment_id,
+    created_by_profile_id: emoji.created_by_profile_id,
+    created_at: emoji.created_at || new Date().toISOString(),
+  });
+  if (error) {
+    if (missingOrganizationEmojisTable(error.message, error.code)) {
+      console.warn(
+        "organization_emojis missing — apply supabase/migrations/110_organization_emojis.sql",
+      );
+      return;
+    }
+    throw error;
+  }
+}
+
+export async function deleteOrganizationEmojiRow(
+  supabase: SupabaseClient,
+  id: string,
+) {
+  const { error } = await supabase
+    .from("organization_emojis")
+    .delete()
+    .eq("id", id);
+  if (error) {
+    if (missingOrganizationEmojisTable(error.message, error.code)) {
+      console.warn(
+        "organization_emojis missing — apply supabase/migrations/110_organization_emojis.sql",
+      );
       return;
     }
     throw error;

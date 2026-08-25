@@ -3,7 +3,8 @@ export type StorageProviderName = "r2";
 export type AttachmentEntityType =
   | "profile_picture"
   | "comment"
-  | "task_note";
+  | "task_note"
+  | "custom_emoji";
 
 /** inline = embedded in WYSIWYG HTML; attached = email-style file chip. */
 export type AttachmentPlacement = "inline" | "attached";

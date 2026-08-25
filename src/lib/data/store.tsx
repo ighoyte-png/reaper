@@ -151,6 +151,8 @@ import {
   upsertPodRow,
   deletePodRow,
   setPodMembersRows,
+  upsertOrganizationEmojiRow,
+  deleteOrganizationEmojiRow,
   upsertProjectAssetRow,
   upsertProjectFavoriteRow,
   upsertProjectRow,
@@ -223,6 +225,7 @@ import type {
   Profile,
   Pod,
   PodMember,
+  OrganizationEmoji,
   Project,
   ProjectAsset,
   ProjectContractorExpense,
@@ -578,6 +581,7 @@ function emptySupabaseState(): DemoState {
     project_favorites: [],
     pods: [],
     pod_members: [],
+    organization_emojis: [],
     project_templates: [],
     template_milestones: [],
     template_task_lists: [],
@@ -716,6 +720,15 @@ interface DataContextValue {
   setPodMembers: (podId: string, personIds: string[]) => Promise<void>;
   /** Sync which pods a person belongs to (from person form). */
   setPersonPods: (personId: string, podIds: string[]) => Promise<void>;
+  /** Create or update a workspace custom emoji (admins only). */
+  upsertOrganizationEmoji: (
+    emoji: Omit<OrganizationEmoji, "organization_id" | "created_at"> & {
+      organization_id?: string;
+      created_at?: string;
+    },
+  ) => Promise<void>;
+  /** Delete a workspace custom emoji and its attachment (admins only). */
+  deleteOrganizationEmoji: (id: string) => Promise<void>;
   upsertAssignment: (
     assignment: Omit<Assignment, "organization_id"> & {
       organization_id?: string;
@@ -1735,6 +1748,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         enqueueRealtimeChange("pod_members"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "organization_emojis",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        enqueueRealtimeChange("organization_emojis"),
       )
       .on(
         "broadcast",
@@ -4051,6 +4074,81 @@ export function DataProvider({ children }: { children: ReactNode }) {
             await runRemote(() =>
               setPodMembersRows(supabaseRef.current!, podId, orgId, next),
             );
+          }
+        }
+      },
+      upsertOrganizationEmoji: async (emoji) => {
+        if (!admin) {
+          throw new Error("Only workspace admins can manage custom emojis");
+        }
+        const name = String(emoji.name ?? "")
+          .trim()
+          .toLowerCase();
+        if (!/^[a-z0-9_]{2,32}$/.test(name)) {
+          throw new Error(
+            "Emoji name must be 2–32 characters: lowercase letters, numbers, underscores",
+          );
+        }
+        const orgId = emoji.organization_id ?? state.organization.id;
+        const duplicate = state.organization_emojis.find(
+          (e) => e.name === name && e.id !== emoji.id,
+        );
+        if (duplicate) {
+          throw new Error(`Emoji :${name}: already exists`);
+        }
+        if (!emoji.attachment_id) {
+          throw new Error("Emoji image is required");
+        }
+        const row: OrganizationEmoji = {
+          id: emoji.id,
+          organization_id: orgId,
+          name,
+          attachment_id: emoji.attachment_id,
+          created_by_profile_id:
+            emoji.created_by_profile_id ?? profile?.id ?? null,
+          created_at: emoji.created_at ?? new Date().toISOString(),
+          src: emoji.src ?? null,
+        };
+        noteLocalWrite("organization_emojis", row.id);
+        patch((prev) => {
+          const exists = prev.organization_emojis.some((e) => e.id === row.id);
+          const next = exists
+            ? prev.organization_emojis.map((e) => (e.id === row.id ? row : e))
+            : [...prev.organization_emojis, row];
+          return {
+            ...prev,
+            organization_emojis: [...next].sort((a, b) =>
+              a.name.localeCompare(b.name),
+            ),
+          };
+        });
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            upsertOrganizationEmojiRow(supabaseRef.current!, row),
+          );
+        }
+      },
+      deleteOrganizationEmoji: async (id) => {
+        if (!admin) {
+          throw new Error("Only workspace admins can manage custom emojis");
+        }
+        const existing = state.organization_emojis.find((e) => e.id === id);
+        if (!existing) return;
+        noteLocalWrite("organization_emojis", id);
+        patch((prev) => ({
+          ...prev,
+          organization_emojis: prev.organization_emojis.filter(
+            (e) => e.id !== id,
+          ),
+        }));
+        if (mode === "supabase" && supabaseRef.current) {
+          await runRemote(() =>
+            deleteOrganizationEmojiRow(supabaseRef.current!, id),
+          );
+          if (existing.attachment_id) {
+            void fetch(`/api/storage/${existing.attachment_id}`, {
+              method: "DELETE",
+            }).catch(() => {});
           }
         }
       },

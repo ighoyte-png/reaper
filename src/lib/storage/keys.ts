@@ -20,6 +20,8 @@ export function buildStorageKey(
       return `comments/${id}/${objectId}.${ext}`;
     case "task_note":
       return `notes/${id}/${objectId}.${ext}`;
+    case "custom_emoji":
+      return `emojis/${id}/${objectId}.${ext}`;
     default: {
       const _exhaustive: never = entityType;
       return _exhaustive;

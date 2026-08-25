@@ -1140,6 +1140,7 @@ export function createDemoSeed(): DemoState {
     project_favorites: [],
     pods: [],
     pod_members: [],
+    organization_emojis: [],
     sessionProfileId: null,
   };
 }

@@ -120,6 +120,18 @@ export async function assertCanAttachToEntity(
     return { ok: true };
   }
 
+  if (entityType === "custom_emoji") {
+    if (role !== "admin") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only workspace admins can upload custom emojis",
+      };
+    }
+    // entityId is the emoji row id (may not exist yet until after upload).
+    return { ok: true };
+  }
+
   return { ok: false, status: 400, error: "Invalid entity type" };
 }
 

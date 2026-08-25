@@ -306,6 +306,12 @@ export function imageLightboxTargetFromEvent(
   const target = event.target;
   if (!(target instanceof HTMLImageElement)) return null;
   if (target.classList.contains("rich-notes-img-pending")) return null;
+  if (
+    target.classList.contains("custom-emoji") ||
+    target.getAttribute("data-type") === "custom-emoji"
+  ) {
+    return null;
+  }
   const src = target.currentSrc || target.src;
   if (!src || src.startsWith("data:image/svg+xml")) return null;
   const attachmentId = target.getAttribute("data-attachment-id");
