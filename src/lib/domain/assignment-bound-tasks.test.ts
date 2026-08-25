@@ -167,14 +167,22 @@ describe("assignment-bound-tasks", () => {
     ).toBe(false);
   });
 
-  it("detects out of sync from flag or date mismatch", () => {
+  it("detects out of sync from date mismatch (ignores stale flags)", () => {
     const lists = [{ id: "l1", gantt_enabled: false }];
-    const tasks = [
+    const mismatched = [
       task({
         id: "t1",
         list_id: "l1",
         start_date: "2026-03-01",
         due_date: "2026-03-01",
+      }),
+    ];
+    const matched = [
+      task({
+        id: "t1",
+        list_id: "l1",
+        start_date: "2026-03-02",
+        due_date: "2026-03-02",
       }),
     ];
     const assignments = [
@@ -183,7 +191,7 @@ describe("assignment-bound-tasks", () => {
     expect(
       assignmentIsOutOfSync(
         [bind({ assignment_id: "a1", task_id: "t1", out_of_sync: true })],
-        tasks,
+        mismatched,
         lists,
         assignments,
         "a1",
@@ -192,12 +200,67 @@ describe("assignment-bound-tasks", () => {
     expect(
       assignmentIsOutOfSync(
         [bind({ assignment_id: "a1", task_id: "t1" })],
-        tasks,
+        mismatched,
         lists,
         assignments,
         "a1",
       ),
     ).toBe(true);
+    // Stale flag must not keep OOS when dates already match.
+    expect(
+      assignmentIsOutOfSync(
+        [bind({ assignment_id: "a1", task_id: "t1", out_of_sync: true })],
+        matched,
+        lists,
+        assignments,
+        "a1",
+      ),
+    ).toBe(false);
+    expect(
+      taskIsBoundOutOfSync(
+        "t1",
+        [bind({ assignment_id: "a1", task_id: "t1", out_of_sync: true })],
+        matched,
+        assignments,
+      ),
+    ).toBe(false);
+  });
+
+  it("assignment is OOS until every bound task matches", () => {
+    const lists = [{ id: "l1", gantt_enabled: false }];
+    const tasks = [
+      task({
+        id: "t1",
+        list_id: "l1",
+        start_date: "2026-03-02",
+        due_date: "2026-03-02",
+      }),
+      task({
+        id: "t2",
+        list_id: "l1",
+        start_date: "2026-03-01",
+        due_date: "2026-03-01",
+      }),
+    ];
+    const assignments = [
+      asg({ id: "a1", start_date: "2026-03-02", end_date: "2026-03-02" }),
+    ];
+    const binds = [
+      bind({ assignment_id: "a1", task_id: "t1" }),
+      bind({ assignment_id: "a1", task_id: "t2" }),
+    ];
+    expect(
+      assignmentIsOutOfSync(binds, tasks, lists, assignments, "a1"),
+    ).toBe(true);
+    expect(taskIsBoundOutOfSync("t1", binds, tasks, assignments)).toBe(false);
+    expect(taskIsBoundOutOfSync("t2", binds, tasks, assignments)).toBe(true);
+    const allMatched = [
+      tasks[0],
+      { ...tasks[1], start_date: "2026-03-02", due_date: "2026-03-02" },
+    ];
+    expect(
+      assignmentIsOutOfSync(binds, allMatched, lists, assignments, "a1"),
+    ).toBe(false);
   });
 
   it("detects Gantt date mismatch as out of sync", () => {

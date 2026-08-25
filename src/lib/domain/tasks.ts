@@ -153,6 +153,52 @@ export function isTaskPastDueOpen(
   return Boolean(task.due_date && task.due_date < todayKey);
 }
 
+/** Due today and not complete (dividers never count). */
+export function isTaskDueTodayOpen(
+  task: Pick<Task, "status" | "due_date" | "is_divider">,
+  todayKey: string,
+): boolean {
+  if (task.is_divider || task.status === "complete") return false;
+  return task.due_date === todayKey;
+}
+
+/**
+ * Task Pulse: overdue open tasks assigned to this person only.
+ * Does not use In Review → assigner routing (that is for My Tasks / reports).
+ */
+export function collectAssigneeOverdueTasks<T extends Task>(
+  tasks: T[],
+  assigneePersonId: string | null,
+  todayKey: string,
+): T[] {
+  if (!assigneePersonId) return [];
+  return tasks
+    .filter(
+      (t) =>
+        t.assignee_person_id === assigneePersonId &&
+        isTaskPastDueOpen(t, todayKey),
+    )
+    .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+}
+
+/**
+ * Task Pulse: due-today open tasks assigned to this person only.
+ */
+export function collectAssigneeDueTodayTasks<T extends Task>(
+  tasks: T[],
+  assigneePersonId: string | null,
+  todayKey: string,
+): T[] {
+  if (!assigneePersonId) return [];
+  return tasks
+    .filter(
+      (t) =>
+        t.assignee_person_id === assigneePersonId &&
+        isTaskDueTodayOpen(t, todayKey),
+    )
+    .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+}
+
 /**
  * Whether a past-due open task belongs on this person's overdue list.
  * Active (`upcoming`) → assignee; In Review (`active`) → assigner.

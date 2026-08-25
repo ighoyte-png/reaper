@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  collectAssigneeDueTodayTasks,
+  collectAssigneeOverdueTasks,
   collectPersonOverdueTasks,
   isTaskInReview,
   taskOnPersonOverdueList,
@@ -54,12 +56,54 @@ describe("In Review overdue ownership", () => {
       status: "upcoming",
       assignee_person_id: assignee.id,
       due_date: "2026-01-01",
+      created_at: "2026-01-01T00:00:00Z",
       created_by_profile_id: assigner.profile_id,
     });
     expect(taskOnPersonOverdueList(t, assignee.id, people, project)).toBe(true);
     expect(taskOnPersonOverdueList(t, assigner.id, people, project)).toBe(
       false,
     );
+  });
+
+  it("Task Pulse assignee helpers ignore In Review → assigner routing", () => {
+    const tasks = [
+      task({
+        id: "1",
+        status: "active",
+        assignee_person_id: assignee.id,
+        due_date: "2026-01-01",
+        created_by_profile_id: assigner.profile_id,
+      }),
+      task({
+        id: "2",
+        status: "upcoming",
+        assignee_person_id: assignee.id,
+        due_date: "2026-01-10",
+      }),
+      task({
+        id: "3",
+        status: "upcoming",
+        assignee_person_id: assigner.id,
+        due_date: "2026-01-01",
+      }),
+    ];
+    // In Review assigned to assignee still counts on assignee pulse.
+    expect(
+      collectAssigneeOverdueTasks(tasks, assignee.id, "2026-01-05").map(
+        (t) => t.id,
+      ),
+    ).toEqual(["1"]);
+    // Assigner does not see others' assignee overdue on their pulse.
+    expect(
+      collectAssigneeOverdueTasks(tasks, assigner.id, "2026-01-05").map(
+        (t) => t.id,
+      ),
+    ).toEqual(["3"]);
+    expect(
+      collectAssigneeDueTodayTasks(tasks, assignee.id, "2026-01-10").map(
+        (t) => t.id,
+      ),
+    ).toEqual(["2"]);
   });
 
   it("moves In Review overdue to the assigner", () => {

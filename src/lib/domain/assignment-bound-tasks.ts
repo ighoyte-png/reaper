@@ -220,7 +220,7 @@ export function taskBoundDatesMatchSpan(
   return task.start_date === start && task.due_date === end;
 }
 
-/** Task shows OOS when any bind row is flagged or dates diverge from span. */
+/** Task shows OOS when dates diverge from the bound assignment span. */
 export function taskIsBoundOutOfSync(
   taskId: string,
   binds: AssignmentBoundTask[],
@@ -229,11 +229,14 @@ export function taskIsBoundOutOfSync(
 ): boolean {
   const rows = binds.filter((b) => b.task_id === taskId);
   if (rows.length === 0) return false;
-  if (rows.some((r) => r.out_of_sync)) return true;
   return !taskBoundDatesMatchSpan(taskId, binds, tasks, assignments);
 }
 
-/** Assignment shows OOS when any join row is flagged, or bound task dates diverge. */
+/**
+ * Assignment shows OOS when any bound task's dates diverge from its span.
+ * Ignores persisted `out_of_sync` flags (those are a derived cache).
+ * Green only when every bound task matches.
+ */
 export function assignmentIsOutOfSync(
   binds: AssignmentBoundTask[],
   tasks: Pick<Task, "id" | "list_id" | "start_date" | "due_date">[],
@@ -243,7 +246,6 @@ export function assignmentIsOutOfSync(
 ): boolean {
   const rows = binds.filter((b) => b.assignment_id === assignmentId);
   if (rows.length === 0) return false;
-  if (rows.some((r) => r.out_of_sync)) return true;
   for (const row of rows) {
     if (
       !taskBoundDatesMatchSpan(row.task_id, binds, tasks, assignments)

@@ -102,9 +102,12 @@ import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { isFullyHiddenFromPlanning } from "@/lib/domain/contractor";
 import { utilizationVisiblePeople, personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import {
-  collectPersonDueTodayTasks,
+  collectAssigneeDueTodayTasks,
+  collectAssigneeOverdueTasks,
   collectPersonOverdueTasks,
   dueDateToneClass,
+  isTaskDueTodayOpen,
+  isTaskPastDueOpen,
   taskUrgency,
   type TaskUrgency,
 } from "@/lib/domain/tasks";
@@ -208,13 +211,14 @@ export default function DashboardPage() {
   useEffect(() => {
     if (mode !== "supabase") return;
     if (showingAsManager && (canManage || isPublicShare)) {
+      // Full org task set for manager KPIs; Task Pulse filters to assignee.
       void ensureOrgTasks();
-    } else if (personalPersonId) {
-      const assignerProfileId =
-        viewAsPerson?.profile_id ?? profile?.id ?? myPerson?.profile_id ?? null;
+      return;
+    }
+    if (personalPersonId) {
+      // Assignee-only for Task Pulse (no assigner In Review slice).
       void ensureOrgTasks({
         assigneePersonId: personalPersonId,
-        assignerProfileId,
       });
     }
   }, [
@@ -224,9 +228,6 @@ export default function DashboardPage() {
     canManage,
     isPublicShare,
     personalPersonId,
-    viewAsPerson?.profile_id,
-    profile?.id,
-    myPerson?.profile_id,
   ]);
 
   /** Members / View As: capacity + leave widgets scoped to one person. */
@@ -396,24 +397,18 @@ export default function DashboardPage() {
   ]);
 
   /**
-   * Task Pulse overdue: personal responsibility.
-   * In Review past-due goes to the assigner, not the assignee.
+   * Task Pulse overdue: assignee-only (signed-in / View As person).
+   * Managers must not see others' tasks here via In Review → assigner routing.
    */
   const pulseOverdueTasks = useMemo(() => {
     if (isPublicShare && showingAsManager) {
-      return collectPersonOverdueTasks(
-        pulseTasks,
-        null,
-        state.people,
-        projectById,
-        todayKey,
-      );
+      return pulseTasks
+        .filter((t) => isTaskPastDueOpen(t, todayKey))
+        .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
     }
-    return collectPersonOverdueTasks(
+    return collectAssigneeOverdueTasks(
       state.tasks,
       personalPersonId,
-      state.people,
-      projectById,
       todayKey,
     );
   }, [
@@ -421,28 +416,20 @@ export default function DashboardPage() {
     showingAsManager,
     pulseTasks,
     state.tasks,
-    state.people,
     personalPersonId,
-    projectById,
     todayKey,
   ]);
 
-  /** Task Pulse due today — same person-responsibility rules as overdue. */
+  /** Task Pulse due today — assignee-only, same as overdue. */
   const pulseDueTodayTasks = useMemo(() => {
     if (isPublicShare && showingAsManager) {
-      return collectPersonDueTodayTasks(
-        pulseTasks,
-        null,
-        state.people,
-        projectById,
-        todayKey,
-      );
+      return pulseTasks
+        .filter((t) => isTaskDueTodayOpen(t, todayKey))
+        .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
     }
-    return collectPersonDueTodayTasks(
+    return collectAssigneeDueTodayTasks(
       state.tasks,
       personalPersonId,
-      state.people,
-      projectById,
       todayKey,
     );
   }, [
@@ -450,9 +437,7 @@ export default function DashboardPage() {
     showingAsManager,
     pulseTasks,
     state.tasks,
-    state.people,
     personalPersonId,
-    projectById,
     todayKey,
   ]);
 

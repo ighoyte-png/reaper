@@ -1947,7 +1947,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           : assigneeId
         : null;
       const scope = orgTasksScopeRef.current;
-      if (scope.all) {
+      // Org-wide load already covers every assignee; skip only bare all-refetches.
+      if (scope.all && !assigneeId) {
         setOrgTasksStatus("ready");
         return;
       }

@@ -930,7 +930,7 @@ export function ScheduleGrid() {
     const task = state.tasks.find((t) => t.id === taskId);
     if (!task || isGanttTask(task, state.task_lists)) return;
     // Apply this assignment's calendar dates to the project task (not the
-    // multi-assignment span), then clear OOS even if dates already matched.
+    // multi-assignment span), then clear OOS when all bound dates match.
     const start = assignment.start_date;
     const end = assignment.end_date;
     const datesChanged =
@@ -960,7 +960,11 @@ export function ScheduleGrid() {
     );
     void setAssignmentBoundTasksOutOfSync(assignment.id, oos);
     refreshBoundAssignmentNotes(assignment, boundIds, oos);
-    push("Task date synced to assignment");
+    push(
+      oos
+        ? "Task date synced (other bound tasks still out of sync)"
+        : "Task date synced to assignment",
+    );
   }
 
   function assignmentNoteIconClass(
@@ -1066,24 +1070,22 @@ export function ScheduleGrid() {
       ),
     }));
     await setAssignmentBoundTasks(assignment.id, bindRows);
-    // Assign unassigned tasks to the Schedule person.
+    // One upsert per task: assignee (if missing) + non-Gantt date patches.
+    // Never follow with a second upsert from a stale task snapshot.
     for (const taskId of unique) {
       const task = state.tasks.find((t) => t.id === taskId);
       if (!task) continue;
-      if (!task.assignee_person_id) {
-        upsertTask({
-          ...task,
-          assignee_person_id: assignment.person_id,
-        });
-      }
-    }
-    for (const patch of patches) {
-      const task = state.tasks.find((t) => t.id === patch.taskId);
-      if (!task) continue;
+      const patch = patches.find((p) => p.taskId === taskId);
+      const needsAssignee = !task.assignee_person_id;
+      if (!patch && !needsAssignee) continue;
       upsertTask({
         ...task,
-        start_date: patch.start_date,
-        due_date: patch.due_date,
+        ...(needsAssignee
+          ? { assignee_person_id: assignment.person_id }
+          : {}),
+        ...(patch
+          ? { start_date: patch.start_date, due_date: patch.due_date }
+          : {}),
       });
     }
     const finalBinds: AssignmentBoundTask[] = [
