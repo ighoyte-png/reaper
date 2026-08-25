@@ -30,6 +30,7 @@ import {
   availableHoursInRange,
   capacityLevel,
   personBookedHoursInRange,
+  projectEndLookupFromProjects,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import {
@@ -120,6 +121,10 @@ function PeoplePageContent() {
 
   const start = toDateKey(weekStart(new Date()));
   const end = toDateKey(weekEnd(new Date()));
+  const projectEndById = useMemo(
+    () => projectEndLookupFromProjects(state.projects),
+    [state.projects],
+  );
 
   const { filters, setFilter } = useUrlFilters(PEOPLE_FILTER_DEFAULTS);
   const pods = sortPods(state.pods);
@@ -514,6 +519,8 @@ function PeoplePageContent() {
       end,
       state.assignments,
       state.leave_days,
+      true,
+      projectEndById,
     );
     const available = availableHoursInRange(
       person,
@@ -674,6 +681,8 @@ function PeoplePageContent() {
       end,
       state.assignments,
       state.leave_days,
+      true,
+      projectEndById,
     );
     const available = availableHoursInRange(
       person,

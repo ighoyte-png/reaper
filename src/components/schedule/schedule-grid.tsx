@@ -6298,6 +6298,8 @@ function MemberTodaySummary({
       todayKey,
       assignments,
       leaveDays,
+      true,
+      (projectId) => projectsById.get(projectId)?.end_date,
     );
     const capacity = dailyCapacityHours(myPerson);
     return { dayDate, weekend, leave, assignmentsToday, bookedHours, capacity };

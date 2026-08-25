@@ -156,6 +156,22 @@ function boundLinkColorClass(outOfSync: boolean): string {
     : "text-[var(--status-healthy)]";
 }
 
+/** Same Link2 tooltip copy on Schedule Tasks tab and the project task board. */
+function boundLinkTooltip(opts: {
+  outOfSync: boolean;
+  canSync?: boolean;
+  ganttControlled?: boolean;
+}): string {
+  if (!opts.outOfSync) return "Task Bound to Schedule Assignment";
+  if (opts.canSync) {
+    return "Sync Project Task Date to Schedule Assignment Date";
+  }
+  if (opts.ganttControlled) {
+    return "Task dates are controlled by Gantt; update dates in Gantt view";
+  }
+  return "Task Dates out of Sync";
+}
+
 type Props = {
   projectId: string;
   /** When true, no create/reorder/edit - status toggle still allowed for own tasks. */
@@ -4063,28 +4079,43 @@ function InlineTaskForm({
                   {dueDate ? format(parseISO(dueDate), "MMM d, yyyy") : "—"}
                 </span>
                 {scheduleDatesHref ? (
-                  <Tooltip content="Dates are controlled by the Schedule, open the Schedule page to make changes">
+                  <Tooltip
+                    content={boundLinkTooltip({
+                      outOfSync: isBoundOutOfSync,
+                      ganttControlled: false,
+                    })}
+                  >
                     <Link
                       href={scheduleDatesHref}
                       className={cn(
                         "inline-flex hover:opacity-80",
                         boundLinkColorClass(isBoundOutOfSync),
                       )}
-                      aria-label="Open Schedule assignment"
+                      aria-label={boundLinkTooltip({
+                        outOfSync: isBoundOutOfSync,
+                      })}
                     >
                       <Link2 size={16} strokeWidth={2} />
                     </Link>
                   </Tooltip>
                 ) : (
-                  <span
-                    className={cn(
-                      "inline-flex",
-                      boundLinkColorClass(isBoundOutOfSync),
-                    )}
-                    title="Dates are controlled by the Schedule, open the Schedule page to make changes"
+                  <Tooltip
+                    content={boundLinkTooltip({
+                      outOfSync: isBoundOutOfSync,
+                    })}
                   >
-                    <Link2 size={16} strokeWidth={2} />
-                  </span>
+                    <span
+                      className={cn(
+                        "inline-flex",
+                        boundLinkColorClass(isBoundOutOfSync),
+                      )}
+                      aria-label={boundLinkTooltip({
+                        outOfSync: isBoundOutOfSync,
+                      })}
+                    >
+                      <Link2 size={16} strokeWidth={2} />
+                    </span>
+                  </Tooltip>
                 )}
               </div>
             ) : (
@@ -4161,7 +4192,7 @@ function InlineTaskForm({
                   boundLinkColorClass(isBoundOutOfSync),
                 )}
               >
-                Task Bound to Schedule Assignment
+                {boundLinkTooltip({ outOfSync: isBoundOutOfSync })}
               </span>
             ) : canBindToAssignment &&
               isProjectManager &&
@@ -4965,6 +4996,7 @@ function TaskRow({
             ctx.showBoundAssignmentIcon && ctx.isTaskBound(task.id)
               ? (() => {
                   const boundOos = ctx.isTaskBoundOutOfSync(task.id);
+                  const ganttControlled = ctx.isTaskGanttControlled(task.id);
                   const href =
                     ctx.boundAssignmentLinkEnabled &&
                     ctx.boundAssignmentHref?.(task.id)
@@ -4972,13 +5004,13 @@ function TaskRow({
                       : null;
                   const canSync =
                     boundOos &&
-                    ctx.onSyncBoundTaskDate &&
-                    !ctx.isTaskGanttControlled(task.id);
-                  const tooltip = canSync
-                    ? "Sync Project Task Date to Schedule Assignment Date"
-                    : boundOos && ctx.isTaskGanttControlled(task.id)
-                      ? "Task dates are controlled by Gantt; update dates in Gantt view"
-                      : "Task Bound to Schedule Assignment";
+                    Boolean(ctx.onSyncBoundTaskDate) &&
+                    !ganttControlled;
+                  const tooltip = boundLinkTooltip({
+                    outOfSync: boundOos,
+                    canSync,
+                    ganttControlled,
+                  });
                   const iconClass = cn(
                     "inline-flex shrink-0",
                     boundLinkColorClass(boundOos),
@@ -5009,7 +5041,7 @@ function TaskRow({
                         <Link
                           href={href}
                           className={iconClass}
-                          aria-label="Task Bound to Schedule Assignment"
+                          aria-label={tooltip}
                           onPointerDown={(e) =>
                             multiSelectDrag && e.stopPropagation()
                           }

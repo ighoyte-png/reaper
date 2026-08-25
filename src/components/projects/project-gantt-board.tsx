@@ -90,7 +90,6 @@ import {
   spanColumnsPx,
   type ScheduleColumn,
 } from "@/lib/domain/schedule-zoom";
-import { readUserViewPrefs } from "@/lib/user-view-prefs";
 import type {
   Milestone,
   Person,
@@ -1068,9 +1067,6 @@ export function ProjectGanttBoard({
     () => state.milestones.filter((m) => m.project_id === projectId),
     [state.milestones, projectId],
   );
-
-  const showExpandToggle =
-    readUserViewPrefs(profile?.id).contentWidth === "constrained";
 
   const fallbackKey = useMemo(
     () => toDateKey(weekStart(anchor)),
@@ -2363,18 +2359,16 @@ export function ProjectGanttBoard({
               >
                 {halfZoom ? <ZoomIn size={16} /> : <ZoomOut size={16} />}
               </NavBtn>
-              {showExpandToggle ? (
-                <NavBtn
-                  onClick={() => setViewportExpanded((v) => !v)}
-                  label={viewportExpanded ? "Collapse Gantt" : "Expand Gantt"}
-                >
-                  {viewportExpanded ? (
-                    <Minimize2 size={16} />
-                  ) : (
-                    <Maximize2 size={16} />
-                  )}
-                </NavBtn>
-              ) : null}
+              <NavBtn
+                onClick={() => setViewportExpanded((v) => !v)}
+                label={viewportExpanded ? "Collapse Gantt" : "Expand Gantt"}
+              >
+                {viewportExpanded ? (
+                  <Minimize2 size={16} />
+                ) : (
+                  <Maximize2 size={16} />
+                )}
+              </NavBtn>
             </div>
           </div>
 

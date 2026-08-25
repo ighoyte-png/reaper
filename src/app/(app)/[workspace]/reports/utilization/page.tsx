@@ -16,6 +16,7 @@ import { formatHours } from "@/lib/domain/budget";
 import {
   availableHoursInRange,
   projectBookedHoursByProjectInRange,
+  projectEndLookupFromProjects,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
 import {
@@ -87,6 +88,7 @@ function UtilizationReportContent() {
   }, [mode, ensureScheduleRange, rangeStart, rangeEnd]);
 
   const weekBreakdowns = useMemo(() => {
+    const projectEndById = projectEndLookupFromProjects(state.projects);
     return weekAnchors.map((anchor, index) => {
       const start = toDateKey(anchor);
       const end = toDateKey(weekEnd(anchor));
@@ -97,6 +99,7 @@ function UtilizationReportContent() {
         state.leave_days,
         true,
         scopedPersonIdSet,
+        projectEndById,
       );
 
       const slices: SchedulePieSlice[] = [...byProject.entries()]

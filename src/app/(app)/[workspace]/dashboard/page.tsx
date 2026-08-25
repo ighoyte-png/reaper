@@ -76,6 +76,7 @@ import {
   dailyCapacityHours,
   personBookedHoursInRange,
   availableHoursInRange,
+  projectEndLookupFromProjects,
   utilizationPct,
 } from "@/lib/domain/capacity";
 import { capacityThresholdsFromSettings } from "@/lib/domain/org-settings";
@@ -167,6 +168,10 @@ export default function DashboardPage() {
   const todayKey = toDateKey(now);
   const start = toDateKey(weekStart(now));
   const end = toDateKey(weekEnd(now));
+  const projectEndById = useMemo(
+    () => projectEndLookupFromProjects(state.projects),
+    [state.projects],
+  );
   const monthEndKey = toDateKey(endOfMonth(now));
   const utilRangeStart = toDateKey(weekStart(addWeeks(now, -5)));
   /** Cover the 4-week utilization heatmap (current week + 3 ahead). */
@@ -289,7 +294,12 @@ export default function DashboardPage() {
   const scheduleDayAssignments = useMemo(() => {
     if (!personalPersonId) return [];
     const dayKey = scheduleDay.dayKey;
-    return expandAssignmentsInRange(state.assignments, dayKey, dayKey)
+    return expandAssignmentsInRange(
+      state.assignments,
+      dayKey,
+      dayKey,
+      projectEndById,
+    )
       .filter((o) => occurrenceCoversDay(o, dayKey))
       .filter((o) => o.person_id === personalPersonId)
       .map((o) => ({
@@ -301,7 +311,12 @@ export default function DashboardPage() {
         project_id: o.project_id,
         hours_per_day: o.hours_per_day,
       }));
-  }, [state.assignments, scheduleDay.dayKey, personalPersonId]);
+  }, [
+    state.assignments,
+    scheduleDay.dayKey,
+    personalPersonId,
+    projectEndById,
+  ]);
 
   const viewerPods = useMemo(() => {
     if (!personalPersonId) return [];
@@ -545,6 +560,8 @@ export default function DashboardPage() {
           end,
           state.assignments,
           state.leave_days,
+          true,
+          projectEndById,
         );
         const available = availableHoursInRange(
           person,
@@ -572,6 +589,8 @@ export default function DashboardPage() {
     state.leave_days,
     start,
     end,
+    projectEndById,
+    state.organization_settings,
   ]);
 
   const leaveHorizonEnd = monthEndKey > end ? monthEndKey : end;
@@ -672,6 +691,8 @@ export default function DashboardPage() {
         end,
         state.assignments,
         state.leave_days,
+        true,
+        projectEndById,
       );
       thisWeekAvailable += availableHoursInRange(
         person,
@@ -693,6 +714,7 @@ export default function DashboardPage() {
     state.leave_days,
     start,
     end,
+    projectEndById,
   ]);
 
   const teamUtilizationPieSlices = useMemo((): SchedulePieSlice[] => {

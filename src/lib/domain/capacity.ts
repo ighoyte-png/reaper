@@ -1,4 +1,4 @@
-import type { Assignment, CapacityLevel, LeaveDay, Person } from "@/lib/types";
+import type { Assignment, CapacityLevel, LeaveDay, Person, Project } from "@/lib/types";
 import { toDateKey, workingDaysBetween } from "@/lib/domain/dates";
 import { isFullDayLeave } from "@/lib/domain/leave";
 import {
@@ -7,6 +7,18 @@ import {
   type AssignmentOccurrence,
 } from "@/lib/domain/recurrence";
 import { isWeekend, parseISO } from "date-fns";
+
+/** Resolve project end dates when expanding weekly series (matches Schedule). */
+export type ProjectEndLookup = (
+  projectId: string,
+) => string | null | undefined;
+
+export function projectEndLookupFromProjects(
+  projects: Pick<Project, "id" | "end_date">[],
+): ProjectEndLookup {
+  const byId = new Map(projects.map((p) => [p.id, p.end_date] as const));
+  return (projectId) => byId.get(projectId) ?? null;
+}
 
 export function dailyCapacityHours(person: Person): number {
   if (person.hide_from_schedule && person.hide_from_utilization) return 0;
@@ -42,6 +54,7 @@ export function personBookedHoursOnDay(
   assignments: Assignment[],
   leaveDays: LeaveDay[],
   includeTentative = true,
+  projectEndById: ProjectEndLookup | null = null,
 ): number {
   if (isWeekend(parseISO(dateKey))) return 0;
   if (isOnFullDayLeave(personId, dateKey, leaveDays)) return 0;
@@ -50,17 +63,25 @@ export function personBookedHoursOnDay(
   const leaveHours =
     leave && !isFullDayLeave(leave) ? (leave.hours_per_day ?? 0) : 0;
 
-  const occs = expandAssignmentsInRange(assignments, dateKey, dateKey).filter(
-    (o) => {
-      if (o.person_id !== personId) return false;
-      if (!includeTentative && o.status !== "confirmed") return false;
-      return occurrenceCoversDay(o, dateKey);
-    },
-  );
+  const occs = expandAssignmentsInRange(
+    assignments,
+    dateKey,
+    dateKey,
+    projectEndById ?? undefined,
+  ).filter((o) => {
+    if (o.person_id !== personId) return false;
+    if (!includeTentative && o.status !== "confirmed") return false;
+    return occurrenceCoversDay(o, dateKey);
+  });
 
   return leaveHours + occs.reduce((sum, o) => sum + o.hours_per_day, 0);
 }
 
+/**
+ * Booked hours for a person in [startKey, endKey].
+ * Same rules as Schedule: expand with project end dates, then sum working days
+ * (assignments + partial leave; skip weekends / full-day leave).
+ */
 export function personBookedHoursInRange(
   personId: string,
   startKey: string,
@@ -68,19 +89,26 @@ export function personBookedHoursInRange(
   assignments: Assignment[],
   leaveDays: LeaveDay[],
   includeTentative = true,
+  projectEndById: ProjectEndLookup | null = null,
 ): number {
-  const days = workingDaysBetween(startKey, endKey);
-  return days.reduce(
-    (sum, day) =>
-      sum +
-      personBookedHoursOnDay(
-        personId,
-        day,
-        assignments,
-        leaveDays,
-        includeTentative,
-      ),
-    0,
+  const personAssignments = assignments.filter((a) => a.person_id === personId);
+  const occurrences = expandAssignmentsInRange(
+    personAssignments,
+    startKey,
+    endKey,
+    projectEndById ?? undefined,
+  );
+  const dayMap = buildBookedHoursByPersonDay(
+    occurrences,
+    leaveDays,
+    includeTentative,
+  );
+  return sumBookedHoursFromDayMap(
+    dayMap.get(personId),
+    startKey,
+    endKey,
+    personId,
+    leaveDays,
   );
 }
 
@@ -138,11 +166,17 @@ export function projectBookedHoursByProjectInRange(
   leaveDays: LeaveDay[],
   includeTentative = true,
   personIds?: ReadonlySet<string> | null,
+  projectEndById: ProjectEndLookup | null = null,
 ): Map<string, number> {
   const byProject = new Map<string, number>();
   if (endKey < startKey) return byProject;
 
-  const occs = expandAssignmentsInRange(assignments, startKey, endKey);
+  const occs = expandAssignmentsInRange(
+    assignments,
+    startKey,
+    endKey,
+    projectEndById ?? undefined,
+  );
   for (const occ of occs) {
     if (personIds && !personIds.has(occ.person_id)) continue;
     if (!includeTentative && occ.status !== "confirmed") continue;

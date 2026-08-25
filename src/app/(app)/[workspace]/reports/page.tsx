@@ -44,6 +44,7 @@ import {
   availableHoursInRange,
   capacityLevel,
   personBookedHoursInRange,
+  projectEndLookupFromProjects,
   utilizationPct,
 } from "@/lib/domain/capacity";
 import { toDateKey, weekEnd, weekStart } from "@/lib/domain/dates";
@@ -144,6 +145,10 @@ function ReportsPageContent() {
   const todayKey = toDateKey(now);
   const utilStart = toDateKey(weekStart(now));
   const utilEnd = toDateKey(weekEnd(addWeeks(now, 7)));
+  const projectEndById = useMemo(
+    () => projectEndLookupFromProjects(state.projects),
+    [state.projects],
+  );
   const { filters, setFilter } = useUrlFilters({ scope: "all" });
   const scopeMine = filters.scope === "mine";
 
@@ -290,6 +295,8 @@ function ReportsPageContent() {
           end,
           state.assignments,
           state.leave_days,
+          true,
+          projectEndById,
         );
         available += availableHoursInRange(
           person,
@@ -323,6 +330,8 @@ function ReportsPageContent() {
         thisEnd,
         state.assignments,
         state.leave_days,
+        true,
+        projectEndById,
       );
       const available = availableHoursInRange(
         person,
@@ -346,7 +355,7 @@ function ReportsPageContent() {
       unavailable,
       peopleCount: orgScopedPeople.length,
     };
-  }, [orgScopedPeople, state.assignments, state.leave_days, now]);
+  }, [orgScopedPeople, state.assignments, state.leave_days, now, projectEndById]);
 
   const budgets = useMemo(() => {
     let healthy = 0;
