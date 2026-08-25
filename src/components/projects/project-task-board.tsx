@@ -4087,15 +4087,16 @@ function InlineTaskForm({
                   >
                     <Link
                       href={scheduleDatesHref}
-                      className={cn(
-                        "inline-flex hover:opacity-80",
-                        boundLinkColorClass(isBoundOutOfSync),
-                      )}
+                      className="inline-flex hover:opacity-80"
                       aria-label={boundLinkTooltip({
                         outOfSync: isBoundOutOfSync,
                       })}
                     >
-                      <Link2 size={16} strokeWidth={2} />
+                      <Link2
+                        size={16}
+                        strokeWidth={2}
+                        className={boundLinkColorClass(isBoundOutOfSync)}
+                      />
                     </Link>
                   </Tooltip>
                 ) : (
@@ -4105,15 +4106,16 @@ function InlineTaskForm({
                     })}
                   >
                     <span
-                      className={cn(
-                        "inline-flex",
-                        boundLinkColorClass(isBoundOutOfSync),
-                      )}
+                      className="inline-flex"
                       aria-label={boundLinkTooltip({
                         outOfSync: isBoundOutOfSync,
                       })}
                     >
-                      <Link2 size={16} strokeWidth={2} />
+                      <Link2
+                        size={16}
+                        strokeWidth={2}
+                        className={boundLinkColorClass(isBoundOutOfSync)}
+                      />
                     </span>
                   </Tooltip>
                 )}
@@ -5013,10 +5015,17 @@ function TaskRow({
                   });
                   const iconClass = cn(
                     "inline-flex shrink-0",
-                    boundLinkColorClass(boundOos),
                     (href || canSync) && "hover:opacity-80",
                   );
-                  const icon = <Link2 size={16} strokeWidth={2} />;
+                  // Color on the SVG — not the <Link>. Unlayered `a { color: inherit }`
+                  // in globals.css beats Tailwind text utilities on anchors.
+                  const icon = (
+                    <Link2
+                      size={16}
+                      strokeWidth={2}
+                      className={boundLinkColorClass(boundOos)}
+                    />
+                  );
                   return (
                     <Tooltip
                       align={ctx.compact && ctx.readOnly ? "end" : "center"}

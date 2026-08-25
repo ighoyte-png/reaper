@@ -1473,7 +1473,8 @@ export function spendHealth(
 
 export function formatHours(hours: number): string {
   const rounded = Math.round(hours * 100) / 100;
-  return `${rounded.toFixed(2)}h`;
+  // Up to 2 decimals, no trailing zeros (3, 3.5, 3.75 — not 3.00 / 3.50).
+  return `${parseFloat(rounded.toFixed(2))}h`;
 }
 
 /** Clamp assignment hours to two decimal places (e.g. 0.25). */

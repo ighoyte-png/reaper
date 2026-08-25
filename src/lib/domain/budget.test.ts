@@ -5,6 +5,7 @@ import {
   contractorExpenseAggregatesInRange,
   contractorExpenseAppliesInMonth,
   contractorRepeatEndMonth,
+  formatHours,
   listedBudgetAmount,
   projectToDateSpan,
   scheduleOutsideProjectDates,
@@ -418,5 +419,17 @@ describe("contractorExpenseAggregatesInRange", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.notes).toBe("Monthly studio fee");
     expect(rows[0]!.amount).toBe(1000 * 10);
+  });
+});
+
+describe("formatHours", () => {
+  it("rounds to 2 decimals and drops trailing zeros", () => {
+    expect(formatHours(3)).toBe("3h");
+    expect(formatHours(3.0)).toBe("3h");
+    expect(formatHours(3.5)).toBe("3.5h");
+    expect(formatHours(3.5)).toBe("3.5h");
+    expect(formatHours(3.7455)).toBe("3.75h");
+    expect(formatHours(3.50)).toBe("3.5h");
+    expect(formatHours(12.04)).toBe("12.04h");
   });
 });
