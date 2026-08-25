@@ -91,7 +91,10 @@ import {
   splitWeeklySeriesForInstance,
   withRecurrenceException,
 } from "@/lib/domain/recurrence-split";
-import { applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
+import {
+  applyFullDayLeaveOverrideForDates,
+  sliceWeeklyOccurrenceAt,
+} from "@/lib/domain/leave-override";
 import { fullDayLeaveDatesInRange } from "@/lib/domain/project-manager-schedule";
 import {
   assignmentPlacementConflicts,
@@ -386,6 +389,8 @@ export function ScheduleGrid() {
   const [cutBoundConfirm, setCutBoundConfirm] = useState<null | {
     assignmentId: string;
     cutDate: string;
+    occurrenceStart?: string;
+    occurrenceEnd?: string;
   }>(null);
   /** Pending project-origin bind completed on first assignment save. */
   const pendingProjectBindTaskIdRef = useRef<string | null>(null);
@@ -2999,12 +3004,19 @@ export function ScheduleGrid() {
   function sliceAssignmentAt(
     assignmentId: string,
     cutDate: string,
-    opts?: { confirmed?: boolean },
+    opts?: {
+      confirmed?: boolean;
+      occurrenceStart?: string;
+      occurrenceEnd?: string;
+    },
   ) {
     const base = state.assignments.find((a) => a.id === assignmentId);
-    if (!base || base.start_date >= base.end_date) return;
-    if (cutDate < base.start_date || cutDate >= base.end_date) return;
-    const days = workingDaysBetween(base.start_date, base.end_date);
+    if (!base) return;
+    const occStart = opts?.occurrenceStart ?? base.start_date;
+    const occEnd = opts?.occurrenceEnd ?? base.end_date;
+    if (occStart >= occEnd) return;
+    if (cutDate < occStart || cutDate >= occEnd) return;
+    const days = workingDaysBetween(occStart, occEnd);
     if (!days.includes(cutDate)) return;
     const cutIndex = days.indexOf(cutDate);
     if (cutIndex < 0 || cutIndex >= days.length - 1) return;
@@ -3012,10 +3024,113 @@ export function ScheduleGrid() {
       (r) => r.assignment_id === assignmentId,
     );
     if (hasBound && !opts?.confirmed) {
-      setCutBoundConfirm({ assignmentId, cutDate });
+      setCutBoundConfirm({
+        assignmentId,
+        cutDate,
+        occurrenceStart: opts?.occurrenceStart,
+        occurrenceEnd: opts?.occurrenceEnd,
+      });
       return;
     }
     setCutBoundConfirm(null);
+    const boundRows = state.assignment_bound_tasks
+      .filter((r) => r.assignment_id === assignmentId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const recurrence = base.recurrence ?? "none";
+
+    if (recurrence === "weekly") {
+      const { upserts, deletes } = sliceWeeklyOccurrenceAt(
+        base,
+        cutDate,
+        occStart,
+        occEnd,
+        newId,
+      );
+      if (upserts.length === 0 && deletes.length === 0) return;
+
+      const leftFrag = upserts.find(
+        (a) =>
+          a.recurrence === "none" &&
+          a.start_date === days[0] &&
+          a.end_date === cutDate,
+      );
+      const rightFrag = upserts.find(
+        (a) =>
+          a.recurrence === "none" &&
+          a.start_date === days[cutIndex + 1] &&
+          a.end_date === days[days.length - 1],
+      );
+      const newIds = upserts
+        .filter((row) => row.id !== base.id)
+        .map((row) => row.id);
+
+      pushUndo({
+        kind: "assignments",
+        restoreAssignments: [{ ...base }],
+        removeAssignmentIds: newIds,
+      });
+
+      for (const row of upserts) {
+        upsertAssignment(row);
+      }
+
+      const finishWeeklySlice = () => {
+        for (const id of deletes) {
+          deleteAssignment(id);
+        }
+        selectAssignment(leftFrag?.id ?? assignmentId);
+        setSliceMode(false);
+        push("Assignment sliced");
+      };
+
+      if (boundRows.length > 0 && leftFrag && rightFrag) {
+        void (async () => {
+          await copyAssignmentBoundTasks(assignmentId, leftFrag.id);
+          await copyAssignmentBoundTasks(assignmentId, rightFrag.id);
+          if (!deletes.includes(assignmentId)) {
+            await clearAssignmentBoundTasks(assignmentId);
+          }
+          const nextAssignments = state.assignments
+            .filter((a) => !deletes.includes(a.id))
+            .concat(upserts);
+          const nextBinds = [
+            ...state.assignment_bound_tasks.filter(
+              (r) => r.assignment_id !== assignmentId,
+            ),
+            ...boundRows.map((r) => ({
+              ...r,
+              assignment_id: leftFrag.id,
+            })),
+            ...boundRows.map((r) => ({
+              ...r,
+              assignment_id: rightFrag.id,
+            })),
+          ];
+          const taskIds = [...new Set(boundRows.map((r) => r.task_id))];
+          const patches = syncNonGanttTaskDatesFromBindings(
+            nextBinds,
+            state.tasks,
+            state.task_lists,
+            nextAssignments,
+            taskIds,
+          );
+          for (const patch of patches) {
+            const task = state.tasks.find((t) => t.id === patch.taskId);
+            if (!task) continue;
+            upsertTask({
+              ...task,
+              start_date: patch.start_date,
+              due_date: patch.due_date,
+            });
+          }
+          finishWeeklySlice();
+        })();
+      } else {
+        finishWeeklySlice();
+      }
+      return;
+    }
+
     const leftEnd = cutDate;
     const rightStart = days[cutIndex + 1];
     const left: Assignment = {
@@ -3027,9 +3142,6 @@ export function ScheduleGrid() {
       id: newId("asg"),
       start_date: rightStart,
     };
-    const boundRows = state.assignment_bound_tasks
-      .filter((r) => r.assignment_id === assignmentId)
-      .sort((a, b) => a.sort_order - b.sort_order);
     pushUndo({
       kind: "assignments",
       restoreAssignments: [{ ...base }],
@@ -4466,7 +4578,10 @@ export function ScheduleGrid() {
                                           dayKey &&
                                           dayKey !== occ.end_date
                                         ) {
-                                          sliceAssignmentAt(base.id, dayKey);
+                                          sliceAssignmentAt(base.id, dayKey, {
+                                            occurrenceStart: occ.start_date,
+                                            occurrenceEnd: occ.end_date,
+                                          });
                                           return;
                                         }
                                         if (isAssignmentScheduleLocked(base.id)) {
@@ -5944,6 +6059,8 @@ export function ScheduleGrid() {
             if (pending) {
               sliceAssignmentAt(pending.assignmentId, pending.cutDate, {
                 confirmed: true,
+                occurrenceStart: pending.occurrenceStart,
+                occurrenceEnd: pending.occurrenceEnd,
               });
             }
           }}

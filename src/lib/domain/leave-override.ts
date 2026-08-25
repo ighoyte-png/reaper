@@ -169,6 +169,88 @@ function punchWeekly(
 }
 
 /**
+ * Split one weekly occurrence at a working day, leaving the series intact
+ * before and after that week (same model as leave punch on weekly rows).
+ */
+export function sliceWeeklyOccurrenceAt(
+  assignment: Assignment,
+  cutDate: string,
+  occurrenceStart: string,
+  occurrenceEnd: string,
+  newId: (prefix: string) => string,
+): LeaveOverrideResult {
+  const days = workingDaysBetween(occurrenceStart, occurrenceEnd);
+  if (!days.includes(cutDate)) return { upserts: [], deletes: [] };
+  const cutIndex = days.indexOf(cutDate);
+  if (cutIndex < 0 || cutIndex >= days.length - 1) return { upserts: [], deletes: [] };
+
+  const occs = expandAssignmentInRange(
+    assignment,
+    occurrenceStart,
+    occurrenceEnd,
+  );
+  const occ =
+    occs.find(
+      (o) =>
+        o.start_date === occurrenceStart && o.end_date === occurrenceEnd,
+    ) ?? occs.find((o) => occurrenceCoversDay(o, cutDate));
+  if (!occ) return { upserts: [], deletes: [] };
+
+  const W = occ.weekOffset;
+  const upserts: Assignment[] = [];
+  const deletes: string[] = [];
+
+  upserts.push(
+    cloneAssignment(assignment, {
+      id: newId("asg"),
+      start_date: days[0]!,
+      end_date: cutDate,
+      recurrence: "none",
+      recurrence_end_date: null,
+      recurrence_exceptions: [],
+    }),
+  );
+  upserts.push(
+    cloneAssignment(assignment, {
+      id: newId("asg"),
+      start_date: days[cutIndex + 1]!,
+      end_date: days[days.length - 1]!,
+      recurrence: "none",
+      recurrence_end_date: null,
+      recurrence_exceptions: [],
+    }),
+  );
+
+  const nextStart = toDateKey(addWeeks(parseISO(assignment.start_date), W + 1));
+  const nextEnd = toDateKey(addWeeks(parseISO(assignment.end_date), W + 1));
+  const seriesEnd = assignment.recurrence_end_date;
+  const canContinue = !seriesEnd || nextStart <= seriesEnd;
+  if (canContinue) {
+    upserts.push(
+      cloneAssignment(assignment, {
+        id: newId("asg"),
+        start_date: nextStart,
+        end_date: nextEnd,
+        recurrence: "weekly",
+        recurrence_end_date: seriesEnd,
+      }),
+    );
+  }
+
+  if (W === 0) {
+    deletes.push(assignment.id);
+  } else {
+    const endBefore = prevWorkingDay(occ.start_date);
+    upserts.push({
+      ...assignment,
+      recurrence_end_date: endBefore,
+    });
+  }
+
+  return { upserts, deletes };
+}
+
+/**
  * Punch a single assignment off one date (non-recurring split or weekly
  * exception/fragments). Used by leave override and overlap cleanup.
  */
