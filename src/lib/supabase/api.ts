@@ -650,6 +650,7 @@ function emptyWorkspace(): DemoState {
     unread_mentions: [],
     unread_task_threads: [],
     unread_assigned_tasks: [],
+    notifications: [],
     project_favorites: [],
     pods: [],
     pod_members: [],
@@ -1309,6 +1310,47 @@ export async function loadOrgBootstrap(
         .filter((r) => r.task_id && r.person_id);
     }
   }
+  let notifications: import("@/lib/domain/notifications").NotificationRow[] = [];
+  if (sessionProfileId) {
+    const notifRes = await supabase
+      .from("notifications")
+      .select(
+        "id, organization_id, recipient_profile_id, kind, title, body, href, entity_type, entity_id, actor_person_id, read_at, created_at",
+      )
+      .eq("organization_id", orgId)
+      .eq("recipient_profile_id", sessionProfileId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (notifRes.error) {
+      if (
+        !/relation .*notifications.* does not exist/i.test(
+          notifRes.error.message,
+        ) &&
+        notifRes.error.code !== "42P01"
+      ) {
+        console.warn("notifications load failed", notifRes.error.message);
+      }
+    } else {
+      notifications = (notifRes.data ?? []).map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          id: String(r.id),
+          organization_id: String(r.organization_id),
+          recipient_profile_id: String(r.recipient_profile_id),
+          kind: r.kind as import("@/lib/domain/notifications").NotificationKind,
+          title: String(r.title ?? ""),
+          body: String(r.body ?? ""),
+          href: String(r.href ?? "/"),
+          entity_type: r.entity_type != null ? String(r.entity_type) : null,
+          entity_id: r.entity_id != null ? String(r.entity_id) : null,
+          actor_person_id:
+            r.actor_person_id != null ? String(r.actor_person_id) : null,
+          read_at: r.read_at != null ? String(r.read_at) : null,
+          created_at: String(r.created_at ?? new Date().toISOString()),
+        };
+      });
+    }
+  }
   let project_favorites: ProjectFavorite[] = [];
   if (projectFavoritesRes.error) {
     if (
@@ -1440,6 +1482,7 @@ export async function loadOrgBootstrap(
     unread_mentions,
     unread_task_threads,
     unread_assigned_tasks,
+    notifications,
     project_favorites,
     pods,
     pod_members,

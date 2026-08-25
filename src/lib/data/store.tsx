@@ -178,6 +178,15 @@ import { clearViewAsStorage } from "@/lib/view-as-storage";
 import { applyFullDayLeaveOverride, applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isAlwaysFullDayKind, isFullDayLeave, normalizeLeaveKind } from "@/lib/domain/leave";
 import { personAvatarColor } from "@/lib/domain/people";
+import {
+  buildDemoNotificationRows,
+  emitNotificationClient,
+} from "@/lib/notifications-client";
+import { projectRelativePath, workspacePath } from "@/lib/paths";
+import {
+  dedupeProfileIds,
+  type EmitNotificationInput,
+} from "@/lib/domain/notifications";
 import { workingDaysBetween } from "@/lib/domain/dates";
 import {
   buildAppliedTemplate,
@@ -503,6 +512,9 @@ function loadDemoState(): DemoState {
               typeof (r as { person_id?: unknown }).person_id === "string",
           )
         : (seed.unread_assigned_tasks ?? []),
+      notifications: Array.isArray(parsed.notifications)
+        ? (parsed.notifications as import("@/lib/domain/notifications").NotificationRow[])
+        : (seed.notifications ?? []),
       project_favorites: Array.isArray(parsed.project_favorites)
         ? parsed.project_favorites.filter(
             (f): f is ProjectFavorite =>
@@ -562,6 +574,7 @@ function emptySupabaseState(): DemoState {
     unread_mentions: [],
     unread_task_threads: [],
     unread_assigned_tasks: [],
+    notifications: [],
     project_favorites: [],
     pods: [],
     pod_members: [],
@@ -824,6 +837,8 @@ interface DataContextValue {
    * e.g. when the user opens the task on the project board.
    */
   markMentionsReadForTask: (taskId: string, personId: string) => void;
+  /** Mark durable notification feed rows read locally (and demo mirror). */
+  markNotificationFeedRead: (ids: string[] | "all") => void;
   /** Mark assigner ↔ assignee task thread as read (opening the task). */
   dismissTaskThreadUnread: (taskId: string, personId: string) => void;
   /** Clear outstanding "assigned to you" unread (read or dismiss). */
@@ -1596,6 +1611,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         enqueueRealtimeChange("task_assigned_unreads"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        enqueueRealtimeChange("notifications"),
       )
       .on(
         "postgres_changes",
@@ -2697,6 +2722,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     },
     [mode],
+  );
+
+  /** Durable feed emit: demo mirrors in-memory; live hits API (+ push). */
+  const emitFeed = useCallback(
+    (input: EmitNotificationInput) => {
+      const recipients = dedupeProfileIds(input.recipientProfileIds);
+      if (recipients.length === 0) return;
+      if (mode === "demo") {
+        const rows = buildDemoNotificationRows({
+          ...input,
+          recipientProfileIds: recipients,
+        });
+        patch((prev) => ({
+          ...prev,
+          notifications: [...rows, ...prev.notifications],
+        }));
+        return;
+      }
+      emitNotificationClient({ ...input, recipientProfileIds: recipients });
+    },
+    [mode, patch],
   );
 
 
@@ -4032,6 +4078,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
             authorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
           sendOrgBroadcast("assignment-note-mention", payload);
+          const profileIds = dedupeProfileIds(
+            newlyMentioned.map(
+              (pid) =>
+                state.people.find((p) => p.id === pid)?.profile_id ?? null,
+            ),
+          );
+          const slug = state.organization.slug || "";
+          const qs = new URLSearchParams({
+            person: row.person_id,
+            assignment: row.id,
+            tab: "details",
+            date: row.start_date,
+          });
+          emitFeed({
+            organizationId: row.organization_id,
+            recipientProfileIds: profileIds,
+            kind: "mention",
+            title: payload.authorName,
+            body: project?.name
+              ? `Mentioned in schedule note · ${project.name}`
+              : "Mentioned in a schedule note",
+            href: workspacePath(slug, `/schedule?${qs.toString()}`),
+            entityType: "assignment",
+            entityId: row.id,
+            actorPersonId: myPerson?.id ?? null,
+          });
         }
       },
       deleteAssignment: (id) => {
@@ -5200,6 +5272,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
             authorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
           sendOrgBroadcast("task-note-mention", payload);
+          const profileIds = dedupeProfileIds(
+            newlyMentionedLocal.map(
+              (pid) =>
+                state.people.find((p) => p.id === pid)?.profile_id ?? null,
+            ),
+          );
+          const slug = state.organization.slug || "";
+          const project =
+            state.projects.find((p) => p.id === row.project_id) ?? null;
+          emitFeed({
+            organizationId: row.organization_id,
+            recipientProfileIds: profileIds,
+            kind: "mention",
+            title: payload.authorName,
+            body: row.title
+              ? `Mentioned in task “${row.title}”`
+              : "Mentioned in a task description",
+            href: project
+              ? workspacePath(
+                  slug,
+                  projectRelativePath(project, state.clients, `task=${row.id}`),
+                )
+              : workspacePath(slug, "/dashboard"),
+            entityType: "task",
+            entityId: row.id,
+            actorPersonId: myPerson?.id ?? null,
+          });
         }
 
         // Opt-in assignee notify (create or first edit save).
@@ -5222,6 +5321,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (mode === "demo") {
             dispatchTaskAssigned(payload);
           }
+          const assigneeProfile = state.people.find(
+            (p) => p.id === row.assignee_person_id,
+          )?.profile_id;
+          const slug = state.organization.slug || "";
+          const project =
+            state.projects.find((p) => p.id === row.project_id) ?? null;
+          emitFeed({
+            organizationId: row.organization_id,
+            recipientProfileIds: assigneeProfile ? [assigneeProfile] : [],
+            kind: "assigned",
+            title: payload.authorName,
+            body: row.title
+              ? `Assigned you “${row.title}”`
+              : "Assigned you a task",
+            href: project
+              ? workspacePath(
+                  slug,
+                  projectRelativePath(project, state.clients, `task=${row.id}`),
+                )
+              : workspacePath(slug, "/dashboard"),
+            entityType: "task",
+            entityId: row.id,
+            actorPersonId: myPerson?.id ?? null,
+          });
         }
       },
       deleteTask: (id) => {
@@ -5512,6 +5635,66 @@ export function DataProvider({ children }: { children: ReactNode }) {
             if (mode === "demo") {
               dispatchNewComment(payload);
             }
+            const mentionSet = new Set(newlyMentionedForBroadcast);
+            const messagePersonIds = notifyIds.filter(
+              (id) => !mentionSet.has(id),
+            );
+            const messageProfiles = dedupeProfileIds(
+              messagePersonIds.map(
+                (pid) =>
+                  state.people.find((p) => p.id === pid)?.profile_id ?? null,
+              ),
+            );
+            const mentionProfiles = dedupeProfileIds(
+              newlyMentionedForBroadcast.map(
+                (pid) =>
+                  state.people.find((p) => p.id === pid)?.profile_id ?? null,
+              ),
+            );
+            const slug = state.organization.slug || "";
+            const href = workspacePath(
+              slug,
+              projectRelativePath(
+                project ?? { client_id: null, slug: "project" },
+                state.clients,
+                `task=${row.task_id}&comment=${row.id}`,
+              ),
+            );
+            if (messageProfiles.length > 0) {
+              emitFeed({
+                organizationId: row.organization_id,
+                recipientProfileIds: messageProfiles,
+                kind: "message",
+                title: payload.authorName,
+                body: [
+                  task.title
+                    ? `New comment on “${task.title}”`
+                    : "New comment",
+                  snippet || null,
+                ]
+                  .filter(Boolean)
+                  .join("\n"),
+                href,
+                entityType: "comment",
+                entityId: row.id,
+                actorPersonId: authorPerson.id,
+              });
+            }
+            if (mentionProfiles.length > 0) {
+              emitFeed({
+                organizationId: row.organization_id,
+                recipientProfileIds: mentionProfiles,
+                kind: "mention",
+                title: payload.authorName,
+                body: task.title
+                  ? `Mentioned you in “${task.title}”`
+                  : "Mentioned you in a comment",
+                href,
+                entityType: "comment",
+                entityId: row.id,
+                actorPersonId: authorPerson.id,
+              });
+            }
           }
         }
       },
@@ -5636,6 +5819,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
             reactorColor: myPerson ? personAvatarColor(myPerson) : null,
           };
           sendOrgBroadcast("comment-reaction", payload);
+          const slug = state.organization.slug || "";
+          const project = task
+            ? (state.projects.find((p) => p.id === task.project_id) ?? null)
+            : null;
+          emitFeed({
+            organizationId: organizationId,
+            recipientProfileIds: [comment.author_profile_id],
+            kind: "reaction",
+            title: payload.reactorName,
+            body: [
+              trimmed
+                ? `${trimmed} reacted to your comment`
+                : "Reacted to your comment",
+              task?.title ?? null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            href: project
+              ? workspacePath(
+                  slug,
+                  projectRelativePath(
+                    project,
+                    state.clients,
+                    `task=${comment.task_id}&comment=${commentId}`,
+                  ),
+                )
+              : workspacePath(slug, "/dashboard"),
+            entityType: "comment",
+            entityId: commentId,
+            actorPersonId: myPerson?.id ?? null,
+          });
         }
       },
       upsertBulletin: (bulletin) => {
@@ -5701,6 +5915,40 @@ export function DataProvider({ children }: { children: ReactNode }) {
                     },
               );
             }
+            const slug = state.organization.slug || "";
+            const linkedProject = row.project_id
+              ? (state.projects.find((p) => p.id === row.project_id) ?? null)
+              : null;
+            const kind =
+              row.tone === "success" && row.milestone_id
+                ? ("milestone_approved" as const)
+                : row.tone === "success" && row.task_id
+                  ? ("in_review" as const)
+                  : ("bulletin" as const);
+            emitFeed({
+              organizationId: row.organization_id,
+              recipientProfileIds: recipients,
+              kind,
+              title: row.title || "Bulletin",
+              body: notesPlainText(row.body).slice(0, 140),
+              href: linkedProject
+                ? workspacePath(
+                    slug,
+                    projectRelativePath(
+                      linkedProject,
+                      state.clients,
+                      row.task_id
+                        ? `task=${row.task_id}`
+                        : row.milestone_id
+                          ? `milestone=${row.milestone_id}`
+                          : undefined,
+                    ),
+                  )
+                : workspacePath(slug, "/dashboard"),
+              entityType: "bulletin",
+              entityId: row.id,
+              actorPersonId: myPerson?.id ?? null,
+            });
           }
         } else if (isNew && mode === "demo") {
           const recipients = bulletinUnreadRecipientProfileIds(
@@ -5720,6 +5968,40 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   },
             );
           }
+          const slug = state.organization.slug || "";
+          const linkedProject = row.project_id
+            ? (state.projects.find((p) => p.id === row.project_id) ?? null)
+            : null;
+          const kind =
+            row.tone === "success" && row.milestone_id
+              ? ("milestone_approved" as const)
+              : row.tone === "success" && row.task_id
+                ? ("in_review" as const)
+                : ("bulletin" as const);
+          emitFeed({
+            organizationId: row.organization_id,
+            recipientProfileIds: recipients,
+            kind,
+            title: row.title || "Bulletin",
+            body: notesPlainText(row.body).slice(0, 140),
+            href: linkedProject
+              ? workspacePath(
+                  slug,
+                  projectRelativePath(
+                    linkedProject,
+                    state.clients,
+                    row.task_id
+                      ? `task=${row.task_id}`
+                      : row.milestone_id
+                        ? `milestone=${row.milestone_id}`
+                        : undefined,
+                  ),
+                )
+              : workspacePath(slug, "/dashboard"),
+            entityType: "bulletin",
+            entityId: row.id,
+            actorPersonId: myPerson?.id ?? null,
+          });
         }
       },
       deleteBulletin: (id) => {
@@ -5873,6 +6155,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
             });
           }
         }
+      },
+      markNotificationFeedRead: (ids) => {
+        const now = new Date().toISOString();
+        const profileId = profile?.id;
+        patch((prev) => {
+          let changed = false;
+          const notifications = prev.notifications.map((n) => {
+            if (n.read_at) return n;
+            if (profileId && n.recipient_profile_id !== profileId) return n;
+            if (ids !== "all" && !ids.includes(n.id)) return n;
+            changed = true;
+            return { ...n, read_at: now };
+          });
+          return changed ? { ...prev, notifications } : prev;
+        });
       },
       dismissTaskThreadUnread: (taskId, personId) => {
         if (!taskId || !personId) return;
@@ -6362,6 +6659,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       fetchPersonUtilizationWeeksRpc,
       fetchOrgForecastRpc,
       fetchOrgTaskStatsRpc,
+      emitFeed,
       router,
       pathname,
     ],

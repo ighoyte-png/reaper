@@ -9,6 +9,7 @@ import {
   shouldOfferNotificationPermissionPrompt,
   snoozeNotificationPermissionPrompt,
 } from "@/lib/desktop-notifications";
+import { ensurePushSubscription } from "@/lib/web-push-client";
 import { cn } from "@/lib/cn";
 
 /**
@@ -39,6 +40,7 @@ export function NotificationPermissionBanner() {
     ) {
       clearNotificationPermissionPromptPrefs();
       setVisible(false);
+      void ensurePushSubscription();
     }
   }, [visible]);
 
@@ -50,6 +52,7 @@ export function NotificationPermissionBanner() {
       if (result === "granted") {
         clearNotificationPermissionPromptPrefs();
         setVisible(false);
+        void ensurePushSubscription();
       } else {
         // Denied or still default — refresh visibility rules.
         refresh();

@@ -16,13 +16,20 @@ export async function ensureDesktopNotificationPermission(): Promise<
   NotificationPermission | "unsupported"
 > {
   if (!desktopNotificationsSupported()) return "unsupported";
-  if (Notification.permission === "granted") return "granted";
-  if (Notification.permission === "denied") return "denied";
-  try {
-    return await Notification.requestPermission();
-  } catch {
-    return Notification.permission;
+  let permission: NotificationPermission = Notification.permission;
+  if (permission === "default") {
+    try {
+      permission = await Notification.requestPermission();
+    } catch {
+      permission = Notification.permission;
+    }
   }
+  if (permission === "granted") {
+    void import("@/lib/web-push-client").then(({ ensurePushSubscription }) => {
+      void ensurePushSubscription();
+    });
+  }
+  return permission;
 }
 
 function absoluteUrl(pathOrUrl: string): string {

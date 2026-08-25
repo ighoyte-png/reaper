@@ -122,7 +122,11 @@ export function PwaProvider({ children }: { children?: ReactNode }) {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
-    void navigator.serviceWorker.register("/sw.js").catch(() => {
+    void navigator.serviceWorker.register("/sw.js").then(() => {
+      void import("@/lib/web-push-client").then(({ ensurePushSubscription }) => {
+        void ensurePushSubscription();
+      });
+    }).catch(() => {
       /* ignore — private mode / unsupported */
     });
 

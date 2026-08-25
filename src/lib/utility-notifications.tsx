@@ -14,10 +14,14 @@ import { useData } from "@/lib/data/store";
 import { isMilestoneApprovalBulletin, isTaskInReviewBulletin } from "@/lib/domain/bulletins";
 import { mentionTargetFromUnread, mentionUnreadKey } from "@/lib/mentions";
 import {
+  mapNotificationRowToCard,
+  notificationTag,
+  type NotificationRow,
+} from "@/lib/domain/notifications";
+import {
   clearNotificationCenterCards,
   notificationCenterStorageKey,
   readNotificationCenterCards,
-  writeNotificationCenterCards,
 } from "@/lib/notification-center-persist";
 import { notesPlainText } from "@/lib/notes-html";
 import {
@@ -25,11 +29,14 @@ import {
   notificationPortraitIcon,
   reaperNotificationBadgeUrl,
   showDesktopNotification,
+  COMMENT_REACTION_EVENT,
   TASK_ASSIGNED_EVENT,
+  type CommentReactionBroadcast,
   type TaskAssignedBroadcast,
 } from "@/lib/desktop-notifications";
 import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
+import { createClient } from "@/lib/supabase/client";
 import { useViewAsOptional } from "@/lib/view-as";
 import type {
   Bulletin,
@@ -46,7 +53,8 @@ export type UtilityNotificationKind =
   | "in_review"
   | "milestone_approved"
   | "message"
-  | "assigned";
+  | "assigned"
+  | "reaction";
 
 export type UtilityNotificationCard = {
   id: string;
@@ -112,7 +120,8 @@ export function UtilityNotificationsProvider({
 }: {
   children: ReactNode;
 }) {
-  const { state, myPerson, profile, isPublicShare } = useData();
+  const { state, myPerson, profile, isPublicShare, mode, markNotificationFeedRead } =
+    useData();
   const appHref = useAppHref();
   const projectHref = useProjectHref();
   const viewAs = useViewAsOptional();
@@ -124,6 +133,7 @@ export function UtilityNotificationsProvider({
   const seenBulletinIdsRef = useRef<Set<string> | null>(null);
   const seenMessageCommentIdsRef = useRef<Set<string> | null>(null);
   const seenAssignedCardIdsRef = useRef<Set<string> | null>(null);
+  const seenFeedIdsRef = useRef<Set<string> | null>(null);
   /** After first message-thread pass, new cards also get a desktop push. */
   const messageDesktopSeededRef = useRef(false);
   /** After first mention pass, new mention cards also get a desktop push. */
@@ -148,7 +158,7 @@ export function UtilityNotificationsProvider({
       ? notificationCenterStorageKey(orgId, profileId, mentionPersonId)
       : null;
 
-  // Restore cards from localStorage before unread watchers run.
+  // One-time localStorage migrate → then server feed is source of truth.
   useEffect(() => {
     for (const t of fadeTimersRef.current.values()) clearTimeout(t);
     fadeTimersRef.current.clear();
@@ -159,6 +169,7 @@ export function UtilityNotificationsProvider({
       seenBulletinIdsRef.current = null;
       seenMessageCommentIdsRef.current = null;
       seenAssignedCardIdsRef.current = null;
+      seenFeedIdsRef.current = null;
       messageDesktopSeededRef.current = false;
       mentionDesktopSeededRef.current = false;
       bulletinDesktopSeededRef.current = false;
@@ -172,6 +183,7 @@ export function UtilityNotificationsProvider({
     messageDesktopSeededRef.current = false;
     mentionDesktopSeededRef.current = false;
     bulletinDesktopSeededRef.current = false;
+    seenFeedIdsRef.current = null;
 
     const mentionSeen = new Set<string>();
     const bulletinSeen = new Set<string>();
@@ -204,6 +216,8 @@ export function UtilityNotificationsProvider({
         visible: true,
       })),
     );
+    // Drop local SoT after migrate — durable feed owns unread state going forward.
+    clearNotificationCenterCards(storageKey);
     setStorageReady(true);
   }, [storageKey]);
 
@@ -222,31 +236,6 @@ export function UtilityNotificationsProvider({
       return changed ? next : prev;
     });
   }, [storageReady, isPublicShare, state.bulletins]);
-
-  // Persist whenever the list changes (read/unread/dismiss).
-  useEffect(() => {
-    if (!storageKey || !storageReady || storageKeyRef.current !== storageKey) {
-      return;
-    }
-    writeNotificationCenterCards(
-      storageKey,
-      cards.map((c) => ({
-        id: c.id,
-        kind: c.kind,
-        href: c.href,
-        title: c.title,
-        subtitle: c.subtitle,
-        clientName: c.clientName,
-        clientColor: c.clientColor,
-        enqueuedAt: c.enqueuedAt,
-        read: c.read,
-        mentionTarget: c.mentionTarget,
-        bulletinId: c.bulletinId,
-        taskId: c.taskId,
-        commentId: c.commentId,
-      })),
-    );
-  }, [cards, storageKey, storageReady]);
 
   const scheduleVisible = useCallback((id: string) => {
     const delay =
@@ -270,18 +259,30 @@ export function UtilityNotificationsProvider({
   }, []);
 
   const enqueue = useCallback(
-    (card: Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read">) => {
+    (
+      card: Omit<UtilityNotificationCard, "visible" | "enqueuedAt" | "read"> & {
+        enqueuedAt?: number;
+        read?: boolean;
+      },
+    ) => {
       if (isPublicShare) return;
 
       setCards((prev) => {
-        if (prev.some((c) => c.id === card.id)) return prev;
-        // Newest notices sit at the top of the center list.
+        if (prev.some((c) => c.id === card.id)) {
+          // Sync read flag for existing feed cards.
+          if (card.read) {
+            return prev.map((c) =>
+              c.id === card.id && !c.read ? { ...c, read: true } : c,
+            );
+          }
+          return prev;
+        }
         return [
           {
             ...card,
-            enqueuedAt: Date.now(),
+            enqueuedAt: card.enqueuedAt ?? Date.now(),
             visible: false,
-            read: false,
+            read: Boolean(card.read),
           },
           ...prev,
         ];
@@ -291,11 +292,34 @@ export function UtilityNotificationsProvider({
     [isPublicShare, scheduleVisible],
   );
 
-  const markCardRead = useCallback((id: string) => {
-    setCards((prev) =>
-      prev.map((c) => (c.id === id && !c.read ? { ...c, read: true } : c)),
-    );
-  }, []);
+  const markFeedReadOnServer = useCallback(
+    (feedIds: string[]) => {
+      if (mode !== "supabase" || feedIds.length === 0) return;
+      const now = new Date().toISOString();
+      void createClient()
+        .from("notifications")
+        .update({ read_at: now })
+        .in("id", feedIds)
+        .then(({ error }) => {
+          if (error) console.warn("mark notifications read failed", error.message);
+        });
+    },
+    [mode],
+  );
+
+  const markCardRead = useCallback(
+    (id: string) => {
+      setCards((prev) =>
+        prev.map((c) => (c.id === id && !c.read ? { ...c, read: true } : c)),
+      );
+      if (id.startsWith("feed:")) {
+        const feedId = id.slice("feed:".length);
+        markNotificationFeedRead([feedId]);
+        markFeedReadOnServer([feedId]);
+      }
+    },
+    [markFeedReadOnServer, markNotificationFeedRead],
+  );
 
   const removeCard = useCallback((id: string) => {
     const t = fadeTimersRef.current.get(id);
@@ -366,15 +390,104 @@ export function UtilityNotificationsProvider({
   const clearAll = useCallback(() => {
     for (const t of fadeTimersRef.current.values()) clearTimeout(t);
     fadeTimersRef.current.clear();
+    const feedIds = cards
+      .filter((c) => c.id.startsWith("feed:"))
+      .map((c) => c.id.slice("feed:".length));
     setCards([]);
     if (storageKeyRef.current) {
       clearNotificationCenterCards(storageKeyRef.current);
     }
-  }, []);
+    markNotificationFeedRead("all");
+    if (mode === "supabase") {
+      if (feedIds.length > 0) {
+        markFeedReadOnServer(feedIds);
+      }
+      void createClient()
+        .rpc("mark_all_notifications_read")
+        .then(({ error }) => {
+          if (error) {
+            console.warn("mark_all_notifications_read failed", error.message);
+          }
+        });
+    }
+  }, [cards, mode, markFeedReadOnServer, markNotificationFeedRead]);
 
   const openCenter = useCallback(() => setCenterOpen(true), []);
   const closeCenter = useCallback(() => setCenterOpen(false), []);
   const toggleCenter = useCallback(() => setCenterOpen((v) => !v), []);
+
+  // Durable server/demo feed → Notification Center (+ OS only when tab is hidden).
+  useEffect(() => {
+    if (!storageReady || isPublicShare || !profileId) return;
+    const feed = ((state.notifications ?? []) as NotificationRow[]).filter(
+      (n) => n.recipient_profile_id === profileId,
+    );
+    if (seenFeedIdsRef.current === null) {
+      seenFeedIdsRef.current = new Set(feed.map((n) => n.id));
+      for (const row of feed) {
+        const built = mapNotificationRowToCard(row);
+        enqueue({
+          id: built.id,
+          kind: built.kind,
+          href: built.href,
+          title: built.title,
+          subtitle: built.subtitle,
+          bulletinId: built.bulletinId,
+          taskId: built.taskId,
+          commentId: built.commentId,
+          enqueuedAt: built.enqueuedAt,
+          read: built.read,
+        });
+      }
+      return;
+    }
+
+    const seen = seenFeedIdsRef.current;
+    for (const row of feed) {
+      if (seen.has(row.id)) {
+        if (row.read_at) {
+          setCards((prev) =>
+            prev.map((c) =>
+              c.id === `feed:${row.id}` && !c.read ? { ...c, read: true } : c,
+            ),
+          );
+        }
+        continue;
+      }
+      seen.add(row.id);
+      const built = mapNotificationRowToCard(row);
+      enqueue({
+        id: built.id,
+        kind: built.kind,
+        href: built.href,
+        title: built.title,
+        subtitle: built.subtitle,
+        bulletinId: built.bulletinId,
+        taskId: built.taskId,
+        commentId: built.commentId,
+        enqueuedAt: built.enqueuedAt,
+        read: built.read,
+      });
+      // Prefer Web Push when no focused tab; local OS only if this tab is open but hidden.
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "hidden" &&
+        desktopNotificationPermission() === "granted"
+      ) {
+        void showDesktopNotification(row.title, {
+          body: row.body,
+          tag: notificationTag(row),
+          href: row.href,
+        });
+      }
+    }
+  }, [
+    storageReady,
+    isPublicShare,
+    profileId,
+    state.notifications,
+    enqueue,
+  ]);
 
   // Watch mention unreads
   useEffect(() => {
@@ -697,6 +810,63 @@ export function UtilityNotificationsProvider({
       window.removeEventListener(TASK_ASSIGNED_EVENT, onTaskAssigned);
     };
   }, [storageReady, isPublicShare, enqueue, projectHref]);
+
+  // Comment reactions — OS toast only (same path as former MentionDesktopListener).
+  useEffect(() => {
+    if (!storageReady || isPublicShare) return;
+    const myProfileId = profileId;
+
+    function onCommentReaction(ev: Event) {
+      if (!myProfileId) return;
+      const detail = (ev as CustomEvent<CommentReactionBroadcast>).detail;
+      if (!detail?.authorProfileId) return;
+      if (detail.authorProfileId !== myProfileId) return;
+      if (detail.reactorProfileId === myProfileId) return;
+
+      const snap = stateRef.current;
+      const orgName = snap.organization?.name?.trim() || "Reaper";
+      const reactorName = detail.reactorName?.trim() || "Someone";
+      const emoji = detail.emoji?.trim() || "";
+      const project = detail.projectId
+        ? (snap.projects.find((p) => p.id === detail.projectId) ?? null)
+        : null;
+      const href =
+        project && detail.taskId
+          ? projectHref(
+              project,
+              `task=${detail.taskId}&comment=${detail.commentId}`,
+            )
+          : appHref("/dashboard");
+
+      void (async () => {
+        const icon = await notificationPortraitIcon({
+          name: reactorName,
+          avatarUrl: detail.reactorAvatarUrl,
+          avatarAttachmentId: detail.reactorAvatarAttachmentId,
+          color: detail.reactorColor,
+        });
+        void showDesktopNotification(reactorName, {
+          body: [
+            orgName,
+            emoji
+              ? `${emoji} reacted to your comment`
+              : "Reacted to your comment",
+            detail.taskTitle ? detail.taskTitle : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          tag: `comment-reaction-${detail.commentId}-${detail.reactorProfileId}-${emoji}`,
+          icon,
+          href,
+        });
+      })();
+    }
+
+    window.addEventListener(COMMENT_REACTION_EVENT, onCommentReaction);
+    return () => {
+      window.removeEventListener(COMMENT_REACTION_EVENT, onCommentReaction);
+    };
+  }, [storageReady, isPublicShare, profileId, projectHref, appHref]);
 
   // When unread is cleared elsewhere, mark as read but keep the card.
   useEffect(() => {

@@ -12,7 +12,8 @@ export type NoticeCardTone =
   | "in_review"
   | "milestone_approved"
   | "message"
-  | "assigned";
+  | "assigned"
+  | "reaction";
 
 export function noticeToneClass(
   tone: NoticeCardTone,
@@ -24,6 +25,7 @@ export function noticeToneClass(
   if (tone === "milestone_approved") return "bg-[var(--status-milestone)]/15";
   if (tone === "bulletin") return "bg-[var(--status-over)]/15";
   if (tone === "assigned") return "bg-[var(--status-near)]/15";
+  if (tone === "reaction") return "bg-[var(--accent)]/12";
   return "bg-[var(--accent)]/15";
 }
 

@@ -1,5 +1,12 @@
 import type { MentionTarget } from "@/lib/types";
 
+/**
+ * Legacy localStorage helpers for Notification Center cards.
+ * Server `notifications` feed is now the source of truth; these remain only
+ * for a one-time migrate-on-load in UtilityNotificationsProvider, then keys
+ * are cleared. Do not write new SoT here.
+ */
+
 export type PersistedNotificationKind =
   | "mention"
   | "bulletin"

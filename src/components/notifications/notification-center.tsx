@@ -9,6 +9,7 @@ import {
   Megaphone,
   MessageSquare,
   Milestone,
+  SmilePlus,
   UserPlus,
   X,
   type LucideIcon,
@@ -35,6 +36,7 @@ function kindIcon(kind: UtilityNotificationKind): LucideIcon {
   if (kind === "milestone_approved") return Milestone;
   if (kind === "message") return MessageSquare;
   if (kind === "assigned") return UserPlus;
+  if (kind === "reaction") return SmilePlus;
   return Megaphone;
 }
 

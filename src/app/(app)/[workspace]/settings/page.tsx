@@ -24,6 +24,7 @@ import { personAvatarColor } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 import { AdminBudgetSettingsForm } from "@/components/settings/admin-budget-settings-form";
+import { NotificationDevicesSettings } from "@/components/settings/notification-devices-settings";
 import { normalizeOrgBudgetSettings } from "@/lib/domain/org-settings";
 import {
   CONTENT_WIDTH_OPTIONS,
@@ -921,6 +922,8 @@ export default function SettingsPage() {
                     )}
                   </div>
                 </div>
+
+                <NotificationDevicesSettings />
               </div>
 
               <div className="mt-4 flex items-center justify-end border-t border-[var(--border)] pt-3">

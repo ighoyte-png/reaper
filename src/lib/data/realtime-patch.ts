@@ -18,6 +18,7 @@ import type {
   Task,
   TaskList,
 } from "@/lib/types";
+import type { NotificationKind, NotificationRow } from "@/lib/domain/notifications";
 
 function upsertById<T extends { id: string }>(list: T[], row: T): T[] {
   const exists = list.some((x) => x.id === row.id);
@@ -153,6 +154,10 @@ export function realtimeEchoId(
       return `assignment:${String(row.assignment_id)}:${String(pid)}`;
     }
     return null;
+  }
+  if (table === "notifications") {
+    const id = row.id;
+    return id != null ? String(id) : null;
   }
   if (table === "pod_members") {
     const podId = row.pod_id;
@@ -642,6 +647,51 @@ export function applyRealtimeTableEvent(
       return {
         ...state,
         pod_members: [...state.pod_members, row],
+      };
+    }
+    case "notifications": {
+      const id = String(source.id ?? "");
+      if (!id) return state;
+      const recipient = String(source.recipient_profile_id ?? "");
+      if (
+        state.sessionProfileId &&
+        recipient &&
+        recipient !== state.sessionProfileId
+      ) {
+        return state;
+      }
+      if (isDelete) {
+        const next = state.notifications.filter((n) => n.id !== id);
+        return next.length === state.notifications.length
+          ? state
+          : { ...state, notifications: next };
+      }
+      const row: NotificationRow = {
+        id,
+        organization_id: String(source.organization_id ?? ""),
+        recipient_profile_id: recipient,
+        kind: String(source.kind ?? "message") as NotificationKind,
+        title: String(source.title ?? ""),
+        body: String(source.body ?? ""),
+        href: String(source.href ?? "/"),
+        entity_type:
+          source.entity_type != null ? String(source.entity_type) : null,
+        entity_id: source.entity_id != null ? String(source.entity_id) : null,
+        actor_person_id:
+          source.actor_person_id != null
+            ? String(source.actor_person_id)
+            : null,
+        read_at: source.read_at != null ? String(source.read_at) : null,
+        created_at: String(
+          source.created_at ?? new Date().toISOString(),
+        ),
+      };
+      const exists = state.notifications.some((n) => n.id === id);
+      return {
+        ...state,
+        notifications: exists
+          ? state.notifications.map((n) => (n.id === id ? row : n))
+          : [row, ...state.notifications],
       };
     }
     default:

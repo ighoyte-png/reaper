@@ -318,6 +318,7 @@ function buildPortalGanttContext(
     dismissMention: () => {},
     markMentionRead: () => {},
     markMentionsReadForTask: () => {},
+    markNotificationFeedRead: () => {},
     dismissTaskThreadUnread: () => {},
     dismissAssignedUnread: () => {},
     toggleProjectFavorite: () => {},

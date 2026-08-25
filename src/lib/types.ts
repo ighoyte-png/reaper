@@ -1,3 +1,5 @@
+import type { NotificationRow } from "@/lib/domain/notifications";
+
 export type Role = "admin" | "manager" | "member";
 export type CurrencyCode = "usd" | "cad";
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
@@ -560,6 +562,8 @@ export interface DemoState {
   unread_task_threads: { task_id: string; person_id: string }[];
   /** Outstanding "assigned to you" notices (deleted when read/dismissed). */
   unread_assigned_tasks: { task_id: string; person_id: string }[];
+  /** Durable notification center feed for the signed-in profile. */
+  notifications: NotificationRow[];
   /** Current profile's starred projects (sort_order = nav tab order). */
   project_favorites: ProjectFavorite[];
   pods: Pod[];

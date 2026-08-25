@@ -1136,6 +1136,7 @@ export function createDemoSeed(): DemoState {
     unread_mentions: [],
     unread_task_threads: [],
     unread_assigned_tasks: [],
+    notifications: [],
     project_favorites: [],
     pods: [],
     pod_members: [],

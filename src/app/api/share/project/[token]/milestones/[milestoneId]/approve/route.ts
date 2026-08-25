@@ -70,7 +70,7 @@ export async function POST(request: Request, { params }: Params) {
     const { data: project, error: projectError } = await admin
       .from("projects")
       .select(
-        "id, organization_id, name, client_id, manager_person_id, share_enabled, share_token",
+        "id, organization_id, name, slug, client_id, manager_person_id, share_enabled, share_token",
       )
       .eq("share_token", shareToken)
       .maybeSingle();
@@ -229,6 +229,51 @@ export async function POST(request: Request, { params }: Params) {
         organization_id: String(project.organization_id),
       })),
     );
+
+    try {
+      const { emitAndPushNotifications } = await import(
+        "@/lib/server/notifications"
+      );
+      const { workspacePath, projectRelativePath } = await import(
+        "@/lib/paths"
+      );
+      const { data: org } = await admin
+        .from("organizations")
+        .select("slug")
+        .eq("id", project.organization_id)
+        .maybeSingle();
+      const { data: clients } = await admin
+        .from("clients")
+        .select("id, slug")
+        .eq("organization_id", project.organization_id);
+      const slug = String((org as { slug?: string } | null)?.slug ?? "");
+      await emitAndPushNotifications({
+        organizationId: String(project.organization_id),
+        recipientProfileIds: profileIds,
+        kind: "milestone_approved",
+        title,
+        body: "Milestone approved",
+        href: workspacePath(
+          slug,
+          projectRelativePath(
+            {
+              client_id: project.client_id
+                ? String(project.client_id)
+                : null,
+              slug: String(
+                (project as { slug?: string }).slug ?? "project",
+              ),
+            },
+            (clients ?? []) as { id: string; slug: string }[],
+            `milestone=${milestone.id}`,
+          ),
+        ),
+        entityType: "bulletin",
+        entityId: bulletinId,
+      });
+    } catch (err) {
+      console.warn("milestone approval notification emit failed", err);
+    }
 
     return NextResponse.json(
       {
