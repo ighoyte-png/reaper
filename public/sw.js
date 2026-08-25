@@ -1,6 +1,6 @@
 /* Reaper notification service worker — enables PWA-branded OS toasts when installed.
  * Bump REAPER_SW_REV when this file changes so browsers pick up a new worker. */
-const REAPER_SW_REV = "0.4.310";
+const REAPER_SW_REV = "0.4.311";
 void REAPER_SW_REV;
 
 self.addEventListener("install", (event) => {
@@ -79,8 +79,27 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const href =
-    (event.notification.data && event.notification.data.href) || "/";
+  const data = event.notification.data || {};
+  const href = data.href || "/";
+  const notificationId = data.notificationId
+    ? String(data.notificationId)
+    : undefined;
+
+  function launchHref() {
+    if (!notificationId) return href;
+    try {
+      const base =
+        typeof self !== "undefined" && self.registration
+          ? self.registration.scope
+          : "/";
+      const u = new URL(href, base);
+      u.searchParams.set("reaper_notif", notificationId);
+      return u.pathname + u.search + u.hash;
+    } catch {
+      return href;
+    }
+  }
+
   event.waitUntil(
     (async () => {
       const all = await self.clients.matchAll({
@@ -90,12 +109,16 @@ self.addEventListener("notificationclick", (event) => {
       for (const client of all) {
         if ("focus" in client) {
           await client.focus();
-          client.postMessage({ type: "REAPER_NOTIFICATION_CLICK", href });
+          client.postMessage({
+            type: "REAPER_NOTIFICATION_CLICK",
+            href,
+            notificationId,
+          });
           return;
         }
       }
       if (self.clients.openWindow) {
-        await self.clients.openWindow(href);
+        await self.clients.openWindow(launchHref());
       }
     })(),
   );

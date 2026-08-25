@@ -12,11 +12,15 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { useData } from "@/lib/data/store";
+import { OS_NOTIFICATION_CLICK_EVENT } from "@/lib/desktop-notifications";
+import { createClient } from "@/lib/supabase/client";
 
 const DISMISS_UNTIL_KEY = "reaper:pwa-install-dismiss-until";
 const LEGACY_DISMISS_KEY = "reaper:pwa-install-dismissed";
 /** After "Not now", wait this long before auto-prompting again. */
 const DISMISS_MS = 14 * 24 * 60 * 60 * 1000;
+const REAPER_NOTIF_PARAM = "reaper_notif";
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
@@ -110,10 +114,31 @@ function clearDismissed() {
  */
 export function PwaProvider({ children }: { children?: ReactNode }) {
   const router = useRouter();
+  const { mode, markNotificationFeedRead, ready } = useData();
   const deferredPrompt = useRef<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
   const [showHint, setShowHint] = useState(false);
+
+  const markOsNotificationRead = useCallback(
+    (notificationId: string | null | undefined) => {
+      const id = notificationId?.trim();
+      if (!id) return;
+      markNotificationFeedRead([id]);
+      if (mode !== "supabase") return;
+      const now = new Date().toISOString();
+      void createClient()
+        .from("notifications")
+        .update({ read_at: now })
+        .eq("id", id)
+        .then(({ error }) => {
+          if (error) {
+            console.warn("mark OS notification read failed", error.message);
+          }
+        });
+    },
+    [markNotificationFeedRead, mode],
+  );
 
   useEffect(() => {
     setIsInstalled(isStandaloneDisplay());
@@ -122,23 +147,61 @@ export function PwaProvider({ children }: { children?: ReactNode }) {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
-    void navigator.serviceWorker.register("/sw.js").then(() => {
-      void import("@/lib/web-push-client").then(({ ensurePushSubscription }) => {
-        void ensurePushSubscription();
+    void navigator.serviceWorker
+      .register("/sw.js")
+      .then(() => {
+        void import("@/lib/web-push-client").then(({ ensurePushSubscription }) => {
+          void ensurePushSubscription();
+        });
+      })
+      .catch(() => {
+        /* ignore — private mode / unsupported */
       });
-    }).catch(() => {
-      /* ignore — private mode / unsupported */
-    });
 
     const onMessage = (event: MessageEvent) => {
+      if (event.data?.type !== "REAPER_NOTIFICATION_CLICK") return;
       const href = event.data?.href;
-      if (event.data?.type !== "REAPER_NOTIFICATION_CLICK" || !href) return;
-      navigateLaunchTarget(String(href), router);
+      const notificationId =
+        typeof event.data?.notificationId === "string"
+          ? event.data.notificationId
+          : null;
+      markOsNotificationRead(notificationId);
+      if (href) navigateLaunchTarget(String(href), router);
     };
     navigator.serviceWorker.addEventListener("message", onMessage);
     return () =>
       navigator.serviceWorker.removeEventListener("message", onMessage);
-  }, [router]);
+  }, [router, markOsNotificationRead]);
+
+  // Cold start from OS toast (openWindow appended ?reaper_notif=).
+  useEffect(() => {
+    if (!ready) return;
+    try {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get(REAPER_NOTIF_PARAM);
+      if (!id) return;
+      url.searchParams.delete(REAPER_NOTIF_PARAM);
+      window.history.replaceState(
+        {},
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+      markOsNotificationRead(id);
+    } catch {
+      /* ignore */
+    }
+  }, [ready, markOsNotificationRead]);
+
+  // Fallback path: Notification API click (no service worker show).
+  useEffect(() => {
+    const onOsClick = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ notificationId?: string }>).detail;
+      markOsNotificationRead(detail?.notificationId);
+    };
+    window.addEventListener(OS_NOTIFICATION_CLICK_EVENT, onOsClick);
+    return () =>
+      window.removeEventListener(OS_NOTIFICATION_CLICK_EVENT, onOsClick);
+  }, [markOsNotificationRead]);
 
   useEffect(() => {
     const launchQueue = (
@@ -155,9 +218,16 @@ export function PwaProvider({ children }: { children?: ReactNode }) {
     launchQueue.setConsumer((params) => {
       const target = params.targetURL;
       if (!target) return;
+      try {
+        const url = new URL(target, window.location.origin);
+        const id = url.searchParams.get(REAPER_NOTIF_PARAM);
+        if (id) markOsNotificationRead(id);
+      } catch {
+        /* ignore */
+      }
       navigateLaunchTarget(target, router);
     });
-  }, [router]);
+  }, [router, markOsNotificationRead]);
 
   useEffect(() => {
     if (isStandaloneDisplay()) return;

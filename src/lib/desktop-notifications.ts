@@ -185,6 +185,9 @@ async function showViaServiceWorker(
   }
 }
 
+/** Fired when a non-SW OS notification is clicked (fallback path). */
+export const OS_NOTIFICATION_CLICK_EVENT = "reaper:os-notification-click";
+
 /**
  * Show an OS notification. Prefers the service worker path so an *installed*
  * PWA can brand the toast as Reaper; falls back to `new Notification`.
@@ -200,6 +203,8 @@ export async function showDesktopNotification(
     badge?: string;
     /** Path or URL opened on click (preferred for SW notifications). */
     href?: string;
+    /** Durable feed row id — marked read when the OS toast is clicked. */
+    notificationId?: string;
     onClick?: () => void;
   },
 ): Promise<void> {
@@ -213,13 +218,16 @@ export async function showDesktopNotification(
     ? absoluteUrl(opts.badge)
     : reaperNotificationBadgeUrl();
   const href = opts?.href ? absoluteUrl(opts.href) : absoluteUrl("/");
+  const notificationId = opts?.notificationId
+    ? String(opts.notificationId)
+    : undefined;
 
   const swOptions: NotificationOptions = {
     body: opts?.body,
     tag: opts?.tag,
     icon,
     badge,
-    data: { href },
+    data: { href, notificationId },
   };
 
   if (await showViaServiceWorker(title, swOptions)) {
@@ -232,13 +240,20 @@ export async function showDesktopNotification(
       tag: opts?.tag,
       icon,
       badge,
-      data: { href },
+      data: { href, notificationId },
     });
     notification.onclick = () => {
       try {
         window.focus();
       } catch {
         /* ignore */
+      }
+      if (notificationId) {
+        window.dispatchEvent(
+          new CustomEvent(OS_NOTIFICATION_CLICK_EVENT, {
+            detail: { notificationId, href },
+          }),
+        );
       }
       if (opts?.onClick) {
         opts.onClick();

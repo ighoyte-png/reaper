@@ -521,6 +521,7 @@ export function UtilityNotificationsProvider({
           body: row.body,
           tag: notificationTag(row),
           href: row.href,
+          notificationId: row.id,
         });
       }
     }
