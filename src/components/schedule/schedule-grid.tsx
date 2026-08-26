@@ -21,6 +21,7 @@ import {
   isTasksRemovedNote,
   nextAvailableScheduleRange,
   desiredRangeCollidesOnProjectRow,
+  rangeOverlapsAssignmentWithBoundTasks,
   syncNonGanttTaskDatesFromBindings,
   taskBoundDatesMatchSpan,
 } from "@/lib/domain/assignment-bound-tasks";
@@ -83,6 +84,7 @@ import {
 } from "@/lib/domain/dates";
 import {
   readUserViewPrefs,
+  scheduleAnchorForDateWithOffset,
   scheduleAnchorForOffset,
 } from "@/lib/user-view-prefs";
 import { expandAssignmentInRange, expandAssignmentsInRange, occurrenceCoversDay, assignmentOverlapsDateRange, weeklySeriesEndDate, type AssignmentOccurrence } from "@/lib/domain/recurrence";
@@ -408,7 +410,11 @@ export function ScheduleGrid() {
     projectId: string;
     desiredStart: string;
     desiredEnd: string;
+    /** When false, only next-available / cancel (blockers have bound tasks). */
+    allowSlice: boolean;
   }>(null);
+  /** Local draft assignment — not persisted until Save. */
+  const [pendingCreate, setPendingCreate] = useState<Assignment | null>(null);
   /** Pending project-origin bind completed on first assignment save. */
   const pendingProjectBindTaskIdRef = useRef<string | null>(null);
   const deepLinkBindTaskRef = useRef<string | null>(null);
@@ -503,7 +509,6 @@ export function ScheduleGrid() {
   const closeSidePanelRef = useRef(() => {});
   const deleteSelectedAssignmentRef = useRef(() => {});
   const assignmentsRef = useRef(state.assignments);
-  assignmentsRef.current = state.assignments;
   const scrollRef = useRef<HTMLDivElement>(null);
   const pendingScrollDateRef = useRef<string | null>(null);
   const weekSwipeRef = useRef<{ x: number; y: number } | null>(null);
@@ -549,9 +554,11 @@ export function ScheduleGrid() {
 
   function scrollScheduleToDateKey(dateKey: string) {
     if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
+    const offset = readUserViewPrefs(profile?.id).scheduleViewOffset;
+    const targetAnchor = scheduleAnchorForDateWithOffset(dateKey, offset);
     if (dateKey < startKey || dateKey > endKey) {
       pendingScrollDateRef.current = dateKey;
-      setAnchor(parseISO(dateKey));
+      setAnchor(targetAnchor);
       return;
     }
     pendingScrollDateRef.current = null;
@@ -897,7 +904,21 @@ export function ScheduleGrid() {
     ],
   );
 
-  const selected = state.assignments.find((a) => a.id === selectedId) ?? null;
+  const assignmentsView = useMemo(() => {
+    if (!pendingCreate) return state.assignments;
+    return [
+      ...state.assignments.filter((a) => a.id !== pendingCreate.id),
+      pendingCreate,
+    ];
+  }, [state.assignments, pendingCreate]);
+  assignmentsRef.current = assignmentsView;
+
+  const selected =
+    assignmentsView.find((a) => a.id === selectedId) ?? null;
+
+  const isPendingCreate = Boolean(
+    pendingCreate && editForm && pendingCreate.id === editForm.id,
+  );
 
   const sidebarProjectId =
     editForm?.project_id ?? selected?.project_id ?? null;
@@ -936,6 +957,10 @@ export function ScheduleGrid() {
   }, [state.assignment_bound_tasks, activeAssignmentId]);
 
   useEffect(() => {
+    if (pendingCreate && activeAssignmentId === pendingCreate.id) {
+      // Keep bind drafts seeded by finishProjectBindFlow / createAssignment.
+      return;
+    }
     const ids = !activeAssignmentId
       ? []
       : state.assignment_bound_tasks
@@ -948,7 +973,7 @@ export function ScheduleGrid() {
     setBindConfirm(null);
     // Reset bind chrome when the selected assignment changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- assignment switch only
-  }, [activeAssignmentId]);
+  }, [activeAssignmentId, pendingCreate?.id]);
 
   function syncBoundTaskDatesFromAssignment(assignment: Assignment) {
     const boundIds = state.assignment_bound_tasks
@@ -1195,6 +1220,19 @@ export function ScheduleGrid() {
     const taskIds = [...bindDraftIds];
     const assignment = editForm ?? selected;
     if (!assignment) return;
+    // Pending draft: keep selection local until assignment Save.
+    if (pendingCreate?.id === assignment.id) {
+      const titles = taskIds
+        .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
+        .filter(Boolean);
+      const notes =
+        titles.length > 0 ? boundTasksNotesHtml(titles, "in_sync") : "";
+      patchEditForm({ notes });
+      setBindEditingSelection(false);
+      setBindToAssignment(taskIds.length > 0);
+      setBindConfirm(null);
+      return;
+    }
     const selectedTasks = taskIds
       .map((id) => state.tasks.find((t) => t.id === id))
       .filter((t): t is NonNullable<typeof t> => Boolean(t));
@@ -1419,7 +1457,9 @@ export function ScheduleGrid() {
       setEditForm(null);
       return;
     }
-    const a = state.assignments.find((x) => x.id === selectedId);
+    const a =
+      (pendingCreate?.id === selectedId ? pendingCreate : null) ??
+      state.assignments.find((x) => x.id === selectedId);
     if (!a) {
       setEditForm(null);
       return;
@@ -1438,7 +1478,7 @@ export function ScheduleGrid() {
       }
       return prev;
     });
-  }, [selectedId, state.assignments]);
+  }, [selectedId, state.assignments, pendingCreate]);
 
   useEffect(() => {
     if (!editForm || focusHoursAfterCreateRef.current !== editForm.id) return;
@@ -1475,8 +1515,8 @@ export function ScheduleGrid() {
 
   const sidebarExpandLabel = leaveEditForm
     ? "Time Off"
-    : selected
-      ? formDirty
+    : selected || isPendingCreate
+      ? formDirty || isPendingCreate
         ? "Assignment · Unsaved"
         : "Assignment"
       : canManage
@@ -1486,7 +1526,7 @@ export function ScheduleGrid() {
           : "My Plan";
 
   const occurrences = useMemo(() => {
-    const filtered = state.assignments.filter(
+    const filtered = assignmentsView.filter(
       (a) => projectFilter === "all" || a.project_id === projectFilter,
     );
     const expanded = expandAssignmentsInRange(
@@ -1510,7 +1550,7 @@ export function ScheduleGrid() {
         end_date: dragPreview.previewEnd,
       };
     });
-  }, [state.assignments, projectFilter, startKey, endKey, dragPreview, projectsById]);
+  }, [assignmentsView, projectFilter, startKey, endKey, dragPreview, projectsById]);
 
   const bookedHoursByPersonDay = useMemo(
     () => buildBookedHoursByPersonDay(occurrences, state.leave_days),
@@ -1952,6 +1992,10 @@ export function ScheduleGrid() {
 
   function deleteSelectedAssignment() {
     if (!canManage || !editForm) return;
+    if (pendingCreate?.id === editForm.id) {
+      cancelPendingCreate();
+      return;
+    }
     const before = state.assignments.find((a) => a.id === editForm.id);
     if (
       before &&
@@ -2148,7 +2192,12 @@ export function ScheduleGrid() {
           person: a.person_id,
           project: a.project_id,
         });
-        setAnchor(parseISO(dateKey));
+        setAnchor(
+          scheduleAnchorForDateWithOffset(
+            dateKey,
+            readUserViewPrefs(profile?.id).scheduleViewOffset,
+          ),
+        );
         return;
       }
     }
@@ -2381,6 +2430,10 @@ export function ScheduleGrid() {
 
   /** Clear assignment/leave selection (keeps project filter & toolbar state). */
   function deselectScheduleItem() {
+    if (pendingCreate) {
+      cancelPendingCreate();
+      return;
+    }
     setSelectedId(null);
     setEditForm(null);
     setSelectedLeaveBlockId(null);
@@ -2446,6 +2499,7 @@ export function ScheduleGrid() {
 
   /** Hide the sidebar and clear the current assignment/leave selection. */
   function minimizeSidePanel() {
+    if (pendingCreate) cancelPendingCreate();
     setSelectedId(null);
     setEditForm(null);
     setSelectedLeaveBlockId(null);
@@ -2465,6 +2519,7 @@ export function ScheduleGrid() {
 
   /** Return to the default Budget / plan sidebar (clear assignment + project filter). */
   function closeSidePanel() {
+    if (pendingCreate) cancelPendingCreate();
     setSelectedId(null);
     setEditForm(null);
     setSelectedLeaveBlockId(null);
@@ -2502,25 +2557,38 @@ export function ScheduleGrid() {
     projectId: string,
     start: string,
     end: string,
+    opts?: { bindTaskIds?: string[] },
   ) {
     if (!canManage) return;
     const startDate = start <= end ? start : end;
     const endDate = start <= end ? end : start;
     const origin = startDate;
-    // Clip against other assignments only — leave is punched after save so
-    // series/ranges can continue past time-off days.
+    // Clip against live ref (includes same-tick punches); ignore any prior pending draft.
+    const forClip = assignmentsRef.current.filter(
+      (a) => a.id !== pendingCreate?.id,
+    );
     const clipped = clipRangeToFreeDays(
       personId,
       projectId,
       origin,
       startDate,
       endDate,
-      state.assignments,
+      forClip,
     );
     if (!clipped) {
       push("That day is already booked", "warning");
       return;
     }
+    const bindTaskIds = opts?.bindTaskIds ?? [];
+    const notes =
+      bindTaskIds.length > 0
+        ? boundTasksNotesHtml(
+            bindTaskIds
+              .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
+              .filter(Boolean),
+            "in_sync",
+          )
+        : "";
     const row: Assignment = {
       id: newId("asg"),
       organization_id: state.organization.id,
@@ -2531,7 +2599,7 @@ export function ScheduleGrid() {
       hours_per_day: 4,
       allocation_pct: 50,
       status: "confirmed",
-      notes: "",
+      notes,
       recurrence: "none",
       recurrence_end_date: null,
       recurrence_exceptions: [],
@@ -2539,22 +2607,35 @@ export function ScheduleGrid() {
       edited_at: null,
       edited_by_profile_id: null,
     };
-    trackedUpsert(
-      row,
-      row.recurrence === "weekly"
-        ? "Weekly recurring assignment created"
-        : "Assignment created",
-    );
-    const bounds = assignmentRangeBounds([row]);
-    if (
-      bounds &&
-      punchAssignmentLeaveHoles([row], personId, bounds.start, bounds.end)
-    ) {
-      push("Trimmed around time off to avoid overlap", "warning");
-    }
+    setPendingCreate(row);
+    setEditForm({ ...row });
     focusHoursAfterCreateRef.current = row.id;
     setSidebarPanelTab("edit");
-    selectAssignment(row.id);
+    selectAssignment(row.id, {
+      start: row.start_date,
+      end: row.end_date,
+    });
+    if (bindTaskIds.length > 0) {
+      setBindToAssignment(true);
+      setBindEditingSelection(true);
+      setBindDraftIds(new Set(bindTaskIds));
+    }
+  }
+
+  function cancelPendingCreate() {
+    if (!pendingCreate) return;
+    const id = pendingCreate.id;
+    setPendingCreate(null);
+    pendingProjectBindTaskIdRef.current = null;
+    setBindToAssignment(false);
+    setBindEditingSelection(false);
+    setBindDraftIds(new Set());
+    setBindConfirm(null);
+    if (selectedId === id) {
+      setSelectedId(null);
+      setEditForm(null);
+      setSelectedOccurrence(null);
+    }
   }
 
   function finishProjectBindFlow(
@@ -2571,11 +2652,9 @@ export function ScheduleGrid() {
       person: personId,
       project: projectId,
     });
-    createAssignment(personId, projectId, rangeStart, rangeEnd);
-    setBindToAssignment(true);
-    setBindEditingSelection(true);
-    setBindDraftIds(new Set([taskId]));
-    setSidebarPanelTab("edit");
+    createAssignment(personId, projectId, rangeStart, rangeEnd, {
+      bindTaskIds: [taskId],
+    });
     scrollScheduleToDateKey(rangeStart);
   }
 
@@ -2585,13 +2664,17 @@ export function ScheduleGrid() {
     rangeStart: string,
     rangeEnd: string,
   ) {
+    const boundAssignmentIds = new Set(
+      state.assignment_bound_tasks.map((r) => r.assignment_id),
+    );
     const { upserts, deletes } = punchProjectRowForInsertRange(
-      state.assignments,
+      assignmentsRef.current,
       personId,
       projectId,
       rangeStart,
       rangeEnd,
       newId,
+      boundAssignmentIds,
     );
     if (deletes.length === 0 && upserts.length === 0) return;
     for (const id of deletes) {
@@ -2639,7 +2722,12 @@ export function ScheduleGrid() {
     const dateKey = filters.date?.trim();
     if (dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
       if (dateKey < startKey || dateKey > endKey) {
-        setAnchor(parseISO(dateKey));
+        setAnchor(
+          scheduleAnchorForDateWithOffset(
+            dateKey,
+            readUserViewPrefs(profile?.id).scheduleViewOffset,
+          ),
+        );
         return;
       }
     }
@@ -2664,12 +2752,21 @@ export function ScheduleGrid() {
           person: personId,
           project: projectId,
         });
+        const allowSlice = !rangeOverlapsAssignmentWithBoundTasks({
+          personId,
+          projectId,
+          start: desiredStart,
+          end: desiredEnd,
+          assignments: state.assignments,
+          binds: state.assignment_bound_tasks,
+        });
         setBindCollisionConfirm({
           taskId,
           personId,
           projectId,
           desiredStart,
           desiredEnd,
+          allowSlice,
         });
         scrollScheduleToDateKey(desiredStart);
         return;
@@ -2807,6 +2904,10 @@ export function ScheduleGrid() {
       setGanttScheduleMoveNotice(true);
     }
     trackedUpsert(row, toast);
+    const wasPending = pendingCreate?.id === row.id;
+    if (wasPending) {
+      setPendingCreate(null);
+    }
     if (datesChanged) {
       const assignments = state.assignments.map((a) =>
         a.id === row.id ? row : a,
@@ -2861,14 +2962,26 @@ export function ScheduleGrid() {
     }
     const pendingBind = pendingProjectBindTaskIdRef.current;
     if (pendingBind && canManage) {
-      const ids = new Set(boundTaskIdsForActive);
+      const ids = new Set(bindDraftIds);
       ids.add(pendingBind);
       void applyAssignmentBind([...ids], "project");
+    } else if (
+      wasPending &&
+      canManage &&
+      bindToAssignment &&
+      bindDraftIds.size > 0
+    ) {
+      void applyAssignmentBind([...bindDraftIds], "schedule");
     }
   }
 
   function patchEditForm(patch: Partial<Assignment>) {
     setEditForm((prev) => (prev ? { ...prev, ...patch } : prev));
+    setPendingCreate((prev) =>
+      prev && editForm && prev.id === editForm.id
+        ? { ...prev, ...patch }
+        : prev,
+    );
   }
 
   function saveEditForm() {
@@ -2886,8 +2999,10 @@ export function ScheduleGrid() {
         projectsById.get(next.project_id)?.end_date,
       );
     }
+    const isPending = pendingCreate?.id === editForm.id;
     const before = state.assignments.find((a) => a.id === editForm.id);
     if (
+      !isPending &&
       before &&
       (before.recurrence ?? "none") === "weekly" &&
       selectedOccurrence
@@ -2900,7 +3015,10 @@ export function ScheduleGrid() {
       });
       return;
     }
-    commitAssignment(next, "Assignment saved");
+    commitAssignment(
+      next,
+      isPending ? "Assignment created" : "Assignment saved",
+    );
   }
 
   function createLeaveRange(
@@ -5727,6 +5845,12 @@ export function ScheduleGrid() {
                 onChange={(notes) => patchEditForm({ notes })}
                 placeholder="Add a note… Use @ to mention"
                 mentionPeople={assignmentMentionPeople}
+                readOnly={
+                  isBoundTasksNotes(editForm.notes) ||
+                  (Boolean(pendingCreate?.id === editForm.id) &&
+                    bindToAssignment &&
+                    bindDraftIds.size > 0)
+                }
               />
             </div>
             {(() => {
@@ -5783,27 +5907,49 @@ export function ScheduleGrid() {
               );
             })()}
             <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={!formDirty}
-                className={cn(
-                  "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md text-sm font-medium",
-                  formDirty
-                    ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90"
-                    : "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-muted)]",
-                )}
-                onClick={saveEditForm}
-              >
-                <Save size={14} />
-                {formDirty ? "Save changes" : "Saved"}
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)]"
-                onClick={deleteSelectedAssignment}
-              >
-                <Trash2 size={14} /> Delete
-              </button>
+              {isPendingCreate ? (
+                <>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)] hover:opacity-90"
+                    onClick={saveEditForm}
+                  >
+                    <Save size={14} />
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-md border border-[var(--border)] text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)]"
+                    onClick={cancelPendingCreate}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={!formDirty}
+                    className={cn(
+                      "inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md text-sm font-medium",
+                      formDirty
+                        ? "bg-[var(--accent)] text-[var(--accent-fg)] hover:opacity-90"
+                        : "cursor-not-allowed bg-[var(--bg-elevated)] text-[var(--text-muted)]",
+                    )}
+                    onClick={saveEditForm}
+                  >
+                    <Save size={14} />
+                    {formDirty ? "Save changes" : "Saved"}
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 w-full items-center justify-center gap-1 rounded-md border border-[var(--status-over)]/40 text-sm text-[var(--status-over)]"
+                    onClick={deleteSelectedAssignment}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </>
+              )}
             </div>
             {(() => {
               const name = assignmentEditorName(
@@ -6224,40 +6370,46 @@ export function ScheduleGrid() {
       ) : null}
       {bindCollisionConfirm ? (
         <ConfirmDialog
-          title="Assignment Already Booked"
-          message="An existing assignment blocks this task's chosen dates. You can slice the existing assignment to insert at those dates (the series continues before and after, like time off on a weekly block), use the next available slot, or cancel."
+          title="Assignment Already Booked!"
+          message="An existing assignment blocks this tasks chosen dates. You can slice the existing assignment to insert this task at the requested dates (the blocking assignment continues before and after if applicable), use the next available slot, or cancel this request."
           mode="confirm"
           tone="accent"
-          confirmLabel="Slice and insert"
-          altConfirmLabel="Use next available"
+          confirmLabel={
+            bindCollisionConfirm.allowSlice
+              ? "Slice and Insert"
+              : "Use Next Available"
+          }
+          altConfirmLabel={
+            bindCollisionConfirm.allowSlice
+              ? "Use Next Available"
+              : undefined
+          }
           onConfirm={() => {
             const pending = bindCollisionConfirm;
             setBindCollisionConfirm(null);
             if (!pending) return;
-            applyProjectRowPunchForInsert(
-              pending.personId,
-              pending.projectId,
-              pending.desiredStart,
-              pending.desiredEnd,
-            );
-            finishProjectBindFlow(
-              pending.taskId,
-              pending.personId,
-              pending.projectId,
-              pending.desiredStart,
-              pending.desiredEnd,
-            );
-          }}
-          onAltConfirm={() => {
-            const pending = bindCollisionConfirm;
-            setBindCollisionConfirm(null);
-            if (!pending) return;
+            if (pending.allowSlice) {
+              applyProjectRowPunchForInsert(
+                pending.personId,
+                pending.projectId,
+                pending.desiredStart,
+                pending.desiredEnd,
+              );
+              finishProjectBindFlow(
+                pending.taskId,
+                pending.personId,
+                pending.projectId,
+                pending.desiredStart,
+                pending.desiredEnd,
+              );
+              return;
+            }
             const available = nextAvailableScheduleRange({
               personId: pending.personId,
               projectId: pending.projectId,
               start: pending.desiredStart,
               end: pending.desiredEnd,
-              assignments: state.assignments,
+              assignments: assignmentsRef.current,
               leaveDays: state.leave_days,
             });
             finishProjectBindFlow(
@@ -6268,6 +6420,30 @@ export function ScheduleGrid() {
               available?.end ?? pending.desiredEnd,
             );
           }}
+          onAltConfirm={
+            bindCollisionConfirm.allowSlice
+              ? () => {
+                  const pending = bindCollisionConfirm;
+                  setBindCollisionConfirm(null);
+                  if (!pending) return;
+                  const available = nextAvailableScheduleRange({
+                    personId: pending.personId,
+                    projectId: pending.projectId,
+                    start: pending.desiredStart,
+                    end: pending.desiredEnd,
+                    assignments: assignmentsRef.current,
+                    leaveDays: state.leave_days,
+                  });
+                  finishProjectBindFlow(
+                    pending.taskId,
+                    pending.personId,
+                    pending.projectId,
+                    available?.start ?? pending.desiredStart,
+                    available?.end ?? pending.desiredEnd,
+                  );
+                }
+              : undefined
+          }
           onCancel={() => {
             setBindCollisionConfirm(null);
             deepLinkBindTaskRef.current = null;

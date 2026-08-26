@@ -2,6 +2,7 @@ import { addDays, differenceInCalendarDays, parseISO } from "date-fns";
 import {
   assignmentPlacementConflicts,
   clipRangeToFreeDays,
+  occupiedDaysForRow,
 } from "@/lib/domain/assignment-occupancy";
 import { isOnFullDayLeave } from "@/lib/domain/capacity";
 import { toDateKey, workingDaysBetween } from "@/lib/domain/dates";
@@ -352,6 +353,43 @@ export function desiredRangeCollidesOnProjectRow(args: {
   if (!clipped) return true;
   const clippedDays = workingDaysBetween(clipped.start, clipped.end);
   return clippedDays.length < desiredDays.length;
+}
+
+/**
+ * True when any assignment on this person+project row that overlaps the date
+ * range already has one or more bound tasks.
+ */
+export function rangeOverlapsAssignmentWithBoundTasks(args: {
+  personId: string;
+  projectId: string;
+  start: string;
+  end: string;
+  assignments: Assignment[];
+  binds: Pick<AssignmentBoundTask, "assignment_id" | "task_id">[];
+}): boolean {
+  const lo = args.start <= args.end ? args.start : args.end;
+  const hi = args.start <= args.end ? args.end : args.start;
+  const boundIds = new Set(
+    args.binds.map((b) => b.assignment_id).filter(Boolean),
+  );
+  if (boundIds.size === 0) return false;
+
+  const candidates = args.assignments.filter(
+    (a) =>
+      a.person_id === args.personId &&
+      a.project_id === args.projectId &&
+      boundIds.has(a.id),
+  );
+  if (candidates.length === 0) return false;
+
+  const occupied = occupiedDaysForRow(
+    args.personId,
+    args.projectId,
+    lo,
+    hi,
+    candidates,
+  );
+  return occupied.size > 0;
 }
 
 /**

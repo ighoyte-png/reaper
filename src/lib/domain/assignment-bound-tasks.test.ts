@@ -9,6 +9,7 @@ import {
   isBoundTasksNotes,
   nextAvailableScheduleRange,
   preferredBoundAssignmentForTask,
+  rangeOverlapsAssignmentWithBoundTasks,
   spanDatesForBoundTask,
   syncNonGanttTaskDatesFromBindings,
   taskBoundDatesMatchSpan,
@@ -498,6 +499,44 @@ describe("desiredRangeCollidesOnProjectRow", () => {
         end: "2026-03-04",
         assignments: [blocker],
         leaveDays: [],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("rangeOverlapsAssignmentWithBoundTasks", () => {
+  it("returns false when overlapping assignment has no binds", () => {
+    const blocker = asg({
+      id: "a1",
+      start_date: "2026-03-02",
+      end_date: "2026-03-04",
+    });
+    expect(
+      rangeOverlapsAssignmentWithBoundTasks({
+        personId: "p1",
+        projectId: "proj",
+        start: "2026-03-03",
+        end: "2026-03-03",
+        assignments: [blocker],
+        binds: [],
+      }),
+    ).toBe(false);
+  });
+
+  it("returns true when an overlapping assignment has bound tasks", () => {
+    const blocker = asg({
+      id: "a1",
+      start_date: "2026-03-02",
+      end_date: "2026-03-04",
+    });
+    expect(
+      rangeOverlapsAssignmentWithBoundTasks({
+        personId: "p1",
+        projectId: "proj",
+        start: "2026-03-03",
+        end: "2026-03-03",
+        assignments: [blocker],
+        binds: [bind({ assignment_id: "a1", task_id: "t1" })],
       }),
     ).toBe(true);
   });

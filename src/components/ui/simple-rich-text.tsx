@@ -263,6 +263,8 @@ type SimpleRichTextEditorProps = {
   /** Fired when email-style (paperclip) attachments change. */
   onFileAttachmentsChange?: (items: EntityFileAttachment[]) => void;
   isDemo?: boolean;
+  /** When true, content is visible but not editable (toolbar hidden). */
+  readOnly?: boolean;
 };
 
 export const SimpleRichTextEditor = forwardRef<
@@ -285,6 +287,7 @@ export const SimpleRichTextEditor = forwardRef<
     onAttachmentError,
     onFileAttachmentsChange,
     isDemo = false,
+    readOnly = false,
   },
   ref,
 ) {
@@ -607,6 +610,7 @@ export const SimpleRichTextEditor = forwardRef<
       extensions,
       content: notesToEditorHtml(value),
       immediatelyRender: false,
+      editable: !readOnly,
       editorProps: {
         attributes: {
           class: editorContentClass,
@@ -654,8 +658,13 @@ export const SimpleRichTextEditor = forwardRef<
         onChange(html);
       },
     },
-    [extensions, attachmentsActive],
+    [extensions, attachmentsActive, readOnly],
   );
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(!readOnly);
+  }, [editor, readOnly]);
 
   // Pin after TipTap mounts (editor null → DOM absent on first paint).
   useLayoutEffect(() => {
@@ -853,6 +862,7 @@ export const SimpleRichTextEditor = forwardRef<
       className={cn(
         "mt-1 rounded-md border border-[var(--border)] bg-[var(--bg)]",
         !autoGrow && !editorMaxHeight && "overflow-hidden",
+        readOnly && "opacity-70",
         className,
       )}
     >
@@ -861,7 +871,7 @@ export const SimpleRichTextEditor = forwardRef<
         className="pointer-events-none h-0 w-full shrink-0"
         aria-hidden
       />
-      {(() => {
+      {!readOnly ? (() => {
         const toolbarClass = cn(
           "flex flex-wrap items-center gap-0.5 border-b border-[var(--border)] bg-[var(--bg)] px-1 py-0.5",
         );
@@ -1053,7 +1063,7 @@ export const SimpleRichTextEditor = forwardRef<
               : null}
           </>
         );
-      })()}
+      })() : null}
       {uploading ? (
         <p className="border-b border-[var(--border)] px-2 py-1 text-[10px] text-[var(--text-muted)]">
           Uploading…

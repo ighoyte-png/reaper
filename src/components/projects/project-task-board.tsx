@@ -77,6 +77,7 @@ import {
   isBoundTasksNotes,
   isGanttTask,
   preferredBoundAssignmentForTask,
+  rangeOverlapsAssignmentWithBoundTasks,
   spanDatesForBoundTask,
   syncNonGanttTaskDatesFromBindings,
   taskIsBoundOutOfSync,
@@ -584,6 +585,7 @@ export function ProjectTaskBoard({
   }>({});
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [draftingListId, setDraftingListId] = useState<string | null>(null);
+  const [bindDateConflictNotice, setBindDateConflictNotice] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const [confirmDeleteList, setConfirmDeleteList] = useState<{
     id: string;
@@ -1421,16 +1423,48 @@ export function ProjectTaskBoard({
     clearTaskCreateDraft(profile?.id, listId);
     setDraftingListId(null);
     if (draft.bind_to_assignment && draft.assignee_person_id) {
-      const start =
-        draft.start_date || draft.due_date || toDateKey(new Date());
-      const qs = new URLSearchParams({
-        bindTask: task.id,
-        person: draft.assignee_person_id,
-        project: projectId,
-        date: start,
+      navigateToScheduleBind({
+        taskId: task.id,
+        personId: draft.assignee_person_id,
+        startDate: draft.start_date,
+        dueDate: draft.due_date,
       });
-      router.push(appHref(`/schedule?${qs.toString()}`));
     }
+  }
+
+  function navigateToScheduleBind(args: {
+    taskId: string;
+    personId: string;
+    startDate: string | null | undefined;
+    dueDate: string | null | undefined;
+  }) {
+    const hasPredefined = Boolean(args.startDate || args.dueDate);
+    if (hasPredefined) {
+      const desiredStart = args.startDate || args.dueDate!;
+      const desiredEnd = args.dueDate || args.startDate!;
+      if (
+        rangeOverlapsAssignmentWithBoundTasks({
+          personId: args.personId,
+          projectId,
+          start: desiredStart,
+          end: desiredEnd,
+          assignments: state.assignments,
+          binds: state.assignment_bound_tasks,
+        })
+      ) {
+        setBindDateConflictNotice(true);
+        return;
+      }
+    }
+    const start =
+      args.startDate || args.dueDate || toDateKey(new Date());
+    const qs = new URLSearchParams({
+      bindTask: args.taskId,
+      person: args.personId,
+      project: projectId,
+      date: start,
+    });
+    router.push(appHref(`/schedule?${qs.toString()}`));
   }
 
   function addDivider(listId: string) {
@@ -1629,15 +1663,12 @@ export function ProjectTaskBoard({
       });
     }
     if (draft.bind_to_assignment && draft.assignee_person_id) {
-      const start =
-        nextStart || nextDue || toDateKey(new Date());
-      const qs = new URLSearchParams({
-        bindTask: taskId,
-        person: draft.assignee_person_id,
-        project: projectId,
-        date: start,
+      navigateToScheduleBind({
+        taskId,
+        personId: draft.assignee_person_id,
+        startDate: nextStart,
+        dueDate: nextDue,
       });
-      router.push(appHref(`/schedule?${qs.toString()}`));
     }
     // Leave editing open so the row can animate closed, then clear.
   }
@@ -3044,6 +3075,17 @@ export function ProjectTaskBoard({
             deleteTaskList(confirmDeleteList.id);
             setConfirmDeleteList(null);
           }}
+        />
+      ) : null}
+      {bindDateConflictNotice ? (
+        <ConfirmDialog
+          title="Date Conflict"
+          message="A task or tasks are already assigned on the Schedule for this assignee. Please chose a different date, or add this Task via the Assignment Tasks tab on the Schedule Page."
+          mode="notice"
+          tone="accent"
+          confirmLabel="Got it"
+          onConfirm={() => setBindDateConflictNotice(false)}
+          onCancel={() => setBindDateConflictNotice(false)}
         />
       ) : null}
       {moveListTarget ? (
@@ -4826,11 +4868,7 @@ function TaskRow({
           scheduleDatesHref={ctx.boundAssignmentHref?.(task.id) ?? null}
           isProjectManager={ctx.isProjectManager}
           canBindToAssignment={Boolean(
-            ctx.canManage &&
-              ctx.isProjectManager &&
-              task.assignee_person_id &&
-              !ctx.allPeople.find((p) => p.id === task.assignee_person_id)
-                ?.hide_from_schedule,
+            ctx.canManage && ctx.isProjectManager,
           )}
           onCancel={() => requestCloseEdit({ scrollToTitle: true })}
           onSubmit={(draft) => {

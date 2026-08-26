@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { primaryNavLinks } from "@/components/nav/nav-links";
 import { shiftWeek, weekStart } from "@/lib/domain/dates";
+import { parseISO } from "date-fns";
 
 export type DefaultStartPage =
   | "/dashboard"
@@ -161,6 +162,17 @@ export function resolveDefaultStartPage(
 
 export function scheduleAnchorForOffset(offset: ScheduleViewOffset): Date {
   const base = weekStart(new Date());
+  if (offset === "one_week") return shiftWeek(base, -1);
+  if (offset === "two_weeks") return shiftWeek(base, -2);
+  return base;
+}
+
+/** Anchor so `dateKey`'s week is visible, shifted left by the user's view offset. */
+export function scheduleAnchorForDateWithOffset(
+  dateKey: string,
+  offset: ScheduleViewOffset,
+): Date {
+  const base = weekStart(parseISO(dateKey));
   if (offset === "one_week") return shiftWeek(base, -1);
   if (offset === "two_weeks") return shiftWeek(base, -2);
   return base;

@@ -240,6 +240,7 @@ function assignmentSpanDays(a: Assignment): number {
 /**
  * Punch holes in same person+project row assignments for each working day in
  * the insert range (same model as leave on weekly PM blocks).
+ * Skips assignments listed in `skipAssignmentIds` (e.g. already have bound tasks).
  */
 export function punchProjectRowForInsertRange(
   assignments: Assignment[],
@@ -248,6 +249,7 @@ export function punchProjectRowForInsertRange(
   rangeStart: string,
   rangeEnd: string,
   newId: (prefix: string) => string,
+  skipAssignmentIds?: ReadonlySet<string> | null,
 ): { upserts: Assignment[]; deletes: string[] } {
   const days = workingDaysBetween(rangeStart, rangeEnd);
   let current = [...assignments];
@@ -259,7 +261,8 @@ export function punchProjectRowForInsertRange(
       (a) =>
         a.person_id === personId &&
         a.project_id === projectId &&
-        !allDeletes.has(a.id),
+        !allDeletes.has(a.id) &&
+        !skipAssignmentIds?.has(a.id),
     );
     for (const assignment of rowAssignments) {
       const occs = expandAssignmentInRange(assignment, day, day);
