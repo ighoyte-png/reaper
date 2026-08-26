@@ -935,7 +935,7 @@ export function ScheduleGrid() {
 
   function patchAssignmentDates(
     id: string,
-    patch: Pick<Assignment, "start_date" | "end_date">,
+    patch: Partial<Pick<Assignment, "start_date" | "end_date">>,
   ) {
     if (pendingCreate?.id === id) {
       setPendingCreate((prev) => (prev ? { ...prev, ...patch } : prev));
