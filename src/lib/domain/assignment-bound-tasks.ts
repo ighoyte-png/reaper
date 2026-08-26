@@ -6,6 +6,7 @@ import {
 } from "@/lib/domain/assignment-occupancy";
 import { isOnFullDayLeave } from "@/lib/domain/capacity";
 import { toDateKey, workingDaysBetween } from "@/lib/domain/dates";
+import { listDisplayOrder, sortTaskLists } from "@/lib/domain/tasks";
 import type {
   Assignment,
   AssignmentBoundSource,
@@ -48,6 +49,35 @@ export function isTasksRemovedNote(html: string | null | undefined): boolean {
   if (!html) return false;
   const text = html.replace(/<[^>]+>/g, "").trim();
   return text === TASKS_REMOVED_NOTE;
+}
+
+/** Order bound task ids top-to-bottom as shown on the project task board. */
+export function sortBoundTaskIdsByListOrder(
+  taskIds: string[],
+  tasks: Pick<
+    Task,
+    "id" | "list_id" | "parent_id" | "sort_order" | "is_divider"
+  >[],
+  taskLists: Pick<TaskList, "id" | "sort_order">[],
+): string[] {
+  const idSet = new Set(taskIds);
+  if (idSet.size === 0) return [];
+  const ordered: string[] = [];
+  for (const list of sortTaskLists(
+    taskLists.filter((l) =>
+      tasks.some((t) => idSet.has(t.id) && t.list_id === l.id),
+    ),
+  )) {
+    for (const task of listDisplayOrder(
+      tasks.filter((t) => t.list_id === list.id && idSet.has(t.id)),
+    )) {
+      if (!task.is_divider) ordered.push(task.id);
+    }
+  }
+  for (const id of taskIds) {
+    if (!ordered.includes(id)) ordered.push(id);
+  }
+  return ordered;
 }
 
 export function tasksRemovedNotesHtml(): string {

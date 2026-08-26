@@ -121,6 +121,10 @@ export function ConfirmDialog({
   confirmDisabled = false,
   altConfirmLabel,
   onAltConfirm,
+  panelClassName,
+  actionsClassName,
+  confirmClassName,
+  altConfirmClassName,
 }: {
   title: string;
   message: string;
@@ -137,6 +141,10 @@ export function ConfirmDialog({
   confirmDisabled?: boolean;
   altConfirmLabel?: string;
   onAltConfirm?: () => void;
+  panelClassName?: string;
+  actionsClassName?: string;
+  confirmClassName?: string;
+  altConfirmClassName?: string;
 }) {
   const mounted = useMounted();
   if (!mounted) return null;
@@ -147,11 +155,21 @@ export function ConfirmDialog({
 
   return createPortal(
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl">
+      <div
+        className={cn(
+          "w-full max-w-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl",
+          panelClassName,
+        )}
+      >
         <h2 className="text-sm font-semibold">{title}</h2>
         <p className="mt-2 text-sm text-[var(--text-muted)]">{message}</p>
         {children}
-        <div className="mt-4 flex justify-end gap-2">
+        <div
+          className={cn(
+            "mt-4 flex justify-end gap-2",
+            actionsClassName,
+          )}
+        >
           {mode === "confirm" ? (
             <Button variant="secondary" size="lg" onClick={onCancel}>
               {cancelLabel}
@@ -161,6 +179,7 @@ export function ConfirmDialog({
             variant={resolvedTone === "accent" ? "primary" : "destructive"}
             size="lg"
             disabled={confirmDisabled}
+            className={confirmClassName}
             onClick={onConfirm}
           >
             {resolvedLabel}
@@ -170,6 +189,7 @@ export function ConfirmDialog({
               variant="primary"
               size="lg"
               disabled={confirmDisabled}
+              className={altConfirmClassName}
               onClick={onAltConfirm}
             >
               {altConfirmLabel}

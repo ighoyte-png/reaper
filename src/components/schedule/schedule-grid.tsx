@@ -23,6 +23,7 @@ import {
   desiredRangeCollidesOnProjectRow,
   rangeOverlapsAssignmentWithBoundTasks,
   syncNonGanttTaskDatesFromBindings,
+  sortBoundTaskIdsByListOrder,
   taskBoundDatesMatchSpan,
 } from "@/lib/domain/assignment-bound-tasks";
 import { useAppHref, useProjectHref } from "@/lib/hooks/use-app-href";
@@ -417,6 +418,11 @@ export function ScheduleGrid() {
   const [pendingCreate, setPendingCreate] = useState<Assignment | null>(null);
   /** Pending project-origin bind completed on first assignment save. */
   const pendingProjectBindTaskIdRef = useRef<string | null>(null);
+  /** Undo entry for slice-and-insert during project bind; reverted on draft cancel. */
+  const bindInsertPunchPendingRef = useRef<Extract<
+    UndoEntry,
+    { kind: "assignments" }
+  > | null>(null);
   const deepLinkBindTaskRef = useRef<string | null>(null);
   const sidebarPreferMinimizedRef = useRef(true);
   const hoursInputRef = useRef<HTMLInputElement>(null);
@@ -922,6 +928,70 @@ export function ScheduleGrid() {
     pendingCreate && editForm && pendingCreate.id === editForm.id,
   );
 
+  function assignmentById(id: string): Assignment | undefined {
+    if (pendingCreate?.id === id) return pendingCreate;
+    return state.assignments.find((a) => a.id === id);
+  }
+
+  function patchAssignmentDates(
+    id: string,
+    patch: Pick<Assignment, "start_date" | "end_date">,
+  ) {
+    if (pendingCreate?.id === id) {
+      setPendingCreate((prev) => (prev ? { ...prev, ...patch } : prev));
+      setEditForm((prev) =>
+        prev && prev.id === id ? { ...prev, ...patch } : prev,
+      );
+      return;
+    }
+    const current = state.assignments.find((a) => a.id === id);
+    if (!current) return;
+    upsertAssignment({ ...current, ...patch });
+  }
+
+  function assignmentsForPlacement(excludeId?: string | null): Assignment[] {
+    if (!excludeId) return assignmentsView;
+    return assignmentsView.filter((a) => a.id !== excludeId);
+  }
+
+  function revertBindInsertPunch() {
+    const entry = bindInsertPunchPendingRef.current;
+    if (!entry) return;
+    bindInsertPunchPendingRef.current = null;
+    applyingUndoRef.current = true;
+    for (const id of entry.removeAssignmentIds) {
+      deleteAssignment(id);
+    }
+    for (const assignment of entry.restoreAssignments) {
+      upsertAssignment(assignment);
+    }
+    assignmentsRef.current = (() => {
+      let next = assignmentsRef.current.filter(
+        (a) => !entry.removeAssignmentIds.includes(a.id),
+      );
+      for (const assignment of entry.restoreAssignments) {
+        const exists = next.some((a) => a.id === assignment.id);
+        next = exists
+          ? next.map((a) => (a.id === assignment.id ? assignment : a))
+          : [...next, assignment];
+      }
+      return next;
+    })();
+    applyingUndoRef.current = false;
+    const stack = undoStackRef.current;
+    const top = stack[stack.length - 1];
+    if (
+      top?.kind === "assignments" &&
+      top.removeAssignmentIds.length === entry.removeAssignmentIds.length &&
+      top.removeAssignmentIds.every((id) =>
+        entry.removeAssignmentIds.includes(id),
+      )
+    ) {
+      stack.pop();
+      setUndoDepth(stack.length);
+    }
+  }
+
   const sidebarProjectId =
     editForm?.project_id ?? selected?.project_id ?? null;
   const sidebarProject = sidebarProjectId
@@ -982,9 +1052,10 @@ export function ScheduleGrid() {
       .filter((r) => r.assignment_id === assignment.id)
       .map((r) => r.task_id);
     if (boundIds.length === 0) return;
-    const assignments = state.assignments.map((a) =>
-      a.id === assignment.id ? assignment : a,
-    );
+    const assignments = [
+      ...state.assignments.filter((a) => a.id !== assignment.id),
+      assignment,
+    ];
     const patches = syncNonGanttTaskDatesFromBindings(
       state.assignment_bound_tasks,
       state.tasks,
@@ -1021,9 +1092,10 @@ export function ScheduleGrid() {
         due_date: end,
       });
     }
-    const assignments = state.assignments.map((a) =>
-      a.id === assignment.id ? assignment : a,
-    );
+    const assignments = [
+      ...state.assignments.filter((a) => a.id !== assignment.id),
+      assignment,
+    ];
     const nextTasks = state.tasks.map((t) =>
       t.id === taskId ? { ...t, start_date: start, due_date: end } : t,
     );
@@ -1085,7 +1157,12 @@ export function ScheduleGrid() {
     taskIds: string[],
     outOfSync = false,
   ) {
-    const titles = taskIds
+    const ordered = sortBoundTaskIdsByListOrder(
+      taskIds,
+      state.tasks,
+      state.task_lists,
+    );
+    const titles = ordered
       .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
       .filter(Boolean);
     const notes = boundTasksNotesHtml(
@@ -1108,10 +1185,15 @@ export function ScheduleGrid() {
   ) {
     const assignment = editForm ?? selected;
     if (!assignment || !canManage) return;
-    const unique = [...new Set(taskIds)];
-    const assignments = state.assignments.map((a) =>
-      a.id === assignment.id ? assignment : a,
+    const unique = sortBoundTaskIdsByListOrder(
+      [...new Set(taskIds)],
+      state.tasks,
+      state.task_lists,
     );
+    const assignments = [
+      ...state.assignments.filter((a) => a.id !== assignment.id),
+      assignment,
+    ];
     const bindsPreview = [
       ...state.assignment_bound_tasks.filter(
         (r) => r.assignment_id !== assignment.id,
@@ -1224,7 +1306,12 @@ export function ScheduleGrid() {
     if (!assignment) return;
     // Pending draft: keep selection local until assignment Save.
     if (pendingCreate?.id === assignment.id) {
-      const titles = taskIds
+      const ordered = sortBoundTaskIdsByListOrder(
+        taskIds,
+        state.tasks,
+        state.task_lists,
+      );
+      const titles = ordered
         .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
         .filter(Boolean);
       const notes =
@@ -1272,9 +1359,10 @@ export function ScheduleGrid() {
         out_of_sync: false,
       })),
     ];
-    const assignments = state.assignments.map((a) =>
-      a.id === assignment.id ? assignment : a,
-    );
+    const assignments = [
+      ...state.assignments.filter((a) => a.id !== assignment.id),
+      assignment,
+    ];
     const wouldChange = nonGantt.some((t) => {
       const span = syncNonGanttTaskDatesFromBindings(
         bindsPreview,
@@ -1337,9 +1425,10 @@ export function ScheduleGrid() {
             out_of_sync: false,
           })),
         ];
-        const assignments = state.assignments.map((a) =>
-          a.id === assignment.id ? assignment : a,
-        );
+        const assignments = [
+          ...state.assignments.filter((a) => a.id !== assignment.id),
+          assignment,
+        ];
         const wouldChange = nonGantt.some((t) => {
           const patches = syncNonGanttTaskDatesFromBindings(
             bindsPreview,
@@ -2582,10 +2671,15 @@ export function ScheduleGrid() {
       return;
     }
     const bindTaskIds = opts?.bindTaskIds ?? [];
+    const orderedBindIds = sortBoundTaskIdsByListOrder(
+      bindTaskIds,
+      state.tasks,
+      state.task_lists,
+    );
     const notes =
-      bindTaskIds.length > 0
+      orderedBindIds.length > 0
         ? boundTasksNotesHtml(
-            bindTaskIds
+            orderedBindIds
               .map((id) => state.tasks.find((t) => t.id === id)?.title ?? "")
               .filter(Boolean),
             "in_sync",
@@ -2620,13 +2714,14 @@ export function ScheduleGrid() {
     if (bindTaskIds.length > 0) {
       setBindToAssignment(true);
       setBindEditingSelection(true);
-      setBindDraftIds(new Set(bindTaskIds));
+      setBindDraftIds(new Set(orderedBindIds));
     }
   }
 
   function cancelPendingCreate() {
     if (!pendingCreate) return;
     const id = pendingCreate.id;
+    revertBindInsertPunch();
     setPendingCreate(null);
     pendingProjectBindTaskIdRef.current = null;
     setBindToAssignment(false);
@@ -2665,12 +2760,15 @@ export function ScheduleGrid() {
     projectId: string,
     rangeStart: string,
     rangeEnd: string,
+    opts?: { trackBindInsertUndo?: boolean },
   ) {
     const boundAssignmentIds = new Set(
       state.assignment_bound_tasks.map((r) => r.assignment_id),
     );
+    const before = assignmentsRef.current;
+    const preIds = new Set(before.map((a) => a.id));
     const { upserts, deletes } = punchProjectRowForInsertRange(
-      assignmentsRef.current,
+      before,
       personId,
       projectId,
       rangeStart,
@@ -2679,22 +2777,26 @@ export function ScheduleGrid() {
       boundAssignmentIds,
     );
     if (deletes.length === 0 && upserts.length === 0) return;
-    for (const id of deletes) {
-      deleteAssignment(id);
+    const undoRestore = before.filter(
+      (a) =>
+        deletes.includes(a.id) || upserts.some((u) => u.id === a.id),
+    );
+    const undoRemoveIds = upserts
+      .filter((u) => !preIds.has(u.id))
+      .map((u) => u.id);
+    trackedAssignmentBatch({
+      upserts,
+      deletes,
+      undoRestore,
+      undoRemoveIds,
+    });
+    if (opts?.trackBindInsertUndo) {
+      bindInsertPunchPendingRef.current = {
+        kind: "assignments",
+        restoreAssignments: undoRestore.map((a) => ({ ...a })),
+        removeAssignmentIds: undoRemoveIds,
+      };
     }
-    for (const row of upserts) {
-      upsertAssignment(row);
-    }
-    assignmentsRef.current = (() => {
-      let next = assignmentsRef.current.filter((a) => !deletes.includes(a.id));
-      for (const row of upserts) {
-        const exists = next.some((a) => a.id === row.id);
-        next = exists
-          ? next.map((a) => (a.id === row.id ? row : a))
-          : [...next, row];
-      }
-      return next;
-    })();
   }
 
   // One-shot: /schedule?bindTask=&person=&project=&date= — create assignment + preselect task
@@ -2909,11 +3011,13 @@ export function ScheduleGrid() {
     const wasPending = pendingCreate?.id === row.id;
     if (wasPending) {
       setPendingCreate(null);
+      bindInsertPunchPendingRef.current = null;
     }
     if (datesChanged) {
-      const assignments = state.assignments.map((a) =>
-        a.id === row.id ? row : a,
-      );
+      const assignments = [
+        ...state.assignments.filter((a) => a.id !== row.id),
+        row,
+      ];
       const boundIds = state.assignment_bound_tasks
         .filter((r) => r.assignment_id === row.id)
         .map((r) => r.task_id);
@@ -3220,9 +3324,11 @@ export function ScheduleGrid() {
           setGridDragging(false);
           return;
         }
-        const after = state.assignments.find((a) => a.id === snap.id);
+        const after = assignmentById(snap.id);
+        const isPendingDrag = pendingCreate?.id === snap.id;
         if (
           after &&
+          !isPendingDrag &&
           (snap.before.recurrence ?? "none") === "weekly"
         ) {
           // Revert live drag mutation until the user chooses scope.
@@ -3237,6 +3343,10 @@ export function ScheduleGrid() {
             occurrenceEnd: snap.occurrenceEnd,
             leaveTrimmed: snap.leaveTrimmed,
           });
+          if (snap.leaveTrimmed) {
+            push("Trimmed around time off to avoid overlap", "warning");
+          }
+        } else if (after && isPendingDrag) {
           if (snap.leaveTrimmed) {
             push("Trimmed around time off to avoid overlap", "warning");
           }
@@ -4542,22 +4652,23 @@ export function ScheduleGrid() {
                               }
                               const snap = dragSnapshot.current;
                               if (!snap || !canManage) return;
-                              const current = state.assignments.find(
-                                (a) => a.id === snap.id,
-                              );
+                              const current = assignmentById(snap.id);
                               if (
                                 !current ||
                                 current.person_id !== person.id
                               ) {
                                 return;
                               }
+                              const placementAssignments = assignmentsForPlacement(
+                                pendingCreate?.id === snap.id ? snap.id : null,
+                              );
                               if (snap.weeklyInstance) {
                                 const vacated = withRecurrenceException(
                                   snap.before,
                                   snap.occurrenceStart,
                                 );
                                 const checkAssignments =
-                                  state.assignments.map((a) =>
+                                  placementAssignments.map((a) =>
                                     a.id === snap.id ? vacated : a,
                                   );
                                 if (snap.mode === "resize-end") {
@@ -4667,7 +4778,7 @@ export function ScheduleGrid() {
                                   current.project_id,
                                   snap.before.start_date,
                                   desiredEnd,
-                                  state.assignments,
+                                  placementAssignments,
                                   snap.id,
                                   state.leave_days,
                                 );
@@ -4677,8 +4788,7 @@ export function ScheduleGrid() {
                                 }
                                 if (end !== current.end_date) {
                                   snap.dirty = true;
-                                  upsertAssignment({
-                                    ...current,
+                                  patchAssignmentDates(snap.id, {
                                     end_date: end,
                                   });
                                 }
@@ -4693,7 +4803,7 @@ export function ScheduleGrid() {
                                   current.project_id,
                                   desiredStart,
                                   snap.before.end_date,
-                                  state.assignments,
+                                  placementAssignments,
                                   snap.id,
                                   state.leave_days,
                                 );
@@ -4703,8 +4813,7 @@ export function ScheduleGrid() {
                                 }
                                 if (start !== current.start_date) {
                                   snap.dirty = true;
-                                  upsertAssignment({
-                                    ...current,
+                                  patchAssignmentDates(snap.id, {
                                     start_date: start,
                                   });
                                 }
@@ -4717,7 +4826,7 @@ export function ScheduleGrid() {
                                 const { start, end } = resolveMovePlacement(
                                   snap.before,
                                   desiredDelta,
-                                  state.assignments,
+                                  placementAssignments,
                                   startKey,
                                   endKey,
                                 );
@@ -4726,8 +4835,7 @@ export function ScheduleGrid() {
                                   end !== current.end_date
                                 ) {
                                   snap.dirty = true;
-                                  upsertAssignment({
-                                    ...current,
+                                  patchAssignmentDates(snap.id, {
                                     start_date: start,
                                     end_date: end,
                                   });
@@ -4887,9 +4995,7 @@ export function ScheduleGrid() {
                                         ) {
                                           return;
                                         }
-                                        const base = state.assignments.find(
-                                          (a) => a.id === occ.assignmentId,
-                                        );
+                                        const base = assignmentById(occ.assignmentId);
                                         if (!base) return;
                                         const rect = (
                                           e.currentTarget as HTMLElement
@@ -5022,10 +5128,7 @@ export function ScheduleGrid() {
                                                 return;
                                               }
                                               const base =
-                                                state.assignments.find(
-                                                  (a) =>
-                                                    a.id === occ.assignmentId,
-                                                );
+                                                assignmentById(occ.assignmentId);
                                               if (!base) return;
                                               if (isAssignmentScheduleLocked(base.id)) {
                                                 setGanttMoveLockedNotice(true);
@@ -5083,10 +5186,7 @@ export function ScheduleGrid() {
                                                 return;
                                               }
                                               const base =
-                                                state.assignments.find(
-                                                  (a) =>
-                                                    a.id === occ.assignmentId,
-                                                );
+                                                assignmentById(occ.assignmentId);
                                               if (!base) return;
                                               if (isAssignmentScheduleLocked(base.id)) {
                                                 setGanttMoveLockedNotice(true);
@@ -5900,10 +6000,8 @@ export function ScheduleGrid() {
                 placeholder="Add a note… Use @ to mention"
                 mentionPeople={assignmentMentionPeople}
                 readOnly={
-                  isBoundTasksNotes(editForm.notes) ||
-                  (Boolean(pendingCreate?.id === editForm.id) &&
-                    bindToAssignment &&
-                    bindDraftIds.size > 0)
+                  boundTaskIdsForActive.length > 0 ||
+                  (isPendingCreate && bindDraftIds.size > 0)
                 }
               />
             </div>
@@ -6428,6 +6526,10 @@ export function ScheduleGrid() {
           message="An existing assignment blocks this tasks chosen dates. You can slice the existing assignment to insert this task at the requested dates (the blocking assignment continues before and after if applicable), use the next available slot, or cancel this request."
           mode="confirm"
           tone="accent"
+          panelClassName="max-w-md"
+          actionsClassName="flex flex-wrap justify-end gap-2"
+          confirmClassName="whitespace-nowrap min-h-9 h-auto py-2 leading-snug"
+          altConfirmClassName="whitespace-nowrap min-h-9 h-auto py-2 leading-snug"
           confirmLabel={
             bindCollisionConfirm.allowSlice
               ? "Slice and Insert"
@@ -6448,6 +6550,7 @@ export function ScheduleGrid() {
                 pending.projectId,
                 pending.desiredStart,
                 pending.desiredEnd,
+                { trackBindInsertUndo: true },
               );
               finishProjectBindFlow(
                 pending.taskId,

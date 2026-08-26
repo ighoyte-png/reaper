@@ -12,6 +12,7 @@ import {
   rangeOverlapsAssignmentWithBoundTasks,
   spanDatesForBoundTask,
   syncNonGanttTaskDatesFromBindings,
+  sortBoundTaskIdsByListOrder,
   taskBoundDatesMatchSpan,
   taskIsBoundOutOfSync,
   tryShiftAssignmentByDays,
@@ -94,6 +95,42 @@ describe("assignment-bound-tasks", () => {
   it("uses out-of-sync heading when requested", () => {
     const html = boundTasksNotesHtml(["Alpha"], "out_of_sync");
     expect(html).toContain("Task Dates out of Sync");
+  });
+
+  it("sorts bound task ids by list display order", () => {
+    const lists = [
+      { id: "l1", sort_order: 0 },
+      { id: "l2", sort_order: 1 },
+    ];
+    const tasks = [
+      task({ id: "t3", list_id: "l2", sort_order: 0, title: "C" }),
+      task({ id: "t1", list_id: "l1", sort_order: 1, title: "B" }),
+      task({ id: "t2", list_id: "l1", sort_order: 0, title: "A" }),
+    ];
+    expect(
+      sortBoundTaskIdsByListOrder(["t3", "t1", "t2"], tasks, lists),
+    ).toEqual(["t2", "t1", "t3"]);
+  });
+
+  it("matches bound task dates when assignment is merged explicitly", () => {
+    const assignment = asg({
+      id: "a1",
+      start_date: "2026-03-02",
+      end_date: "2026-03-04",
+    });
+    const tasks = [
+      task({
+        id: "t1",
+        list_id: "l1",
+        start_date: "2026-03-02",
+        due_date: "2026-03-04",
+      }),
+    ];
+    const binds = [bind({ assignment_id: "a1", task_id: "t1" })];
+    expect(taskBoundDatesMatchSpan("t1", binds, tasks, [])).toBe(false);
+    expect(
+      taskBoundDatesMatchSpan("t1", binds, tasks, [assignment]),
+    ).toBe(true);
   });
 
   it("spans dates across multiple bound assignments", () => {
