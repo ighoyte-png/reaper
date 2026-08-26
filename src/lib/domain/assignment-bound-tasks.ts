@@ -6,7 +6,7 @@ import {
 } from "@/lib/domain/assignment-occupancy";
 import { isOnFullDayLeave } from "@/lib/domain/capacity";
 import { toDateKey, workingDaysBetween } from "@/lib/domain/dates";
-import { listDisplayOrder, sortTaskLists } from "@/lib/domain/tasks";
+import { listDisplayOrder } from "@/lib/domain/tasks";
 import type {
   Assignment,
   AssignmentBoundSource,
@@ -63,11 +63,12 @@ export function sortBoundTaskIdsByListOrder(
   const idSet = new Set(taskIds);
   if (idSet.size === 0) return [];
   const ordered: string[] = [];
-  for (const list of sortTaskLists(
-    taskLists.filter((l) =>
+  const lists = taskLists
+    .filter((l) =>
       tasks.some((t) => idSet.has(t.id) && t.list_id === l.id),
-    ),
-  )) {
+    )
+    .sort((a, b) => a.sort_order - b.sort_order);
+  for (const list of lists) {
     for (const task of listDisplayOrder(
       tasks.filter((t) => t.list_id === list.id && idSet.has(t.id)),
     )) {
