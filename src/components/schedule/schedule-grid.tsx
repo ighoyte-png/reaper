@@ -479,6 +479,8 @@ export function ScheduleGrid() {
     dirty: boolean;
   } | null>(null);
   const [sliceMode, setSliceMode] = useState(false);
+  /** Phone-only: filters/slice toolbar starts collapsed to free viewport. */
+  const [phoneFiltersExpanded, setPhoneFiltersExpanded] = useState(false);
   const [extraProjectsByPerson, setExtraProjectsByPerson] = useState<
     Record<string, string[]>
   >({});
@@ -3590,26 +3592,78 @@ export function ScheduleGrid() {
       onPointerCancel={finishPointer}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-3 py-2 sm:px-5 sm:py-3">
-          <div className="flex items-center gap-1">
-            <NavBtn onClick={() => shiftAnchor(-1)} label="Prev">
-              <ChevronLeft size={16} />
-            </NavBtn>
-            <button
-              type="button"
-              className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
-              onClick={goToday}
+        <div
+          className={cn(
+            "border-b border-[var(--border)] px-3 py-2 sm:px-5 sm:py-3",
+            isPhone
+              ? "flex flex-col gap-2"
+              : "flex flex-wrap items-center gap-2",
+          )}
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1">
+              <NavBtn onClick={() => shiftAnchor(-1)} label="Prev">
+                <ChevronLeft size={16} />
+              </NavBtn>
+              <button
+                type="button"
+                className="h-8 rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                onClick={goToday}
+              >
+                Today
+              </button>
+              <NavBtn onClick={() => shiftAnchor(1)} label="Next">
+                <ChevronRight size={16} />
+              </NavBtn>
+            </div>
+            <p
+              className={cn(
+                "min-w-0 text-sm font-medium",
+                isPhone && "flex-1 truncate",
+              )}
             >
-              Today
-            </button>
-            <NavBtn onClick={() => shiftAnchor(1)} label="Next">
-              <ChevronRight size={16} />
-            </NavBtn>
+              {rangeLabel}
+            </p>
+            {isPhone ? (
+              <button
+                type="button"
+                className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-[var(--border)] px-2.5 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+                onClick={() => setPhoneFiltersExpanded((v) => !v)}
+                aria-expanded={phoneFiltersExpanded}
+                aria-controls="schedule-phone-filters"
+                title={
+                  phoneFiltersExpanded
+                    ? "Hide filters and tools"
+                    : "Show filters and tools"
+                }
+              >
+                <ChevronDown
+                  size={16}
+                  className={cn(
+                    "transition-transform",
+                    phoneFiltersExpanded && "rotate-180",
+                  )}
+                />
+                {phoneFiltersExpanded ? "Less" : "Filters"}
+              </button>
+            ) : null}
+            {isPhone && isNarrow ? (
+              <button
+                type="button"
+                className="h-8 shrink-0 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
+                onClick={() => openMobilePanel({ immediate: true })}
+              >
+                {sidebarExpandLabel}
+              </button>
+            ) : null}
           </div>
-          <p className="text-sm font-medium">
-            {rangeLabel}
-          </p>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+          <div
+            id="schedule-phone-filters"
+            className={cn(
+              "flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto",
+              isPhone && !phoneFiltersExpanded && "hidden",
+            )}
+          >
             <Select
               value={zoom}
               onChange={(v) => setFilter("zoom", v)}
@@ -3705,7 +3759,7 @@ export function ScheduleGrid() {
                 ) : null}
               </>
             )}
-            {isNarrow ? (
+            {!isPhone && isNarrow ? (
               <button
                 type="button"
                 className="h-8 cursor-pointer rounded-md border border-[var(--border)] px-3 text-sm hover:bg-[var(--row-hover)]"
@@ -3713,7 +3767,7 @@ export function ScheduleGrid() {
               >
                 {sidebarExpandLabel}
               </button>
-            ) : (
+            ) : !isPhone ? (
               <button
                 type="button"
                 className={cn(
@@ -3739,7 +3793,7 @@ export function ScheduleGrid() {
                 )}
                 {sidebarExpandLabel}
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 
