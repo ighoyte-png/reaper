@@ -614,6 +614,8 @@ export function ProjectTaskBoard({
   );
   const [archiveExpanded, setArchiveExpanded] = useState(false);
   const didRestoreCreateDraft = useRef(false);
+  /** One-shot deep-link scroll key (`taskId` or `taskId:commentId`). */
+  const deepLinkScrollDoneRef = useRef<string | null>(null);
   const [exitingTaskIds, setExitingTaskIds] = useState<Set<string>>(new Set());
   const pendingDeleteRootsRef = useRef<Set<string>>(new Set());
   const exitHandledRef = useRef<Set<string>>(new Set());
@@ -1880,7 +1882,10 @@ export function ProjectTaskBoard({
   ]);
 
   useEffect(() => {
-    if (!focusTaskId) return;
+    if (!focusTaskId) {
+      deepLinkScrollDoneRef.current = null;
+      return;
+    }
     const focused =
       visibleTasks.find((t) => t.id === focusTaskId) ??
       state.tasks.find(
@@ -1905,6 +1910,10 @@ export function ProjectTaskBoard({
       }
       markMentionsReadForTask(focusTaskId, viewerPersonId);
     }
+    const scrollKey = focusCommentId
+      ? `${focusTaskId}:${focusCommentId}`
+      : focusTaskId;
+    if (deepLinkScrollDoneRef.current === scrollKey) return;
     const targetId = focusCommentId
       ? `task-comment-${focusCommentId}`
       : `task-row-${focusTaskId}`;
@@ -1915,6 +1924,7 @@ export function ProjectTaskBoard({
       if (cancelled) return;
       const el = document.getElementById(targetId);
       if (el) {
+        deepLinkScrollDoneRef.current = scrollKey;
         scrollIntoNearest(el, { behavior: "smooth", block: "center" });
         return;
       }
