@@ -347,20 +347,13 @@ export function ScheduleGrid() {
   useLayoutEffect(() => {
     if (scheduleOffsetAppliedRef.current) return;
     if (!profile?.id) return;
-    const hasDeepLink =
-      Boolean(filters.assignment?.trim()) ||
-      Boolean(filters.bindTask?.trim()) ||
-      (filters.date?.trim() &&
-        /^\d{4}-\d{2}-\d{2}$/.test(filters.date.trim()));
-    if (!hasDeepLink) {
-      setAnchor(
-        scheduleAnchorForOffset(
-          readUserViewPrefs(profile.id).scheduleViewOffset,
-        ),
-      );
-    }
+    setAnchor(
+      scheduleAnchorForOffset(
+        readUserViewPrefs(profile.id).scheduleViewOffset,
+      ),
+    );
     scheduleOffsetAppliedRef.current = true;
-  }, [profile?.id, filters.assignment, filters.bindTask, filters.date]);
+  }, [profile?.id]);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLeaveBlockId, setSelectedLeaveBlockId] = useState<
@@ -564,7 +557,9 @@ export function ScheduleGrid() {
     if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
     const offset = readUserViewPrefs(profile?.id).scheduleViewOffset;
     const targetAnchor = scheduleAnchorForDateWithOffset(dateKey, offset);
-    if (dateKey < startKey || dateKey > endKey) {
+    const needsReanchor =
+      weekStart(anchor).getTime() !== weekStart(targetAnchor).getTime();
+    if (needsReanchor || dateKey < startKey || dateKey > endKey) {
       pendingScrollDateRef.current = dateKey;
       setAnchor(targetAnchor);
       return;
@@ -781,7 +776,11 @@ export function ScheduleGrid() {
   }
 
   function goToday() {
-    setAnchor(weekStart(new Date()));
+    setAnchor(
+      scheduleAnchorForOffset(
+        readUserViewPrefs(profile?.id).scheduleViewOffset,
+      ),
+    );
     if (scrollRef.current) scrollRef.current.scrollLeft = 0;
   }
 
@@ -886,12 +885,21 @@ export function ScheduleGrid() {
       ? null
       : (projectsById.get(projectFilter) ?? null);
 
+  const assignmentsView = useMemo(() => {
+    if (!pendingCreate) return state.assignments;
+    return [
+      ...state.assignments.filter((a) => a.id !== pendingCreate.id),
+      pendingCreate,
+    ];
+  }, [state.assignments, pendingCreate]);
+  assignmentsRef.current = assignmentsView;
+
   const selectedBurn = useMemo(
     () =>
       selectedProject
         ? budgetBurn(
             selectedProject,
-            state.assignments,
+            assignmentsView,
             state.people,
             false,
             new Date(),
@@ -905,21 +913,12 @@ export function ScheduleGrid() {
         : null,
     [
       selectedProject,
-      state.assignments,
+      assignmentsView,
       state.people,
       state.project_members,
       state.project_contractor_expenses,
     ],
   );
-
-  const assignmentsView = useMemo(() => {
-    if (!pendingCreate) return state.assignments;
-    return [
-      ...state.assignments.filter((a) => a.id !== pendingCreate.id),
-      pendingCreate,
-    ];
-  }, [state.assignments, pendingCreate]);
-  assignmentsRef.current = assignmentsView;
 
   const selected =
     assignmentsView.find((a) => a.id === selectedId) ?? null;
@@ -947,6 +946,9 @@ export function ScheduleGrid() {
     const current = state.assignments.find((a) => a.id === id);
     if (!current) return;
     upsertAssignment({ ...current, ...patch });
+    setEditForm((prev) =>
+      prev && prev.id === id ? { ...prev, ...patch } : prev,
+    );
   }
 
   function assignmentsForPlacement(excludeId?: string | null): Assignment[] {
@@ -1126,7 +1128,10 @@ export function ScheduleGrid() {
       // Stroke color (fill set separately on StickyNote).
       return "text-white";
     }
-    if (isBoundTasksNotes(notes)) {
+    const hasBoundRows = state.assignment_bound_tasks.some(
+      (r) => r.assignment_id === assignmentId,
+    );
+    if (hasBoundRows || isBoundTasksNotes(notes)) {
       return assignmentIsOutOfSync(
         state.assignment_bound_tasks,
         state.tasks,
@@ -1142,11 +1147,17 @@ export function ScheduleGrid() {
 
   function assignmentNoteStickyClass(
     notes: string | null | undefined,
+    assignmentId?: string,
   ): string | undefined {
     if (isTasksRemovedNote(notes)) {
       return "fill-[var(--text-muted)] stroke-white";
     }
-    if (isBoundTasksNotes(notes)) {
+    const hasBoundRows = assignmentId
+      ? state.assignment_bound_tasks.some(
+          (r) => r.assignment_id === assignmentId,
+        )
+      : false;
+    if (hasBoundRows || isBoundTasksNotes(notes)) {
       return "fill-current stroke-white";
     }
     return undefined;
@@ -2239,7 +2250,7 @@ export function ScheduleGrid() {
       const hasBoundTasks = state.assignment_bound_tasks.some(
         (r) => r.assignment_id === id,
       );
-      if (hasBoundTasks) setSidebarPanelTab("tasks");
+      if (hasBoundTasks && id !== selectedId) setSidebarPanelTab("tasks");
     }
     if (id) {
       if (isNarrow) openMobilePanel();
@@ -3013,14 +3024,14 @@ export function ScheduleGrid() {
       setPendingCreate(null);
       bindInsertPunchPendingRef.current = null;
     }
+    const assignments = [
+      ...state.assignments.filter((a) => a.id !== row.id),
+      row,
+    ];
+    const boundIds = state.assignment_bound_tasks
+      .filter((r) => r.assignment_id === row.id)
+      .map((r) => r.task_id);
     if (datesChanged) {
-      const assignments = [
-        ...state.assignments.filter((a) => a.id !== row.id),
-        row,
-      ];
-      const boundIds = state.assignment_bound_tasks
-        .filter((r) => r.assignment_id === row.id)
-        .map((r) => r.task_id);
       const datePatches = syncNonGanttTaskDatesFromBindings(
         state.assignment_bound_tasks,
         state.tasks,
@@ -3046,6 +3057,15 @@ export function ScheduleGrid() {
       if (boundIds.length > 0) {
         refreshBoundAssignmentNotes(row, boundIds, oos);
       }
+    } else if (boundIds.length > 0) {
+      const oos = assignmentIsOutOfSync(
+        state.assignment_bound_tasks,
+        state.tasks,
+        state.task_lists,
+        assignments,
+        row.id,
+      );
+      refreshBoundAssignmentNotes(row, boundIds, oos);
     }
     const bounds = assignmentRangeBounds([row]);
     if (
@@ -3602,7 +3622,7 @@ export function ScheduleGrid() {
     if (!canManage) return [];
     const visibleIds = new Set(visiblePeople.map((p) => p.id));
     const projectIds = new Set<string>();
-    for (const a of state.assignments) {
+    for (const a of assignmentsView) {
       if (!visibleIds.has(a.person_id)) continue;
       if (!assignmentOverlapsDateRange(a, startKey, endKey, projectsById.get(a.project_id)?.end_date)) continue;
       projectIds.add(a.project_id);
@@ -3616,7 +3636,7 @@ export function ScheduleGrid() {
           : undefined,
         burn: budgetBurn(
           project,
-          state.assignments,
+          assignmentsView,
           state.people,
           false,
           new Date(),
@@ -3630,7 +3650,7 @@ export function ScheduleGrid() {
     canManage,
     sortedProjects,
     clientsById,
-    state.assignments,
+    assignmentsView,
     state.people,
     state.project_members,
     state.project_contractor_expenses,
@@ -5101,6 +5121,7 @@ export function ScheduleGrid() {
                                               strokeWidth={2.5}
                                               className={assignmentNoteStickyClass(
                                                 occ.notes,
+                                                occ.assignmentId,
                                               )}
                                             />
                                           </span>
@@ -5419,6 +5440,7 @@ export function ScheduleGrid() {
                                                 boundNoteOcc
                                                   ? assignmentNoteStickyClass(
                                                       boundNoteOcc.notes,
+                                                      boundNoteOcc.assignmentId,
                                                     )
                                                   : undefined
                                               }
@@ -5830,7 +5852,7 @@ export function ScheduleGrid() {
               <div className="p-4">
                 <ProductionHoursPanel
                   project={sidebarProject}
-                  assignments={state.assignments}
+                  assignments={assignmentsView}
                   people={state.people}
                   members={state.project_members.filter(
                     (m) => m.project_id === sidebarProject.id,
@@ -6010,7 +6032,7 @@ export function ScheduleGrid() {
               if (!project) return null;
               const burn = budgetBurn(
                 project,
-                state.assignments,
+                assignmentsView,
                 state.people,
                 false,
                 new Date(),
@@ -6526,8 +6548,8 @@ export function ScheduleGrid() {
           message="An existing assignment blocks this tasks chosen dates. You can slice the existing assignment to insert this task at the requested dates (the blocking assignment continues before and after if applicable), use the next available slot, or cancel this request."
           mode="confirm"
           tone="accent"
-          panelClassName="max-w-md"
-          actionsClassName="flex flex-wrap justify-end gap-2"
+          panelClassName="max-w-xl"
+          actionsClassName="mt-4 flex flex-nowrap justify-end gap-2"
           confirmClassName="whitespace-nowrap min-h-9 h-auto py-2 leading-snug"
           altConfirmClassName="whitespace-nowrap min-h-9 h-auto py-2 leading-snug"
           confirmLabel={

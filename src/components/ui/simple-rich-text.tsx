@@ -316,6 +316,8 @@ export const SimpleRichTextEditor = forwardRef<
   onFileAttachmentsChangeRef.current = onFileAttachmentsChange;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const pendingFilesRef = useRef(
     new Map<string, { file: File; blobUrl: string }>(),
   );
@@ -644,6 +646,7 @@ export const SimpleRichTextEditor = forwardRef<
         },
       },
       onUpdate: ({ editor: ed }) => {
+        if (readOnlyRef.current) return;
         const alive = new Set<string>();
         ed.state.doc.descendants((node) => {
           const id = node.attrs["data-pending-id"];
@@ -655,7 +658,7 @@ export const SimpleRichTextEditor = forwardRef<
           pendingFilesRef.current.delete(id);
         }
         const html = ed.isEmpty ? "" : ed.getHTML();
-        onChange(html);
+        onChangeRef.current(html);
       },
     },
     [extensions, attachmentsActive, readOnly],
@@ -663,7 +666,7 @@ export const SimpleRichTextEditor = forwardRef<
 
   useEffect(() => {
     if (!editor) return;
-    editor.setEditable(!readOnly);
+    editor.setEditable(!readOnly, false);
   }, [editor, readOnly]);
 
   // Pin after TipTap mounts (editor null → DOM absent on first paint).

@@ -157,8 +157,8 @@ export function ConfirmDialog({
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
       <div
         className={cn(
-          "w-full max-w-sm rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl",
-          panelClassName,
+          "w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl",
+          panelClassName ?? "max-w-sm",
         )}
       >
         <h2 className="text-sm font-semibold">{title}</h2>
