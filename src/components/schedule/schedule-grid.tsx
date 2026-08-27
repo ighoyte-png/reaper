@@ -553,6 +553,23 @@ export function ScheduleGrid() {
   const startKey = columns[0]?.startKey ?? todayKey;
   const endKey = columns[columns.length - 1]?.endKey ?? todayKey;
 
+  function applyScheduleScrollForDateKey(dateKey: string) {
+    if (!scrollRef.current) return;
+    const offset = readUserViewPrefs(profile?.id).scheduleViewOffset;
+    // With a view offset, keep the left edge at the offset weeks (same as
+    // Today / default Schedule load) so prior weeks stay on screen.
+    if (offset !== "none") {
+      scrollRef.current.scrollLeft = 0;
+      return;
+    }
+    const idx = columnIndexForDateKey(columns, dateKey);
+    if (idx < 0) return;
+    scrollRef.current.scrollLeft = Math.max(
+      0,
+      columnOffsetPx(columns, idx) - dayW * 2,
+    );
+  }
+
   function scrollScheduleToDateKey(dateKey: string) {
     if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return;
     const offset = readUserViewPrefs(profile?.id).scheduleViewOffset;
@@ -565,12 +582,7 @@ export function ScheduleGrid() {
       return;
     }
     pendingScrollDateRef.current = null;
-    const idx = columnIndexForDateKey(columns, dateKey);
-    if (idx < 0 || !scrollRef.current) return;
-    scrollRef.current.scrollLeft = Math.max(
-      0,
-      columnOffsetPx(columns, idx) - dayW * 2,
-    );
+    applyScheduleScrollForDateKey(dateKey);
   }
 
   useLayoutEffect(() => {
@@ -578,12 +590,7 @@ export function ScheduleGrid() {
     if (!key) return;
     if (key < startKey || key > endKey) return;
     pendingScrollDateRef.current = null;
-    const idx = columnIndexForDateKey(columns, key);
-    if (idx < 0 || !scrollRef.current) return;
-    scrollRef.current.scrollLeft = Math.max(
-      0,
-      columnOffsetPx(columns, idx) - dayW * 2,
-    );
+    applyScheduleScrollForDateKey(key);
   }, [columns, startKey, endKey, dayW]);
 
   useEffect(() => {

@@ -1396,7 +1396,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ) {
           const active = new Set(activeRealtimeProjectIdsRef.current);
           if (active.size === 0 && projectReadyRef.current.size === 0) {
-            continue;
+            // No project live scope — still apply task UPDATEs/DELETEs for
+            // rows already in state (Dashboard Pulse / My Tasks via ensureOrgTasks).
+            if (ev.table === "tasks") {
+              const taskId = String(
+                (ev.newRecord ?? ev.oldRecord)?.id ?? "",
+              );
+              if (
+                !taskId ||
+                !next.tasks.some((t) => t.id === taskId)
+              ) {
+                continue;
+              }
+            } else {
+              continue;
+            }
           }
           if (
             ev.table === "tasks" ||
@@ -1412,7 +1426,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
               !active.has(pid) &&
               !projectReadyRef.current.has(pid)
             ) {
-              continue;
+              // Task Pulse / My Tasks load via ensureOrgTasks without project
+              // channels — still apply UPDATEs/DELETEs for rows we already hold.
+              if (ev.table === "tasks") {
+                const taskId = String(
+                  (ev.newRecord ?? ev.oldRecord)?.id ?? "",
+                );
+                const held =
+                  Boolean(taskId) &&
+                  next.tasks.some((t) => t.id === taskId);
+                if (!held) continue;
+              } else {
+                continue;
+              }
             }
           } else if (
             ev.table === "task_comment_reactions" ||
@@ -1708,6 +1734,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
           filter: `organization_id=eq.${organizationId}`,
         },
         enqueueRealtimeChange("task_comments"),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tasks",
+          filter: `organization_id=eq.${organizationId}`,
+        },
+        enqueueRealtimeChange("tasks"),
       )
       .on(
         "postgres_changes",
