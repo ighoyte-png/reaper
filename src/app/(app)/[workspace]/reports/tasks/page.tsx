@@ -33,6 +33,7 @@ import { toDateKey } from "@/lib/domain/dates";
 import {
   collectPersonOverdueTasks,
   dueDateToneClass,
+  isTaskPastDueOpen,
   taskAssignerPersonId,
 } from "@/lib/domain/tasks";
 import { projectDisplayColor, sortClientsByName } from "@/lib/domain/sorting";
@@ -902,13 +903,16 @@ function TasksReportContent() {
   );
 
   const overdueTasks = useMemo(() => {
-    // My Tasks: Active overdue → assignee; In Review overdue → assigner.
-    // Org-wide: all past-due open tasks (including In Review).
-    const personId =
-      myTasksMode && assigneePersonId ? assigneePersonId : null;
+    // My Tasks: all non-complete past-due in the current role/project scope
+    // (Active + In Review). Org-wide keeps person-null collector (all open).
+    if (myTasksMode) {
+      return bucketTasks
+        .filter((t) => isTaskPastDueOpen(t, todayKey))
+        .sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? ""));
+    }
     return collectPersonOverdueTasks(
       bucketTasks,
-      personId,
+      null,
       state.people,
       projectById,
       todayKey,
@@ -916,7 +920,6 @@ function TasksReportContent() {
   }, [
     bucketTasks,
     myTasksMode,
-    assigneePersonId,
     state.people,
     projectById,
     todayKey,

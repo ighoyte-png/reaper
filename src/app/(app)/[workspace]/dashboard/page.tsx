@@ -109,9 +109,11 @@ import {
   dueDateToneClass,
   isTaskDueTodayOpen,
   isTaskPastDueOpen,
+  taskStatusLabel,
   taskUrgency,
   type TaskUrgency,
 } from "@/lib/domain/tasks";
+import { taskStatusTagClassName } from "@/components/tasks/task-status-tag";
 import {
   mentionTargetFromUnread,
   mentionUnreadKey,
@@ -129,6 +131,7 @@ import type {
   Profile,
   Project,
   Task,
+  TaskStatus,
 } from "@/lib/types";
 
 export default function DashboardPage() {
@@ -2247,7 +2250,6 @@ function TodaySchedule({
 function TaskPulse({
   overdue,
   dueToday,
-  total,
   projectById,
   clientById,
   peopleById,
@@ -2258,7 +2260,8 @@ function TaskPulse({
 }: {
   overdue: Task[];
   dueToday: Task[];
-  total: number;
+  /** @deprecated badge uses filtered count; kept for call-site compatibility */
+  total?: number;
   projectById: Map<string, Project>;
   clientById: Map<string, Client>;
   peopleById: Map<string, Person>;
@@ -2267,7 +2270,21 @@ function TaskPulse({
   viewAllHref: string;
   stretch?: boolean;
 }) {
-  const hasFeed = overdue.length > 0 || dueToday.length > 0;
+  /** Pulse status filter — DB `upcoming` = Active, `active` = In Review. */
+  const [statusFilter, setStatusFilter] = useState<
+    Extract<TaskStatus, "upcoming" | "active">
+  >("upcoming");
+
+  const filteredOverdue = useMemo(
+    () => overdue.filter((t) => t.status === statusFilter),
+    [overdue, statusFilter],
+  );
+  const filteredDueToday = useMemo(
+    () => dueToday.filter((t) => t.status === statusFilter),
+    [dueToday, statusFilter],
+  );
+  const filteredTotal = filteredOverdue.length + filteredDueToday.length;
+  const hasFeed = filteredOverdue.length > 0 || filteredDueToday.length > 0;
 
   function row(task: Task, overdueRow: boolean) {
     const assignee = task.assignee_person_id
@@ -2291,6 +2308,26 @@ function TaskPulse({
     );
   }
 
+  function statusFilterChip(status: Extract<TaskStatus, "upcoming" | "active">) {
+    const selected = statusFilter === status;
+    return (
+      <button
+        type="button"
+        aria-pressed={selected}
+        onClick={() => setStatusFilter(status)}
+        className={cn(
+          taskStatusTagClassName(status),
+          "cursor-pointer border transition-opacity",
+          selected
+            ? "border-[var(--text)] opacity-100"
+            : "border-transparent opacity-60 hover:opacity-90",
+        )}
+      >
+        {taskStatusLabel(status)}
+      </button>
+    );
+  }
+
   return (
     <section
       className={cn(
@@ -2305,18 +2342,22 @@ function TaskPulse({
             <Pin size={16} strokeWidth={1.75} aria-hidden />
           </div>
           <h2 className="text-sm font-semibold">Task Pulse</h2>
-          {total > 0 ? (
+          {filteredTotal > 0 ? (
             <span className="rounded-full bg-[var(--status-attention)] px-2 py-0.5 text-[11px] font-medium text-white">
-              {total}
+              {filteredTotal}
             </span>
           ) : null}
         </div>
-        <Link
-          href={viewAllHref}
-          className={buttonClass({ variant: "secondary", size: "sm" })}
-        >
-          View All
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          {statusFilterChip("upcoming")}
+          {statusFilterChip("active")}
+          <Link
+            href={viewAllHref}
+            className={buttonClass({ variant: "secondary", size: "sm" })}
+          >
+            View All
+          </Link>
+        </div>
       </div>
       {!hasFeed ? (
         <p className="text-sm text-[var(--text-muted)]">
@@ -2329,26 +2370,26 @@ function TaskPulse({
             stretch ? "min-h-0 flex-1" : "max-h-72",
           )}
         >
-          {overdue.length > 0 ? (
+          {filteredOverdue.length > 0 ? (
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--status-over)]">
                 <AlertTriangle size={12} />
                 Overdue
               </div>
               <div className="space-y-1.5">
-                {overdue.map((t) => row(t, true))}
+                {filteredOverdue.map((t) => row(t, true))}
               </div>
             </div>
           ) : null}
 
-          {dueToday.length > 0 ? (
+          {filteredDueToday.length > 0 ? (
             <div>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--status-near)]">
                 <CalendarClock size={12} />
                 Due Today
               </div>
               <div className="space-y-1.5">
-                {dueToday.map((t) => row(t, false))}
+                {filteredDueToday.map((t) => row(t, false))}
               </div>
             </div>
           ) : null}
