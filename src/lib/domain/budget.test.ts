@@ -8,6 +8,7 @@ import {
   formatHours,
   listedBudgetAmount,
   projectToDateSpan,
+  projectHoursSplitInRange,
   scheduleOutsideProjectDates,
   weeklyProgressSeries,
 } from "@/lib/domain/budget";
@@ -193,6 +194,53 @@ describe("projectToDateSpan", () => {
         new Date("2026-08-17T12:00:00"),
       ),
     ).toEqual({ startKey: "2026-03-02", endKey: "2026-08-17" });
+  });
+});
+
+describe("projectHoursSplitInRange todate future hours", () => {
+  it("counts future hours only when rangeEnd extends beyond today", () => {
+    const project = makeProject({
+      budget_monthly_reset: false,
+      start_date: "2026-01-15",
+      end_date: "2027-03-31",
+    });
+    const assignments = [
+      makeAssignment({
+        start_date: "2026-08-07",
+        end_date: "2026-08-07",
+        hours_per_day: 8,
+      }),
+      makeAssignment({
+        id: "a2",
+        start_date: "2026-09-01",
+        end_date: "2026-09-01",
+        hours_per_day: 6,
+      }),
+    ];
+    const asOf = new Date("2026-08-17T12:00:00");
+    const todayKey = "2026-08-17";
+
+    const toDateSplit = projectHoursSplitInRange(
+      project.id,
+      assignments,
+      [],
+      project.start_date!,
+      todayKey,
+      asOf,
+    );
+    expect(toDateSplit.usedHours).toBe(8);
+    expect(toDateSplit.futureHours).toBe(0);
+
+    const fullSpanSplit = projectHoursSplitInRange(
+      project.id,
+      assignments,
+      [],
+      project.start_date!,
+      project.end_date!,
+      asOf,
+    );
+    expect(fullSpanSplit.usedHours).toBe(8);
+    expect(fullSpanSplit.futureHours).toBe(6);
   });
 });
 

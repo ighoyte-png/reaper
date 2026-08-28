@@ -365,6 +365,21 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     };
   }, [periodMode, year, selectedMonth, project, state.assignments]);
 
+  const plannedRangeEnd = useMemo(() => {
+    if (
+      periodMode !== "todate" ||
+      !project ||
+      isMonthlyRetainerBudget(project)
+    ) {
+      return periodRange.end;
+    }
+    return (
+      projectDateSpan(project, state.assignments)?.endKey ??
+      project.end_date ??
+      periodRange.end
+    );
+  }, [periodMode, project, periodRange.end, state.assignments]);
+
   const periodSplit = useMemo(() => {
     if (!project) return null;
     const asOf = new Date();
@@ -399,7 +414,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         scheduleAssignments,
         state.people,
         periodRange.start,
-        periodRange.end,
+        plannedRangeEnd,
         asOf,
         state.organization_settings,
       );
@@ -484,6 +499,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     state.people,
     state.organization_settings,
     periodRange,
+    plannedRangeEnd,
     projectExpenses,
     projectMembers,
     membersByPerson,
@@ -561,7 +577,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         project.id,
         state.assignments,
         periodRange.start,
-        periodRange.end,
+        plannedRangeEnd,
       );
       return {
         id: person.id,
@@ -815,7 +831,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         project.id,
         state.assignments,
         periodRange.start,
-        periodRange.end,
+        plannedRangeEnd,
       );
       contractors.push({
         id: person.id,
@@ -862,6 +878,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     state.assignments,
     state.people,
     periodRange,
+    plannedRangeEnd,
     periodMode,
     projectExpenses,
   ]);

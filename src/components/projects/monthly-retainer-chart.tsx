@@ -211,7 +211,7 @@ function MonthBarColumn({
     );
   }
 
-  /** justify-end: last child sits at the bottom â€” contractor green at bottom. */
+  /** justify-end: last child sits at the bottom — contractor green at bottom. */
   function renderStackedBar(heightPct: number, baseTotal: number) {
     const base = baseTotal > 0 ? baseTotal : total;
     const contractorPct = base > 0 ? (contractor / base) * 100 : 0;
@@ -371,9 +371,9 @@ export function ProjectYearBurnChart({
   /** Highlight a month bar (yyyy-MM). */
   selectedMonthKey?: string;
   onMonthSelect?: (bar: MonthBurnBar) => void;
-  /** Paint contractor hours as internal (blue) â€” client portal only. */
+  /** Paint contractor hours as internal (blue) — client portal only. */
   blendContractors?: boolean;
-  /** Hover tooltips and month click â€” full budget report only. */
+  /** Hover tooltips and month click — full budget report only. */
   interactive?: boolean;
 }) {
   const isPhone = useIsPhone();
@@ -557,7 +557,7 @@ export function ProjectYearBurnChart({
                       cap > 0 ? ` / ${formatValue(cap)}` : ""
                     }`}
                   >
-                    {total > 0 ? formatValue(total) : "Â·"}
+                    {total > 0 ? formatValue(total) : "·"}
                   </span>
                 </div>
               );
@@ -646,11 +646,11 @@ export function ProjectYearBurnChart({
         showCapLine ? (
           <p className="mt-1 text-[10px] text-[var(--text-muted)]">
             Monthly cap {formatValue(cap)}
-            <span className="ml-1 text-[#ef4444]">â€” â€”</span>
-            <span className="ml-2">Â· hatched = future / planned</span>
+            <span className="ml-1 text-[#ef4444]">— —</span>
+            <span className="ml-2">· hatched = future / planned</span>
             {hasContractor ? (
               <span className="ml-2">
-                Â·{" "}
+                ·{" "}
                 <span
                   className="inline-block h-2 w-2 rounded-full align-middle"
                   style={{ backgroundColor: contractorColor }}
@@ -666,12 +666,12 @@ export function ProjectYearBurnChart({
               : "Planned hours by month"}
             {hasContractor ? (
               <span className="ml-2">
-                Â·{" "}
+                ·{" "}
                 <span
                   className="inline-block h-2 w-2 rounded-full align-middle"
                   style={{ backgroundColor: contractorColor }}
                 />{" "}
-                contractor Â·{" "}
+                contractor ·{" "}
                 <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)] align-middle" />{" "}
                 internal
               </span>
