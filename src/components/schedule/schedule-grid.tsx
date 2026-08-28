@@ -47,6 +47,7 @@ import {
   RichNotesHtml,
   SimpleRichTextEditor,
 } from "@/components/ui/simple-rich-text";
+import { BoundAssignmentNotesTooltip } from "@/components/schedule/bound-assignment-notes-tooltip";
 import { Tooltip } from "@/components/ui/tooltip";
 import { notesHasContent } from "@/lib/notes-html";
 import { useToast } from "@/components/toast/toast-provider";
@@ -1168,6 +1169,22 @@ export function ScheduleGrid() {
       return "fill-current stroke-white";
     }
     return undefined;
+  }
+
+  function assignmentNotesTooltipContent(
+    notes: string,
+    assignmentId: string,
+  ): ReactNode {
+    if (isTasksRemovedNote(notes)) return <span>Tasks Removed</span>;
+    if (isBoundTasksNotes(notes)) {
+      return (
+        <BoundAssignmentNotesTooltip
+          assignmentId={assignmentId}
+          projectHref={projectHref}
+        />
+      );
+    }
+    return <RichNotesHtml html={notes} />;
   }
 
   function refreshBoundAssignmentNotes(
@@ -5105,9 +5122,10 @@ export function ScheduleGrid() {
                                       </span>
                                       {notesHasContent(occ.notes) ? (
                                         <Tooltip
-                                          content={
-                                            <RichNotesHtml html={occ.notes!} />
-                                          }
+                                          content={assignmentNotesTooltipContent(
+                                            occ.notes!,
+                                            occ.assignmentId,
+                                          )}
                                           className="relative z-[1] ml-0.5 inline-flex shrink-0"
                                         >
                                           <span
@@ -5317,9 +5335,9 @@ export function ScheduleGrid() {
                                     overlapping.every(
                                       (o) => o.status === "tentative",
                                     );
-                                  const noteHtmls = overlapping
-                                    .map((o) => o.notes)
-                                    .filter((n) => notesHasContent(n));
+                                  const noteOccurrences = overlapping.filter(
+                                    (o) => notesHasContent(o.notes),
+                                  );
                                   const boundNoteOcc = overlapping.find(
                                     (o) =>
                                       isBoundTasksNotes(o.notes) ||
@@ -5411,15 +5429,19 @@ export function ScheduleGrid() {
                                         {hoursLabel}
                                         {hasWeekly ? " ↻" : ""}
                                       </span>
-                                      {noteHtmls.length > 0 ? (
+                                      {noteOccurrences.length > 0 ? (
                                         <Tooltip
                                           content={
                                             <span className="flex flex-col gap-1.5">
-                                              {noteHtmls.map((html, i) => (
-                                                <RichNotesHtml
-                                                  key={i}
-                                                  html={html!}
-                                                />
+                                              {noteOccurrences.map((o) => (
+                                                <Fragment
+                                                  key={o.assignmentId}
+                                                >
+                                                  {assignmentNotesTooltipContent(
+                                                    o.notes!,
+                                                    o.assignmentId,
+                                                  )}
+                                                </Fragment>
                                               ))}
                                             </span>
                                           }
