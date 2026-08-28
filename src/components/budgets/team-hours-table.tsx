@@ -69,9 +69,9 @@ export function TeamHoursTable({
         <thead>
           <tr className="border-b border-[var(--border)] text-xs text-[var(--text-muted)]">
             <th className="pb-2 font-medium">Person</th>
-            <th className="pb-2 text-right font-medium">Used</th>
-            <th className="pb-2 text-right font-medium">Planned</th>
-            <th className="pb-2 text-right font-medium">Total</th>
+            <th className="pb-2 text-right font-medium text-[var(--accent)]">Used</th>
+            <th className="pb-2 text-right font-medium text-[var(--status-near)]">Planned</th>
+            <th className="pb-2 text-right font-medium text-[var(--status-healthy)]">Total</th>
           </tr>
         </thead>
         <tbody>

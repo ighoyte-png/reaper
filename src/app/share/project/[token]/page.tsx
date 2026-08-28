@@ -266,7 +266,7 @@ export default function ProjectSharePage() {
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
   const [chartYear, setChartYear] = useState(() => new Date().getFullYear());
-  const [periodMode, setPeriodMode] = useState<"month" | "year" | "term">(
+  const [periodMode, setPeriodMode] = useState<"month" | "term">(
     "month",
   );
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -355,13 +355,6 @@ export default function ProjectSharePage() {
         start: startDate,
         end: endDate,
         label: "Contract Term",
-      };
-    }
-    if (periodMode === "year") {
-      return {
-        start: toDateKey(new Date(chartYear, 0, 1)),
-        end: toDateKey(endOfMonth(new Date(chartYear, 11, 1))),
-        label: String(chartYear),
       };
     }
     const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
@@ -1085,6 +1078,7 @@ export default function ProjectSharePage() {
                   blendContractors
                   selectedMonthKey={selectedMonthKey}
                   onMonthSelect={handleMonthSelect}
+                  interactive
                 />
               </section>
 
@@ -1100,14 +1094,7 @@ export default function ProjectSharePage() {
                     onSelect={() => setPeriodMode("month")}
                   />
                 </li>
-                <li>
-                  <PeriodChip
-                    label="Year"
-                    selected={periodMode === "year"}
-                    onSelect={() => setPeriodMode("year")}
-                  />
-                </li>
-                {portal.project.start_date && portal.project.end_date ? (
+{portal.project.start_date && portal.project.end_date ? (
                   <li>
                     <PeriodChip
                       label="Contract Term"

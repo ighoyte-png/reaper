@@ -335,6 +335,7 @@ function BudgetCardView({
               }
               year={year}
               compact
+              interactive={false}
             />
           ) : (
             <BurnBar

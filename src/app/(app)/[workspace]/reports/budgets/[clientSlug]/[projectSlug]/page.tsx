@@ -102,7 +102,7 @@ export default function ProjectBudgetDetailPage() {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [periodProjectId, setPeriodProjectId] = useState<string | null>(null);
   const [periodMode, setPeriodMode] = useState<
-    "month" | "year" | "lifetime" | "term" | "todate"
+    "month" | "lifetime" | "term" | "todate"
   >("month");
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -281,6 +281,7 @@ export default function ProjectBudgetDetailPage() {
   const staffTeam = useMemo(() => {
     if (!project) return [];
     const ids = new Set<string>();
+    for (const m of projectMembers) ids.add(m.person_id);
     for (const a of state.assignments) {
       if (a.project_id === project.id) ids.add(a.person_id);
     }
@@ -292,7 +293,7 @@ export default function ProjectBudgetDetailPage() {
     return sortPeopleByName(
       state.people.filter((p) => ids.has(p.id) && !p.is_contractor),
     );
-  }, [project, state.assignments, state.tasks, state.people]);
+  }, [project, projectMembers, state.assignments, state.tasks, state.people]);
 
   const contractorRoster = useMemo(() => {
     if (!project) return [];
@@ -314,14 +315,22 @@ export default function ProjectBudgetDetailPage() {
   const periodRange = useMemo(() => {
     if (periodMode === "todate" && project) {
       const span = projectToDateSpan(project, state.assignments);
+      const today = toDateKey(new Date());
       if (span) {
         return {
           start: span.startKey,
-          end: span.endKey,
+          end: span.endKey <= today ? span.endKey : today,
           label: "Project to Date",
         };
       }
-      const today = toDateKey(new Date());
+      const lifetime = projectDateSpan(project, state.assignments);
+      if (lifetime) {
+        return {
+          start: lifetime.startKey,
+          end: lifetime.endKey <= today ? lifetime.endKey : today,
+          label: "Project to Date",
+        };
+      }
       return { start: today, end: today, label: "Project to Date" };
     }
     if (periodMode === "lifetime" && project) {
@@ -348,14 +357,7 @@ export default function ProjectBudgetDetailPage() {
         label: "Contract Term",
       };
     }
-    if (periodMode === "year") {
-      return {
-        start: toDateKey(new Date(year, 0, 1)),
-        end: toDateKey(endOfMonth(new Date(year, 11, 1))),
-        label: String(year),
-      };
-    }
-    const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
+const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     return {
       start: toDateKey(startOfMonth(d)),
       end: toDateKey(endOfMonth(d)),
@@ -581,6 +583,7 @@ export default function ProjectBudgetDetailPage() {
     const asOf = new Date();
 
     for (const person of contractorRoster) {
+      let contractorRowAdded = false;
       const member = membersByPerson.get(person.id);
       const mode = member?.contractor_mode ?? null;
       const isFixedFee = mode === "fixed_fee";
@@ -600,6 +603,7 @@ export default function ProjectBudgetDetailPage() {
               person.id,
             );
             for (const line of expenseLines) {
+              contractorRowAdded = true;
               contractors.push({
                 id: line.rowId,
                 personId: person.id,
@@ -710,8 +714,7 @@ export default function ProjectBudgetDetailPage() {
               periodRange.end,
               asOf,
             );
-            if (totalHours > 0) {
-              contractors.push({
+            contractors.push({
                 id: `${person.id}:hours`,
                 personId: person.id,
                 name: person.name,
@@ -719,13 +722,12 @@ export default function ProjectBudgetDetailPage() {
                 avatar_attachment_id: person.avatar_attachment_id,
                 avatar_color: person.avatar_color,
                 usedHours: 0,
-                plannedHours: 0,
+                plannedHours: totalHours,
                 totalHours,
                 moneyAmount: null,
-                dashUsedPlanned: true,
+                dashUsedPlanned: false,
                 is_contractor: true,
               });
-            }
           }
         }
 
@@ -751,6 +753,7 @@ export default function ProjectBudgetDetailPage() {
             dashUsedPlanned: false,
             is_contractor: true,
           });
+          contractorRowAdded = true;
         }
         continue;
       }
@@ -782,6 +785,13 @@ export default function ProjectBudgetDetailPage() {
             nativeCurrency: personCurrency(person, true),
           });
         } else {
+          const totalHours = hoursCommitmentTotalInRange(
+            project,
+            committed.hours,
+            periodRange.start,
+            periodRange.end,
+            asOf,
+          );
           contractors.push({
             id: person.id,
             personId: person.id,
@@ -790,10 +800,10 @@ export default function ProjectBudgetDetailPage() {
             avatar_attachment_id: person.avatar_attachment_id,
             avatar_color: person.avatar_color,
             usedHours: 0,
-            plannedHours: 0,
-            totalHours: committed.hours,
+            plannedHours: totalHours,
+            totalHours,
             moneyAmount: null,
-            dashUsedPlanned: true,
+            dashUsedPlanned: false,
             is_contractor: true,
           });
         }
@@ -821,15 +831,28 @@ export default function ProjectBudgetDetailPage() {
         dashUsedPlanned: false,
         is_contractor: true,
       });
-    }
+      contractorRowAdded = true;
 
+      if (!contractorRowAdded) {
+        contractors.push({
+          id: person.id,
+          personId: person.id,
+          name: person.name,
+          avatar_url: person.avatar_url,
+          avatar_attachment_id: person.avatar_attachment_id,
+          avatar_color: person.avatar_color,
+          usedHours: 0,
+          plannedHours: 0,
+          totalHours: 0,
+          moneyAmount: null,
+          dashUsedPlanned: false,
+          is_contractor: true,
+        });
+      }
+    }
     return {
-      staff: staff.sort((a, b) => b.totalHours - a.totalHours),
-      contractors: contractors.sort((a, b) => {
-        const aKey = a.moneyAmount ?? a.totalHours;
-        const bKey = b.moneyAmount ?? b.totalHours;
-        return bKey - aKey;
-      }),
+      staff: staff.sort((a, b) => a.name.localeCompare(b.name)),
+      contractors: contractors.sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [
     project,
@@ -959,8 +982,6 @@ export default function ProjectBudgetDetailPage() {
     const monthly = project.budget_hours ?? 0;
     if (periodMode === "month" && isRetainer) {
       periodBudgetCap = monthly;
-    } else if (periodMode === "year" && isRetainer) {
-      periodBudgetCap = monthly * 12;
     } else if (periodMode === "term" && isRetainer) {
       periodBudgetCap =
         monthly *
@@ -972,8 +993,6 @@ export default function ProjectBudgetDetailPage() {
     const monthly = project.budget_amount ?? 0;
     if (periodMode === "month" && isRetainer) {
       periodBudgetCap = monthly;
-    } else if (periodMode === "year" && isRetainer) {
-      periodBudgetCap = monthly * 12;
     } else if (periodMode === "term" && isRetainer) {
       periodBudgetCap =
         monthly *
@@ -1067,9 +1086,7 @@ export default function ProjectBudgetDetailPage() {
         ? "Project to Date"
         : periodMode === "lifetime"
           ? "Lifetime"
-          : periodMode === "term"
-            ? "Contract Term"
-            : String(year);
+          : "Contract Term";
 
   return (
     <PageContainer className="overflow-y-auto">
@@ -1342,6 +1359,7 @@ export default function ProjectBudgetDetailPage() {
                   year={periodMode === "term" ? undefined : year}
                   selectedMonthKey={selectedMonthKey}
                   onMonthSelect={handleMonthSelect}
+                  interactive
                 />
               ) : weeklyPoints.length === 0 ? (
                 <p className="text-sm text-[var(--text-muted)]">
@@ -1385,14 +1403,7 @@ export default function ProjectBudgetDetailPage() {
                 />
               </li>
             )}
-            <li>
-              <PeriodChip
-                label="Year"
-                selected={periodMode === "year"}
-                onSelect={() => setPeriodMode("year")}
-              />
-            </li>
-            {isRetainer && hasContractTerm ? (
+{isRetainer && hasContractTerm ? (
               <li>
                 <PeriodChip
                   label="Contract Term"
@@ -1553,9 +1564,9 @@ export default function ProjectBudgetDetailPage() {
                   <thead>
                     <tr className="border-b border-[var(--border)] text-xs text-[var(--text-muted)]">
                       <th className="pb-2 font-medium">Person</th>
-                      <th className="pb-2 text-right font-medium">Used</th>
-                      <th className="pb-2 text-right font-medium">Planned</th>
-                      <th className="pb-2 text-right font-medium">Total</th>
+                      <th className="pb-2 text-right font-medium text-[var(--accent)]">Used</th>
+                      <th className="pb-2 text-right font-medium text-[var(--status-near)]">Planned</th>
+                      <th className="pb-2 text-right font-medium text-[var(--status-healthy)]">Total</th>
                     </tr>
                   </thead>
                   <tbody>

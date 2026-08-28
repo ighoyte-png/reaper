@@ -1,13 +1,12 @@
-"use client";
+﻿"use client";
 
 import { format } from "date-fns";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import {
-  CHART_TOOLTIP_SPACE_PX,
-  chartTooltipPosition,
-  weekHoverHatchStyle,
-} from "@/components/budgets/cumulative-hours-chart";
+  ChartHoverTooltip,
+  useColumnAnchor,
+} from "@/components/budgets/chart-hover";
 import {
   formatHours,
   formatMoney,
@@ -89,6 +88,7 @@ function MonthBarColumn({
   selected,
   currentMonth,
   isHovered,
+  interactive,
   onHoverStart,
   onMonthSelect,
 }: {
@@ -107,7 +107,8 @@ function MonthBarColumn({
   selected: boolean;
   currentMonth: boolean;
   isHovered: boolean;
-  onHoverStart?: () => void;
+  interactive: boolean;
+  onHoverStart?: (el: HTMLDivElement) => void;
   onMonthSelect?: (bar: MonthBurnBar) => void;
 }) {
   const futureMonth = isFutureMonth(bar.year, bar.monthIndex, new Date());
@@ -210,7 +211,7 @@ function MonthBarColumn({
     );
   }
 
-  /** justify-end: last child sits at the bottom — contractor green at bottom. */
+  /** justify-end: last child sits at the bottom â€” contractor green at bottom. */
   function renderStackedBar(heightPct: number, baseTotal: number) {
     const base = baseTotal > 0 ? baseTotal : total;
     const contractorPct = base > 0 ? (contractor / base) * 100 : 0;
@@ -259,12 +260,12 @@ function MonthBarColumn({
 
   return (
     <div
-      role={onMonthSelect ? "button" : undefined}
-      tabIndex={onMonthSelect ? 0 : undefined}
-      onClick={onMonthSelect ? () => onMonthSelect(bar) : undefined}
-      onMouseEnter={onHoverStart}
+      role={interactive && onMonthSelect ? "button" : undefined}
+      tabIndex={interactive && onMonthSelect ? 0 : undefined}
+      onClick={interactive && onMonthSelect ? () => onMonthSelect(bar) : undefined}
+      onMouseEnter={interactive && onHoverStart ? (e) => onHoverStart(e.currentTarget) : undefined}
       onKeyDown={
-        onMonthSelect
+        interactive && onMonthSelect
           ? (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
@@ -275,10 +276,10 @@ function MonthBarColumn({
       }
       className={cn(
         "relative flex h-full min-w-0 flex-1 items-end justify-center",
-        onMonthSelect && "cursor-pointer",
+        interactive && onMonthSelect && "cursor-pointer",
       )}
       title={
-        onHoverStart
+        interactive && onHoverStart
           ? undefined
           : `${bar.label}: ${formatValue(total)}${
               cap > 0 ? ` / ${formatValue(cap)}` : ""
@@ -291,21 +292,18 @@ function MonthBarColumn({
           aria-hidden
         />
       ) : null}
-      {isHovered ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[2]">
-          <div
-            className="absolute inset-0 bg-[var(--accent)]/6"
-            aria-hidden
-          />
-          <div
-            className="absolute inset-0"
-            style={weekHoverHatchStyle}
-            aria-hidden
-          />
-          <div
-            className="absolute inset-x-0 top-0 h-px bg-[var(--accent)]"
-            aria-hidden
-          />
+      {interactive && isHovered ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[2] overflow-hidden" aria-hidden>
+          <svg className="h-full w-full" preserveAspectRatio="none">
+            <defs>
+              <pattern id={`month-hover-${bar.key}`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+                <line x1="0" y1="0" x2="0" y2="6" stroke="var(--accent)" strokeWidth="2" strokeOpacity="0.32" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#month-hover-${bar.key})`} />
+            <rect width="100%" height="100%" fill="var(--accent)" fillOpacity="0.06" />
+          </svg>
+          <div className="absolute inset-x-0 top-0 h-px bg-[var(--accent)]" />
         </div>
       ) : null}
       {selected && !isHovered ? (
@@ -360,6 +358,7 @@ export function ProjectYearBurnChart({
   selectedMonthKey,
   onMonthSelect,
   blendContractors = false,
+  interactive = !compact,
 }: {
   bars: MonthBurnBar[];
   unit?: "hours" | "amount";
@@ -372,13 +371,16 @@ export function ProjectYearBurnChart({
   /** Highlight a month bar (yyyy-MM). */
   selectedMonthKey?: string;
   onMonthSelect?: (bar: MonthBurnBar) => void;
-  /** Paint contractor hours as internal (blue) — client portal only. */
+  /** Paint contractor hours as internal (blue) â€” client portal only. */
   blendContractors?: boolean;
+  /** Hover tooltips and month click â€” full budget report only. */
+  interactive?: boolean;
 }) {
   const isPhone = useIsPhone();
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentBarRef = useRef<HTMLDivElement>(null);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const [hoverColumnEl, setHoverColumnEl] = useState<HTMLDivElement | null>(null);
 
   const displayBars = useMemo(() => {
     if (!isPhone || bars.length <= 6) return bars;
@@ -424,6 +426,11 @@ export function ProjectYearBurnChart({
     hoverBar != null
       ? displayBars.findIndex((bar) => bar.key === hoverBar.key)
       : -1;
+
+  const tooltipAnchor = useColumnAnchor(
+    interactive ? hoverColumnEl : null,
+    0,
+  );
 
   useEffect(() => {
     if (!isPhone) return;
@@ -510,36 +517,13 @@ export function ProjectYearBurnChart({
       <div
         ref={scrollRef}
         className="overflow-x-auto overscroll-x-contain"
-        onMouseLeave={() => setHoverKey(null)}
+        onMouseLeave={interactive ? () => { setHoverKey(null); setHoverColumnEl(null); } : undefined}
       >
-        <div
-          className="relative"
-          style={{
-            minWidth: chartMinWidth,
-            paddingTop: CHART_TOOLTIP_SPACE_PX,
-          }}
-        >
-          {hoverBar && hoverIdx >= 0 ? (
-            <div
-              className="pointer-events-none absolute z-20 w-max max-w-[min(100%,18rem)]"
-              style={{
-                top: 8,
-                ...chartTooltipPosition(
-                  ((hoverIdx + 0.5) / displayBars.length) * chartMinWidth,
-                  chartMinWidth,
-                ),
-              }}
-            >
+        <div className="relative" style={{ minWidth: chartMinWidth }}>
+          {interactive && hoverBar ? (
+            <ChartHoverTooltip anchor={tooltipAnchor}>
               {monthTooltipContent(hoverBar)}
-              <div
-                className="mx-auto h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-[var(--border)]"
-                aria-hidden
-              />
-              <div
-                className="-mt-[7px] mx-auto h-0 w-0 border-x-[5px] border-t-[5px] border-x-transparent border-t-[var(--bg-elevated)]"
-                aria-hidden
-              />
-            </div>
+            </ChartHoverTooltip>
           ) : null}
           <div style={{ minWidth: chartMinWidth }}>
           <div
@@ -556,12 +540,10 @@ export function ProjectYearBurnChart({
                   key={`v-${bar.key}`}
                   className="relative min-w-0 flex-1 text-center"
                 >
-                  {currentMonth ? (
+                  {interactive && currentMonth ? (
                     <span
-                      className={cn(
-                        "pointer-events-none absolute inset-x-0 -top-4 text-[var(--accent)]",
-                        compact ? "text-[8px]" : "text-[9px] font-semibold",
-                      )}
+                      className="pointer-events-none absolute inset-x-0 -top-4 text-[8px] font-semibold text-[var(--accent)]"
+                      style={{ fontWeight: 600 }}
                     >
                       This month
                     </span>
@@ -575,7 +557,7 @@ export function ProjectYearBurnChart({
                       cap > 0 ? ` / ${formatValue(cap)}` : ""
                     }`}
                   >
-                    {total > 0 ? formatValue(total) : "·"}
+                    {total > 0 ? formatValue(total) : "Â·"}
                   </span>
                 </div>
               );
@@ -625,9 +607,13 @@ export function ProjectYearBurnChart({
                     compact={compact}
                     selected={selectedMonthKey === bar.key}
                     currentMonth={currentMonth}
-                    isHovered={hoverKey === bar.key}
-                    onHoverStart={() => setHoverKey(bar.key)}
-                    onMonthSelect={onMonthSelect}
+                    interactive={interactive}
+                    isHovered={interactive && hoverKey === bar.key}
+                    onHoverStart={(el) => {
+                      setHoverKey(bar.key);
+                      setHoverColumnEl(el);
+                    }}
+                    onMonthSelect={interactive ? onMonthSelect : undefined}
                   />
                 </div>
               );
@@ -660,11 +646,11 @@ export function ProjectYearBurnChart({
         showCapLine ? (
           <p className="mt-1 text-[10px] text-[var(--text-muted)]">
             Monthly cap {formatValue(cap)}
-            <span className="ml-1 text-[#ef4444]">— —</span>
-            <span className="ml-2">· hatched = future / planned</span>
+            <span className="ml-1 text-[#ef4444]">â€” â€”</span>
+            <span className="ml-2">Â· hatched = future / planned</span>
             {hasContractor ? (
               <span className="ml-2">
-                ·{" "}
+                Â·{" "}
                 <span
                   className="inline-block h-2 w-2 rounded-full align-middle"
                   style={{ backgroundColor: contractorColor }}
@@ -680,12 +666,12 @@ export function ProjectYearBurnChart({
               : "Planned hours by month"}
             {hasContractor ? (
               <span className="ml-2">
-                ·{" "}
+                Â·{" "}
                 <span
                   className="inline-block h-2 w-2 rounded-full align-middle"
                   style={{ backgroundColor: contractorColor }}
                 />{" "}
-                contractor ·{" "}
+                contractor Â·{" "}
                 <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)] align-middle" />{" "}
                 internal
               </span>

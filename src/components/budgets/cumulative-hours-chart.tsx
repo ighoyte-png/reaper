@@ -1,8 +1,16 @@
 "use client";
 
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { format, parseISO } from "date-fns";
 import { ChartColumn, ChartLine } from "lucide-react";
+import {
+  ChartHoverPattern,
+  ChartHoverTooltip,
+  ChartWeekHoverBand,
+  progressWeekBandBounds,
+  slotWeekBandBounds,
+  useSvgChartAnchor,
+} from "@/components/budgets/chart-hover";
 import { cn } from "@/lib/cn";
 import {
   formatChartMoneyAxis,
@@ -15,12 +23,6 @@ import { progressLineHandoffIndex } from "@/components/budgets/progress-line-han
 type ChartTab = "progress" | "weekly";
 
 const CHART_MIN_WIDTH_PX = 560;
-const CHART_TOOLTIP_SPACE_PX = 108;
-
-const weekHoverHatchStyle = {
-  backgroundImage:
-    "repeating-linear-gradient(-45deg, transparent, transparent 2px, color-mix(in srgb, var(--accent) 32%, transparent) 2px, color-mix(in srgb, var(--accent) 32%, transparent) 4px)",
-} as const;
 
 const contractorColor = "var(--status-healthy)";
 
@@ -255,47 +257,6 @@ function formatDetailValue(v: number, unit: "hours" | "amount"): string {
   return unit === "amount" ? formatMoney(v) : formatHours(v);
 }
 
-/** Week column bounds for progress-line charts (points sit on edges, not slot centers). */
-function progressWeekBandBounds(
-  index: number,
-  pointCount: number,
-  padL: number,
-  plotW: number,
-): { x: number; width: number; centerX: number } {
-  if (pointCount <= 1) {
-    return { x: padL, width: plotW, centerX: padL + plotW / 2 };
-  }
-  const slotW = plotW / (pointCount - 1);
-  const plotRight = padL + plotW;
-  if (index <= 0) {
-    const width = slotW / 2;
-    return { x: padL, width, centerX: padL + width / 2 };
-  }
-  if (index >= pointCount - 1) {
-    const x = padL + (pointCount - 1.5) * slotW;
-    const width = plotRight - x;
-    return { x, width, centerX: x + width / 2 };
-  }
-  const x = padL + (index - 0.5) * slotW;
-  return { x, width: slotW, centerX: x + slotW / 2 };
-}
-
-function chartTooltipPosition(
-  centerX: number,
-  chartWidth: number,
-): { left: string; transform: string } {
-  const ratio = centerX / chartWidth;
-  let translateX = "-50%";
-  if (ratio < 0.22) translateX = "0%";
-  else if (ratio > 0.78) translateX = "-100%";
-  return {
-    left: `${(centerX / chartWidth) * 100}%`,
-    transform: `translateX(${translateX})`,
-  };
-}
-
-export { CHART_TOOLTIP_SPACE_PX, chartTooltipPosition, weekHoverHatchStyle };
-
 function ProgressLineChart({
   points,
   unit,
@@ -310,6 +271,7 @@ function ProgressLineChart({
   profitLine?: number | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const hatchId = useId().replace(/:/g, "");
   const w = 720;
   const h = 174;
@@ -510,24 +472,23 @@ function ProgressLineChart({
       ? progressWeekBandBounds(hoverIdx, points.length, padL, plotW)
       : null;
 
+  const tooltipAnchor = useSvgChartAnchor(
+    svgRef,
+    hoverBand?.centerX ?? null,
+    padT,
+    w,
+    h,
+  );
+
   return (
     <div className="overflow-x-auto overscroll-x-contain">
       <div
         className="relative"
-        style={{
-          minWidth: CHART_MIN_WIDTH_PX,
-          paddingTop: CHART_TOOLTIP_SPACE_PX,
-        }}
+        style={{ minWidth: CHART_MIN_WIDTH_PX }}
         onMouseLeave={() => setHoverIdx(null)}
       >
-      {hover && hoverIdx != null && hoverBand ? (
-        <div
-          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)]"
-          style={{
-            top: 8,
-            ...chartTooltipPosition(hoverBand.centerX, w),
-          }}
-        >
+      {hover && hoverIdx != null ? (
+      <ChartHoverTooltip anchor={tooltipAnchor}>
           <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
             <div className="text-xs font-semibold leading-snug text-[var(--text)]">
               Cumulative up to{" "}
@@ -572,17 +533,10 @@ function ProgressLineChart({
               ) : null}
             </div>
           </div>
-          <div
-            className="mx-auto h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-[var(--border)]"
-            aria-hidden
-          />
-          <div
-            className="-mt-[7px] mx-auto h-0 w-0 border-x-[5px] border-t-[5px] border-x-transparent border-t-[var(--bg-elevated)]"
-            aria-hidden
-          />
-        </div>
+      </ChartHoverTooltip>
       ) : null}
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${w} ${h}`}
         className="h-auto w-full overflow-hidden"
         role="img"
@@ -590,23 +544,7 @@ function ProgressLineChart({
         onMouseLeave={() => setHoverIdx(null)}
       >
         <defs>
-          <pattern
-            id={`week-hover-hatch-${hatchId}`}
-            width="6"
-            height="6"
-            patternUnits="userSpaceOnUse"
-            patternTransform="rotate(-45)"
-          >
-            <line
-              x1="0"
-              y1="0"
-              x2="0"
-              y2="6"
-              stroke="var(--accent)"
-              strokeWidth="2"
-              strokeOpacity="0.32"
-            />
-          </pattern>
+          <ChartHoverPattern id={`week-hover-hatch-${hatchId}`} />
         </defs>
 
         {yTicks.map((v, i) => {
@@ -694,31 +632,13 @@ function ProgressLineChart({
         ) : null}
 
         {hoverBand ? (
-          <g pointerEvents="none">
-            <rect
-              x={hoverBand.x}
-              y={padT}
-              width={hoverBand.width}
-              height={plotH}
-              fill={`url(#week-hover-hatch-${hatchId})`}
-            />
-            <rect
-              x={hoverBand.x}
-              y={padT}
-              width={hoverBand.width}
-              height={plotH}
-              fill="var(--accent)"
-              fillOpacity={0.06}
-            />
-            <line
-              x1={hoverBand.x}
-              x2={hoverBand.x + hoverBand.width}
-              y1={padT}
-              y2={padT}
-              stroke="var(--accent)"
-              strokeWidth={1.25}
-            />
-          </g>
+          <ChartWeekHoverBand
+            patternId={`week-hover-hatch-${hatchId}`}
+            x={hoverBand.x}
+            width={hoverBand.width}
+            padT={padT}
+            plotH={plotH}
+          />
         ) : null}
 
         {contractorY != null ? (
@@ -838,6 +758,8 @@ export function HoursPerWeekChart({
   unit?: "hours" | "amount";
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const hatchId = useId().replace(/:/g, "");
   const values = points.map((p) => weekValue(p, unit));
   const maxV = Math.max(...values, 1);
   const w = 720;
@@ -892,25 +814,32 @@ export function HoursPerWeekChart({
 
   const hover = hoverIdx != null ? points[hoverIdx] : null;
   const hoverVal = hoverIdx != null ? values[hoverIdx]! : 0;
+  const hoverBand =
+    hoverIdx != null
+      ? slotWeekBandBounds(hoverIdx, points.length, padL, plotW)
+      : null;
+  const thisWeekIdx = currentIdx >= 0 ? currentIdx : null;
+  const thisWeekBand =
+    thisWeekIdx != null
+      ? slotWeekBandBounds(thisWeekIdx, points.length, padL, plotW)
+      : null;
+  const tooltipAnchor = useSvgChartAnchor(
+    svgRef,
+    hoverBand?.centerX ?? null,
+    padT,
+    w,
+    h,
+  );
 
   return (
     <div className="overflow-x-auto overscroll-x-contain">
       <div
         className="relative"
-        style={{
-          minWidth: CHART_MIN_WIDTH_PX,
-          paddingTop: CHART_TOOLTIP_SPACE_PX,
-        }}
+        style={{ minWidth: CHART_MIN_WIDTH_PX }}
         onMouseLeave={() => setHoverIdx(null)}
       >
       {hover && hoverIdx != null ? (
-        <div
-          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)]"
-          style={{
-            top: 8,
-            ...chartTooltipPosition(xCenter(hoverIdx), w),
-          }}
-        >
+      <ChartHoverTooltip anchor={tooltipAnchor}>
           <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
             <div className="text-xs font-semibold leading-snug text-[var(--text)]">
               {hover.label}
@@ -923,14 +852,18 @@ export function HoursPerWeekChart({
               {formatDetailValue(hoverVal, unit)}
             </div>
           </div>
-        </div>
+      </ChartHoverTooltip>
       ) : null}
       <svg
+        ref={svgRef}
         viewBox={`0 0 ${w} ${h}`}
-        className="block h-auto w-full"
+        className="block h-auto w-full overflow-hidden"
         role="img"
         aria-label={unit === "amount" ? "Spend per week" : "Hours per week"}
       >
+        <defs>
+          <ChartHoverPattern id={`week-hover-hatch-${hatchId}`} />
+        </defs>
         {yTicks.map((v, i) => {
           const y = yAt(v);
           return (
@@ -983,14 +916,42 @@ export function HoursPerWeekChart({
             </g>
           );
         })}
-        {currentIdx >= 0 ? (
-          <rect
-            x={padL + slotW * currentIdx}
-            y={padT}
-            width={slotW}
-            height={plotH}
-            fill="var(--accent)"
-            fillOpacity={0.1}
+        {thisWeekBand ? (
+          <g>
+            <rect
+              x={thisWeekBand.x}
+              y={padT}
+              width={thisWeekBand.width}
+              height={plotH}
+              fill="var(--accent)"
+              fillOpacity={0.1}
+            />
+            <line
+              x1={thisWeekBand.x}
+              x2={thisWeekBand.x + thisWeekBand.width}
+              y1={padT}
+              y2={padT}
+              stroke="var(--accent)"
+              strokeWidth={1.25}
+            />
+            <text
+              x={thisWeekBand.centerX}
+              y={padT - 6}
+              textAnchor="middle"
+              fill="var(--accent)"
+              style={{ fontSize: 8, fontWeight: 600 }}
+            >
+              This week
+            </text>
+          </g>
+        ) : null}
+        {hoverBand ? (
+          <ChartWeekHoverBand
+            patternId={`week-hover-hatch-${hatchId}`}
+            x={hoverBand.x}
+            width={hoverBand.width}
+            padT={padT}
+            plotH={plotH}
           />
         ) : null}
         {points.map((p, i) => {
