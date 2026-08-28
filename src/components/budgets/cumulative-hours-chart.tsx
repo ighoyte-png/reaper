@@ -249,6 +249,48 @@ function formatDetailValue(v: number, unit: "hours" | "amount"): string {
   return unit === "amount" ? formatMoney(v) : formatHours(v);
 }
 
+/** Week column bounds for progress-line charts (points sit on edges, not slot centers). */
+function progressWeekBandBounds(
+  index: number,
+  pointCount: number,
+  padL: number,
+  plotW: number,
+): { x: number; width: number; centerX: number } {
+  if (pointCount <= 1) {
+    return { x: padL, width: plotW, centerX: padL + plotW / 2 };
+  }
+  const slotW = plotW / (pointCount - 1);
+  const plotRight = padL + plotW;
+  if (index <= 0) {
+    const width = slotW / 2;
+    return { x: padL, width, centerX: padL + width / 2 };
+  }
+  if (index >= pointCount - 1) {
+    const x = padL + (pointCount - 1.5) * slotW;
+    const width = plotRight - x;
+    return { x, width, centerX: x + width / 2 };
+  }
+  const x = padL + (index - 0.5) * slotW;
+  return { x, width: slotW, centerX: x + slotW / 2 };
+}
+
+function chartTooltipPosition(
+  index: number,
+  pointCount: number,
+  centerX: number,
+  chartWidth: number,
+): { left: string; transform: string } {
+  let translateX = "-50%";
+  if (pointCount > 1) {
+    if (index === 0) translateX = "0%";
+    else if (index === pointCount - 1) translateX = "-100%";
+  }
+  return {
+    left: `${(centerX / chartWidth) * 100}%`,
+    transform: `translateX(${translateX}) translateY(calc(-100% - 8px))`,
+  };
+}
+
 function ProgressLineChart({
   points,
   unit,
@@ -443,11 +485,11 @@ function ProgressLineChart({
   const contractorY = hasContractorBaseline ? yAt(contractorBaseline) : null;
   const firstX = xAt(0);
   const lastX = xAt(points.length - 1);
-  const weekBandW =
-    points.length <= 1 ? plotW * 0.08 : plotW / (points.length - 1);
-  const thisWeekX =
-    handoffIdx >= 0 && points[handoffIdx]?.isCurrentWeek
-      ? xAt(handoffIdx)
+  const thisWeekIdx =
+    handoffIdx >= 0 && points[handoffIdx]?.isCurrentWeek ? handoffIdx : null;
+  const thisWeekBand =
+    thisWeekIdx != null
+      ? progressWeekBandBounds(thisWeekIdx, points.length, padL, plotW)
       : null;
 
   const usedPieces =
@@ -458,7 +500,10 @@ function ProgressLineChart({
       : [];
   const hover = hoverIdx != null ? points[hoverIdx] : null;
   const hoverVal = hoverIdx != null ? valueAt(hoverIdx) : 0;
-  const hoverX = hoverIdx != null ? xAt(hoverIdx) : null;
+  const hoverBand =
+    hoverIdx != null
+      ? progressWeekBandBounds(hoverIdx, points.length, padL, plotW)
+      : null;
 
   return (
     <div className="overflow-x-auto overscroll-x-contain">
@@ -548,26 +593,26 @@ function ProgressLineChart({
           );
         })}
 
-        {thisWeekX != null ? (
+        {thisWeekBand ? (
           <g>
             <rect
-              x={thisWeekX - weekBandW / 2}
+              x={thisWeekBand.x}
               y={padT}
-              width={weekBandW}
+              width={thisWeekBand.width}
               height={plotH}
               fill="var(--accent)"
               fillOpacity={0.1}
             />
             <line
-              x1={thisWeekX - weekBandW / 2}
-              x2={thisWeekX + weekBandW / 2}
+              x1={thisWeekBand.x}
+              x2={thisWeekBand.x + thisWeekBand.width}
               y1={padT}
               y2={padT}
               stroke="var(--accent)"
               strokeWidth={1.25}
             />
             <text
-              x={thisWeekX}
+              x={thisWeekBand.centerX}
               y={padT - 6}
               textAnchor="middle"
               fill="var(--accent)"
@@ -578,26 +623,26 @@ function ProgressLineChart({
           </g>
         ) : null}
 
-        {hoverX != null ? (
+        {hoverBand ? (
           <g pointerEvents="none">
             <rect
-              x={hoverX - weekBandW / 2}
+              x={hoverBand.x}
               y={padT}
-              width={weekBandW}
+              width={hoverBand.width}
               height={plotH}
               fill={`url(#week-hover-hatch-${hatchId})`}
             />
             <rect
-              x={hoverX - weekBandW / 2}
+              x={hoverBand.x}
               y={padT}
-              width={weekBandW}
+              width={hoverBand.width}
               height={plotH}
               fill="var(--accent)"
               fillOpacity={0.06}
             />
             <line
-              x1={hoverX - weekBandW / 2}
-              x2={hoverX + weekBandW / 2}
+              x1={hoverBand.x}
+              x2={hoverBand.x + hoverBand.width}
               y1={padT}
               y2={padT}
               stroke="var(--accent)"
@@ -687,12 +732,13 @@ function ProgressLineChart({
           const cx = xAt(i);
           const cy = yAt(valueAt(i));
           const band = bandAt(valueAt(i));
+          const weekBand = progressWeekBandBounds(i, points.length, padL, plotW);
           return (
             <g key={p.key}>
               <rect
-                x={cx - weekBandW / 2}
+                x={weekBand.x}
                 y={padT}
-                width={weekBandW}
+                width={weekBand.width}
                 height={plotH}
                 fill="transparent"
                 className="cursor-pointer"
@@ -710,14 +756,15 @@ function ProgressLineChart({
         })}
       </svg>
 
-      {hover && hoverIdx != null ? (
+      {hover && hoverIdx != null && hoverBand ? (
         <div
-          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)] -translate-x-1/2 -translate-y-full"
-          style={{
-            left: `${(xAt(hoverIdx) / w) * 100}%`,
-            top: 0,
-            marginTop: -8,
-          }}
+          className="pointer-events-none absolute z-10 top-0 w-max max-w-[min(100%,18rem)]"
+          style={chartTooltipPosition(
+            hoverIdx,
+            points.length,
+            hoverBand.centerX,
+            w,
+          )}
         >
           <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
             <div className="text-xs font-semibold leading-snug text-[var(--text)]">
@@ -952,12 +999,13 @@ export function HoursPerWeekChart({
       </svg>
       {hover && hoverIdx != null ? (
         <div
-          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)] -translate-x-1/2 -translate-y-full"
-          style={{
-            left: `${(xCenter(hoverIdx) / w) * 100}%`,
-            top: 0,
-            marginTop: -8,
-          }}
+          className="pointer-events-none absolute z-10 top-0 w-max max-w-[min(100%,18rem)]"
+          style={chartTooltipPosition(
+            hoverIdx,
+            points.length,
+            xCenter(hoverIdx),
+            w,
+          )}
         >
           <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
             <div className="text-xs font-semibold leading-snug text-[var(--text)]">
