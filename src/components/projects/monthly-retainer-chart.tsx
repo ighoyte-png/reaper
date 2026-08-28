@@ -1,8 +1,13 @@
 "use client";
 
 import { format } from "date-fns";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import {
+  CHART_TOOLTIP_SPACE_PX,
+  chartTooltipPosition,
+  weekHoverHatchStyle,
+} from "@/components/budgets/cumulative-hours-chart";
 import {
   formatHours,
   formatMoney,
@@ -82,6 +87,9 @@ function MonthBarColumn({
   showCapLine,
   compact,
   selected,
+  currentMonth,
+  isHovered,
+  onHoverStart,
   onMonthSelect,
 }: {
   bar: MonthBurnBar;
@@ -97,11 +105,13 @@ function MonthBarColumn({
   showCapLine: boolean;
   compact: boolean;
   selected: boolean;
+  currentMonth: boolean;
+  isHovered: boolean;
+  onHoverStart?: () => void;
   onMonthSelect?: (bar: MonthBurnBar) => void;
 }) {
-  const asOf = new Date();
-  const current = isCurrentMonth(bar.year, bar.monthIndex, asOf);
-  const futureMonth = isFutureMonth(bar.year, bar.monthIndex, asOf);
+  const futureMonth = isFutureMonth(bar.year, bar.monthIndex, new Date());
+  const current = currentMonth;
 
   const valuePct =
     maxValue <= 0 ? 0 : Math.min(100, Math.max(0, (total / maxValue) * 100));
@@ -252,6 +262,7 @@ function MonthBarColumn({
       role={onMonthSelect ? "button" : undefined}
       tabIndex={onMonthSelect ? 0 : undefined}
       onClick={onMonthSelect ? () => onMonthSelect(bar) : undefined}
+      onMouseEnter={onHoverStart}
       onKeyDown={
         onMonthSelect
           ? (e) => {
@@ -266,13 +277,40 @@ function MonthBarColumn({
         "relative flex h-full min-w-0 flex-1 items-end justify-center",
         onMonthSelect && "cursor-pointer",
       )}
-      title={`${bar.label}: ${formatValue(total)}${
-        cap > 0 ? ` / ${formatValue(cap)}` : ""
-      }${futureMonth ? " (planned)" : ""}`}
+      title={
+        onHoverStart
+          ? undefined
+          : `${bar.label}: ${formatValue(total)}${
+              cap > 0 ? ` / ${formatValue(cap)}` : ""
+            }${futureMonth ? " (planned)" : ""}`
+      }
     >
-      {selected ? (
+      {current ? (
         <div
-          className="absolute inset-x-0 bottom-0 top-0 bg-[var(--accent)]/10"
+          className="pointer-events-none absolute inset-x-0 bottom-0 top-0 bg-[var(--accent)]/10"
+          aria-hidden
+        />
+      ) : null}
+      {isHovered ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[2]">
+          <div
+            className="absolute inset-0 bg-[var(--accent)]/6"
+            aria-hidden
+          />
+          <div
+            className="absolute inset-0"
+            style={weekHoverHatchStyle}
+            aria-hidden
+          />
+          <div
+            className="absolute inset-x-0 top-0 h-px bg-[var(--accent)]"
+            aria-hidden
+          />
+        </div>
+      ) : null}
+      {selected && !isHovered ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[1] ring-1 ring-inset ring-[var(--accent)]/35"
           aria-hidden
         />
       ) : null}
@@ -340,6 +378,7 @@ export function ProjectYearBurnChart({
   const isPhone = useIsPhone();
   const scrollRef = useRef<HTMLDivElement>(null);
   const currentBarRef = useRef<HTMLDivElement>(null);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
 
   const displayBars = useMemo(() => {
     if (!isPhone || bars.length <= 6) return bars;
@@ -377,6 +416,14 @@ export function ProjectYearBurnChart({
       unit === "amount" ? b.contractorAmount > 0 : b.contractorHours > 0,
     );
   const nowKey = format(new Date(), "yyyy-MM");
+  const hoverBar =
+    hoverKey != null
+      ? displayBars.find((bar) => bar.key === hoverKey) ?? null
+      : null;
+  const hoverIdx =
+    hoverBar != null
+      ? displayBars.findIndex((bar) => bar.key === hoverBar.key)
+      : -1;
 
   useEffect(() => {
     if (!isPhone) return;
@@ -406,6 +453,51 @@ export function ProjectYearBurnChart({
     return formatHours(n);
   }
 
+  function monthTooltipContent(bar: MonthBurnBar) {
+    const split = displaySplit(bar);
+    const total = split.total;
+    const hasCap = cap > 0;
+    const hasContractorInTotal = split.contractor > 0 && !blendContractors;
+    return (
+      <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
+        <div className="text-xs font-semibold leading-snug text-[var(--text)]">
+          {bar.label}
+        </div>
+        <div className="my-2 border-t border-[var(--border)]" />
+        <div
+          className={cn(
+            "grid gap-x-5 gap-y-1",
+            hasCap ? "grid-cols-2" : "grid-cols-1",
+          )}
+        >
+          <div className="min-w-0">
+            <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+              {unit === "amount" ? "Spend this month" : "Hours this month"}
+            </div>
+            <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+              {formatValue(total)}
+            </div>
+            {hasContractorInTotal ? (
+              <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+                incl. {formatValue(split.contractor)} contractor
+              </div>
+            ) : null}
+          </div>
+          {hasCap ? (
+            <div className="min-w-0">
+              <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+                Monthly budget remaining
+              </div>
+              <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+                {formatValue(Math.max(0, cap - total))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn(className)}>
       {!compact ? (
@@ -415,29 +507,73 @@ export function ProjectYearBurnChart({
             : `Monthly ${unit === "amount" ? "spend" : "usage"}`}
         </p>
       ) : null}
-      <div ref={scrollRef} className="overflow-x-auto overscroll-x-contain">
-        <div style={{ minWidth: chartMinWidth }}>
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto overscroll-x-contain"
+        onMouseLeave={() => setHoverKey(null)}
+      >
+        <div
+          className="relative"
+          style={{
+            minWidth: chartMinWidth,
+            paddingTop: CHART_TOOLTIP_SPACE_PX,
+          }}
+        >
+          {hoverBar && hoverIdx >= 0 ? (
+            <div
+              className="pointer-events-none absolute z-20 w-max max-w-[min(100%,18rem)]"
+              style={{
+                top: 8,
+                ...chartTooltipPosition(
+                  ((hoverIdx + 0.5) / displayBars.length) * chartMinWidth,
+                  chartMinWidth,
+                ),
+              }}
+            >
+              {monthTooltipContent(hoverBar)}
+              <div
+                className="mx-auto h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-[var(--border)]"
+                aria-hidden
+              />
+              <div
+                className="-mt-[7px] mx-auto h-0 w-0 border-x-[5px] border-t-[5px] border-x-transparent border-t-[var(--bg-elevated)]"
+                aria-hidden
+              />
+            </div>
+          ) : null}
+          <div style={{ minWidth: chartMinWidth }}>
           <div
             className={cn(
-              "flex items-end gap-1.5 sm:gap-2",
+              "relative flex items-end gap-1.5 sm:gap-2",
               compact ? "mb-0.5 h-4" : "mb-1",
             )}
           >
             {displayBars.map((bar) => {
               const { total } = displaySplit(bar);
+              const currentMonth = bar.key === nowKey;
               return (
                 <div
                   key={`v-${bar.key}`}
-                  className="min-w-0 flex-1 text-center"
-                  title={`${bar.label}: ${formatValue(total)}${
-                    cap > 0 ? ` / ${formatValue(cap)}` : ""
-                  }`}
+                  className="relative min-w-0 flex-1 text-center"
                 >
+                  {currentMonth ? (
+                    <span
+                      className={cn(
+                        "pointer-events-none absolute inset-x-0 -top-4 text-[var(--accent)]",
+                        compact ? "text-[8px]" : "text-[9px] font-semibold",
+                      )}
+                    >
+                      This month
+                    </span>
+                  ) : null}
                   <span
                     className={cn(
                       "block max-w-full truncate tabular-nums text-[var(--text-muted)]",
                       compact ? "text-[8px]" : "text-[9px] sm:text-[10px]",
                     )}
+                    title={`${bar.label}: ${formatValue(total)}${
+                      cap > 0 ? ` / ${formatValue(cap)}` : ""
+                    }`}
                   >
                     {total > 0 ? formatValue(total) : "·"}
                   </span>
@@ -467,6 +603,7 @@ export function ProjectYearBurnChart({
                 contractor,
                 total,
               } = displaySplit(bar);
+              const currentMonth = bar.key === nowKey;
               return (
                 <div
                   key={bar.key}
@@ -487,6 +624,9 @@ export function ProjectYearBurnChart({
                     showCapLine={showCapLine}
                     compact={compact}
                     selected={selectedMonthKey === bar.key}
+                    currentMonth={currentMonth}
+                    isHovered={hoverKey === bar.key}
+                    onHoverStart={() => setHoverKey(bar.key)}
                     onMonthSelect={onMonthSelect}
                   />
                 </div>
@@ -503,6 +643,7 @@ export function ProjectYearBurnChart({
                     isFutureMonth(bar.year, bar.monthIndex) && "italic",
                     selectedMonthKey === bar.key &&
                       "font-semibold text-[var(--text)]",
+                    bar.key === nowKey && "font-semibold text-[var(--accent)]",
                   )}
                 >
                   {multiYear
@@ -511,6 +652,7 @@ export function ProjectYearBurnChart({
                 </span>
               </div>
             ))}
+          </div>
           </div>
         </div>
       </div>

@@ -15,6 +15,12 @@ import { progressLineHandoffIndex } from "@/components/budgets/progress-line-han
 type ChartTab = "progress" | "weekly";
 
 const CHART_MIN_WIDTH_PX = 560;
+const CHART_TOOLTIP_SPACE_PX = 108;
+
+const weekHoverHatchStyle = {
+  backgroundImage:
+    "repeating-linear-gradient(-45deg, transparent, transparent 2px, color-mix(in srgb, var(--accent) 32%, transparent) 2px, color-mix(in srgb, var(--accent) 32%, transparent) 4px)",
+} as const;
 
 const contractorColor = "var(--status-healthy)";
 
@@ -275,21 +281,20 @@ function progressWeekBandBounds(
 }
 
 function chartTooltipPosition(
-  index: number,
-  pointCount: number,
   centerX: number,
   chartWidth: number,
 ): { left: string; transform: string } {
+  const ratio = centerX / chartWidth;
   let translateX = "-50%";
-  if (pointCount > 1) {
-    if (index === 0) translateX = "0%";
-    else if (index === pointCount - 1) translateX = "-100%";
-  }
+  if (ratio < 0.22) translateX = "0%";
+  else if (ratio > 0.78) translateX = "-100%";
   return {
     left: `${(centerX / chartWidth) * 100}%`,
-    transform: `translateX(${translateX}) translateY(calc(-100% - 8px))`,
+    transform: `translateX(${translateX})`,
   };
 }
+
+export { CHART_TOOLTIP_SPACE_PX, chartTooltipPosition, weekHoverHatchStyle };
 
 function ProgressLineChart({
   points,
@@ -508,10 +513,75 @@ function ProgressLineChart({
   return (
     <div className="overflow-x-auto overscroll-x-contain">
       <div
-        className="relative overflow-visible"
-        style={{ minWidth: CHART_MIN_WIDTH_PX }}
+        className="relative"
+        style={{
+          minWidth: CHART_MIN_WIDTH_PX,
+          paddingTop: CHART_TOOLTIP_SPACE_PX,
+        }}
         onMouseLeave={() => setHoverIdx(null)}
       >
+      {hover && hoverIdx != null && hoverBand ? (
+        <div
+          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)]"
+          style={{
+            top: 8,
+            ...chartTooltipPosition(hoverBand.centerX, w),
+          }}
+        >
+          <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
+            <div className="text-xs font-semibold leading-snug text-[var(--text)]">
+              Cumulative up to{" "}
+              {format(parseISO(hover.weekEndKey), "dd MMM yyyy")} (Week{" "}
+              {hoverIdx + 1})
+            </div>
+            <div className="my-2 border-t border-[var(--border)]" />
+            <div
+              className={cn(
+                "grid gap-x-5 gap-y-1",
+                hasBudget ? "grid-cols-2" : "grid-cols-1",
+              )}
+            >
+              <div className="min-w-0">
+                <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+                  {hoverIdx > handoffIdx
+                    ? unit === "amount"
+                      ? "Forecasted spend"
+                      : "Forecasted hours"
+                    : unit === "amount"
+                      ? "Cumulative spend"
+                      : "Cumulative hours"}
+                </div>
+                <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+                  {formatDetailValue(hoverVal, unit)}
+                </div>
+                {hasContractorBaseline ? (
+                  <div className="mt-1 text-[10px] text-[var(--text-muted)]">
+                    incl. {formatDetailValue(contractorBaseline, unit)} contractor
+                  </div>
+                ) : null}
+              </div>
+              {hasBudget ? (
+                <div className="min-w-0">
+                  <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+                    Forecasted budget remaining
+                  </div>
+                  <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+                    {formatDetailValue(Math.max(0, budgetCap! - hoverVal), unit)}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <div
+            className="mx-auto h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-[var(--border)]"
+            aria-hidden
+          />
+          <div
+            className="-mt-[7px] mx-auto h-0 w-0 border-x-[5px] border-t-[5px] border-x-transparent border-t-[var(--bg-elevated)]"
+            aria-hidden
+          />
+        </div>
+      ) : null}
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="h-auto w-full overflow-hidden"
@@ -755,71 +825,6 @@ function ProgressLineChart({
           );
         })}
       </svg>
-
-      {hover && hoverIdx != null && hoverBand ? (
-        <div
-          className="pointer-events-none absolute z-10 top-0 w-max max-w-[min(100%,18rem)]"
-          style={chartTooltipPosition(
-            hoverIdx,
-            points.length,
-            hoverBand.centerX,
-            w,
-          )}
-        >
-          <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
-            <div className="text-xs font-semibold leading-snug text-[var(--text)]">
-              Cumulative up to{" "}
-              {format(parseISO(hover.weekEndKey), "dd MMM yyyy")} (Week{" "}
-              {hoverIdx + 1})
-            </div>
-            <div className="my-2 border-t border-[var(--border)]" />
-            <div
-              className={cn(
-                "grid gap-x-5 gap-y-1",
-                hasBudget ? "grid-cols-2" : "grid-cols-1",
-              )}
-            >
-              <div className="min-w-0">
-                <div className="text-[10px] leading-tight text-[var(--text-muted)]">
-                  {hoverIdx > handoffIdx
-                    ? unit === "amount"
-                      ? "Forecasted spend"
-                      : "Forecasted hours"
-                    : unit === "amount"
-                      ? "Cumulative spend"
-                      : "Cumulative hours"}
-                </div>
-                <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
-                  {formatDetailValue(hoverVal, unit)}
-                </div>
-                {hasContractorBaseline ? (
-                  <div className="mt-1 text-[10px] text-[var(--text-muted)]">
-                    incl. {formatDetailValue(contractorBaseline, unit)} contractor
-                  </div>
-                ) : null}
-              </div>
-              {hasBudget ? (
-                <div className="min-w-0">
-                  <div className="text-[10px] leading-tight text-[var(--text-muted)]">
-                    Forecasted budget remaining
-                  </div>
-                  <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
-                    {formatDetailValue(Math.max(0, budgetCap! - hoverVal), unit)}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          <div
-            className="mx-auto h-0 w-0 border-x-[6px] border-t-[6px] border-x-transparent border-t-[var(--border)]"
-            aria-hidden
-          />
-          <div
-            className="-mt-[7px] mx-auto h-0 w-0 border-x-[5px] border-t-[5px] border-x-transparent border-t-[var(--bg-elevated)]"
-            aria-hidden
-          />
-        </div>
-      ) : null}
       </div>
     </div>
   );
@@ -891,10 +896,35 @@ export function HoursPerWeekChart({
   return (
     <div className="overflow-x-auto overscroll-x-contain">
       <div
-        className="relative overflow-visible"
-        style={{ minWidth: CHART_MIN_WIDTH_PX }}
+        className="relative"
+        style={{
+          minWidth: CHART_MIN_WIDTH_PX,
+          paddingTop: CHART_TOOLTIP_SPACE_PX,
+        }}
         onMouseLeave={() => setHoverIdx(null)}
       >
+      {hover && hoverIdx != null ? (
+        <div
+          className="pointer-events-none absolute z-10 w-max max-w-[min(100%,18rem)]"
+          style={{
+            top: 8,
+            ...chartTooltipPosition(xCenter(hoverIdx), w),
+          }}
+        >
+          <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
+            <div className="text-xs font-semibold leading-snug text-[var(--text)]">
+              {hover.label}
+            </div>
+            <div className="my-2 border-t border-[var(--border)]" />
+            <div className="text-[10px] leading-tight text-[var(--text-muted)]">
+              {unit === "amount" ? "Spend this week" : "Hours this week"}
+            </div>
+            <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
+              {formatDetailValue(hoverVal, unit)}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="block h-auto w-full"
@@ -997,30 +1027,6 @@ export function HoursPerWeekChart({
           );
         })}
       </svg>
-      {hover && hoverIdx != null ? (
-        <div
-          className="pointer-events-none absolute z-10 top-0 w-max max-w-[min(100%,18rem)]"
-          style={chartTooltipPosition(
-            hoverIdx,
-            points.length,
-            xCenter(hoverIdx),
-            w,
-          )}
-        >
-          <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
-            <div className="text-xs font-semibold leading-snug text-[var(--text)]">
-              {hover.label}
-            </div>
-            <div className="my-2 border-t border-[var(--border)]" />
-            <div className="text-[10px] leading-tight text-[var(--text-muted)]">
-              {unit === "amount" ? "Spend this week" : "Hours this week"}
-            </div>
-            <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
-              {formatDetailValue(hoverVal, unit)}
-            </div>
-          </div>
-        </div>
-      ) : null}
       </div>
     </div>
   );
