@@ -244,6 +244,39 @@ describe("projectHoursSplitInRange todate future hours", () => {
   });
 });
 
+describe("weeklyProgressSeries current week used hours", () => {
+  it("exposes weekUsedHours below weekHours when future days remain in the week", () => {
+    const asOf = new Date("2026-08-17T12:00:00");
+    const points = weeklyProgressSeries(
+      makeProject({
+        start_date: "2026-08-17",
+        end_date: "2026-08-21",
+        budget_monthly_reset: false,
+      }),
+      [
+        makeAssignment({
+          start_date: "2026-08-17",
+          end_date: "2026-08-17",
+          hours_per_day: 8,
+        }),
+        makeAssignment({
+          id: "a2",
+          start_date: "2026-08-21",
+          end_date: "2026-08-21",
+          hours_per_day: 6,
+        }),
+      ],
+      asOf,
+    );
+
+    const current = points.find((p) => p.isCurrentWeek);
+    expect(current).toBeDefined();
+    expect(current!.weekHours).toBe(14);
+    expect(current!.weekUsedHours).toBe(8);
+    expect(current!.weekUsedHours).toBeLessThan(current!.weekHours);
+  });
+});
+
 describe("weeklyProgressSeries ended project", () => {
   it("counts past assignments as used when the term ended last week", () => {
     const asOf = new Date("2026-08-17T12:00:00");

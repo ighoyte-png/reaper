@@ -339,7 +339,7 @@ export default function ProjectBudgetDetailPage() {
         return {
           start: span.startKey,
           end: span.endKey,
-          label: "Lifetime",
+          label: "Total Plan",
         };
       }
       return {
@@ -347,7 +347,7 @@ export default function ProjectBudgetDetailPage() {
         end:
           project.end_date ??
           toDateKey(endOfMonth(new Date(year, 11, 1))),
-        label: "Lifetime",
+        label: "Total Plan",
       };
     }
     if (periodMode === "term" && project?.start_date && project?.end_date) {
@@ -554,6 +554,8 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
 
   const teamPeriod = useMemo(() => {
     if (!project) return { staff: [], contractors: [] };
+    const BURN_RANGE_START = "1970-01-01";
+    const BURN_RANGE_END = "2099-12-31";
     type TeamPeriodRow = {
       id: string;
       personId: string;
@@ -571,13 +573,19 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
       mixedCurrency?: boolean;
       nativeCurrency?: CurrencyCode;
     };
+    const monthly = isMonthlyRetainerBudget(project);
+    const asOf = new Date();
+    const teamRangeStart = monthly ? periodRange.start : BURN_RANGE_START;
+    const teamRangeEnd = monthly ? periodRange.end : BURN_RANGE_END;
+
     const staff = staffTeam.map((person) => {
       const split = personHoursSplitInRange(
         person.id,
         project.id,
         state.assignments,
-        periodRange.start,
-        plannedRangeEnd,
+        teamRangeStart,
+        teamRangeEnd,
+        asOf,
       );
       return {
         id: person.id,
@@ -595,8 +603,6 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
       } satisfies TeamPeriodRow;
     });
     const contractors: TeamPeriodRow[] = [];
-    const monthly = isMonthlyRetainerBudget(project);
-    const asOf = new Date();
 
     for (const person of contractorRoster) {
       let contractorRowAdded = false;
@@ -801,13 +807,23 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             nativeCurrency: personCurrency(person, true),
           });
         } else {
-          const totalHours = hoursCommitmentTotalInRange(
-            project,
-            committed.hours,
-            periodRange.start,
-            periodRange.end,
-            asOf,
-          );
+          const committed = contractorCommitted(person, member);
+          const todayKey = toDateKey(asOf);
+          let usedHours = 0;
+          let futureHours = 0;
+          for (const mk of eachMonthKeyInRange(BURN_RANGE_START, BURN_RANGE_END)) {
+            if (!hoursCommitmentAppliesInMonth(project, mk, asOf)) continue;
+            const monthStart = toDateKey(
+              startOfMonth(
+                new Date(Number(mk.slice(0, 4)), Number(mk.slice(5, 7)) - 1, 1),
+              ),
+            );
+            if (monthStart > todayKey) {
+              futureHours += committed.hours;
+            } else {
+              usedHours += committed.hours;
+            }
+          }
           contractors.push({
             id: person.id,
             personId: person.id,
@@ -815,9 +831,9 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             avatar_url: person.avatar_url,
             avatar_attachment_id: person.avatar_attachment_id,
             avatar_color: person.avatar_color,
-            usedHours: 0,
-            plannedHours: totalHours,
-            totalHours,
+            usedHours,
+            plannedHours: futureHours,
+            totalHours: usedHours + futureHours,
             moneyAmount: null,
             dashUsedPlanned: false,
             is_contractor: true,
@@ -830,8 +846,9 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         person.id,
         project.id,
         state.assignments,
-        periodRange.start,
-        plannedRangeEnd,
+        teamRangeStart,
+        teamRangeEnd,
+        asOf,
       );
       contractors.push({
         id: person.id,
@@ -878,7 +895,6 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     state.assignments,
     state.people,
     periodRange,
-    plannedRangeEnd,
     periodMode,
     projectExpenses,
   ]);
@@ -975,10 +991,33 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     return points.map((p) => ({
       ...p,
       weekAmount: fx(p.weekAmount),
+      weekUsedAmount: fx(p.weekUsedAmount),
       cumulativeUsedAmount: fx(p.cumulativeUsedAmount),
       cumulativePlannedAmount: fx(p.cumulativePlannedAmount),
     }));
   };
+
+  const canonicalUsedHours = isRetainer ? burn.usedHours : hoursFx.hoursUsedToDate;
+  const canonicalFutureHours = isRetainer
+    ? burn.futureHours
+    : hoursFx.hoursFuturePlanned;
+  const canonicalTotalHours = isRetainer
+    ? burn.plannedHours
+    : hoursFx.hoursTotalPlanned;
+  const canonicalRemainingHours = isRetainer
+    ? burn.remainingHours
+    : hoursFx.hoursRemaining;
+  const canonicalUsedAmount = burn.usedAmount;
+  const canonicalFutureAmount = burn.futureAmount;
+  const canonicalTotalAmount = burn.plannedAmount;
+  const canonicalRemainingAmount = burn.remainingAmount;
+  const chartTodayAnchorValue =
+    !isRetainer
+      ? chartUnit === "amount"
+        ? fx(burn.usedAmount)
+        : hoursFx.hoursUsedToDate
+      : null;
+  const chartTodayAnchorDateKey = !isRetainer ? toDateKey(new Date()) : null;
 
   const burnSummary =
     burn.mode === "none"
@@ -989,10 +1028,12 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             burn.overBy > 0 ? ` · ${formatHours(burn.overBy)} over` : ""
           }`;
 
-  const periodPlannedHours =
-    (periodSplit?.usedHours ?? 0) + (periodSplit?.futureHours ?? 0);
-  const periodPlannedAmount =
-    (periodSplit?.usedAmount ?? 0) + (periodSplit?.futureAmount ?? 0);
+  const periodPlannedHours = isRetainer
+    ? (periodSplit?.usedHours ?? 0) + (periodSplit?.futureHours ?? 0)
+    : canonicalTotalHours;
+  const periodPlannedAmount = isRetainer
+    ? (periodSplit?.usedAmount ?? 0) + (periodSplit?.futureAmount ?? 0)
+    : canonicalTotalAmount;
 
   let periodBudgetCap: number | null = null;
   if (mode === "hours") {
@@ -1061,16 +1102,41 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         )
       : null;
 
-  const periodRemainingLabel =
+  const forecastRemainingHours = isRetainer
+    ? periodRemainingHours
+    : canonicalRemainingHours;
+  const forecastRemainingAmount = isRetainer
+    ? periodRemainingAmount
+    : canonicalRemainingAmount;
+
+  const forecastOverBudget = isRetainer
+    ? periodOverBudget
+    : mode === "amount"
+      ? forecastRemainingAmount != null && forecastRemainingAmount < 0
+      : forecastRemainingHours != null && forecastRemainingHours < 0;
+
+  const forecastRemainingLabel =
     mode === "none"
       ? "—"
       : showAmountMetrics
-        ? periodRemainingAmount == null
+        ? forecastRemainingAmount == null
           ? "—"
-          : money(periodRemainingAmount)
-        : periodRemainingHours == null
+          : money(forecastRemainingAmount)
+        : forecastRemainingHours == null
           ? "—"
-          : formatHours(periodRemainingHours);
+          : formatHours(forecastRemainingHours);
+
+  const showForecastFutureRow = isRetainer || periodMode === "todate";
+  const forecastFirstRowLabel =
+    !isRetainer && periodMode === "lifetime"
+      ? showAmountMetrics
+        ? "Total Spend Planned"
+        : "Total Hours Planned"
+      : showAmountMetrics
+        ? "Spend to Date"
+        : "Hours Used";
+
+  const periodRemainingLabel = forecastRemainingLabel;
 
   const periodRevenue =
     mode === "amount" && periodBudgetCap != null
@@ -1102,7 +1168,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
       : periodMode === "todate"
         ? "Project to Date"
         : periodMode === "lifetime"
-          ? "Lifetime"
+          ? "Total Plan"
           : "Contract Term";
 
   return (
@@ -1397,6 +1463,8 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
               contractorBaseline={contractorBaseline}
               profitLine={profitLine}
               outsideDatesNote={scheduleOutsideDates}
+              todayAnchorValue={chartTodayAnchorValue}
+              todayAnchorDateKey={chartTodayAnchorDateKey}
             />
           )}
         </section>
@@ -1432,7 +1500,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             {!isRetainer ? (
               <li>
                 <PeriodChip
-                  label="Lifetime"
+                  label="Total Plan"
                   selected={periodMode === "lifetime"}
                   onSelect={() => setPeriodMode("lifetime")}
                 />
@@ -1467,26 +1535,62 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between gap-2">
                 <dt className="text-[var(--text-muted)]">
-                  {showAmountMetrics ? "Spend to Date" : "Hours Used"}
+                  {isRetainer
+                    ? showAmountMetrics
+                      ? "Spend to Date"
+                      : "Hours Used"
+                    : forecastFirstRowLabel}
                 </dt>
                 <dd className="tabular-nums font-medium">
                   {showHoursMetrics
-                    ? formatHours(periodSplit?.usedHours ?? 0)
+                    ? formatHours(
+                        isRetainer
+                          ? (periodSplit?.usedHours ?? 0)
+                          : periodMode === "lifetime"
+                            ? canonicalTotalHours
+                            : canonicalUsedHours,
+                      )
                     : showAmountMetrics
-                      ? money(periodSplit?.usedAmount ?? 0)
-                      : formatHours(periodSplit?.usedHours ?? 0)}
+                      ? money(
+                          isRetainer
+                            ? (periodSplit?.usedAmount ?? 0)
+                            : periodMode === "lifetime"
+                              ? canonicalTotalAmount
+                              : canonicalUsedAmount,
+                        )
+                      : formatHours(
+                          isRetainer
+                            ? (periodSplit?.usedHours ?? 0)
+                            : periodMode === "lifetime"
+                              ? canonicalTotalHours
+                              : canonicalUsedHours,
+                        )}
                 </dd>
               </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-[var(--text-muted)]">Future Planned</dt>
-                <dd className="tabular-nums font-medium">
-                  {showHoursMetrics
-                    ? formatHours(periodSplit?.futureHours ?? 0)
-                    : showAmountMetrics
-                      ? money(periodSplit?.futureAmount ?? 0)
-                      : formatHours(periodSplit?.futureHours ?? 0)}
-                </dd>
-              </div>
+              {showForecastFutureRow ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-[var(--text-muted)]">Future Planned</dt>
+                  <dd className="tabular-nums font-medium">
+                    {showHoursMetrics
+                      ? formatHours(
+                          isRetainer
+                            ? (periodSplit?.futureHours ?? 0)
+                            : canonicalFutureHours,
+                        )
+                      : showAmountMetrics
+                        ? money(
+                            isRetainer
+                              ? (periodSplit?.futureAmount ?? 0)
+                              : canonicalFutureAmount,
+                          )
+                        : formatHours(
+                            isRetainer
+                              ? (periodSplit?.futureHours ?? 0)
+                              : canonicalFutureHours,
+                          )}
+                  </dd>
+                </div>
+              ) : null}
               {periodRevenueCost.contractorCost > 0 ||
               periodRevenueCost.contractorHours > 0 ? (
                 <div className="flex justify-between gap-2">
@@ -1514,7 +1618,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
                 <dd
                   className={cn(
                     "tabular-nums font-medium",
-                    periodOverBudget && "text-[var(--status-over)]",
+                    forecastOverBudget && "text-[var(--status-over)]",
                   )}
                 >
                   {periodRemainingLabel}
@@ -1568,7 +1672,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
 
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">
-              Team · {periodHeading}
+              {isRetainer ? `Team · ${periodHeading}` : "Team"}
             </h2>
             {teamPeriod.staff.length === 0 &&
             teamPeriod.contractors.length === 0 ? (

@@ -2342,8 +2342,12 @@ export interface WeeklyProgressPoint {
   label: string;
   /** Hours scheduled in this week only. */
   weekHours: number;
+  /** Hours used in this week through today (≤ weekHours on current week). */
+  weekUsedHours: number;
   /** Billable $ scheduled in this week only. */
   weekAmount: number;
+  /** Billable $ used in this week through today (≤ weekAmount on current week). */
+  weekUsedAmount: number;
   /** Cumulative used through min(week end, today). */
   cumulativeUsed: number;
   /** Cumulative planned through week end. */
@@ -2631,7 +2635,9 @@ export function weeklyProgressSeries(
       weekEndKey,
       label: format(ws, "MMM d"),
       weekHours,
+      weekUsedHours: weekUsed,
       weekAmount,
+      weekUsedAmount,
       cumulativeUsed: cumUsed,
       cumulativePlanned: cumPlanned,
       cumulativeUsedAmount: cumUsedAmount,

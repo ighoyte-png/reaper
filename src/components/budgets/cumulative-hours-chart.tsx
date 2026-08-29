@@ -90,6 +90,8 @@ export function ProjectProgressCharts({
   contractorBaseline = 0,
   profitLine = null,
   outsideDatesNote = false,
+  todayAnchorValue = null,
+  todayAnchorDateKey = null,
   className,
 }: {
   points: WeeklyProgressPoint[];
@@ -102,6 +104,9 @@ export function ProjectProgressCharts({
   profitLine?: number | null;
   /** Confirmed schedule hours sit outside project start/end. */
   outsideDatesNote?: boolean;
+  /** Canonical used hours/amount through today — aligns current-week hover with Budget Burn. */
+  todayAnchorValue?: number | null;
+  todayAnchorDateKey?: string | null;
   className?: string;
 }) {
   const [tab, setTab] = useState<ChartTab>("progress");
@@ -150,6 +155,8 @@ export function ProjectProgressCharts({
             budgetCap={budgetCap ?? null}
             contractorBaseline={contractorBaseline}
             profitLine={profitLine}
+            todayAnchorValue={todayAnchorValue}
+            todayAnchorDateKey={todayAnchorDateKey}
           />
           <ChartLegend
             showContractor={contractorBaseline > 0}
@@ -249,6 +256,13 @@ function weekValue(point: WeeklyProgressPoint, unit: "hours" | "amount"): number
   return unit === "amount" ? point.weekAmount : point.weekHours;
 }
 
+function weekUsedValue(
+  point: WeeklyProgressPoint,
+  unit: "hours" | "amount",
+): number {
+  return unit === "amount" ? point.weekUsedAmount : point.weekUsedHours;
+}
+
 function formatAxisValue(v: number, unit: "hours" | "amount"): string {
   return unit === "amount" ? formatChartMoneyAxis(v) : `${v}h`;
 }
@@ -263,12 +277,16 @@ function ProgressLineChart({
   budgetCap,
   contractorBaseline = 0,
   profitLine = null,
+  todayAnchorValue = null,
+  todayAnchorDateKey = null,
 }: {
   points: WeeklyProgressPoint[];
   unit: "hours" | "amount";
   budgetCap: number | null;
   contractorBaseline?: number;
   profitLine?: number | null;
+  todayAnchorValue?: number | null;
+  todayAnchorDateKey?: string | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -466,7 +484,14 @@ function ProgressLineChart({
       ? pathPiecesAtCap(handoffIdx, points.length - 1)
       : [];
   const hover = hoverIdx != null ? points[hoverIdx] : null;
-  const hoverVal = hoverIdx != null ? valueAt(hoverIdx) : 0;
+  const hoverVal =
+    hoverIdx != null
+      ? hover?.isCurrentWeek && todayAnchorValue != null
+        ? todayAnchorValue
+        : valueAt(hoverIdx)
+      : 0;
+  const hoverUsesTodayAnchor =
+    hover?.isCurrentWeek && todayAnchorValue != null;
   const hoverBand =
     hoverIdx != null
       ? progressWeekBandBounds(hoverIdx, points.length, padL, plotW)
@@ -491,9 +516,18 @@ function ProgressLineChart({
       <ChartHoverTooltip anchor={tooltipAnchor}>
           <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
             <div className="text-xs font-semibold leading-snug text-[var(--text)]">
-              Cumulative up to{" "}
-              {format(parseISO(hover.weekEndKey), "dd MMM yyyy")} (Week{" "}
-              {hoverIdx + 1})
+              {hoverUsesTodayAnchor && todayAnchorDateKey ? (
+                <>
+                  Through today (
+                  {format(parseISO(todayAnchorDateKey), "dd MMM yyyy")})
+                </>
+              ) : (
+                <>
+                  Cumulative up to{" "}
+                  {format(parseISO(hover.weekEndKey), "dd MMM yyyy")} (Week{" "}
+                  {hoverIdx + 1})
+                </>
+              )}
             </div>
             <div className="my-2 border-t border-[var(--border)]" />
             <div
@@ -504,18 +538,22 @@ function ProgressLineChart({
             >
               <div className="min-w-0">
                 <div className="text-[10px] leading-tight text-[var(--text-muted)]">
-                  {hoverIdx > handoffIdx
+                  {hoverUsesTodayAnchor
                     ? unit === "amount"
-                      ? "Forecasted spend"
-                      : "Forecasted hours"
-                    : unit === "amount"
-                      ? "Cumulative spend"
-                      : "Cumulative hours"}
+                      ? "Spend through today"
+                      : "Hours through today"
+                    : hoverIdx > handoffIdx
+                      ? unit === "amount"
+                        ? "Forecasted spend"
+                        : "Forecasted hours"
+                      : unit === "amount"
+                        ? "Cumulative spend"
+                        : "Cumulative hours"}
                 </div>
                 <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
                   {formatDetailValue(hoverVal, unit)}
                 </div>
-                {hasContractorBaseline ? (
+                {hasContractorBaseline && !hoverUsesTodayAnchor ? (
                   <div className="mt-1 text-[10px] text-[var(--text-muted)]">
                     incl. {formatDetailValue(contractorBaseline, unit)} contractor
                   </div>
@@ -524,7 +562,11 @@ function ProgressLineChart({
               {hasBudget ? (
                 <div className="min-w-0">
                   <div className="text-[10px] leading-tight text-[var(--text-muted)]">
-                    Forecasted budget remaining
+                    {hoverUsesTodayAnchor
+                      ? unit === "amount"
+                        ? "Budget remaining"
+                        : "Hours remaining"
+                      : "Forecasted budget remaining"}
                   </div>
                   <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
                     {formatDetailValue(Math.max(0, budgetCap! - hoverVal), unit)}
@@ -842,14 +884,25 @@ export function HoursPerWeekChart({
       <ChartHoverTooltip anchor={tooltipAnchor}>
           <div className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-3 py-2.5 shadow-lg">
             <div className="text-xs font-semibold leading-snug text-[var(--text)]">
-              {hover.label}
+              {hover.isCurrentWeek ? "This week" : hover.label}
             </div>
             <div className="my-2 border-t border-[var(--border)]" />
             <div className="text-[10px] leading-tight text-[var(--text-muted)]">
-              {unit === "amount" ? "Spend this week" : "Hours this week"}
+              {hover.isCurrentWeek
+                ? unit === "amount"
+                  ? "Spend through today"
+                  : "Hours through today"
+                : unit === "amount"
+                  ? "Spend this week"
+                  : "Hours this week"}
             </div>
             <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
-              {formatDetailValue(hoverVal, unit)}
+              {formatDetailValue(
+                hover.isCurrentWeek
+                  ? weekUsedValue(hover, unit)
+                  : hoverVal,
+                unit,
+              )}
             </div>
           </div>
       </ChartHoverTooltip>
@@ -1010,7 +1063,9 @@ export function CumulativeHoursChart({
     weekEndKey: `${p.key}-28`,
     label: p.label,
     weekHours: 0,
+    weekUsedHours: 0,
     weekAmount: 0,
+    weekUsedAmount: 0,
     cumulativeUsed: p.cumulativeUsed,
     cumulativePlanned: p.cumulativePlanned,
     cumulativeUsedAmount: 0,
