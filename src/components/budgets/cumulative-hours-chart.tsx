@@ -6,7 +6,6 @@ import { ChartColumn, ChartLine } from "lucide-react";
 import {
   ChartHoverPattern,
   ChartHoverTooltip,
-  ChartTodayChip,
   ChartWeekHoverBand,
   CHART_BUDGET_DASH,
   CHART_BUDGET_STROKE,
@@ -18,7 +17,6 @@ import {
   progressWeekSegmentEndpoints,
   slotWeekBandBounds,
   useSvgChartAnchor,
-  useSvgPointAnchor,
 } from "@/components/budgets/chart-hover";
 import { BudgetChartLegend } from "@/components/budgets/budget-chart-legend";
 import { cn } from "@/lib/cn";
@@ -264,7 +262,6 @@ function ProgressLineChart({
   todayAnchorDateKey?: string | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
-  const [todayDotHover, setTodayDotHover] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const hatchId = useId().replace(/:/g, "");
   const w = 720;
@@ -590,18 +587,17 @@ function ProgressLineChart({
     return 2;
   }
 
+  function vertexValueAt(i: number) {
+    if (todaySplit && i === todaySplit.idx) {
+      return plannedValueAt(i);
+    }
+    return valueAt(i);
+  }
+
   const tooltipAnchor = useSvgChartAnchor(
     svgRef,
     hoverBand?.centerX ?? null,
     padT,
-    w,
-    h,
-  );
-
-  const todayTooltipAnchor = useSvgPointAnchor(
-    svgRef,
-    todayDotHover && todaySplit ? todaySplit.x : null,
-    todayDotHover && todaySplit ? todaySplit.y : null,
     w,
     h,
   );
@@ -611,10 +607,7 @@ function ProgressLineChart({
       <div
         className="relative"
         style={{ minWidth: CHART_MIN_WIDTH_PX }}
-        onMouseLeave={() => {
-          setHoverIdx(null);
-          setTodayDotHover(false);
-        }}
+        onMouseLeave={() => setHoverIdx(null)}
       >
       {hover && hoverIdx != null ? (
       <ChartHoverTooltip anchor={tooltipAnchor}>
@@ -679,21 +672,13 @@ function ProgressLineChart({
           </div>
       </ChartHoverTooltip>
       ) : null}
-      {todayDotHover && todaySplit ? (
-        <ChartHoverTooltip anchor={todayTooltipAnchor} showArrow={false}>
-          <ChartTodayChip />
-        </ChartHoverTooltip>
-      ) : null}
       <svg
         ref={svgRef}
         viewBox={`0 0 ${w} ${h}`}
         className="h-auto w-full overflow-hidden"
         role="img"
         aria-label="Project progress chart"
-        onMouseLeave={() => {
-          setHoverIdx(null);
-          setTodayDotHover(false);
-        }}
+        onMouseLeave={() => setHoverIdx(null)}
       >
         <defs>
           <ChartHoverPattern id={`week-hover-hatch-${hatchId}`} />
@@ -872,8 +857,9 @@ function ProgressLineChart({
 
         {points.map((p, i) => {
           const cx = xAt(i);
-          const cy = yAt(valueAt(i));
-          const band = bandAt(valueAt(i));
+          const vertexVal = vertexValueAt(i);
+          const cy = yAt(vertexVal);
+          const band = bandAt(vertexVal);
           const weekBand = progressWeekLineSegmentBounds(
             i,
             points.length,
@@ -904,24 +890,13 @@ function ProgressLineChart({
         })}
 
         {todaySplit ? (
-          <g>
-            <circle
-              cx={todaySplit.x}
-              cy={todaySplit.y}
-              r={todayDotHover ? 3.5 : 2}
-              fill={CHART_TODAY_COLOR}
-              className="pointer-events-none"
-            />
-            <circle
-              cx={todaySplit.x}
-              cy={todaySplit.y}
-              r={6}
-              fill="transparent"
-              className="cursor-pointer"
-              onMouseEnter={() => setTodayDotHover(true)}
-              onMouseLeave={() => setTodayDotHover(false)}
-            />
-          </g>
+          <circle
+            cx={todaySplit.x}
+            cy={todaySplit.y}
+            r={3.5}
+            fill={CHART_TODAY_COLOR}
+            className="pointer-events-none"
+          />
         ) : null}
       </svg>
       </div>

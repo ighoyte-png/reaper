@@ -1,5 +1,4 @@
 import { cn } from "@/lib/cn";
-import { CHART_TODAY_COLOR } from "@/components/budgets/chart-hover";
 
 const contractorColor = "var(--status-healthy)";
 
@@ -70,8 +69,7 @@ export function BudgetChartLegend({
       {showToday ? (
         <span className="inline-flex items-center gap-1">
           <span
-            className="inline-block h-2 w-2 rounded-full"
-            style={{ backgroundColor: CHART_TODAY_COLOR }}
+            className="inline-block h-2 w-2 rounded-full bg-[var(--status-attention)]"
             aria-hidden
           />
           Today

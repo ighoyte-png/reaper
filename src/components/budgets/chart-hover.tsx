@@ -8,7 +8,6 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { cn } from "@/lib/cn";
 
 export function progressWeekBandBounds(
   index: number,
@@ -96,7 +95,7 @@ export const CHART_BUDGET_DASH = "4 3";
 export const CHART_TARGET_STROKE = "var(--status-near)";
 export const CHART_LINE_STROKE_WIDTH = 1.25;
 export const CHART_FUTURE_PATH_DASH = "5 4";
-export const CHART_TODAY_COLOR = "#9333ea";
+export const CHART_TODAY_COLOR = "var(--status-attention)";
 export const CHART_HOVER_TOP_STROKE = 1.25;
 
 export function ChartHoverPattern({ id }: { id: string }) {
@@ -217,71 +216,6 @@ export function ChartHoverTooltip({
       ) : null}
     </div>,
     document.body,
-  );
-}
-
-export function useSvgPointAnchor(
-  svgRef: RefObject<SVGSVGElement | null>,
-  x: number | null,
-  y: number | null,
-  viewW: number,
-  viewH: number,
-): { left: number; top: number } | null {
-  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
-
-  const update = () => {
-    if (x == null || y == null) {
-      setAnchor(null);
-      return;
-    }
-    const svg = svgRef.current;
-    if (!svg) {
-      setAnchor(null);
-      return;
-    }
-    const rect = svg.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-      setAnchor(null);
-      return;
-    }
-    setAnchor({
-      left: rect.left + (x / viewW) * rect.width,
-      top: rect.top + (y / viewH) * rect.height,
-    });
-  };
-
-  useLayoutEffect(() => {
-    update();
-  }, [x, y, viewW, viewH, svgRef]);
-
-  useEffect(() => {
-    if (x == null || y == null) return;
-    const onScrollOrResize = () => update();
-    window.addEventListener("scroll", onScrollOrResize, true);
-    window.addEventListener("resize", onScrollOrResize);
-    return () => {
-      window.removeEventListener("scroll", onScrollOrResize, true);
-      window.removeEventListener("resize", onScrollOrResize);
-    };
-  }, [x, y, viewW, viewH]);
-
-  return anchor;
-}
-
-export function ChartTodayChip({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-        className,
-      )}
-      style={{
-        backgroundColor: `${CHART_TODAY_COLOR}26`,
-        color: CHART_TODAY_COLOR,
-      }}
-    >
-      Today
-    </span>
   );
 }
 
