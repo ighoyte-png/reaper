@@ -12,6 +12,7 @@ import {
   CHART_FUTURE_PATH_DASH,
   CHART_LINE_STROKE_WIDTH,
   CHART_TARGET_STROKE,
+  CHART_TODAY_COLOR,
   progressWeekBandBounds,
   slotWeekBandBounds,
   useSvgChartAnchor,
@@ -29,7 +30,6 @@ import { progressLineHandoffIndex } from "@/components/budgets/progress-line-han
 type ChartTab = "progress" | "weekly";
 
 const CHART_MIN_WIDTH_PX = 560;
-const PROGRESS_TODAY_COLOR = "#9333ea";
 
 const contractorColor = "var(--status-healthy)";
 
@@ -131,6 +131,7 @@ export function ProjectProgressCharts({
             showContractor={contractorBaseline > 0}
             showTargetCost={Boolean(profitLine && profitLine > 0)}
             showProjectBudget={showProjectBudgetLegend && Boolean(budgetCap && budgetCap > 0)}
+            showToday={Boolean(todayAnchorDateKey)}
             className="mt-2"
           />
         </>
@@ -474,12 +475,17 @@ function ProgressLineChart({
       endMs > startMs
         ? Math.min(1, Math.max(0, (todayMs - startMs) / (endMs - startMs)))
         : 0.5;
-    const prevIdx = Math.max(0, idx - 1);
-    const weekBand = progressWeekBandBounds(idx, points.length, padL, plotW);
-    const x0 = idx > 0 ? xAt(prevIdx) : weekBand.x;
+    const prevIdx = idx > 0 ? idx - 1 : 0;
+    const x0 = idx > 0 ? xAt(prevIdx) : xAt(0);
     const x1 = xAt(idx);
+    const xEnd =
+      idx < points.length - 1 ? xAt(idx + 1) : x1;
     const todayX =
-      idx > 0 ? x0 + (x1 - x0) * frac : weekBand.x + weekBand.width * frac;
+      idx > 0
+        ? x0 + (x1 - x0) * frac
+        : points.length > 1
+          ? xAt(0) + (xEnd - xAt(0)) * frac
+          : xAt(0);
     const vStart = idx > 0 ? valueAt(prevIdx) : contractorBaseline;
     const vToday =
       todayAnchorValue != null
@@ -493,7 +499,7 @@ function ProgressLineChart({
       y: todayY,
       val: todayV,
       idx,
-      x0: idx > 0 ? xAt(prevIdx) : weekBand.x,
+      x0,
       v0: vStart,
       x1,
       vPlannedWeek,
@@ -815,12 +821,10 @@ function ProgressLineChart({
         ))}
 
         {points.map((p, i) => {
-          const isTodayWeek = todaySplit != null && i === thisWeekIdx;
-          const cx = isTodayWeek ? todaySplit.x : xAt(i);
-          const cy = isTodayWeek ? todaySplit.y : yAt(valueAt(i));
-          const band = bandAt(
-            isTodayWeek ? todaySplit.val : valueAt(i),
-          );
+          const showTodayDot = Boolean(todaySplit && p.isCurrentWeek);
+          const cx = xAt(i);
+          const cy = yAt(valueAt(i));
+          const band = bandAt(valueAt(i));
           const weekBand = progressWeekBandBounds(i, points.length, padL, plotW);
           return (
             <g key={p.key}>
@@ -833,30 +837,29 @@ function ProgressLineChart({
                 className="cursor-pointer"
                 onMouseEnter={() => setHoverIdx(i)}
               />
-              <circle
-                cx={cx}
-                cy={cy}
-                r={hoverIdx === i || isTodayWeek ? 3.5 : 2}
-                fill={isTodayWeek ? PROGRESS_TODAY_COLOR : strokeFor(band)}
-                stroke={isTodayWeek ? "var(--bg)" : undefined}
-                strokeWidth={isTodayWeek ? 1.5 : undefined}
-                className="pointer-events-none"
-              />
+              {showTodayDot ? null : (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={hoverIdx === i ? 3.5 : 2}
+                  fill={strokeFor(band)}
+                  className="pointer-events-none"
+                />
+              )}
             </g>
           );
         })}
 
         {todaySplit ? (
-          <text
-            x={todaySplit.x}
-            y={todaySplit.y - 10}
-            textAnchor="middle"
-            fill={PROGRESS_TODAY_COLOR}
-            style={{ fontSize: 8, fontWeight: 600 }}
+          <circle
+            cx={todaySplit.x}
+            cy={todaySplit.y}
+            r={4}
+            fill={CHART_TODAY_COLOR}
+            stroke="var(--bg)"
+            strokeWidth={2}
             className="pointer-events-none"
-          >
-            Today
-          </text>
+          />
         ) : null}
       </svg>
       </div>

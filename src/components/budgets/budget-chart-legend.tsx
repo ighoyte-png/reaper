@@ -1,4 +1,5 @@
 import { cn } from "@/lib/cn";
+import { CHART_TODAY_COLOR } from "@/components/budgets/chart-hover";
 
 const contractorColor = "var(--status-healthy)";
 
@@ -7,6 +8,7 @@ export function BudgetChartLegend({
   showTargetCost = false,
   showMonthlyBudget = false,
   showProjectBudget = false,
+  showToday = false,
   monthlyBudgetLabel,
   className,
 }: {
@@ -14,6 +16,7 @@ export function BudgetChartLegend({
   showTargetCost?: boolean;
   showMonthlyBudget?: boolean;
   showProjectBudget?: boolean;
+  showToday?: boolean;
   /** e.g. "20h" or "$5,000" */
   monthlyBudgetLabel?: string;
   className?: string;
@@ -62,6 +65,16 @@ export function BudgetChartLegend({
         <span className="inline-flex items-center gap-1">
           Project Budget
           <span className="text-[#ef4444]">— —</span>
+        </span>
+      ) : null}
+      {showToday ? (
+        <span className="inline-flex items-center gap-1">
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ backgroundColor: CHART_TODAY_COLOR }}
+            aria-hidden
+          />
+          Today
         </span>
       ) : null}
       <span>Hatched = Future / Planned</span>
