@@ -29,6 +29,7 @@ import { progressLineHandoffIndex } from "@/components/budgets/progress-line-han
 type ChartTab = "progress" | "weekly";
 
 const CHART_MIN_WIDTH_PX = 560;
+const PROGRESS_TODAY_COLOR = "#9333ea";
 
 const contractorColor = "var(--status-healthy)";
 
@@ -333,16 +334,22 @@ function ProgressLineChart({
     return lineColor;
   }
 
-  function pathPiecesAtCap(
+  function plannedValueAt(i: number) {
+    return contractorBaseline + pointValue(points[i]!, "planned", unit);
+  }
+
+  function pathPiecesForValues(
     from: number,
     to: number,
+    getValue: (i: number) => number,
   ): { d: string; band: StrokeBand }[] {
     if (to < from) return [];
     if (from === to) {
+      const v = getValue(from);
       return [
         {
-          d: `M ${xAt(from).toFixed(1)} ${yAt(valueAt(from)).toFixed(1)}`,
-          band: bandAt(valueAt(from)),
+          d: `M ${xAt(from).toFixed(1)} ${yAt(v).toFixed(1)}`,
+          band: bandAt(v),
         },
       ];
     }
@@ -352,9 +359,9 @@ function ProgressLineChart({
     if (hasBudget && budgetCap != null) thresholds.push({ v: budgetCap });
 
     const pieces: { d: string; band: StrokeBand }[] = [];
-    let currentBand = bandAt(valueAt(from));
+    let currentBand = bandAt(getValue(from));
     let parts: string[] = [
-      `M ${xAt(from).toFixed(1)} ${yAt(valueAt(from)).toFixed(1)}`,
+      `M ${xAt(from).toFixed(1)} ${yAt(getValue(from)).toFixed(1)}`,
     ];
 
     const flush = () => {
@@ -365,8 +372,8 @@ function ProgressLineChart({
     };
 
     for (let i = from; i < to; i++) {
-      const v0 = valueAt(i);
-      const v1 = valueAt(i + 1);
+      const v0 = getValue(i);
+      const v1 = getValue(i + 1);
       const x0 = xAt(i);
       const x1 = xAt(i + 1);
       const hits = thresholds
@@ -411,6 +418,13 @@ function ProgressLineChart({
     return pieces;
   }
 
+  function pathPiecesAtCap(
+    from: number,
+    to: number,
+  ): { d: string; band: StrokeBand }[] {
+    return pathPiecesForValues(from, to, valueAt);
+  }
+
   const monthLabels = useMemo(() => {
     const groups: { key: string; label: string; start: number; end: number }[] =
       [];
@@ -447,10 +461,12 @@ function ProgressLineChart({
       ? progressWeekBandBounds(thisWeekIdx, points.length, padL, plotW)
       : null;
 
-  const todayDot = useMemo(() => {
-    if (!todayAnchorDateKey || thisWeekIdx == null || thisWeekIdx < 0) return null;
-    const p = points[thisWeekIdx]!;
-    const band = progressWeekBandBounds(thisWeekIdx, points.length, padL, plotW);
+  const todaySplit = useMemo(() => {
+    if (!todayAnchorDateKey || thisWeekIdx == null || thisWeekIdx < 0) {
+      return null;
+    }
+    const idx = thisWeekIdx;
+    const p = points[idx]!;
     const startMs = parseISO(p.weekStartKey).getTime();
     const endMs = parseISO(p.weekEndKey).getTime();
     const todayMs = parseISO(todayAnchorDateKey).getTime();
@@ -458,15 +474,37 @@ function ProgressLineChart({
       endMs > startMs
         ? Math.min(1, Math.max(0, (todayMs - startMs) / (endMs - startMs)))
         : 0.5;
-    const x = band.x + band.width * frac;
-    const val =
-      todayAnchorValue != null ? todayAnchorValue : valueAt(thisWeekIdx);
-    return { x, y: padT + plotH - (val / maxY) * plotH, val };
+    const prevIdx = Math.max(0, idx - 1);
+    const weekBand = progressWeekBandBounds(idx, points.length, padL, plotW);
+    const x0 = idx > 0 ? xAt(prevIdx) : weekBand.x;
+    const x1 = xAt(idx);
+    const todayX =
+      idx > 0 ? x0 + (x1 - x0) * frac : weekBand.x + weekBand.width * frac;
+    const vStart = idx > 0 ? valueAt(prevIdx) : contractorBaseline;
+    const vToday =
+      todayAnchorValue != null
+        ? contractorBaseline + todayAnchorValue
+        : valueAt(idx);
+    const todayV = vStart + (vToday - vStart) * frac;
+    const todayY = yAt(todayV);
+    const vPlannedWeek = plannedValueAt(idx);
+    return {
+      x: todayX,
+      y: todayY,
+      val: todayV,
+      idx,
+      x0: idx > 0 ? xAt(prevIdx) : weekBand.x,
+      v0: vStart,
+      x1,
+      vPlannedWeek,
+    };
   }, [
     todayAnchorDateKey,
     todayAnchorValue,
     thisWeekIdx,
     points,
+    contractorBaseline,
+    unit,
     padL,
     plotW,
     plotH,
@@ -474,10 +512,31 @@ function ProgressLineChart({
     maxY,
   ]);
 
-  const usedPieces =
-    handoffIdx >= 0 ? pathPiecesAtCap(0, handoffIdx) : [];
-  const futurePieces =
-    handoffIdx < points.length - 1
+  const usedPieces = todaySplit
+    ? [
+        ...(todaySplit.idx > 0
+          ? pathPiecesForValues(0, todaySplit.idx - 1, valueAt)
+          : []),
+        {
+          d: `M ${todaySplit.x0.toFixed(1)} ${yAt(todaySplit.v0).toFixed(1)} L ${todaySplit.x.toFixed(1)} ${todaySplit.y.toFixed(1)}`,
+          band: bandAt(todaySplit.val),
+        },
+      ]
+    : handoffIdx >= 0
+      ? pathPiecesAtCap(0, handoffIdx)
+      : [];
+
+  const futurePieces = todaySplit
+    ? [
+        {
+          d: `M ${todaySplit.x.toFixed(1)} ${todaySplit.y.toFixed(1)} L ${todaySplit.x1.toFixed(1)} ${yAt(todaySplit.vPlannedWeek).toFixed(1)}`,
+          band: bandAt(todaySplit.vPlannedWeek),
+        },
+        ...(todaySplit.idx < points.length - 1
+          ? pathPiecesForValues(todaySplit.idx, points.length - 1, plannedValueAt)
+          : []),
+      ]
+    : handoffIdx < points.length - 1
       ? pathPiecesAtCap(handoffIdx, points.length - 1)
       : [];
   const hover = hoverIdx != null ? points[hoverIdx] : null;
@@ -755,19 +814,22 @@ function ProgressLineChart({
           />
         ))}
 
-        {todayDot ? (
-          <circle
-            cx={todayDot.x}
-            cy={todayDot.y}
-            r={3.5}
-            fill="var(--accent)"
-            stroke="var(--bg)"
-            strokeWidth={1.5}
-            className="pointer-events-none"
-          />
+        {todaySplit ? (
+          <>
+            <circle
+              cx={todaySplit.x}
+              cy={todaySplit.y}
+              r={3.5}
+              fill={PROGRESS_TODAY_COLOR}
+              stroke="var(--bg)"
+              strokeWidth={1.5}
+              className="pointer-events-none"
+            />
+          </>
         ) : null}
 
         {points.map((p, i) => {
+          if (todaySplit && i === thisWeekIdx) return null;
           const cx = xAt(i);
           const cy = yAt(valueAt(i));
           const band = bandAt(valueAt(i));
@@ -794,6 +856,19 @@ function ProgressLineChart({
           );
         })}
       </svg>
+      {todaySplit ? (
+        <div
+          className="pointer-events-none absolute z-10 -translate-x-1/2"
+          style={{
+            left: `${(todaySplit.x / w) * 100}%`,
+            top: `${((todaySplit.y - 14) / h) * 100}%`,
+          }}
+        >
+          <span className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text)] shadow-sm">
+            Today
+          </span>
+        </div>
+      ) : null}
       </div>
     </div>
   );

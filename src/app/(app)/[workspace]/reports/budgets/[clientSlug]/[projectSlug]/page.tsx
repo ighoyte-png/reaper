@@ -12,7 +12,7 @@ import {
 } from "@/components/budgets/cumulative-hours-chart";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
-import { ContractorTag, ProjectManagerPerson } from "@/components/projects/project-manager-person";
+import { ContractorTag, ProjectManagerTag } from "@/components/projects/project-manager-person";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CurrencyChip, CurrencyToggle } from "@/components/ui/currency-chip";
@@ -64,13 +64,12 @@ import {
   burnInternalFromBurn,
   projectBudgetReportMetrics,
 } from "@/lib/domain/budget-report-metrics";
-import { projectManagerPerson } from "@/lib/domain/project-access";
 import { projectPeriodEconomics } from "@/lib/domain/forecast";
 import { toDateKey } from "@/lib/domain/dates";
 import { personAvatarColor } from "@/lib/domain/people";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
 import { cn } from "@/lib/cn";
-import type { CurrencyCode, ProjectMember } from "@/lib/types";
+import type { CurrencyCode, Person, ProjectMember } from "@/lib/types";
 
 export default function ProjectBudgetDetailPage() {
   const params = useParams<{ clientSlug: string; projectSlug: string }>();
@@ -584,7 +583,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
   }
 
   const teamPeriod = useMemo(() => {
-    if (!project) return { staff: [], contractors: [] };
+    if (!project) return { manager: null, staff: [], contractors: [] };
     const BURN_RANGE_START = "1970-01-01";
     const BURN_RANGE_END = "2099-12-31";
     type TeamPeriodRow = {
@@ -601,8 +600,8 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
       dashUsedPlanned: boolean;
       is_contractor: boolean;
       notes?: string;
-      mixedCurrency?: boolean;
       nativeCurrency?: CurrencyCode;
+      isProjectManager?: boolean;
     };
     const monthly = isMonthlyRetainerBudget(project);
     const asOf = new Date();
@@ -611,10 +610,10 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
 
     const currencyEnabled = state.organization_settings.currency_enabled;
 
-    const staff = staffTeam.map((person) => {
+    function staffRowForPerson(person: Person): TeamPeriodRow {
       const split = personHoursSplitInRange(
         person.id,
-        project.id,
+        project!.id,
         state.assignments,
         teamRangeStart,
         teamRangeEnd,
@@ -630,14 +629,23 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         usedHours: split.usedHours,
         plannedHours: split.futureHours,
         totalHours: split.usedHours + split.futureHours,
-        moneyAmount: null as number | null,
+        moneyAmount: null,
         dashUsedPlanned: false,
         is_contractor: person.is_contractor,
         nativeCurrency: currencyEnabled
-          ? personCurrency(person, false)
+          ? personCurrency(person, true)
           : undefined,
-      } satisfies TeamPeriodRow;
-    });
+      };
+    }
+
+    const managerPerson = project.manager_person_id
+      ? state.people.find(
+          (p) => p.id === project.manager_person_id && !p.is_contractor,
+        )
+      : null;
+    const manager = managerPerson ? staffRowForPerson(managerPerson) : null;
+
+    const staff = staffTeam.map((person) => staffRowForPerson(person));
     const contractors: TeamPeriodRow[] = [];
 
     for (const person of contractorRoster) {
@@ -681,10 +689,9 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
                 dashUsedPlanned: true,
                 is_contractor: true,
                 notes: line.notes || undefined,
-            mixedCurrency:
-              state.organization_settings.currency_enabled &&
-              personCurrency(person, true) !== projectCurrency(project, true),
-            nativeCurrency: personCurrency(person, true),
+                nativeCurrency: currencyEnabled
+                  ? personCurrency(person, true)
+                  : undefined,
               });
             }
           } else {
@@ -716,11 +723,9 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
                 dashUsedPlanned: true,
                 is_contractor: true,
                 notes: line.notes || undefined,
-                mixedCurrency:
-                  state.organization_settings.currency_enabled &&
-                  personCurrency(person, true) !==
-                    projectCurrency(project, true),
-                nativeCurrency: personCurrency(person, true),
+                nativeCurrency: currencyEnabled
+                  ? personCurrency(person, true)
+                  : undefined,
               });
             }
           }
@@ -837,10 +842,9 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             ),
             dashUsedPlanned: true,
             is_contractor: true,
-            mixedCurrency:
-              state.organization_settings.currency_enabled &&
-              personCurrency(person, true) !== projectCurrency(project, true),
-            nativeCurrency: personCurrency(person, true),
+            nativeCurrency: currencyEnabled
+              ? personCurrency(person, true)
+              : undefined,
           });
         } else {
           const committed = contractorCommitted(person, member);
@@ -920,6 +924,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
       }
     }
     return {
+      manager,
       staff: staff.sort((a, b) => a.name.localeCompare(b.name)),
       contractors: contractors.sort((a, b) => a.name.localeCompare(b.name)),
     };
@@ -975,7 +980,6 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     project.budget_hours,
     project.budget_amount,
   );
-  const projectManager = projectManagerPerson(project, state.people);
   const settings = state.organization_settings;
   const projectCur = projectCurrency(project, settings.currency_enabled);
   const activeView = viewCurrency ?? projectCur;
@@ -1298,7 +1302,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         }
       />
 
-      <div className="w-full space-y-6 py-5">
+      <div className="w-full space-y-6 pt-5 pb-5">
         <div className="flex flex-wrap items-center gap-2">
           <ProjectColorBar
             color={projectDisplayColor(project, state.clients)}
@@ -1592,7 +1596,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             ) : null}
           </ul>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-end">
           <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Forecast vs Budget</h2>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
@@ -1715,17 +1719,9 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             <h2 className="mb-3 text-sm font-semibold">
               {isRetainer ? `Team · ${periodHeading}` : "Team"}
             </h2>
-            {projectManager ? (
-              <div className="mb-3">
-                <ProjectManagerPerson person={projectManager} showTag />
-              </div>
-            ) : null}
-            {teamPeriod.staff.length === 0 &&
-            teamPeriod.contractors.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">
-                No one assigned yet.
-              </p>
-            ) : (
+            {teamPeriod.manager ||
+            teamPeriod.staff.length > 0 ||
+            teamPeriod.contractors.length > 0 ? (
               <div className="min-w-0 overflow-x-auto">
                 <table className="w-full min-w-[20rem] text-left text-sm">
                   <thead>
@@ -1737,6 +1733,14 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
                     </tr>
                   </thead>
                   <tbody>
+                    {teamPeriod.manager ? (
+                      <TeamRow
+                        key={teamPeriod.manager.id}
+                        row={teamPeriod.manager}
+                        formatAmount={money}
+                        showManagerTag
+                      />
+                    ) : null}
                     {teamPeriod.staff.map((row) => (
                       <TeamRow key={row.id} row={row} formatAmount={money} />
                     ))}
@@ -1756,6 +1760,10 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
                   </tbody>
                 </table>
               </div>
+            ) : (
+              <p className="text-sm text-[var(--text-muted)]">
+                No one assigned yet.
+              </p>
             )}
           </section>
           </div>
@@ -1768,6 +1776,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
 function TeamRow({
   row,
   formatAmount,
+  showManagerTag = false,
 }: {
   row: {
     id: string;
@@ -1783,10 +1792,10 @@ function TeamRow({
     dashUsedPlanned?: boolean;
     is_contractor: boolean;
     notes?: string;
-    mixedCurrency?: boolean;
     nativeCurrency?: CurrencyCode;
   };
   formatAmount: (n: number) => string;
+  showManagerTag?: boolean;
 }) {
   const showMoney = row.moneyAmount != null;
   const dashPartial = Boolean(row.dashUsedPlanned) || showMoney;
@@ -1810,6 +1819,7 @@ function TeamRow({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="min-w-0 truncate">{row.name}</span>
+              {showManagerTag ? <ProjectManagerTag /> : null}
               {row.is_contractor ? <ContractorTag /> : null}
               {row.nativeCurrency ? (
                 <CurrencyChip currency={row.nativeCurrency} />
