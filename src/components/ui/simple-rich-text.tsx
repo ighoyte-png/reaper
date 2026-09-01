@@ -265,6 +265,8 @@ type SimpleRichTextEditorProps = {
   isDemo?: boolean;
   /** When true, content is visible but not editable (toolbar hidden). */
   readOnly?: boolean;
+  /** Focus the editor after it mounts (e.g. reply / add comment). */
+  autoFocus?: boolean;
 };
 
 export const SimpleRichTextEditor = forwardRef<
@@ -288,6 +290,7 @@ export const SimpleRichTextEditor = forwardRef<
     onFileAttachmentsChange,
     isDemo = false,
     readOnly = false,
+    autoFocus = false,
   },
   ref,
 ) {
@@ -668,6 +671,14 @@ export const SimpleRichTextEditor = forwardRef<
     if (!editor) return;
     editor.setEditable(!readOnly, false);
   }, [editor, readOnly]);
+
+  useEffect(() => {
+    if (!autoFocus || !editor || readOnly) return;
+    const frame = window.requestAnimationFrame(() => {
+      editor.chain().focus(undefined, { scrollIntoView: false }).run();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [autoFocus, editor, readOnly]);
 
   // Pin after TipTap mounts (editor null → DOM absent on first paint).
   useLayoutEffect(() => {

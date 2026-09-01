@@ -5652,6 +5652,7 @@ function CommentThread({
           <div className="space-y-2.5">
             <SimpleRichTextEditor
               ref={editorRef}
+              autoFocus
               value={draft}
               onChange={updateDraft}
               placeholder="Add a comment... Use @ to mention"
