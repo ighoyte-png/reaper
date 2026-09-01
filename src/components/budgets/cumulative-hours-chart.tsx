@@ -14,6 +14,7 @@ import {
   CHART_TARGET_STROKE,
   CHART_TODAY_COLOR,
   progressWeekBandBounds,
+  progressWeekLineSegmentBounds,
   slotWeekBandBounds,
   useSvgChartAnchor,
 } from "@/components/budgets/chart-hover";
@@ -459,7 +460,13 @@ function ProgressLineChart({
     handoffIdx >= 0 && points[handoffIdx]?.isCurrentWeek ? handoffIdx : null;
   const thisWeekBand =
     thisWeekIdx != null
-      ? progressWeekBandBounds(thisWeekIdx, points.length, padL, plotW)
+      ? progressWeekLineSegmentBounds(
+          thisWeekIdx,
+          points.length,
+          padL,
+          plotW,
+          xAt,
+        )
       : null;
 
   const todaySplit = useMemo(() => {
@@ -556,7 +563,15 @@ function ProgressLineChart({
     hover?.isCurrentWeek && todayAnchorValue != null;
   const hoverBand =
     hoverIdx != null
-      ? progressWeekBandBounds(hoverIdx, points.length, padL, plotW)
+      ? hoverIdx === thisWeekIdx
+        ? progressWeekLineSegmentBounds(
+            hoverIdx,
+            points.length,
+            padL,
+            plotW,
+            xAt,
+          )
+        : progressWeekBandBounds(hoverIdx, points.length, padL, plotW)
       : null;
 
   const tooltipAnchor = useSvgChartAnchor(
@@ -825,7 +840,16 @@ function ProgressLineChart({
           const cx = xAt(i);
           const cy = yAt(valueAt(i));
           const band = bandAt(valueAt(i));
-          const weekBand = progressWeekBandBounds(i, points.length, padL, plotW);
+          const weekBand =
+            p.isCurrentWeek && thisWeekIdx === i
+              ? progressWeekLineSegmentBounds(
+                  i,
+                  points.length,
+                  padL,
+                  plotW,
+                  xAt,
+                )
+              : progressWeekBandBounds(i, points.length, padL, plotW);
           return (
             <g key={p.key}>
               <rect

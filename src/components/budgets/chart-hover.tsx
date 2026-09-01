@@ -33,6 +33,30 @@ export function progressWeekBandBounds(
   return { x, width: slotW, centerX: x + slotW / 2 };
 }
 
+/**
+ * Week bounds aligned to the progress line segment between week points
+ * (xAt(i-1) → xAt(i)). Matches calendar "today" placement on the line.
+ */
+export function progressWeekLineSegmentBounds(
+  index: number,
+  pointCount: number,
+  padL: number,
+  plotW: number,
+  xAt: (i: number) => number,
+): { x: number; width: number; centerX: number } {
+  if (pointCount <= 1) {
+    return { x: padL, width: plotW, centerX: padL + plotW / 2 };
+  }
+  if (index > 0) {
+    const x = xAt(index - 1);
+    const end = xAt(index);
+    return { x, width: end - x, centerX: (x + end) / 2 };
+  }
+  const x = xAt(0);
+  const end = xAt(1);
+  return { x, width: end - x, centerX: (x + end) / 2 };
+}
+
 export function slotWeekBandBounds(
   index: number,
   pointCount: number,
