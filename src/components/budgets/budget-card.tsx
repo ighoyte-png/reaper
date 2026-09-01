@@ -380,13 +380,14 @@ function BudgetCardView({
               <dd
                 className={cn(
                   "tabular-nums font-medium",
-                  hoursFx.overBudget && "text-[var(--status-over)]",
+                  (burn.overBy > 0 || burn.amountOverBy > 0) &&
+                    "text-[var(--status-over)]",
                 )}
               >
                 {showHoursMetrics
-                  ? hoursFx.hoursRemaining == null
+                  ? burn.remainingHours == null
                     ? "—"
-                    : formatHours(hoursFx.hoursRemaining)
+                    : formatHours(burn.remainingHours)
                   : showAmountMetrics
                     ? burn.remainingAmount == null
                       ? "—"
@@ -562,9 +563,9 @@ function BudgetListRowView({
     ? money(burn.futureAmount)
     : formatHours(hoursFx.hoursFuturePlanned);
   const remainingLabel = showHoursMetrics
-    ? hoursFx.hoursRemaining == null
+    ? burn.remainingHours == null
       ? "—"
-      : formatHours(hoursFx.hoursRemaining)
+      : formatHours(burn.remainingHours)
     : showAmountMetrics
       ? burn.remainingAmount == null
         ? "—"
@@ -610,7 +611,8 @@ function BudgetListRowView({
             <span
               className={cn(
                 "tabular-nums",
-                hoursFx.overBudget && "text-[var(--status-over)]",
+                (burn.overBy > 0 || burn.amountOverBy > 0) &&
+                  "text-[var(--status-over)]",
               )}
             >
               Remaining {remainingLabel}

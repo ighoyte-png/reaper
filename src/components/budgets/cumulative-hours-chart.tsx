@@ -7,10 +7,16 @@ import {
   ChartHoverPattern,
   ChartHoverTooltip,
   ChartWeekHoverBand,
+  CHART_BUDGET_DASH,
+  CHART_BUDGET_STROKE,
+  CHART_FUTURE_PATH_DASH,
+  CHART_LINE_STROKE_WIDTH,
+  CHART_TARGET_STROKE,
   progressWeekBandBounds,
   slotWeekBandBounds,
   useSvgChartAnchor,
 } from "@/components/budgets/chart-hover";
+import { BudgetChartLegend } from "@/components/budgets/budget-chart-legend";
 import { cn } from "@/lib/cn";
 import {
   formatChartMoneyAxis,
@@ -25,46 +31,6 @@ type ChartTab = "progress" | "weekly";
 const CHART_MIN_WIDTH_PX = 560;
 
 const contractorColor = "var(--status-healthy)";
-
-function ChartLegend({
-  showContractor,
-  showProfit,
-}: {
-  showContractor: boolean;
-  showProfit: boolean;
-}) {
-  if (!showContractor && !showProfit) return null;
-  return (
-    <p className="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-[var(--text-muted)]">
-      {showContractor ? (
-        <span className="inline-flex items-center gap-1">
-          <span
-            className="inline-block h-2 w-2 rounded-full"
-            style={{ backgroundColor: contractorColor }}
-            aria-hidden
-          />
-          Contractor
-        </span>
-      ) : null}
-      <span className="inline-flex items-center gap-1">
-        <span
-          className="inline-block h-2 w-2 rounded-full bg-[var(--accent)]"
-          aria-hidden
-        />
-        Internal
-      </span>
-      {showProfit ? (
-        <span className="inline-flex items-center gap-1">
-          <span
-            className="inline-block h-0 w-3 border-t border-dashed border-[var(--status-near)]"
-            aria-hidden
-          />
-          Target cost
-        </span>
-      ) : null}
-    </p>
-  );
-}
 
 export const OUTSIDE_DATES_CHART_NOTE =
   "*Time has been booked on the schedule that is outside the start and end dates of this project and is not reflected in this chart.";
@@ -92,6 +58,7 @@ export function ProjectProgressCharts({
   outsideDatesNote = false,
   todayAnchorValue = null,
   todayAnchorDateKey = null,
+  showProjectBudgetLegend = false,
   className,
 }: {
   points: WeeklyProgressPoint[];
@@ -107,6 +74,7 @@ export function ProjectProgressCharts({
   /** Canonical used hours/amount through today — aligns current-week hover with Budget Burn. */
   todayAnchorValue?: number | null;
   todayAnchorDateKey?: string | null;
+  showProjectBudgetLegend?: boolean;
   className?: string;
 }) {
   const [tab, setTab] = useState<ChartTab>("progress");
@@ -158,9 +126,11 @@ export function ProjectProgressCharts({
             todayAnchorValue={todayAnchorValue}
             todayAnchorDateKey={todayAnchorDateKey}
           />
-          <ChartLegend
+          <BudgetChartLegend
             showContractor={contractorBaseline > 0}
-            showProfit={Boolean(profitLine && profitLine > 0)}
+            showTargetCost={Boolean(profitLine && profitLine > 0)}
+            showProjectBudget={showProjectBudgetLegend && Boolean(budgetCap && budgetCap > 0)}
+            className="mt-2"
           />
         </>
       ) : (
@@ -477,6 +447,33 @@ function ProgressLineChart({
       ? progressWeekBandBounds(thisWeekIdx, points.length, padL, plotW)
       : null;
 
+  const todayDot = useMemo(() => {
+    if (!todayAnchorDateKey || thisWeekIdx == null || thisWeekIdx < 0) return null;
+    const p = points[thisWeekIdx]!;
+    const band = progressWeekBandBounds(thisWeekIdx, points.length, padL, plotW);
+    const startMs = parseISO(p.weekStartKey).getTime();
+    const endMs = parseISO(p.weekEndKey).getTime();
+    const todayMs = parseISO(todayAnchorDateKey).getTime();
+    const frac =
+      endMs > startMs
+        ? Math.min(1, Math.max(0, (todayMs - startMs) / (endMs - startMs)))
+        : 0.5;
+    const x = band.x + band.width * frac;
+    const val =
+      todayAnchorValue != null ? todayAnchorValue : valueAt(thisWeekIdx);
+    return { x, y: padT + plotH - (val / maxY) * plotH, val };
+  }, [
+    todayAnchorDateKey,
+    todayAnchorValue,
+    thisWeekIdx,
+    points,
+    padL,
+    plotW,
+    plotH,
+    padT,
+    maxY,
+  ]);
+
   const usedPieces =
     handoffIdx >= 0 ? pathPiecesAtCap(0, handoffIdx) : [];
   const futurePieces =
@@ -553,7 +550,7 @@ function ProgressLineChart({
                 <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
                   {formatDetailValue(hoverVal, unit)}
                 </div>
-                {hasContractorBaseline && !hoverUsesTodayAnchor ? (
+                {hasContractorBaseline ? (
                   <div className="mt-1 text-[10px] text-[var(--text-muted)]">
                     incl. {formatDetailValue(contractorBaseline, unit)} contractor
                   </div>
@@ -562,11 +559,9 @@ function ProgressLineChart({
               {hasBudget ? (
                 <div className="min-w-0">
                   <div className="text-[10px] leading-tight text-[var(--text-muted)]">
-                    {hoverUsesTodayAnchor
-                      ? unit === "amount"
-                        ? "Budget remaining"
-                        : "Hours remaining"
-                      : "Forecasted budget remaining"}
+                    {unit === "amount"
+                      ? "Forecasted budget remaining"
+                      : "Forecasted hours remaining"}
                   </div>
                   <div className="mt-0.5 text-sm tabular-nums text-[var(--text)]">
                     {formatDetailValue(Math.max(0, budgetCap! - hoverVal), unit)}
@@ -715,9 +710,9 @@ function ProgressLineChart({
             x2={w - padR}
             y1={profitY}
             y2={profitY}
-            stroke="var(--status-near)"
-            strokeWidth={1.25}
-            strokeDasharray="4 3"
+            stroke={CHART_TARGET_STROKE}
+            strokeWidth={CHART_LINE_STROKE_WIDTH}
+            strokeDasharray={CHART_BUDGET_DASH}
             strokeLinecap="round"
           />
         ) : null}
@@ -728,9 +723,9 @@ function ProgressLineChart({
             x2={w - padR}
             y1={budgetY}
             y2={budgetY}
-            stroke="#ef4444"
-            strokeWidth={1.25}
-            strokeDasharray="4 3"
+            stroke={CHART_BUDGET_STROKE}
+            strokeWidth={CHART_LINE_STROKE_WIDTH}
+            strokeDasharray={CHART_BUDGET_DASH}
             strokeLinecap="round"
           />
         ) : null}
@@ -742,7 +737,7 @@ function ProgressLineChart({
             fill="none"
             stroke={strokeFor(piece.band)}
             strokeWidth={1.25}
-            strokeDasharray="5 4"
+            strokeDasharray={CHART_FUTURE_PATH_DASH}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
@@ -754,11 +749,23 @@ function ProgressLineChart({
             d={piece.d}
             fill="none"
             stroke={strokeFor(piece.band)}
-            strokeWidth={1.25}
+            strokeWidth={CHART_LINE_STROKE_WIDTH}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
         ))}
+
+        {todayDot ? (
+          <circle
+            cx={todayDot.x}
+            cy={todayDot.y}
+            r={3.5}
+            fill="var(--accent)"
+            stroke="var(--bg)"
+            strokeWidth={1.5}
+            className="pointer-events-none"
+          />
+        ) : null}
 
         {points.map((p, i) => {
           const cx = xAt(i);

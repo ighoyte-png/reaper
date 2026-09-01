@@ -1542,7 +1542,7 @@ export interface MonthBurnBar {
   pct: number;
 }
 
-function monthBurnSplit(
+export function monthBurnSplit(
   project: Project,
   assignments: Assignment[],
   people: Person[],

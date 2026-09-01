@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  budgetBurn,
   budgetHealth,
   calendarRangeBars,
   contractorExpenseAggregatesInRange,
@@ -7,11 +8,17 @@ import {
   contractorRepeatEndMonth,
   formatHours,
   listedBudgetAmount,
+  monthBurnSplit,
   projectToDateSpan,
   projectHoursSplitInRange,
   scheduleOutsideProjectDates,
   weeklyProgressSeries,
 } from "@/lib/domain/budget";
+import {
+  burnInternalFromBurn,
+  budgetBurnForMonth,
+  projectBudgetReportMetrics,
+} from "@/lib/domain/budget-report-metrics";
 import { convertAmount } from "@/lib/domain/currency";
 import {
   DEFAULT_ORG_BUDGET_SETTINGS,
@@ -512,5 +519,140 @@ describe("formatHours", () => {
     expect(formatHours(3.7455)).toBe("3.75h");
     expect(formatHours(3.50)).toBe("3.5h");
     expect(formatHours(12.04)).toBe("12.04h");
+  });
+});
+
+describe("burnInternalFromBurn", () => {
+  it("subtracts contractor portions from burn totals", () => {
+    const burn: BudgetBurn = {
+      ...amountBurn(40),
+      usedHours: 20,
+      futureHours: 10,
+      plannedHours: 30,
+      contractorUsedHours: 5,
+      contractorFutureHours: 2,
+      contractorUsedAmount: 500,
+      contractorFutureAmount: 200,
+      usedAmount: 2000,
+      futureAmount: 800,
+      plannedAmount: 2800,
+    };
+    const internal = burnInternalFromBurn(burn);
+    expect(internal.usedHours).toBe(15);
+    expect(internal.futureHours).toBe(8);
+    expect(internal.usedAmount).toBe(1500);
+    expect(internal.futureAmount).toBe(600);
+  });
+});
+
+describe("budgetBurnForMonth", () => {
+  it("reports zero remaining when planned hours fill the monthly cap", () => {
+    const project = makeProject({
+      budget_hours: 40,
+      budget_monthly_reset: true,
+      start_date: "2026-01-01",
+      end_date: "2026-12-31",
+    });
+    const assignments = [
+      makeAssignment({
+        start_date: "2026-03-02",
+        end_date: "2026-03-06",
+        hours_per_day: 8,
+      }),
+    ];
+    const asOf = new Date("2026-03-10T12:00:00");
+    const monthBurn = budgetBurnForMonth(
+      project,
+      assignments,
+      [],
+      2026,
+      2,
+      asOf,
+    );
+    expect(monthBurn.plannedHours).toBe(40);
+    expect(monthBurn.remainingHours).toBe(0);
+  });
+
+  it("matches monthBurnSplit totals without double-counting contractors", () => {
+    const project = makeProject({
+      budget_mode: "amount",
+      budget_hours: null,
+      budget_amount: 10000,
+      budget_monthly_reset: true,
+      start_date: "2026-01-01",
+      end_date: "2026-12-31",
+    });
+    const assignments = [
+      makeAssignment({
+        start_date: "2026-04-07",
+        end_date: "2026-04-07",
+        hours_per_day: 8,
+      }),
+    ];
+    const asOf = new Date("2026-04-15T12:00:00");
+    const split = monthBurnSplit(
+      project,
+      assignments,
+      [],
+      2026,
+      3,
+      asOf,
+      [],
+    );
+    const monthBurn = budgetBurnForMonth(
+      project,
+      assignments,
+      [],
+      2026,
+      3,
+      asOf,
+    );
+    expect(monthBurn.usedHours).toBe(
+      split.usedHours + split.contractorUsedHours,
+    );
+    expect(monthBurn.plannedAmount).toBe(split.plannedAmount);
+    expect(burnInternalFromBurn(monthBurn).usedAmount).toBe(split.usedAmount);
+  });
+});
+
+describe("projectBudgetReportMetrics", () => {
+  it("uses schedule-only hours for non-retainer forecast used hours", () => {
+    const project = makeProject({
+      budget_monthly_reset: false,
+      budget_hours: 100,
+      start_date: "2026-01-15",
+      end_date: "2026-12-31",
+    });
+    const assignments = [
+      makeAssignment({
+        start_date: "2026-02-03",
+        end_date: "2026-02-03",
+        hours_per_day: 8,
+      }),
+    ];
+    const asOf = new Date("2026-02-10T12:00:00");
+    const metrics = projectBudgetReportMetrics({
+      project,
+      assignments,
+      people: [],
+      projectMembers: [],
+      contractorExpenses: [],
+      periodMode: "todate",
+      asOf,
+    });
+    const burn = budgetBurn(
+      project,
+      assignments,
+      [],
+      false,
+      asOf,
+      [],
+      [],
+    );
+    expect(metrics.scheduleUsedHours).toBe(8);
+    expect(metrics.remainingHours).toBe(burn.remainingHours);
+    expect(burnInternalFromBurn(burn).usedHours).toBeLessThanOrEqual(
+      metrics.scheduleUsedHours,
+    );
   });
 });

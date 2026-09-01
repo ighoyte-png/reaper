@@ -2,7 +2,14 @@
 
 import { format } from "date-fns";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { BudgetChartLegend } from "@/components/budgets/budget-chart-legend";
 import { cn } from "@/lib/cn";
+import {
+  CHART_BUDGET_DASH,
+  CHART_BUDGET_STROKE,
+  CHART_HOVER_TOP_STROKE,
+  CHART_TARGET_STROKE,
+} from "@/components/budgets/chart-hover";
 import {
   ChartHoverTooltip,
   useColumnAnchor,
@@ -286,9 +293,9 @@ function MonthBarColumn({
             }${futureMonth ? " (planned)" : ""}`
       }
     >
-      {current ? (
+      {selected && !isHovered ? (
         <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 top-0 bg-[var(--accent)]/10"
+          className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[1] bg-[var(--accent)]/18"
           aria-hidden
         />
       ) : null}
@@ -303,14 +310,11 @@ function MonthBarColumn({
             <rect width="100%" height="100%" fill={`url(#month-hover-${bar.key})`} />
             <rect width="100%" height="100%" fill="var(--accent)" fillOpacity="0.06" />
           </svg>
-          <div className="absolute inset-x-0 top-0 h-px bg-[var(--accent)]" />
+          <div
+            className="absolute inset-x-0 top-0 bg-[var(--accent)]"
+            style={{ height: CHART_HOVER_TOP_STROKE }}
+          />
         </div>
-      ) : null}
-      {selected && !isHovered ? (
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 top-0 z-[1] ring-1 ring-inset ring-[var(--accent)]/35"
-          aria-hidden
-        />
       ) : null}
       {total <= 0 ? (
         <div
@@ -359,6 +363,7 @@ export function ProjectYearBurnChart({
   onMonthSelect,
   blendContractors = false,
   interactive = !compact,
+  profitLine = null,
 }: {
   bars: MonthBurnBar[];
   unit?: "hours" | "amount";
@@ -375,6 +380,8 @@ export function ProjectYearBurnChart({
   blendContractors?: boolean;
   /** Hover tooltips and month click — full budget report only. */
   interactive?: boolean;
+  /** Target cost line for dollar retainers (e.g. 75% of monthly fee). */
+  profitLine?: number | null;
 }) {
   const isPhone = useIsPhone();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -411,7 +418,12 @@ export function ProjectYearBurnChart({
     unit === "hours" ? 1 : 1,
   );
   const capPct = maxValue <= 0 ? 0 : (cap / maxValue) * 100;
+  const profitPct =
+    profitLine != null && profitLine > 0 && maxValue > 0
+      ? (profitLine / maxValue) * 100
+      : 0;
   const showCapLine = cap > 0;
+  const showProfitLine = profitLine != null && profitLine > 0;
   const hasContractor =
     !blendContractors &&
     displayBars.some((b) =>
@@ -534,20 +546,11 @@ export function ProjectYearBurnChart({
           >
             {displayBars.map((bar) => {
               const { total } = displaySplit(bar);
-              const currentMonth = bar.key === nowKey;
               return (
                 <div
                   key={`v-${bar.key}`}
                   className="relative min-w-0 flex-1 text-center"
                 >
-                  {interactive && currentMonth ? (
-                    <span
-                      className="pointer-events-none absolute inset-x-0 -top-4 text-[8px] font-semibold text-[var(--accent)]"
-                      style={{ fontWeight: 600 }}
-                    >
-                      This month
-                    </span>
-                  ) : null}
                   <span
                     className={cn(
                       "block max-w-full truncate tabular-nums text-[var(--text-muted)]",
@@ -571,8 +574,21 @@ export function ProjectYearBurnChart({
           >
             {showCapLine ? (
               <div
-                className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-[#ef4444]"
-                style={{ bottom: `${capPct}%` }}
+                className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed"
+                style={{
+                  bottom: `${capPct}%`,
+                  borderColor: CHART_BUDGET_STROKE,
+                }}
+                aria-hidden
+              />
+            ) : null}
+            {showProfitLine ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed"
+                style={{
+                  bottom: `${profitPct}%`,
+                  borderColor: CHART_TARGET_STROKE,
+                }}
                 aria-hidden
               />
             ) : null}
@@ -629,7 +645,6 @@ export function ProjectYearBurnChart({
                     isFutureMonth(bar.year, bar.monthIndex) && "italic",
                     selectedMonthKey === bar.key &&
                       "font-semibold text-[var(--text)]",
-                    bar.key === nowKey && "font-semibold text-[var(--accent)]",
                   )}
                 >
                   {multiYear
@@ -643,41 +658,12 @@ export function ProjectYearBurnChart({
         </div>
       </div>
       {!compact ? (
-        showCapLine ? (
-          <p className="mt-1 text-[10px] text-[var(--text-muted)]">
-            Monthly cap {formatValue(cap)}
-            <span className="ml-1 text-[#ef4444]">— —</span>
-            <span className="ml-2">· hatched = future / planned</span>
-            {hasContractor ? (
-              <span className="ml-2">
-                ·{" "}
-                <span
-                  className="inline-block h-2 w-2 rounded-full align-middle"
-                  style={{ backgroundColor: contractorColor }}
-                />{" "}
-                contractor
-              </span>
-            ) : null}
-          </p>
-        ) : (
-          <p className="mt-1 text-[10px] text-[var(--text-muted)]">
-            {unit === "amount"
-              ? "Planned billable spend by month"
-              : "Planned hours by month"}
-            {hasContractor ? (
-              <span className="ml-2">
-                ·{" "}
-                <span
-                  className="inline-block h-2 w-2 rounded-full align-middle"
-                  style={{ backgroundColor: contractorColor }}
-                />{" "}
-                contractor ·{" "}
-                <span className="inline-block h-2 w-2 rounded-full bg-[var(--accent)] align-middle" />{" "}
-                internal
-              </span>
-            ) : null}
-          </p>
-        )
+        <BudgetChartLegend
+          showContractor={hasContractor}
+          showTargetCost={showProfitLine}
+          showMonthlyBudget={showCapLine}
+          monthlyBudgetLabel={showCapLine ? formatValue(cap) : undefined}
+        />
       ) : null}
     </div>
   );

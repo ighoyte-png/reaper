@@ -47,6 +47,13 @@ export function slotWeekBandBounds(
   return { x, width: slotW, centerX: x + slotW / 2 };
 }
 
+export const CHART_BUDGET_STROKE = "#ef4444";
+export const CHART_BUDGET_DASH = "4 3";
+export const CHART_TARGET_STROKE = "var(--status-near)";
+export const CHART_LINE_STROKE_WIDTH = 1.25;
+export const CHART_FUTURE_PATH_DASH = "5 4";
+export const CHART_HOVER_TOP_STROKE = 1.25;
+
 export function ChartHoverPattern({ id }: { id: string }) {
   return (
     <pattern

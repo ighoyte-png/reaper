@@ -907,7 +907,7 @@ export function ScheduleGrid() {
       selectedProject
         ? budgetBurn(
             selectedProject,
-            assignmentsView,
+            state.assignments,
             state.people,
             false,
             new Date(),
@@ -917,14 +917,16 @@ export function ScheduleGrid() {
             state.project_contractor_expenses.filter(
               (e) => e.project_id === selectedProject.id,
             ),
+            state.organization_settings,
           )
         : null,
     [
       selectedProject,
-      assignmentsView,
+      state.assignments,
       state.people,
       state.project_members,
       state.project_contractor_expenses,
+      state.organization_settings,
     ],
   );
 
@@ -2672,6 +2674,7 @@ export function ScheduleGrid() {
       state.project_contractor_expenses.filter(
         (e) => e.project_id === project.id,
       ),
+      state.organization_settings,
     );
     if (burn.overBy > 0) {
       push(`Over total budget by ${formatHours(burn.overBy)}`, "warning");
@@ -3660,7 +3663,7 @@ export function ScheduleGrid() {
           : undefined,
         burn: budgetBurn(
           project,
-          assignmentsView,
+          state.assignments,
           state.people,
           false,
           new Date(),
@@ -3668,6 +3671,7 @@ export function ScheduleGrid() {
           state.project_contractor_expenses.filter(
             (e) => e.project_id === project.id,
           ),
+          state.organization_settings,
         ),
       }));
   }, [
@@ -3675,9 +3679,11 @@ export function ScheduleGrid() {
     sortedProjects,
     clientsById,
     assignmentsView,
+    state.assignments,
     state.people,
     state.project_members,
     state.project_contractor_expenses,
+    state.organization_settings,
     visiblePeople,
     startKey,
     endKey,
@@ -6069,6 +6075,7 @@ export function ScheduleGrid() {
                 state.project_contractor_expenses.filter(
                   (e) => e.project_id === project.id,
                 ),
+                state.organization_settings,
               );
               const settings = state.organization_settings;
               const moneyCur = projectCurrency(
