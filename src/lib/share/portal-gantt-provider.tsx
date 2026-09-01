@@ -354,6 +354,7 @@ function buildPortalGanttContext(
       assignments: [],
     }),
     ensureProjectData: async () => {},
+    ensureBoundAssignmentTasks: async () => {},
     ensureScheduleRange: async () => {},
     setActiveRealtimeProjectIds: () => {},
     fetchProjectBudgetBurnsRpc: async () => null,
