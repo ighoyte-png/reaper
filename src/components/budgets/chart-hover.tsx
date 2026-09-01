@@ -8,6 +8,7 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { cn } from "@/lib/cn";
 
 export function progressWeekBandBounds(
   index: number,
@@ -52,9 +53,28 @@ export function progressWeekLineSegmentBounds(
     const end = xAt(index);
     return { x, width: end - x, centerX: (x + end) / 2 };
   }
-  const x = xAt(0);
-  const end = xAt(1);
-  return { x, width: end - x, centerX: (x + end) / 2 };
+  const end = xAt(0);
+  let width = end - padL;
+  if (width <= 0 && pointCount > 1) {
+    width = (xAt(1) - padL) / 2;
+  } else if (width <= 0) {
+    width = plotW;
+  }
+  return { x: padL, width, centerX: padL + width / 2 };
+}
+
+/** Vertex indices at each end of the progress line segment for week `index`. */
+export function progressWeekSegmentEndpoints(
+  index: number,
+  pointCount: number,
+): { startIdx: number; endIdx: number } {
+  if (pointCount <= 1) {
+    return { startIdx: 0, endIdx: 0 };
+  }
+  if (index > 0) {
+    return { startIdx: index - 1, endIdx: index };
+  }
+  return { startIdx: 0, endIdx: 0 };
 }
 
 export function slotWeekBandBounds(
@@ -197,6 +217,71 @@ export function ChartHoverTooltip({
       ) : null}
     </div>,
     document.body,
+  );
+}
+
+export function useSvgPointAnchor(
+  svgRef: RefObject<SVGSVGElement | null>,
+  x: number | null,
+  y: number | null,
+  viewW: number,
+  viewH: number,
+): { left: number; top: number } | null {
+  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+
+  const update = () => {
+    if (x == null || y == null) {
+      setAnchor(null);
+      return;
+    }
+    const svg = svgRef.current;
+    if (!svg) {
+      setAnchor(null);
+      return;
+    }
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      setAnchor(null);
+      return;
+    }
+    setAnchor({
+      left: rect.left + (x / viewW) * rect.width,
+      top: rect.top + (y / viewH) * rect.height,
+    });
+  };
+
+  useLayoutEffect(() => {
+    update();
+  }, [x, y, viewW, viewH, svgRef]);
+
+  useEffect(() => {
+    if (x == null || y == null) return;
+    const onScrollOrResize = () => update();
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
+  }, [x, y, viewW, viewH]);
+
+  return anchor;
+}
+
+export function ChartTodayChip({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        className,
+      )}
+      style={{
+        backgroundColor: `${CHART_TODAY_COLOR}26`,
+        color: CHART_TODAY_COLOR,
+      }}
+    >
+      Today
+    </span>
   );
 }
 

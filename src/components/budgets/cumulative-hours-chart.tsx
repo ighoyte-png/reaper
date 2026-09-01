@@ -6,6 +6,7 @@ import { ChartColumn, ChartLine } from "lucide-react";
 import {
   ChartHoverPattern,
   ChartHoverTooltip,
+  ChartTodayChip,
   ChartWeekHoverBand,
   CHART_BUDGET_DASH,
   CHART_BUDGET_STROKE,
@@ -13,10 +14,11 @@ import {
   CHART_LINE_STROKE_WIDTH,
   CHART_TARGET_STROKE,
   CHART_TODAY_COLOR,
-  progressWeekBandBounds,
   progressWeekLineSegmentBounds,
+  progressWeekSegmentEndpoints,
   slotWeekBandBounds,
   useSvgChartAnchor,
+  useSvgPointAnchor,
 } from "@/components/budgets/chart-hover";
 import { BudgetChartLegend } from "@/components/budgets/budget-chart-legend";
 import { cn } from "@/lib/cn";
@@ -262,6 +264,7 @@ function ProgressLineChart({
   todayAnchorDateKey?: string | null;
 }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [todayDotHover, setTodayDotHover] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const hatchId = useId().replace(/:/g, "");
   const w = 720;
@@ -482,18 +485,17 @@ function ProgressLineChart({
       endMs > startMs
         ? Math.min(1, Math.max(0, (todayMs - startMs) / (endMs - startMs)))
         : 0.5;
-    const prevIdx = idx > 0 ? idx - 1 : 0;
-    const x0 = idx > 0 ? xAt(prevIdx) : xAt(0);
+    const seg = progressWeekLineSegmentBounds(
+      idx,
+      points.length,
+      padL,
+      plotW,
+      xAt,
+    );
+    const x0 = seg.x;
     const x1 = xAt(idx);
-    const xEnd =
-      idx < points.length - 1 ? xAt(idx + 1) : x1;
-    const todayX =
-      idx > 0
-        ? x0 + (x1 - x0) * frac
-        : points.length > 1
-          ? xAt(0) + (xEnd - xAt(0)) * frac
-          : xAt(0);
-    const vStart = idx > 0 ? valueAt(prevIdx) : contractorBaseline;
+    const todayX = seg.x + seg.width * frac;
+    const vStart = idx > 0 ? valueAt(idx - 1) : contractorBaseline;
     const vToday =
       todayAnchorValue != null
         ? contractorBaseline + todayAnchorValue
@@ -563,16 +565,30 @@ function ProgressLineChart({
     hover?.isCurrentWeek && todayAnchorValue != null;
   const hoverBand =
     hoverIdx != null
-      ? hoverIdx === thisWeekIdx
-        ? progressWeekLineSegmentBounds(
-            hoverIdx,
-            points.length,
-            padL,
-            plotW,
-            xAt,
-          )
-        : progressWeekBandBounds(hoverIdx, points.length, padL, plotW)
+      ? progressWeekLineSegmentBounds(
+          hoverIdx,
+          points.length,
+          padL,
+          plotW,
+          xAt,
+        )
       : null;
+
+  const hoverEndpoints =
+    hoverIdx != null
+      ? progressWeekSegmentEndpoints(hoverIdx, points.length)
+      : null;
+
+  function vertexDotRadius(pointIdx: number) {
+    if (
+      hoverEndpoints &&
+      (pointIdx === hoverEndpoints.startIdx ||
+        pointIdx === hoverEndpoints.endIdx)
+    ) {
+      return 3.5;
+    }
+    return 2;
+  }
 
   const tooltipAnchor = useSvgChartAnchor(
     svgRef,
@@ -582,12 +598,23 @@ function ProgressLineChart({
     h,
   );
 
+  const todayTooltipAnchor = useSvgPointAnchor(
+    svgRef,
+    todayDotHover && todaySplit ? todaySplit.x : null,
+    todayDotHover && todaySplit ? todaySplit.y : null,
+    w,
+    h,
+  );
+
   return (
     <div className="overflow-x-auto overscroll-x-contain">
       <div
         className="relative"
         style={{ minWidth: CHART_MIN_WIDTH_PX }}
-        onMouseLeave={() => setHoverIdx(null)}
+        onMouseLeave={() => {
+          setHoverIdx(null);
+          setTodayDotHover(false);
+        }}
       >
       {hover && hoverIdx != null ? (
       <ChartHoverTooltip anchor={tooltipAnchor}>
@@ -652,13 +679,21 @@ function ProgressLineChart({
           </div>
       </ChartHoverTooltip>
       ) : null}
+      {todayDotHover && todaySplit ? (
+        <ChartHoverTooltip anchor={todayTooltipAnchor} showArrow={false}>
+          <ChartTodayChip />
+        </ChartHoverTooltip>
+      ) : null}
       <svg
         ref={svgRef}
         viewBox={`0 0 ${w} ${h}`}
         className="h-auto w-full overflow-hidden"
         role="img"
         aria-label="Project progress chart"
-        onMouseLeave={() => setHoverIdx(null)}
+        onMouseLeave={() => {
+          setHoverIdx(null);
+          setTodayDotHover(false);
+        }}
       >
         <defs>
           <ChartHoverPattern id={`week-hover-hatch-${hatchId}`} />
@@ -836,20 +871,16 @@ function ProgressLineChart({
         ))}
 
         {points.map((p, i) => {
-          const showTodayDot = Boolean(todaySplit && p.isCurrentWeek);
           const cx = xAt(i);
           const cy = yAt(valueAt(i));
           const band = bandAt(valueAt(i));
-          const weekBand =
-            p.isCurrentWeek && thisWeekIdx === i
-              ? progressWeekLineSegmentBounds(
-                  i,
-                  points.length,
-                  padL,
-                  plotW,
-                  xAt,
-                )
-              : progressWeekBandBounds(i, points.length, padL, plotW);
+          const weekBand = progressWeekLineSegmentBounds(
+            i,
+            points.length,
+            padL,
+            plotW,
+            xAt,
+          );
           return (
             <g key={p.key}>
               <rect
@@ -861,29 +892,36 @@ function ProgressLineChart({
                 className="cursor-pointer"
                 onMouseEnter={() => setHoverIdx(i)}
               />
-              {showTodayDot ? null : (
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={hoverIdx === i ? 3.5 : 2}
-                  fill={strokeFor(band)}
-                  className="pointer-events-none"
-                />
-              )}
+              <circle
+                cx={cx}
+                cy={cy}
+                r={vertexDotRadius(i)}
+                fill={strokeFor(band)}
+                className="pointer-events-none"
+              />
             </g>
           );
         })}
 
         {todaySplit ? (
-          <circle
-            cx={todaySplit.x}
-            cy={todaySplit.y}
-            r={4}
-            fill={CHART_TODAY_COLOR}
-            stroke="var(--bg)"
-            strokeWidth={2}
-            className="pointer-events-none"
-          />
+          <g>
+            <circle
+              cx={todaySplit.x}
+              cy={todaySplit.y}
+              r={todayDotHover ? 3.5 : 2}
+              fill={CHART_TODAY_COLOR}
+              className="pointer-events-none"
+            />
+            <circle
+              cx={todaySplit.x}
+              cy={todaySplit.y}
+              r={6}
+              fill="transparent"
+              className="cursor-pointer"
+              onMouseEnter={() => setTodayDotHover(true)}
+              onMouseLeave={() => setTodayDotHover(false)}
+            />
+          </g>
         ) : null}
       </svg>
       </div>
