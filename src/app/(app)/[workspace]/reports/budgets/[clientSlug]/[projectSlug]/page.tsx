@@ -1596,8 +1596,8 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             ) : null}
           </ul>
 
-          <div className="grid gap-4 lg:grid-cols-2 lg:items-end">
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+          <section className="h-full rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">Forecast vs Budget</h2>
             <p className="mb-3 text-xs text-[var(--text-muted)]">
               {periodHeading} ·{" "}
@@ -1715,7 +1715,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             </dl>
           </section>
 
-          <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+          <section className="h-full rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
             <h2 className="mb-3 text-sm font-semibold">
               {isRetainer ? `Team · ${periodHeading}` : "Team"}
             </h2>

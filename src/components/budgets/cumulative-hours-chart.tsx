@@ -814,25 +814,13 @@ function ProgressLineChart({
           />
         ))}
 
-        {todaySplit ? (
-          <>
-            <circle
-              cx={todaySplit.x}
-              cy={todaySplit.y}
-              r={3.5}
-              fill={PROGRESS_TODAY_COLOR}
-              stroke="var(--bg)"
-              strokeWidth={1.5}
-              className="pointer-events-none"
-            />
-          </>
-        ) : null}
-
         {points.map((p, i) => {
-          if (todaySplit && i === thisWeekIdx) return null;
-          const cx = xAt(i);
-          const cy = yAt(valueAt(i));
-          const band = bandAt(valueAt(i));
+          const isTodayWeek = todaySplit != null && i === thisWeekIdx;
+          const cx = isTodayWeek ? todaySplit.x : xAt(i);
+          const cy = isTodayWeek ? todaySplit.y : yAt(valueAt(i));
+          const band = bandAt(
+            isTodayWeek ? todaySplit.val : valueAt(i),
+          );
           const weekBand = progressWeekBandBounds(i, points.length, padL, plotW);
           return (
             <g key={p.key}>
@@ -848,27 +836,29 @@ function ProgressLineChart({
               <circle
                 cx={cx}
                 cy={cy}
-                r={hoverIdx === i ? 3.5 : 2}
-                fill={strokeFor(band)}
+                r={hoverIdx === i || isTodayWeek ? 3.5 : 2}
+                fill={isTodayWeek ? PROGRESS_TODAY_COLOR : strokeFor(band)}
+                stroke={isTodayWeek ? "var(--bg)" : undefined}
+                strokeWidth={isTodayWeek ? 1.5 : undefined}
                 className="pointer-events-none"
               />
             </g>
           );
         })}
-      </svg>
-      {todaySplit ? (
-        <div
-          className="pointer-events-none absolute z-10 -translate-x-1/2"
-          style={{
-            left: `${(todaySplit.x / w) * 100}%`,
-            top: `${((todaySplit.y - 14) / h) * 100}%`,
-          }}
-        >
-          <span className="rounded-md border border-[var(--border)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text)] shadow-sm">
+
+        {todaySplit ? (
+          <text
+            x={todaySplit.x}
+            y={todaySplit.y - 10}
+            textAnchor="middle"
+            fill={PROGRESS_TODAY_COLOR}
+            style={{ fontSize: 8, fontWeight: 600 }}
+            className="pointer-events-none"
+          >
             Today
-          </span>
-        </div>
-      ) : null}
+          </text>
+        ) : null}
+      </svg>
       </div>
     </div>
   );
