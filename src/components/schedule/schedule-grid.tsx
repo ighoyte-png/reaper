@@ -231,6 +231,7 @@ export function ScheduleGrid() {
     authError,
     ensureScheduleRange,
     ensureProjectData,
+    ensureBoundAssignmentTasks,
     setActiveRealtimeProjectIds,
   } = useData();
   const viewAs = useViewAsOptional();
@@ -1182,6 +1183,7 @@ export function ScheduleGrid() {
       return (
         <BoundAssignmentNotesTooltip
           assignmentId={assignmentId}
+          notesHtml={notes}
           projectHref={projectHref}
         />
       );
@@ -1555,6 +1557,18 @@ export function ScheduleGrid() {
     state.people,
     projectsById,
   ]);
+
+  const boundTaskHydrationKey = useMemo(
+    () =>
+      [...new Set(state.assignment_bound_tasks.map((r) => r.task_id))]
+        .sort()
+        .join(","),
+    [state.assignment_bound_tasks],
+  );
+
+  useEffect(() => {
+    void ensureBoundAssignmentTasks();
+  }, [ensureBoundAssignmentTasks, boundTaskHydrationKey]);
 
   useEffect(() => {
     const loadIds = new Set<string>();

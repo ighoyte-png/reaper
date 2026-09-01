@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   assignmentIsOutOfSync,
+  parseBoundTasksNotesTitles,
   sortBoundTaskIdsByListOrder,
 } from "@/lib/domain/assignment-bound-tasks";
 import { useData } from "@/lib/data/store";
@@ -12,28 +13,43 @@ import type { Project } from "@/lib/types";
 
 export function BoundAssignmentNotesTooltip({
   assignmentId,
+  notesHtml,
   projectHref,
 }: {
   assignmentId: string;
+  notesHtml?: string | null;
   projectHref: (
     project: Pick<Project, "client_id" | "slug">,
     search?: string,
   ) => string;
 }) {
-  const { state } = useData();
+  const { state, ensureBoundAssignmentTasks } = useData();
 
-  const { heading, taskIds, project } = useMemo(() => {
+  useEffect(() => {
+    void ensureBoundAssignmentTasks();
+  }, [ensureBoundAssignmentTasks]);
+
+  const { heading, rows, project } = useMemo(() => {
     const assignment = state.assignments.find((a) => a.id === assignmentId);
     const projectRow = assignment
       ? state.projects.find((p) => p.id === assignment.project_id)
       : null;
-    const ids = state.assignment_bound_tasks
+    const binds = state.assignment_bound_tasks
       .filter((r) => r.assignment_id === assignmentId)
-      .map((r) => r.task_id);
-    const ordered = sortBoundTaskIdsByListOrder(
-      ids,
-      state.tasks,
-      state.task_lists,
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const bindIds = binds.map((r) => r.task_id);
+    const allTasksLoaded = bindIds.every((id) =>
+      state.tasks.some((t) => t.id === id),
+    );
+    const orderedIds = allTasksLoaded
+      ? sortBoundTaskIdsByListOrder(
+          bindIds,
+          state.tasks,
+          state.task_lists,
+        )
+      : bindIds;
+    const parsedTitles = parseBoundTasksNotesTitles(
+      notesHtml ?? assignment?.notes,
     );
     const oos = assignment
       ? assignmentIsOutOfSync(
@@ -48,11 +64,20 @@ export function BoundAssignmentNotesTooltip({
       heading: oos
         ? "Task Dates out of Sync"
         : "Tasks Bound to Assignment",
-      taskIds: ordered,
+      rows: orderedIds.map((taskId, index) => {
+        const task = state.tasks.find((t) => t.id === taskId);
+        const title =
+          task?.title?.trim() ||
+          parsedTitles[index]?.trim() ||
+          parsedTitles.find((_, i) => bindIds[i] === taskId)?.trim() ||
+          "Task";
+        return { taskId, title };
+      }),
       project: projectRow ?? null,
     };
   }, [
     assignmentId,
+    notesHtml,
     state.assignments,
     state.assignment_bound_tasks,
     state.tasks,
@@ -60,7 +85,7 @@ export function BoundAssignmentNotesTooltip({
     state.projects,
   ]);
 
-  if (taskIds.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <div
@@ -76,10 +101,8 @@ export function BoundAssignmentNotesTooltip({
         <strong>{heading}</strong>
       </p>
       <ul>
-        {taskIds.map((taskId) => {
-          const task = state.tasks.find((t) => t.id === taskId);
-          const title = task?.title?.trim() || "Task";
-          if (project && task) {
+        {rows.map(({ taskId, title }) => {
+          if (project) {
             return (
               <li key={taskId}>
                 <Link

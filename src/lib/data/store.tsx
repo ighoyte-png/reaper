@@ -922,6 +922,8 @@ interface DataContextValue {
     assignments: import("@/lib/types").Assignment[];
   }>;
   ensureProjectData: (projectId: string) => Promise<void>;
+  /** Hydrate task rows referenced by assignment_bound_tasks (schedule tooltips). */
+  ensureBoundAssignmentTasks: () => Promise<void>;
   ensureScheduleRange: (
     startKey: string,
     endKey: string,
@@ -1035,6 +1037,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }> | null>(null);
   const notificationInboxInflight = useRef<Promise<void> | null>(null);
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
+  const boundAssignmentTasksInflight = useRef<Promise<void> | null>(null);
   const scheduleRangeInflight = useRef<Promise<{
     leaveDays: LeaveDay[];
     assignments: Assignment[];
@@ -2615,6 +2618,51 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [mode, state.organization.id, shouldIgnoreLocalEcho],
   );
 
+  const ensureBoundAssignmentTasks = useCallback(async () => {
+    if (mode !== "supabase") return;
+    const organizationId = state.organization.id;
+    if (!organizationId) return;
+
+    const missingTaskIds = () => {
+      const known = new Set(stateRef.current.tasks.map((t) => t.id));
+      return [
+        ...new Set(
+          stateRef.current.assignment_bound_tasks
+            .map((r) => r.task_id)
+            .filter((id) => id && !known.has(id)),
+        ),
+      ];
+    };
+
+    let missing = missingTaskIds();
+    if (missing.length === 0) return;
+
+    if (boundAssignmentTasksInflight.current) {
+      await boundAssignmentTasksInflight.current;
+      missing = missingTaskIds();
+      if (missing.length === 0) return;
+    }
+
+    const client = supabaseRef.current ?? createClient();
+    const run = (async () => {
+      try {
+        const tasks = await loadMentionTasks(client, organizationId, missing);
+        if (tasks.length === 0) return;
+        setState((prev) => {
+          const byId = new Map(prev.tasks.map((t) => [t.id, t]));
+          for (const t of tasks) byId.set(t.id, t);
+          return { ...prev, tasks: [...byId.values()] };
+        });
+      } catch (err) {
+        console.error(err);
+      } finally {
+        boundAssignmentTasksInflight.current = null;
+      }
+    })();
+    boundAssignmentTasksInflight.current = run;
+    await run;
+  }, [mode, state.organization.id]);
+
   const ensureScheduleRange = useCallback(
     async (
       startKey: string,
@@ -3191,6 +3239,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureOrgMilestones,
       ensureMentionComments,
       ensureProjectData,
+      ensureBoundAssignmentTasks,
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
@@ -6863,6 +6912,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureOrgMilestones,
       ensureMentionComments,
       ensureProjectData,
+      ensureBoundAssignmentTasks,
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       sendOrgBroadcast,

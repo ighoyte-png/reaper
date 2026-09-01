@@ -7,6 +7,7 @@ import {
   calendarDayDelta,
   desiredRangeCollidesOnProjectRow,
   isBoundTasksNotes,
+  parseBoundTasksNotesTitles,
   nextAvailableScheduleRange,
   preferredBoundAssignmentForTask,
   rangeOverlapsAssignmentWithBoundTasks,
@@ -95,6 +96,12 @@ describe("assignment-bound-tasks", () => {
   it("uses out-of-sync heading when requested", () => {
     const html = boundTasksNotesHtml(["Alpha"], "out_of_sync");
     expect(html).toContain("Task Dates out of Sync");
+  });
+
+  it("parses task titles from bound assignment notes html", () => {
+    const html = boundTasksNotesHtml(["Alpha", "Beta & Gamma"]);
+    expect(parseBoundTasksNotesTitles(html)).toEqual(["Alpha", "Beta & Gamma"]);
+    expect(parseBoundTasksNotesTitles("<p>plain</p>")).toEqual([]);
   });
 
   it("sorts bound task ids by list display order", () => {

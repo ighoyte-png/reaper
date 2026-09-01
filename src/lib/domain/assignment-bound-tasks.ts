@@ -45,6 +45,21 @@ export function isBoundTasksNotes(html: string | null | undefined): boolean {
   return Boolean(html?.includes(BOUND_TASKS_NOTES_MARKER));
 }
 
+/** Task titles embedded in bind-generated assignment notes (schedule tooltip fallback). */
+export function parseBoundTasksNotesTitles(
+  html: string | null | undefined,
+): string[] {
+  if (!html || !isBoundTasksNotes(html)) return [];
+  const titles: string[] = [];
+  const re = /<li>([^<]*)<\/li>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    const title = unescapeHtml(match[1] ?? "").trim();
+    if (title) titles.push(title);
+  }
+  return titles;
+}
+
 export function isTasksRemovedNote(html: string | null | undefined): boolean {
   if (!html) return false;
   const text = html.replace(/<[^>]+>/g, "").trim();
@@ -608,4 +623,12 @@ function escapeHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function unescapeHtml(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&gt;/g, ">")
+    .replace(/&lt;/g, "<")
+    .replace(/&amp;/g, "&");
 }
