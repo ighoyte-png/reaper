@@ -6847,6 +6847,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
           url: null as string | null,
         };
         let updatedProject: Project | null = null;
+        const portalAllowed =
+          state.organization_settings.client_portal_enabled !== false;
+        if (
+          !portalAllowed &&
+          (action === "enable" || action === "rotate")
+        ) {
+          return result;
+        }
         patch((prev) => {
           const project = prev.projects.find((p) => p.id === projectId);
           if (!project) return prev;

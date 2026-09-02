@@ -4,6 +4,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { loadProjectPortalWorkspace } from "@/lib/supabase/api";
 import { sanitizeProjectPortal } from "@/lib/share/sanitize";
 import { resolveAvatarUrl } from "@/lib/supabase/avatar";
+import { resolveOrgBrandingLogoUrl } from "@/lib/storage/resolve-org-branding";
+import { normalizeOrgBudgetSettings } from "@/lib/domain/org-settings";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -63,11 +65,32 @@ export async function GET(_request: Request, { params }: Params) {
       return notFound();
     }
 
+    const { data: orgSettingsRow } = await admin
+      .from("organization_settings")
+      .select(
+        "client_portal_enabled, client_portal_company_name, client_portal_logo_light_attachment_id, client_portal_logo_dark_attachment_id",
+      )
+      .eq("organization_id", project.organization_id)
+      .maybeSingle();
+    const orgSettings = normalizeOrgBudgetSettings(
+      (orgSettingsRow as Record<string, unknown> | null) ?? {
+        organization_id: String(project.organization_id),
+      },
+      String(project.organization_id),
+    );
+    if (!orgSettings.client_portal_enabled) {
+      return notFound();
+    }
+
     const workspace = await loadProjectPortalWorkspace(
       admin,
       String(project.organization_id),
       String(project.id),
     );
+    workspace.organization_settings = {
+      ...workspace.organization_settings,
+      ...orgSettings,
+    };
     workspace.people = await Promise.all(
       workspace.people.map(async (p) => ({
         ...p,
@@ -78,6 +101,22 @@ export async function GET(_request: Request, { params }: Params) {
     if (!portal) {
       return notFound();
     }
+
+    const [logoLightUrl, logoDarkUrl] = await Promise.all([
+      resolveOrgBrandingLogoUrl(
+        admin,
+        orgSettings.client_portal_logo_light_attachment_id,
+      ),
+      resolveOrgBrandingLogoUrl(
+        admin,
+        orgSettings.client_portal_logo_dark_attachment_id,
+      ),
+    ]);
+    portal.branding = {
+      companyName: orgSettings.client_portal_company_name,
+      logoLightUrl,
+      logoDarkUrl,
+    };
 
     return NextResponse.json(
       { portal },

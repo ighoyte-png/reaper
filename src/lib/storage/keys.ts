@@ -22,6 +22,8 @@ export function buildStorageKey(
       return `notes/${id}/${objectId}.${ext}`;
     case "custom_emoji":
       return `emojis/${id}/${objectId}.${ext}`;
+    case "org_branding":
+      return `org-branding/${id}/${objectId}.${ext}`;
     default: {
       const _exhaustive: never = entityType;
       return _exhaustive;

@@ -2264,6 +2264,12 @@ export async function upsertOrganizationSettingsRow(
     capacity_over_pct: settings.capacity_over_pct,
     currency_enabled: Boolean(settings.currency_enabled),
     usd_to_cad_rate: settings.usd_to_cad_rate,
+    client_portal_enabled: Boolean(settings.client_portal_enabled),
+    client_portal_company_name: settings.client_portal_company_name,
+    client_portal_logo_light_attachment_id:
+      settings.client_portal_logo_light_attachment_id,
+    client_portal_logo_dark_attachment_id:
+      settings.client_portal_logo_dark_attachment_id,
     updated_at: new Date().toISOString(),
   };
   const { error } = await supabase
@@ -2280,6 +2286,23 @@ export async function upsertOrganizationSettingsRow(
     const {
       currency_enabled: _e,
       usd_to_cad_rate: _r,
+      ...rest
+    } = payload;
+    const retry = await supabase
+      .from("organization_settings")
+      .upsert(rest, { onConflict: "organization_id" });
+    if (retry.error) throw retry.error;
+    return;
+  }
+  const missingPortal =
+    /Could not find the 'client_portal_/i.test(error.message) ||
+    (error.code === "PGRST204" && /client_portal_/i.test(error.message));
+  if (missingPortal) {
+    const {
+      client_portal_enabled: _pe,
+      client_portal_company_name: _pn,
+      client_portal_logo_light_attachment_id: _pl,
+      client_portal_logo_dark_attachment_id: _pd,
       ...rest
     } = payload;
     const retry = await supabase

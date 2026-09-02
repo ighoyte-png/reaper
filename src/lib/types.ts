@@ -68,6 +68,14 @@ export interface OrganizationSettings {
   currency_enabled: boolean;
   /** Live Admin rate: 1 USD = usd_to_cad_rate CAD. */
   usd_to_cad_rate: number;
+  /** Org master switch for per-project Client Portal. Default true. */
+  client_portal_enabled: boolean;
+  /** White-label company name shown in the Client Portal. */
+  client_portal_company_name: string | null;
+  /** Light-mode logo attachment id for Client Portal chrome. */
+  client_portal_logo_light_attachment_id: string | null;
+  /** Dark-mode logo attachment id for Client Portal chrome. */
+  client_portal_logo_dark_attachment_id: string | null;
 }
 
 export interface Profile {

@@ -176,6 +176,11 @@ export interface PortalHoursRetainer {
 /** Public, read-only per-project client portal payload. */
 export interface ProjectPortalPayload {
   organizationName: string;
+  branding: {
+    companyName: string | null;
+    logoLightUrl: string | null;
+    logoDarkUrl: string | null;
+  };
   project: {
     id: string;
     name: string;
@@ -440,6 +445,12 @@ export function sanitizeProjectPortal(
 
   return {
     organizationName: state.organization.name,
+    branding: {
+      companyName:
+        state.organization_settings.client_portal_company_name?.trim() || null,
+      logoLightUrl: null,
+      logoDarkUrl: null,
+    },
     project: {
       id: project.id,
       name: project.name,

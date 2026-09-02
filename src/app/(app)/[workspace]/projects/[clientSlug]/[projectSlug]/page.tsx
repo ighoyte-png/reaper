@@ -797,7 +797,9 @@ export default function ProjectDetailPage() {
             </section>
             ) : null}
 
-            {!isSandbox && (canEdit || (isPublicShare && shareResult)) ? (
+            {!isSandbox &&
+            state.organization_settings.client_portal_enabled !== false &&
+            (canEdit || (isPublicShare && shareResult)) ? (
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <div className="mb-2 flex items-center gap-2">
                   <Link2 size={14} className="text-[var(--text-muted)]" />
@@ -1095,7 +1097,8 @@ export default function ProjectDetailPage() {
                   </Link>
                 </section>
 
-              {canEdit || (isPublicShare && shareResult) ? (
+              {state.organization_settings.client_portal_enabled !== false &&
+              (canEdit || (isPublicShare && shareResult)) ? (
                 <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                   <div className="mb-2 flex items-center gap-2">
                     <Link2 size={14} className="text-[var(--text-muted)]" />

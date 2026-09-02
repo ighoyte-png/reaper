@@ -4,7 +4,8 @@ export type AttachmentEntityType =
   | "profile_picture"
   | "comment"
   | "task_note"
-  | "custom_emoji";
+  | "custom_emoji"
+  | "org_branding";
 
 /** inline = embedded in WYSIWYG HTML; attached = email-style file chip. */
 export type AttachmentPlacement = "inline" | "attached";

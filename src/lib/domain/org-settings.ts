@@ -15,6 +15,10 @@ export const DEFAULT_ORG_BUDGET_SETTINGS: OrganizationSettings = {
   capacity_over_pct: 100,
   currency_enabled: false,
   usd_to_cad_rate: 1,
+  client_portal_enabled: true,
+  client_portal_company_name: null,
+  client_portal_logo_light_attachment_id: null,
+  client_portal_logo_dark_attachment_id: null,
 };
 
 export function normalizeOrgBudgetSettings(
@@ -22,6 +26,10 @@ export function normalizeOrgBudgetSettings(
   organizationId = "",
 ): OrganizationSettings {
   const d = DEFAULT_ORG_BUDGET_SETTINGS;
+  const companyName =
+    typeof partial?.client_portal_company_name === "string"
+      ? partial.client_portal_company_name.trim() || null
+      : null;
   return {
     organization_id: partial?.organization_id || organizationId || d.organization_id,
     default_cost_rate: numOr(partial?.default_cost_rate, d.default_cost_rate),
@@ -42,6 +50,15 @@ export function normalizeOrgBudgetSettings(
     capacity_over_pct: numOr(partial?.capacity_over_pct, d.capacity_over_pct),
     currency_enabled: Boolean(partial?.currency_enabled),
     usd_to_cad_rate: Math.max(0.01, numOr(partial?.usd_to_cad_rate, d.usd_to_cad_rate)),
+    client_portal_enabled:
+      partial?.client_portal_enabled == null
+        ? d.client_portal_enabled
+        : Boolean(partial.client_portal_enabled),
+    client_portal_company_name: companyName,
+    client_portal_logo_light_attachment_id:
+      partial?.client_portal_logo_light_attachment_id?.trim() || null,
+    client_portal_logo_dark_attachment_id:
+      partial?.client_portal_logo_dark_attachment_id?.trim() || null,
   };
 }
 

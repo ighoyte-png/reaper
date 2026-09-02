@@ -10,6 +10,8 @@ export function BrandLockup({
   showWordmark = true,
   compact = false,
   stacked = false,
+  logoSrc = null,
+  wordmark = "Reaper",
 }: {
   className?: string;
   logoClassName?: string;
@@ -19,7 +21,14 @@ export function BrandLockup({
   showWordmark?: boolean;
   compact?: boolean;
   stacked?: boolean;
+  /** Custom logo URL; falls back to the Reaper mark. */
+  logoSrc?: string | null;
+  /** Custom wordmark; falls back to “Reaper”. */
+  wordmark?: string | null;
 }) {
+  const name = (wordmark ?? "").trim() || "Reaper";
+  const customLogo = Boolean(logoSrc?.trim());
+
   return (
     <div
       className={cn(
@@ -30,14 +39,32 @@ export function BrandLockup({
         className,
       )}
     >
-      {compact && !stacked ? (
+      {customLogo ? (
+        <span
+          className={cn(
+            "flex shrink-0 items-center",
+            compact && !stacked ? "h-8" : stacked ? "h-16" : "h-9",
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={logoSrc!}
+            alt={name}
+            className={cn(
+              "max-w-[9rem] object-contain",
+              compact && !stacked ? "h-6" : stacked ? "h-16" : "h-9",
+              logoClassName,
+            )}
+          />
+        </span>
+      ) : compact && !stacked ? (
         <span className="flex h-8 shrink-0 items-center">
-          <ReaperLogo className={cn("h-6", logoClassName)} title="Reaper" />
+          <ReaperLogo className={cn("h-6", logoClassName)} title={name} />
         </span>
       ) : (
         <ReaperLogo
           className={cn(stacked ? "h-16" : "h-9", logoClassName)}
-          title="Reaper"
+          title={name}
         />
       )}
       {showWordmark ? (
@@ -53,7 +80,7 @@ export function BrandLockup({
               wordmarkClassName,
             )}
           >
-            Reaper
+            {name}
           </span>
           {showVersion ? (
             <span

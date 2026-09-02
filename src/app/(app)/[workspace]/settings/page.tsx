@@ -24,6 +24,7 @@ import { personAvatarColor } from "@/lib/domain/people";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import type { HolidayCalendar, HolidayCalendarDay } from "@/lib/types";
 import { AdminBudgetSettingsForm } from "@/components/settings/admin-budget-settings-form";
+import { ClientPortalSettings } from "@/components/settings/client-portal-settings";
 import { CustomEmojisSettings } from "@/components/settings/custom-emojis-settings";
 import { NotificationDevicesSettings } from "@/components/settings/notification-devices-settings";
 import { normalizeOrgBudgetSettings } from "@/lib/domain/org-settings";
@@ -1335,6 +1336,7 @@ export default function SettingsPage() {
                   }}
                 />
               </div>
+              <ClientPortalSettings />
               {admin ? <CustomEmojisSettings /> : null}
             </Panel>
           ) : null}

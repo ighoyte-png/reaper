@@ -132,6 +132,18 @@ export async function assertCanAttachToEntity(
     return { ok: true };
   }
 
+  if (entityType === "org_branding") {
+    if (role !== "admin" && role !== "manager") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only workspace managers can upload Client Portal branding",
+      };
+    }
+    // entityId is organizationId:light|dark (or organization id).
+    return { ok: true };
+  }
+
   return { ok: false, status: 400, error: "Invalid entity type" };
 }
 

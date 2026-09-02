@@ -68,6 +68,7 @@ import { toDateKey } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { DemoState } from "@/lib/types";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
+import { useProjectPortalChrome } from "@/components/share/project-portal-chrome";
 
 function portalChartProject(
   projectId: string,
@@ -262,6 +263,7 @@ function PortalTaskRow({
 export default function ProjectSharePage() {
   const params = useParams<{ token: string }>();
   const token = params.token;
+  const { setBranding } = useProjectPortalChrome();
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portal, setPortal] = useState<ProjectPortalPayload | null>(null);
@@ -286,7 +288,13 @@ export default function ProjectSharePage() {
       ? `${portal.clientName} · ${portal.project.name}`
       : portal.project.name
     : "Client portal";
-  useDocumentTitle(portalTabTitle);
+  const portalAppName =
+    portal?.branding.companyName?.trim() || "Reaper";
+  useDocumentTitle(portalTabTitle, portalAppName);
+
+  useEffect(() => {
+    if (portal?.branding) setBranding(portal.branding);
+  }, [portal, setBranding]);
 
   const yearBars =
     portal?.hoursRetainer != null
@@ -939,7 +947,9 @@ export default function ProjectSharePage() {
     <div className="mx-auto max-w-[1400px] space-y-6 p-4 sm:p-8">
       <div>
         <p className="text-xs text-[var(--text-muted)]">
-          Client Dashboard - {portal.clientName ?? "Client"}
+          {portal.branding.companyName?.trim()
+            ? `${portal.branding.companyName.trim()} Client Dashboard - ${portal.clientName ?? "Client"}`
+            : `Client Dashboard - ${portal.clientName ?? "Client"}`}
         </p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">
           {portal.project.name}
