@@ -349,6 +349,7 @@ function ClientsPageContent() {
       hoursPerDay: hours,
       assignments: state.assignments,
       leaveDays: state.leave_days,
+      assignmentBoundTasks: state.assignment_bound_tasks,
       newId,
       upsertAssignment,
       deleteAssignment,
@@ -424,6 +425,7 @@ function ClientsPageContent() {
         endDate: project.end_date,
         existing,
         datesChanged: false,
+        boundTasks: state.assignment_bound_tasks,
       });
 
       const finish = () => {

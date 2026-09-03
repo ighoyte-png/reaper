@@ -19,8 +19,8 @@ export function PmSchedulePromptModal({
       : "Align schedule with timeline?";
   const body =
     kind === "overwrite"
-      ? "This project manager already has schedule time on this project. Replace it with the new daily hours and timeline?"
-      : "The project timeline changed. Update the project manager’s schedule assignment to match the new start and completion dates?";
+      ? "This project manager already has schedule time on this project. Update project-management hours to the new daily hours and timeline? Assignments with bound tasks are kept."
+      : "The project timeline changed. Update the project manager’s schedule assignment to match the new start and completion dates? Assignments with bound tasks are kept.";
 
   return (
     <Modal title={title} onClose={onSkip}>

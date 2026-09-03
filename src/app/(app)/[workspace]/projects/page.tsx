@@ -348,6 +348,7 @@ function ProjectsPageContent() {
       hoursPerDay: hours,
       assignments: state.assignments,
       leaveDays: state.leave_days,
+      assignmentBoundTasks: state.assignment_bound_tasks,
       newId,
       upsertAssignment,
       deleteAssignment,
@@ -456,6 +457,7 @@ function ProjectsPageContent() {
                   pmBaselineDates,
                   toSave,
                 ),
+                boundTasks: state.assignment_bound_tasks,
               });
 
       if (intent.kind === "need_dates") {

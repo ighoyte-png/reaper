@@ -1,16 +1,20 @@
 import { applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
 import { isFullDayLeave } from "@/lib/domain/leave";
 import {
+  assignmentIdsWithBoundTasks,
   buildPmScheduleAssignments,
   findPmProjectAssignments,
   fullDayLeaveDatesInRange,
+  partitionPmProjectAssignments,
+  protectedPmOccurrenceDates,
   snapPmTimelineToScheduleDays,
 } from "@/lib/domain/project-manager-schedule";
-import type { Assignment, LeaveDay } from "@/lib/types";
+import type { Assignment, AssignmentBoundTask, LeaveDay } from "@/lib/types";
 
 /**
- * Replace PM+project assignments with a weekly series for the project
- * timeline, then punch full-day leave holes out of that series.
+ * Replace unprotected PM+project assignments with a weekly series for the
+ * project timeline. Assignments with bound tasks are never deleted. Full-day
+ * leave and protected occurrence days are punched out of the new series.
  */
 export async function applyProjectManagerScheduleTime(args: {
   organizationId: string;
@@ -21,6 +25,7 @@ export async function applyProjectManagerScheduleTime(args: {
   hoursPerDay: number;
   assignments: Assignment[];
   leaveDays: LeaveDay[];
+  assignmentBoundTasks?: AssignmentBoundTask[];
   newId: (prefix: string) => string;
   upsertAssignment: (a: Assignment) => void;
   deleteAssignment: (id: string) => void;
@@ -68,6 +73,22 @@ export async function applyProjectManagerScheduleTime(args: {
     return { created: false, reason: "No working days in that timeline" };
   }
 
+  const existing = findPmProjectAssignments(
+    assignments,
+    args.managerPersonId,
+    args.projectId,
+  );
+  const protectedIds = assignmentIdsWithBoundTasks(
+    args.assignmentBoundTasks ?? [],
+  );
+  const { protected: protectedRows, replaceable } =
+    partitionPmProjectAssignments(existing, protectedIds);
+  const protectedDates = protectedPmOccurrenceDates(
+    protectedRows,
+    snapped.start,
+    snapped.end,
+  );
+
   const rows = buildPmScheduleAssignments({
     newId: () => args.newId("asg"),
     organizationId: args.organizationId,
@@ -81,12 +102,7 @@ export async function applyProjectManagerScheduleTime(args: {
     return { created: false, reason: "No working days in that timeline" };
   }
 
-  const existing = findPmProjectAssignments(
-    assignments,
-    args.managerPersonId,
-    args.projectId,
-  );
-  for (const a of existing) {
+  for (const a of replaceable) {
     args.deleteAssignment(a.id);
   }
 
@@ -94,15 +110,18 @@ export async function applyProjectManagerScheduleTime(args: {
     args.upsertAssignment(row);
   }
 
-  if (leaveDates.length === 0) return { created: true, leaveTrimmed: false };
+  const punchDates = [...new Set([...leaveDates, ...protectedDates])].sort();
+  if (punchDates.length === 0) return { created: true, leaveTrimmed: false };
 
   const { upserts, deletes } = applyFullDayLeaveOverrideForDates(
     rows,
     args.managerPersonId,
-    leaveDates,
+    punchDates,
     args.newId,
   );
   for (const id of deletes) {
+    // Never touch protected assignment ids (punch only targets newly built rows).
+    if (protectedIds.has(id)) continue;
     args.deleteAssignment(id);
   }
   for (const row of upserts) {

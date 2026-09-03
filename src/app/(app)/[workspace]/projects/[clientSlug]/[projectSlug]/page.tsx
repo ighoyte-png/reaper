@@ -401,6 +401,7 @@ export default function ProjectDetailPage() {
                           state.assignments,
                           project.manager_person_id,
                           project.id,
+                          state.assignment_bound_tasks,
                         )
                       : null,
                   );
@@ -1366,6 +1367,7 @@ export default function ProjectDetailPage() {
                     pmBaselineDates,
                     toSave,
                   ),
+                  boundTasks: state.assignment_bound_tasks,
                 });
 
                 const applyPm = async (hours: number) => {
@@ -1385,6 +1387,7 @@ export default function ProjectDetailPage() {
                     hoursPerDay: hours,
                     assignments: state.assignments,
                     leaveDays: state.leave_days,
+                    assignmentBoundTasks: state.assignment_bound_tasks,
                     newId,
                     upsertAssignment,
                     deleteAssignment,
@@ -1473,6 +1476,7 @@ export default function ProjectDetailPage() {
               hoursPerDay: pending.hours,
               assignments: state.assignments,
               leaveDays: state.leave_days,
+              assignmentBoundTasks: state.assignment_bound_tasks,
               newId,
               upsertAssignment,
               deleteAssignment,

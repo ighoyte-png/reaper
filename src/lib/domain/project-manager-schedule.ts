@@ -7,7 +7,8 @@ import {
 } from "@/lib/domain/dates";
 import { isOnFullDayLeave } from "@/lib/domain/capacity";
 import { roundAssignmentHours } from "@/lib/domain/budget";
-import type { Assignment, LeaveDay } from "@/lib/types";
+import { expandAssignmentInRange } from "@/lib/domain/recurrence";
+import type { Assignment, AssignmentBoundTask, LeaveDay } from "@/lib/types";
 
 /** Assignments for this project manager on this project. */
 export function findPmProjectAssignments(
@@ -18,6 +19,64 @@ export function findPmProjectAssignments(
   return assignments.filter(
     (a) => a.person_id === managerPersonId && a.project_id === projectId,
   );
+}
+
+/** Assignment ids that have at least one bound task (protected from PM overwrite). */
+export function assignmentIdsWithBoundTasks(
+  boundTasks: Pick<AssignmentBoundTask, "assignment_id">[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const row of boundTasks) {
+    if (row.assignment_id) ids.add(row.assignment_id);
+  }
+  return ids;
+}
+
+export function isProtectedPmAssignment(
+  assignmentId: string,
+  protectedIds: Set<string> | Iterable<string>,
+): boolean {
+  const set =
+    protectedIds instanceof Set ? protectedIds : new Set(protectedIds);
+  return set.has(assignmentId);
+}
+
+/** Split PM+project assignments into bound-task protected vs replaceable. */
+export function partitionPmProjectAssignments(
+  existing: Assignment[],
+  protectedIds: Set<string> | Iterable<string>,
+): { protected: Assignment[]; replaceable: Assignment[] } {
+  const set =
+    protectedIds instanceof Set ? protectedIds : new Set(protectedIds);
+  const protectedRows: Assignment[] = [];
+  const replaceable: Assignment[] = [];
+  for (const a of existing) {
+    if (set.has(a.id)) protectedRows.push(a);
+    else replaceable.push(a);
+  }
+  return { protected: protectedRows, replaceable };
+}
+
+/**
+ * Working days covered by protected PM assignments in [rangeStart, rangeEnd].
+ * Used to carve holes out of newly built PM daily-hours series.
+ */
+export function protectedPmOccurrenceDates(
+  protectedAssignments: Assignment[],
+  rangeStart: string,
+  rangeEnd: string,
+): string[] {
+  const lo = rangeStart <= rangeEnd ? rangeStart : rangeEnd;
+  const hi = rangeStart <= rangeEnd ? rangeEnd : rangeStart;
+  const days = new Set<string>();
+  for (const assignment of protectedAssignments) {
+    for (const occ of expandAssignmentInRange(assignment, lo, hi)) {
+      for (const day of workingDaysBetween(occ.start_date, occ.end_date)) {
+        if (day >= lo && day <= hi) days.add(day);
+      }
+    }
+  }
+  return [...days].sort();
 }
 
 function assignmentSpanDays(a: Assignment): number {
@@ -46,13 +105,16 @@ export function existingPmDailyHours(
   assignments: Assignment[],
   managerPersonId: string,
   projectId: string,
+  boundTasks: Pick<AssignmentBoundTask, "assignment_id">[] = [],
 ): number | null {
   const existing = findPmProjectAssignments(
     assignments,
     managerPersonId,
     projectId,
   );
-  const winner = pickPmAssignmentWinner(existing);
+  const protectedIds = assignmentIdsWithBoundTasks(boundTasks);
+  const { replaceable } = partitionPmProjectAssignments(existing, protectedIds);
+  const winner = pickPmAssignmentWinner(replaceable);
   return winner ? winner.hours_per_day : null;
 }
 
@@ -203,6 +265,9 @@ export type PmScheduleIntent =
  * Decide whether to create / overwrite / align PM schedule time after a
  * project save. Overwrite only when daily hours or timeline dates changed —
  * unrelated project edits should not prompt.
+ *
+ * Bound-task assignments are excluded from overwrite/align detection so
+ * production blocks never trigger a "replace all" prompt.
  */
 export function resolvePmScheduleIntent(args: {
   /** Parsed daily hours from the form; null when blank. */
@@ -212,6 +277,7 @@ export function resolvePmScheduleIntent(args: {
   endDate: string | null;
   existing: Assignment[];
   datesChanged: boolean;
+  boundTasks?: Pick<AssignmentBoundTask, "assignment_id">[];
 }): PmScheduleIntent {
   const {
     pmDailyHours,
@@ -224,13 +290,16 @@ export function resolvePmScheduleIntent(args: {
 
   if (!managerPersonId) return { kind: "none" };
 
+  const protectedIds = assignmentIdsWithBoundTasks(args.boundTasks ?? []);
+  const { replaceable } = partitionPmProjectAssignments(existing, protectedIds);
+
   const hasHours =
     pmDailyHours != null && Number.isFinite(pmDailyHours) && pmDailyHours > 0;
 
   if (hasHours) {
     if (!startDate || !endDate) return { kind: "need_dates" };
-    if (existing.length > 0) {
-      const winner = pickPmAssignmentWinner(existing);
+    if (replaceable.length > 0) {
+      const winner = pickPmAssignmentWinner(replaceable);
       const existingHours = winner
         ? roundAssignmentHours(winner.hours_per_day)
         : null;
@@ -245,8 +314,8 @@ export function resolvePmScheduleIntent(args: {
     return { kind: "create", hours: pmDailyHours };
   }
 
-  if (datesChanged && existing.length > 0 && startDate && endDate) {
-    const winner = pickPmAssignmentWinner(existing);
+  if (datesChanged && replaceable.length > 0 && startDate && endDate) {
+    const winner = pickPmAssignmentWinner(replaceable);
     if (!winner) return { kind: "none" };
     return { kind: "align", hours: winner.hours_per_day };
   }
