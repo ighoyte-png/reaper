@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { headers } from "next/headers";
 import { Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { NavigationProgress } from "@/components/nav/navigation-progress";
@@ -43,21 +42,15 @@ export const viewport = {
   viewportFit: "cover" as const,
 };
 
-/** Nonce-based CSP requires per-request rendering. */
-export const dynamic = "force-dynamic";
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const headerStore = await headers();
-  const nonce = headerStore.get("x-nonce") ?? undefined;
-
   return (
     <html lang="en" className={geistMono.variable} suppressHydrationWarning>
       <head>
-        <ThemeScript nonce={nonce} />
+        <ThemeScript />
       </head>
       <body className="min-h-full antialiased" suppressHydrationWarning>
         <ThemeProvider>

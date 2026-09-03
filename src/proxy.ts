@@ -3,11 +3,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { sessionNeedsRefresh } from "@/lib/supabase/session-cookie-expiry";
 
-function buildCsp(nonce: string, isDev: boolean): string {
+function buildCsp(isDev: boolean): string {
   const scriptSrc = [
     "'self'",
-    `'nonce-${nonce}'`,
-    "'strict-dynamic'",
+    "'unsafe-inline'",
+    "https://va.vercel-scripts.com",
     isDev ? "'unsafe-eval'" : "",
   ]
     .filter(Boolean)
@@ -67,12 +67,10 @@ function skipSessionRefresh(pathname: string): boolean {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDev = process.env.NODE_ENV === "development";
-  const csp = buildCsp(nonce, isDev);
+  const csp = buildCsp(isDev);
 
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
 
   let response = NextResponse.next({
@@ -124,6 +122,6 @@ export const config = {
      * Run on app/HTML + API, but skip Next internals and common static assets.
      * (PWA icons still match so CSP/security headers apply; session is skipped.)
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|js)$).*)",
   ],
 };
