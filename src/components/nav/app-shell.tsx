@@ -14,6 +14,7 @@ import { loginPathWithNext, stripWorkspacePrefix } from "@/lib/paths";
 import { ViewAsProvider, useViewAs } from "@/lib/view-as";
 import { NotificationPermissionBanner } from "@/components/notifications/notification-permission-banner";
 import { NotificationCenter } from "@/components/notifications/notification-center";
+import { fetchIsPlatformAdmin } from "@/components/nav/platform-admin-link";
 import { UtilityNotificationsProvider } from "@/lib/utility-notifications";
 
 function isSchedulePath(pathname: string, workspaceSlug: string): boolean {
@@ -78,16 +79,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!ready || !isAuthenticated || isPlatformOnly) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/platform/me");
-        if (!res.ok) return;
-        const body = (await res.json()) as { isPlatformAdmin?: boolean };
-        if (!cancelled) setIsPlatformAdmin(Boolean(body.isPlatformAdmin));
-      } catch {
-        /* ignore */
-      }
-    })();
+    void fetchIsPlatformAdmin().then((ok) => {
+      if (!cancelled) setIsPlatformAdmin(ok);
+    });
     return () => {
       cancelled = true;
     };

@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { APP_VERSION } from "@/lib/version";
 
-const POLL_MS = 5 * 60 * 1000;
+const POLL_MS = 15 * 60 * 1000;
 
 /**
  * Detects a newer deploy (via /api/version) and offers a refresh.
  * Auto-reloads when the tab is hidden so users return to a fresh build
  * without interrupting active editing.
+ *
+ * Polling is intentionally sparse — /api/version is cheap, but every hit
+ * still consumes a Vercel function invocation.
  */
 export function VersionRefresh() {
   const [updateReady, setUpdateReady] = useState(false);
@@ -41,20 +44,20 @@ export function VersionRefresh() {
 
   useEffect(() => {
     void check();
-    const id = window.setInterval(() => void check(), POLL_MS);
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void check();
+    }, POLL_MS);
 
     const onVisible = () => {
       if (document.visibilityState === "visible") void check();
     };
-    const onFocus = () => void check();
 
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("focus", onFocus);
 
     return () => {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("focus", onFocus);
     };
   }, [check]);
 

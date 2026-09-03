@@ -3,12 +3,10 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import { useParams } from "next/navigation";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useTheme } from "@/components/theme/theme-provider";
@@ -61,34 +59,10 @@ export function ProjectPortalChromeProvider({
 }: {
   children: ReactNode;
 }) {
-  const params = useParams<{ token: string }>();
-  const token = params.token;
   const [branding, setBranding] = useState<PortalBranding | null>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/share/project/${encodeURIComponent(token)}`,
-          { cache: "no-store" },
-        );
-        if (!res.ok) return;
-        const data = (await res.json()) as {
-          portal?: { branding?: PortalBranding };
-        };
-        if (!cancelled && data.portal?.branding) {
-          setBranding(data.portal.branding);
-        }
-      } catch {
-        /* keep defaults */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  // Branding is set by the portal page after its single /api/share/project fetch —
+  // do not fetch the heavy portal payload a second time from the layout.
 
   const value = useMemo(() => ({ branding, setBranding }), [branding]);
 

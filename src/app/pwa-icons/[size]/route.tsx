@@ -33,6 +33,13 @@ export async function GET(request: Request, { params }: Params) {
         />
       </div>
     ),
-    { width: size, height: size },
+    {
+      width: size,
+      height: size,
+      headers: {
+        // Icons are content-addressed by size/query; cache hard at the edge.
+        "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+      },
+    },
   );
 }

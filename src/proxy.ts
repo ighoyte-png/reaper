@@ -44,7 +44,28 @@ function applySecurityHeaders(response: NextResponse, csp: string) {
   }
 }
 
+/**
+ * Paths that never need a Supabase session refresh in proxy.
+ * Skipping getUser() here is the highest-ROI CPU win: every /api/version poll,
+ * avatar, emoji, and PWA icon hit was paying JWT validation + cookie work.
+ */
+function skipSessionRefresh(pathname: string): boolean {
+  if (pathname === "/api/version" || pathname.startsWith("/api/version/")) {
+    return true;
+  }
+  if (pathname.startsWith("/api/avatars/")) return true;
+  if (pathname.startsWith("/api/emojis/")) return true;
+  if (pathname.startsWith("/pwa-icons/")) return true;
+  if (pathname === "/manifest.webmanifest" || pathname === "/manifest") {
+    return true;
+  }
+  // Public share APIs authenticate via token in the route, not cookies.
+  if (pathname.startsWith("/api/share/")) return true;
+  return false;
+}
+
 export async function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const isDev = process.env.NODE_ENV === "development";
   const csp = buildCsp(nonce, isDev);
@@ -58,7 +79,7 @@ export async function proxy(request: NextRequest) {
   });
   applySecurityHeaders(response, csp);
 
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured() || skipSessionRefresh(pathname)) {
     return response;
   }
 
@@ -86,12 +107,17 @@ export async function proxy(request: NextRequest) {
     },
   );
 
+  // Refresh session cookies on document navigations and authenticated APIs.
   await supabase.auth.getUser();
   return response;
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    /*
+     * Run on app/HTML + API, but skip Next internals and common static assets.
+     * (PWA icons still match so CSP/security headers apply; session is skipped.)
+     */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
   ],
 };
