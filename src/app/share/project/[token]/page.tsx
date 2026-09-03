@@ -18,6 +18,7 @@ import {
 } from "@/components/projects/progress-bar";
 import { ProjectManagerTag } from "@/components/projects/project-manager-person";
 import { ProjectYearBurnChart } from "@/components/projects/monthly-retainer-chart";
+import { PortalInformationCard } from "@/components/share/portal-information-card";
 import { Field, Modal, inputClass } from "@/components/ui/form";
 import { createDemoSeed, DEMO_STORAGE_KEY } from "@/lib/demo/seed";
 import { personAvatarColor } from "@/lib/domain/people";
@@ -1124,89 +1125,20 @@ export default function ProjectSharePage() {
                 </div>
               </li>
             ))}
-            {portal.hoursRetainer
-              ? (() => {
-                  const teamCount =
-                    (manager ? 1 : 0) + teamWithoutManager.length;
-                  const remainder = teamCount % 4;
-                  if (remainder === 0) return null;
-                  const span = 4 - remainder;
-                  const clientLabel = portal.clientName?.trim() || "the client";
-                  return (
-                    <li
-                      className={cn(
-                        "flex flex-col gap-3 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-left",
-                        span === 1 && "lg:col-span-1",
-                        span === 2 && "lg:col-span-2",
-                        span === 3 && "lg:col-span-3",
-                      )}
-                    >
-                      <h3 className="text-sm font-semibold">Information</h3>
-                      <div className="space-y-2">
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                          Task chips
-                        </p>
-                        <ul className="space-y-1.5 text-xs text-[var(--text-muted)]">
-                          <li className="flex flex-wrap items-center gap-2">
-                            <TaskStatusTag status="upcoming" />
-                            <span>
-                              Active: A task is ready to be worked on or is in
-                              progress
-                            </span>
-                          </li>
-                          <li className="flex flex-wrap items-center gap-2">
-                            <TaskStatusTag status="active" />
-                            <span>
-                              In Review: A task is being reviewed for quality
-                              assurance
-                            </span>
-                          </li>
-                          <li className="flex flex-wrap items-center gap-2">
-                            <TaskStatusTag status="complete" />
-                            <span>
-                              Complete: A task has been completed and approved
-                              by {clientLabel}
-                            </span>
-                          </li>
-                        </ul>
-                      </div>
-                      <div className="space-y-2 border-t border-[var(--border)] pt-2">
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
-                          Calendar time
-                        </p>
-                        <ul className="space-y-1.5 text-xs text-[var(--text-muted)]">
-                          <li className="flex items-center gap-2">
-                            <span
-                              className="inline-block h-3 w-5 rounded-sm bg-[var(--accent)]"
-                              aria-hidden
-                            />
-                            Solid blue = time used
-                          </li>
-                          <li className="flex items-center gap-2">
-                            <span
-                              className="inline-block h-3 w-5 rounded-sm border border-[var(--accent)]"
-                              style={{
-                                backgroundImage:
-                                  "repeating-linear-gradient(-45deg, transparent, transparent 2px, var(--accent) 2px, var(--accent) 3px)",
-                                opacity: 0.7,
-                              }}
-                              aria-hidden
-                            />
-                            Hatched blue = planned estimate
-                          </li>
-                          <li className="flex items-center gap-2">
-                            <span
-                              className="inline-block h-3 w-5 rounded-sm bg-[var(--status-over)]"
-                              aria-hidden
-                            />
-                            Red = over budgeted hours
-                          </li>
-                        </ul>
-                      </div>
-                    </li>
-                  );
-                })()
-              : null}
+            {(() => {
+              const teamCount =
+                (manager ? 1 : 0) + teamWithoutManager.length;
+              const remainder = teamCount % 4;
+              if (remainder === 0) return null;
+              const span = (4 - remainder) as 1 | 2 | 3;
+              return (
+                <PortalInformationCard
+                  span={span}
+                  clientLabel={portal.clientName?.trim() || "the client"}
+                  showCalendar={Boolean(portal.hoursRetainer)}
+                />
+              );
+            })()}
           </ul>
         </section>
       ) : null}
