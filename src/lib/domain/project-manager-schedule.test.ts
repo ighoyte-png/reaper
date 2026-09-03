@@ -190,4 +190,20 @@ describe("resolvePmScheduleIntent with bound tasks", () => {
     });
     expect(intent).toEqual({ kind: "none" });
   });
+
+  it("treats bound-task notes as protected without bind rows", () => {
+    const intent = resolvePmScheduleIntent({
+      ...base,
+      pmDailyHours: 2,
+      existing: [
+        assignment({
+          id: "prod",
+          notes: "<!--reaper-bound-tasks--><p>Design</p>",
+          hours_per_day: 8,
+        }),
+      ],
+      boundTasks: [],
+    });
+    expect(intent).toEqual({ kind: "create", hours: 2 });
+  });
 });

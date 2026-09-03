@@ -7,8 +7,15 @@ import {
 } from "@/lib/domain/dates";
 import { isOnFullDayLeave } from "@/lib/domain/capacity";
 import { roundAssignmentHours } from "@/lib/domain/budget";
+import { isBoundTasksNotes } from "@/lib/domain/assignment-bound-tasks";
 import { expandAssignmentInRange } from "@/lib/domain/recurrence";
-import type { Assignment, AssignmentBoundTask, LeaveDay } from "@/lib/types";
+import type {
+  Assignment,
+  AssignmentBoundTask,
+  HolidayCalendarDay,
+  LeaveDay,
+  Person,
+} from "@/lib/types";
 
 /** Assignments for this project manager on this project. */
 export function findPmProjectAssignments(
@@ -28,6 +35,21 @@ export function assignmentIdsWithBoundTasks(
   const ids = new Set<string>();
   for (const row of boundTasks) {
     if (row.assignment_id) ids.add(row.assignment_id);
+  }
+  return ids;
+}
+
+/**
+ * Protected PM assignment ids: bind rows and/or bound-task notes HTML.
+ * Notes cover cases where bind rows were not hydrated yet.
+ */
+export function protectedPmAssignmentIds(
+  assignments: Assignment[],
+  boundTasks: Pick<AssignmentBoundTask, "assignment_id">[] = [],
+): Set<string> {
+  const ids = assignmentIdsWithBoundTasks(boundTasks);
+  for (const a of assignments) {
+    if (isBoundTasksNotes(a.notes)) ids.add(a.id);
   }
   return ids;
 }
@@ -112,7 +134,7 @@ export function existingPmDailyHours(
     managerPersonId,
     projectId,
   );
-  const protectedIds = assignmentIdsWithBoundTasks(boundTasks);
+  const protectedIds = protectedPmAssignmentIds(existing, boundTasks);
   const { replaceable } = partitionPmProjectAssignments(existing, protectedIds);
   const winner = pickPmAssignmentWinner(replaceable);
   return winner ? winner.hours_per_day : null;
@@ -290,7 +312,7 @@ export function resolvePmScheduleIntent(args: {
 
   if (!managerPersonId) return { kind: "none" };
 
-  const protectedIds = assignmentIdsWithBoundTasks(args.boundTasks ?? []);
+  const protectedIds = protectedPmAssignmentIds(existing, args.boundTasks ?? []);
   const { replaceable } = partitionPmProjectAssignments(existing, protectedIds);
 
   const hasHours =
@@ -352,6 +374,26 @@ export function fullDayLeaveDatesInRange(
         isFullDay(l),
     )
     .map((l) => l.date)
+    .sort();
+}
+
+/** Statutory holiday calendar dates for a person in [start, end]. */
+export function holidayCalendarDatesInRange(
+  person: Pick<Person, "holiday_calendar_id"> | null | undefined,
+  holidayDays: Pick<HolidayCalendarDay, "calendar_id" | "date">[],
+  startDate: string,
+  endDate: string,
+): string[] {
+  const calendarId = person?.holiday_calendar_id;
+  if (!calendarId) return [];
+  const lo = startDate <= endDate ? startDate : endDate;
+  const hi = startDate <= endDate ? endDate : startDate;
+  return holidayDays
+    .filter(
+      (d) =>
+        d.calendar_id === calendarId && d.date >= lo && d.date <= hi,
+    )
+    .map((d) => d.date)
     .sort();
 }
 

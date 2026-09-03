@@ -127,4 +127,79 @@ describe("applyProjectManagerScheduleTime bound-task protection", () => {
     });
     expect(deleteAssignment.mock.calls.map((c) => c[0])).not.toContain("prod");
   });
+
+  it("protects assignments with bound-task notes even without bind rows", async () => {
+    const deleted: string[] = [];
+    let n = 0;
+    await applyProjectManagerScheduleTime({
+      organizationId: "org",
+      projectId: "proj-1",
+      managerPersonId: "pm-1",
+      startDate: "2026-08-24",
+      endDate: "2026-08-28",
+      hoursPerDay: 3,
+      assignments: [
+        assignment({ id: "pm-hours", hours_per_day: 2 }),
+        assignment({
+          id: "prod-notes",
+          notes: "<!--reaper-bound-tasks--><p><strong>Tasks Bound to Assignment</strong></p><ul><li>Design</li></ul>",
+          hours_per_day: 6,
+          start_date: "2026-08-25",
+          end_date: "2026-08-26",
+          recurrence: "none",
+          recurrence_end_date: null,
+        }),
+      ],
+      leaveDays: [],
+      assignmentBoundTasks: [],
+      newId: (prefix) => `${prefix}-${++n}`,
+      upsertAssignment: () => {},
+      deleteAssignment: (id) => {
+        deleted.push(id);
+      },
+    });
+    expect(deleted).toContain("pm-hours");
+    expect(deleted).not.toContain("prod-notes");
+  });
+
+  it("never upserts an unpunched weekly that still covers leave days", async () => {
+    const upserted: Assignment[] = [];
+    let n = 0;
+    await applyProjectManagerScheduleTime({
+      organizationId: "org",
+      projectId: "proj-1",
+      managerPersonId: "pm-1",
+      startDate: "2026-08-03",
+      endDate: "2026-08-28",
+      hoursPerDay: 2,
+      assignments: [assignment({ id: "pm-old" })],
+      leaveDays: [
+        {
+          id: "lv1",
+          organization_id: "org",
+          person_id: "pm-1",
+          date: "2026-08-12",
+          kind: "vacation",
+          hours_per_day: null,
+          status: "approved",
+          notes: "",
+        },
+      ],
+      newId: (prefix) => `${prefix}-${++n}`,
+      upsertAssignment: (a) => {
+        upserted.push(a);
+      },
+      deleteAssignment: () => {},
+    });
+    for (const row of upserted) {
+      for (const occ of expandAssignmentInRange(
+        row,
+        "2026-08-03",
+        "2026-08-28",
+      )) {
+        const days = workingDaysBetween(occ.start_date, occ.end_date);
+        expect(days).not.toContain("2026-08-12");
+      }
+    }
+  });
 });

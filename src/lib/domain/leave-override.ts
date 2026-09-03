@@ -332,3 +332,32 @@ export function applyFullDayLeaveOverrideForDates(
     deletes: [...allDeletes],
   };
 }
+
+/**
+ * Punch full-day leave/blocked dates and return the final assignment set.
+ * Use when persisting a rebuilt series so remote never sees pre-punch rows.
+ */
+export function punchAssignmentsForFullDayDates(
+  assignments: Assignment[],
+  personId: string,
+  leaveDates: string[],
+  newId: (prefix: string) => string,
+): Assignment[] {
+  let current = [...assignments];
+  for (const date of leaveDates) {
+    const { upserts, deletes } = applyFullDayLeaveOverride(
+      current,
+      personId,
+      date,
+      newId,
+    );
+    const deleteSet = new Set(deletes);
+    current = current.filter((a) => !deleteSet.has(a.id));
+    for (const row of upserts) {
+      const idx = current.findIndex((a) => a.id === row.id);
+      if (idx >= 0) current[idx] = row;
+      else current.push(row);
+    }
+  }
+  return current;
+}

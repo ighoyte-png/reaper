@@ -1,20 +1,29 @@
-import { applyFullDayLeaveOverrideForDates } from "@/lib/domain/leave-override";
+import { punchAssignmentsForFullDayDates } from "@/lib/domain/leave-override";
 import { isFullDayLeave } from "@/lib/domain/leave";
 import {
-  assignmentIdsWithBoundTasks,
   buildPmScheduleAssignments,
   findPmProjectAssignments,
   fullDayLeaveDatesInRange,
+  holidayCalendarDatesInRange,
   partitionPmProjectAssignments,
+  protectedPmAssignmentIds,
   protectedPmOccurrenceDates,
   snapPmTimelineToScheduleDays,
 } from "@/lib/domain/project-manager-schedule";
-import type { Assignment, AssignmentBoundTask, LeaveDay } from "@/lib/types";
+import type {
+  Assignment,
+  AssignmentBoundTask,
+  HolidayCalendarDay,
+  LeaveDay,
+  Person,
+} from "@/lib/types";
 
 /**
  * Replace unprotected PM+project assignments with a weekly series for the
- * project timeline. Assignments with bound tasks are never deleted. Full-day
- * leave and protected occurrence days are punched out of the new series.
+ * project timeline. Assignments with bound tasks (or bound-task notes) are
+ * never deleted. Full-day leave, holiday calendar days, and protected
+ * occurrence days are punched out of the new series before any persist so
+ * remote never sees an unpunched weekly that overlaps protected time.
  */
 export async function applyProjectManagerScheduleTime(args: {
   organizationId: string;
@@ -26,6 +35,9 @@ export async function applyProjectManagerScheduleTime(args: {
   assignments: Assignment[];
   leaveDays: LeaveDay[];
   assignmentBoundTasks?: AssignmentBoundTask[];
+  /** Manager person (for holiday calendar). */
+  managerPerson?: Pick<Person, "holiday_calendar_id"> | null;
+  holidayCalendarDays?: HolidayCalendarDay[];
   newId: (prefix: string) => string;
   upsertAssignment: (a: Assignment) => void;
   deleteAssignment: (id: string) => void;
@@ -68,7 +80,14 @@ export async function applyProjectManagerScheduleTime(args: {
         hours_per_day: leave.hours_per_day,
       }),
   );
-  const snapped = snapPmTimelineToScheduleDays(lo, hi, leaveDates);
+  const holidayDates = holidayCalendarDatesInRange(
+    args.managerPerson,
+    args.holidayCalendarDays ?? [],
+    lo,
+    hi,
+  );
+  const offDates = [...new Set([...leaveDates, ...holidayDates])].sort();
+  const snapped = snapPmTimelineToScheduleDays(lo, hi, offDates);
   if (!snapped) {
     return { created: false, reason: "No working days in that timeline" };
   }
@@ -78,7 +97,8 @@ export async function applyProjectManagerScheduleTime(args: {
     args.managerPersonId,
     args.projectId,
   );
-  const protectedIds = assignmentIdsWithBoundTasks(
+  const protectedIds = protectedPmAssignmentIds(
+    existing,
     args.assignmentBoundTasks ?? [],
   );
   const { protected: protectedRows, replaceable } =
@@ -89,7 +109,7 @@ export async function applyProjectManagerScheduleTime(args: {
     snapped.end,
   );
 
-  const rows = buildPmScheduleAssignments({
+  const built = buildPmScheduleAssignments({
     newId: () => args.newId("asg"),
     organizationId: args.organizationId,
     personId: args.managerPersonId,
@@ -98,34 +118,39 @@ export async function applyProjectManagerScheduleTime(args: {
     endDate: snapped.end,
     hoursPerDay: args.hoursPerDay,
   });
-  if (rows.length === 0) {
+  if (built.length === 0) {
     return { created: false, reason: "No working days in that timeline" };
   }
 
+  const punchDates = [...new Set([...offDates, ...protectedDates])].sort();
+  const finalRows =
+    punchDates.length === 0
+      ? built
+      : punchAssignmentsForFullDayDates(
+          built,
+          args.managerPersonId,
+          punchDates,
+          args.newId,
+        );
+
+  if (finalRows.length === 0) {
+    return {
+      created: false,
+      reason: "No schedule days left after time off and protected tasks",
+    };
+  }
+
+  // Persist only the final punched set — never write the unpunched weekly.
   for (const a of replaceable) {
+    if (protectedIds.has(a.id)) continue;
     args.deleteAssignment(a.id);
   }
-
-  for (const row of rows) {
+  for (const row of finalRows) {
     args.upsertAssignment(row);
   }
 
-  const punchDates = [...new Set([...leaveDates, ...protectedDates])].sort();
-  if (punchDates.length === 0) return { created: true, leaveTrimmed: false };
-
-  const { upserts, deletes } = applyFullDayLeaveOverrideForDates(
-    rows,
-    args.managerPersonId,
-    punchDates,
-    args.newId,
-  );
-  for (const id of deletes) {
-    // Never touch protected assignment ids (punch only targets newly built rows).
-    if (protectedIds.has(id)) continue;
-    args.deleteAssignment(id);
-  }
-  for (const row of upserts) {
-    args.upsertAssignment(row);
-  }
-  return { created: true, leaveTrimmed: true };
+  return {
+    created: true,
+    leaveTrimmed: punchDates.length > 0,
+  };
 }

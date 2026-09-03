@@ -350,6 +350,9 @@ function ClientsPageContent() {
       assignments: state.assignments,
       leaveDays: state.leave_days,
       assignmentBoundTasks: state.assignment_bound_tasks,
+      managerPerson:
+        state.people.find((p) => p.id === project.manager_person_id) ?? null,
+      holidayCalendarDays: state.holiday_calendar_days,
       newId,
       upsertAssignment,
       deleteAssignment,
