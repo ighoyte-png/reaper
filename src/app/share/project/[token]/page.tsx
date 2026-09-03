@@ -990,14 +990,14 @@ export default function ProjectSharePage() {
     ) : null;
 
   const tasksSection = (
-    <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
+    <section className="flex min-h-0 flex-col rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
       <h2 className="mb-3 text-sm font-semibold">Tasks</h2>
       {portal.taskLists.length === 0 ? (
         <p className="text-sm text-[var(--text-muted)]">
           No tasks published yet.
         </p>
       ) : (
-        <div className="space-y-3">
+        <div className="min-h-0 flex-1 space-y-3">
           {portal.taskLists.map((list) => {
             const listTasks = portal.tasks
               .filter((t) => t.list_id === list.id)
@@ -1236,11 +1236,10 @@ export default function ProjectSharePage() {
       {portal.hoursRetainer ? (
         <>
           <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
-            <div className="flex min-h-0 flex-col">
+            <div className="flex h-full min-h-0 flex-col [&>section]:h-full">
               {tasksSection}
-              <div className="mt-auto hidden min-h-0 flex-1 lg:block" aria-hidden />
             </div>
-            <div className="flex min-h-0 flex-col gap-4">
+            <div className="flex h-full min-h-0 flex-col gap-4">
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold">
@@ -1328,8 +1327,11 @@ export default function ProjectSharePage() {
                 <TeamHoursTable rows={teamHoursRows} />
               </section>
 
-              {essentialsSection}
-              <div className="mt-auto hidden min-h-0 flex-1 lg:block" aria-hidden />
+              {essentialsSection ? (
+                <div className="mt-auto flex min-h-0 flex-col">
+                  {essentialsSection}
+                </div>
+              ) : null}
             </div>
           </div>
           {assignmentTimeSections.length > 0 ? (
