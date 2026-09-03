@@ -376,6 +376,9 @@ export default function ProjectDetailPage() {
                   setDraft({
                     ...rest,
                     budget_monthly_reset: Boolean(rest.budget_monthly_reset),
+                    assignment_time_reporting: Boolean(
+                      rest.assignment_time_reporting,
+                    ),
                   });
                   setMemberIds(
                     state.project_members
@@ -1297,6 +1300,11 @@ export default function ProjectDetailPage() {
                     toSave.budget_mode === "hours" ||
                     toSave.budget_mode === "amount"
                       ? Boolean(toSave.budget_monthly_reset)
+                      : false,
+                  assignment_time_reporting:
+                    toSave.budget_mode === "hours" &&
+                    Boolean(toSave.budget_monthly_reset)
+                      ? Boolean(toSave.assignment_time_reporting)
                       : false,
                 });
                 const memberPayload = buildProjectMembersPayload(

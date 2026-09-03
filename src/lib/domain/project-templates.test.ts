@@ -34,6 +34,7 @@ const project: Project = {
   budget_amount: null,
   bill_rate: null,
   budget_monthly_reset: false,
+  assignment_time_reporting: false,
   notes: "",
   manager_person_id: null,
   share_enabled: false,

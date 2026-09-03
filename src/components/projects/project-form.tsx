@@ -318,6 +318,10 @@ export function ProjectForm({
         mode === "hours" || mode === "amount"
           ? Boolean(project.budget_monthly_reset)
           : false,
+      assignment_time_reporting:
+        mode === "hours" && Boolean(project.budget_monthly_reset)
+          ? Boolean(project.assignment_time_reporting)
+          : false,
     });
   }
 
@@ -769,6 +773,9 @@ export function ProjectForm({
                       onChange({
                         ...project,
                         budget_monthly_reset: e.target.checked,
+                        assignment_time_reporting: e.target.checked
+                          ? Boolean(project.assignment_time_reporting)
+                          : false,
                       })
                     }
                   />
@@ -778,6 +785,30 @@ export function ProjectForm({
                       {project.budget_mode === "amount"
                         ? "Treat the fixed fee as a recurring monthly retainer"
                         : "Treat the hours budget as a recurring monthly retainer (fixed hour bucket billed at the project bill rate each month)"}
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+              {project.budget_mode === "hours" &&
+              project.budget_monthly_reset ? (
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={Boolean(project.assignment_time_reporting)}
+                    onChange={(e) =>
+                      onChange({
+                        ...project,
+                        assignment_time_reporting: e.target.checked,
+                      })
+                    }
+                  />
+                  <span>
+                    Assignment Time
+                    <span className="block text-xs text-[var(--text-muted)]">
+                      Show schedule assignment and bound-task detail on the
+                      Budget Report and Client Portal for this monthly hours
+                      project.
                     </span>
                   </span>
                 </label>

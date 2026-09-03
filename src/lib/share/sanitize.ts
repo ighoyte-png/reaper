@@ -134,7 +134,10 @@ export function sanitizePublicWorkspace(state: DemoState): DemoState {
 /** Schedule + roster stubs for client-facing monthly hours chart / Team hours. */
 export interface PortalHoursRetainer {
   budgetHours: number;
+  /** Opt-in Assignment Time detail section. */
+  assignmentTimeReporting: boolean;
   assignments: {
+    id: string;
     person_id: string;
     start_date: string;
     end_date: string;
@@ -143,6 +146,13 @@ export interface PortalHoursRetainer {
     recurrence_end_date: string | null;
     recurrence_exceptions: string[];
     status: AssignmentStatus;
+  }[];
+  /** Bound task titles for Assignment Time (ids only used for grouping). */
+  boundTasks: {
+    assignment_id: string;
+    task_id: string;
+    title: string;
+    sort_order: number;
   }[];
   /** People appearing on schedule/roster for this retainer (no rates/emails). */
   people: {
@@ -163,6 +173,7 @@ export interface PortalHoursRetainer {
   }[];
   /** Hours entries for retainers (amounts stripped / converted to hours). */
   expenses?: {
+    id: string;
     person_id: string;
     month_key: string;
     hours: number;
@@ -362,7 +373,9 @@ export function sanitizeProjectPortal(
             );
           return {
             budgetHours: project.budget_hours ?? 0,
+            assignmentTimeReporting: Boolean(project.assignment_time_reporting),
             assignments: projectAssignments.map((a) => ({
+              id: a.id,
               person_id: a.person_id,
               start_date: a.start_date,
               end_date: a.end_date,
@@ -372,6 +385,23 @@ export function sanitizeProjectPortal(
               recurrence_exceptions: a.recurrence_exceptions ?? [],
               status: a.status,
             })),
+            boundTasks: (() => {
+              if (!project.assignment_time_reporting) return [];
+              const assignmentIds = new Set(projectAssignments.map((a) => a.id));
+              const taskById = new Map(
+                state.tasks
+                  .filter((t) => t.project_id === projectId)
+                  .map((t) => [t.id, t]),
+              );
+              return (state.assignment_bound_tasks ?? [])
+                .filter((b) => assignmentIds.has(b.assignment_id))
+                .map((b) => ({
+                  assignment_id: b.assignment_id,
+                  task_id: b.task_id,
+                  title: taskById.get(b.task_id)?.title?.trim() || "Untitled task",
+                  sort_order: b.sort_order,
+                }));
+            })(),
             people,
             members: projectMembers.map((m) => ({
               person_id: m.person_id,
@@ -384,11 +414,14 @@ export function sanitizeProjectPortal(
                 const person = state.people.find((p) => p.id === e.person_id);
                 const hours = contractorExpenseEntryHours(e, person);
                 return {
+                  id: e.id,
                   person_id: e.person_id,
                   month_key: e.month_key,
                   hours,
                   amount: 0,
-                  notes: "",
+                  notes: project.assignment_time_reporting
+                    ? String(e.notes ?? "")
+                    : "",
                   repeat_monthly: Boolean(e.repeat_monthly),
                   repeat_end_month: e.repeat_end_month,
                 };

@@ -138,6 +138,11 @@ export interface Project {
   bill_rate: number | null;
   /** When true, hourly budget resets each calendar month (retainer). */
   budget_monthly_reset: boolean;
+  /**
+   * When true (hours + monthly reset only), show Assignment Time detail
+   * on the Budget Report and Client Portal.
+   */
+  assignment_time_reporting: boolean;
   notes: string;
   /** Optional project manager (person in the org directory). */
   manager_person_id: string | null;

@@ -138,6 +138,7 @@ function emptyProject(
     budget_mode: "hours",
     bill_rate: 150,
     budget_monthly_reset: false,
+    assignment_time_reporting: false,
     notes: "",
     manager_person_id: null,
     hide_from_public_share: false,
@@ -377,6 +378,10 @@ function ClientsPageContent() {
         budget_monthly_reset:
           project.budget_mode === "hours" || project.budget_mode === "amount"
             ? project.budget_monthly_reset
+            : false,
+        assignment_time_reporting:
+          project.budget_mode === "hours" && project.budget_monthly_reset
+            ? Boolean(project.assignment_time_reporting)
             : false,
       });
       const memberPayload = buildProjectMembersPayload(

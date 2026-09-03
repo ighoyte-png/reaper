@@ -20,6 +20,7 @@ function monthlyProject(overrides: Partial<Project> = {}): Project {
     budget_mode: "hours",
     bill_rate: 100,
     budget_monthly_reset: true,
+    assignment_time_reporting: false,
     notes: "",
     manager_person_id: null,
     hide_from_public_share: false,

@@ -104,6 +104,7 @@ function mapProject(row: Record<string, unknown>): Project {
           : num(row.bill_rate)
         : null,
     budget_monthly_reset: Boolean(row.budget_monthly_reset),
+    assignment_time_reporting: Boolean(row.assignment_time_reporting),
     notes: String(row.notes ?? ""),
     manager_person_id: row.manager_person_id
       ? String(row.manager_person_id)
@@ -2487,6 +2488,10 @@ export async function upsertProjectRow(
     budget_monthly_reset: mode === "hours" || mode === "amount"
       ? Boolean(project.budget_monthly_reset)
       : false,
+    assignment_time_reporting:
+      mode === "hours" && Boolean(project.budget_monthly_reset)
+        ? Boolean(project.assignment_time_reporting)
+        : false,
     notes: project.notes,
     manager_person_id: project.manager_person_id ?? null,
     share_enabled: Boolean(project.share_enabled),
@@ -2514,6 +2519,10 @@ export async function upsertProjectRow(
     /Could not find the 'sandbox_mode' column/i.test(message) ||
     (code === "PGRST204" && /sandbox_mode/i.test(message));
 
+  const missingAssignmentTime = (message: string, code?: string) =>
+    /Could not find the 'assignment_time_reporting' column/i.test(message) ||
+    (code === "PGRST204" && /assignment_time_reporting/i.test(message));
+
   const missingSlug = (message: string, code?: string) =>
     /Could not find the 'slug' column/i.test(message) ||
     (code === "PGRST204" && /slug/i.test(message));
@@ -2532,6 +2541,19 @@ export async function upsertProjectRow(
     (/null value/i.test(message) || /not-null|not null/i.test(message));
 
   let { error } = await supabase.from("projects").upsert(payload);
+
+  // Retry without assignment_time_reporting if migration 113 is not applied yet.
+  if (error && missingAssignmentTime(error.message, error.code)) {
+    const { assignment_time_reporting: _a, ...rest } = payload;
+    const retry = await supabase.from("projects").upsert(rest);
+    if (!retry.error) {
+      console.warn(
+        "projects.assignment_time_reporting missing — apply supabase/migrations/113_assignment_time_reporting.sql",
+      );
+      return;
+    }
+    error = retry.error;
+  }
 
   // Retry without sandbox_mode if migration 071 is not applied yet.
   if (error && missingSandbox(error.message, error.code)) {

@@ -74,6 +74,7 @@ function emptyProject(id: string, currencyEnabled = false): Omit<Project, "organ
     budget_mode: "hours",
     bill_rate: 150,
     budget_monthly_reset: false,
+    assignment_time_reporting: false,
     notes: "",
     manager_person_id: null,
     hide_from_public_share: false,
@@ -391,6 +392,10 @@ function ProjectsPageContent() {
         budget_monthly_reset:
           toSave.budget_mode === "hours" || toSave.budget_mode === "amount"
             ? toSave.budget_monthly_reset
+            : false,
+        assignment_time_reporting:
+          toSave.budget_mode === "hours" && toSave.budget_monthly_reset
+            ? Boolean(toSave.assignment_time_reporting)
             : false,
       });
       const memberPayload = buildProjectMembersPayload(

@@ -12,7 +12,7 @@ function asg(
     hours_per_day: 8,
     allocation_pct: 50,
     status: "confirmed",
-    notes: null,
+    notes: "",
     recurrence: "none",
     recurrence_end_date: null,
     recurrence_exceptions: [],

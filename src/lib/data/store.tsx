@@ -306,6 +306,7 @@ function loadDemoState(): DemoState {
                 ? "amount"
                 : "hours",
         budget_monthly_reset: Boolean(p.budget_monthly_reset),
+        assignment_time_reporting: Boolean(p.assignment_time_reporting),
         budget_hours: p.budget_hours ?? null,
         budget_amount: p.budget_amount ?? null,
         manager_person_id: p.manager_person_id ?? null,
@@ -673,6 +674,7 @@ interface DataContextValue {
     budget_amount: null;
     budget_mode: "none";
     budget_monthly_reset: false;
+    assignment_time_reporting: false;
     manager_person_id: null;
   }>;
   /** Replace explicit team members for a project (optional contractor terms). */
@@ -3582,6 +3584,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           budget_amount: null,
           budget_mode: "none" as const,
           budget_monthly_reset: false as const,
+          assignment_time_reporting: false as const,
           manager_person_id: null,
         };
       },

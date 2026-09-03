@@ -10,6 +10,7 @@ import {
   OutsideDatesChartNote,
   ProjectProgressCharts,
 } from "@/components/budgets/cumulative-hours-chart";
+import { AssignmentTimeTable } from "@/components/budgets/assignment-time-table";
 import { PageContainer } from "@/components/nav/page-container";
 import { PageHeader } from "@/components/nav/page-header";
 import { ContractorTag, ProjectManagerTag } from "@/components/projects/project-manager-person";
@@ -68,6 +69,11 @@ import { projectPeriodEconomics } from "@/lib/domain/forecast";
 import { toDateKey } from "@/lib/domain/dates";
 import { personAvatarColor } from "@/lib/domain/people";
 import { projectDisplayColor, sortPeopleByName } from "@/lib/domain/sorting";
+import {
+  assignmentTimeTermMonths,
+  buildAssignmentTimeReport,
+  showAssignmentTimeReport,
+} from "@/lib/domain/assignment-time-report";
 import { cn } from "@/lib/cn";
 import type { CurrencyCode, Person, ProjectMember } from "@/lib/types";
 
@@ -1257,6 +1263,44 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
           ? "Total Plan"
           : "Contract Term";
 
+  const assignmentTimeSections = useMemo(() => {
+    if (!project || !showAssignmentTimeReport(project)) return [];
+    if (!isRetainer || (periodMode !== "month" && periodMode !== "term")) {
+      return [];
+    }
+    const months =
+      periodMode === "term"
+        ? assignmentTimeTermMonths(project)
+        : [
+            {
+              year: selectedMonth.year,
+              monthIndex: selectedMonth.monthIndex,
+            },
+          ];
+    if (months.length === 0) return [];
+    return buildAssignmentTimeReport({
+      project,
+      assignments: state.assignments,
+      boundTasks: state.assignment_bound_tasks,
+      tasks: state.tasks,
+      people: state.people,
+      contractorExpenses: state.project_contractor_expenses,
+      todayKey: toDateKey(new Date()),
+      months,
+    });
+  }, [
+    project,
+    isRetainer,
+    periodMode,
+    selectedMonth.year,
+    selectedMonth.monthIndex,
+    state.assignments,
+    state.assignment_bound_tasks,
+    state.tasks,
+    state.people,
+    state.project_contractor_expenses,
+  ]);
+
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader
@@ -1767,6 +1811,16 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             )}
           </section>
           </div>
+
+          {assignmentTimeSections.length > 0 ? (
+            <div className="mt-4">
+              <AssignmentTimeTable
+                sections={assignmentTimeSections}
+                people={state.people}
+                termMode={periodMode === "term"}
+              />
+            </div>
+          ) : null}
         </div>
       </div>
     </PageContainer>

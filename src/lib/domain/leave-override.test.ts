@@ -10,11 +10,15 @@ function weeklyAssignment(
     person_id: "p1",
     project_id: "proj",
     hours_per_day: 8,
+    allocation_pct: null,
     status: "confirmed",
     recurrence: "weekly",
     recurrence_end_date: patch.recurrence_end_date ?? null,
     recurrence_exceptions: [],
-    notes: null,
+    notes: "",
+    created_at: "",
+    edited_at: null,
+    edited_by_profile_id: null,
     ...patch,
   };
 }

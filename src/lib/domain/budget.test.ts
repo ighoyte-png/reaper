@@ -80,6 +80,7 @@ function makeProject(partial: Partial<Project> = {}): Project {
     budget_amount: null,
     bill_rate: null,
     budget_monthly_reset: true,
+    assignment_time_reporting: false,
     notes: "",
     manager_person_id: null,
     share_enabled: false,

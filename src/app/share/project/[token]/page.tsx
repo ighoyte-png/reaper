@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PeriodChip } from "@/components/budgets/period-chip";
+import { AssignmentTimeTable } from "@/components/budgets/assignment-time-table";
 import {
   TeamHoursTable,
   type TeamHoursRow,
@@ -55,13 +56,19 @@ import {
   projectTasksPieStats,
 } from "@/components/projects/project-tasks-pie";
 import { TaskStatusTag } from "@/components/tasks/task-status-tag";
+import {
+  assignmentTimeTermMonths,
+  buildAssignmentTimeReport,
+} from "@/lib/domain/assignment-time-report";
 import type {
   Assignment,
+  AssignmentBoundTask,
   Person,
   Project,
   ProjectAssetKind,
   ProjectContractorExpense,
   ProjectMember,
+  Task,
   TaskStatus,
 } from "@/lib/types";
 import { toDateKey } from "@/lib/domain/dates";
@@ -75,6 +82,10 @@ function portalChartProject(
   budgetHours: number,
   startDate: string | null,
   endDate: string | null,
+  opts?: {
+    assignmentTimeReporting?: boolean;
+    managerPersonId?: string | null;
+  },
 ): Project {
   return {
     id: projectId,
@@ -92,8 +103,9 @@ function portalChartProject(
     budget_mode: "hours",
     bill_rate: 150,
     budget_monthly_reset: true,
+    assignment_time_reporting: Boolean(opts?.assignmentTimeReporting),
     notes: "",
-    manager_person_id: null,
+    manager_person_id: opts?.managerPersonId ?? null,
     hide_from_public_share: false,
     sandbox_mode: false,
   };
@@ -104,7 +116,7 @@ function portalChartAssignments(
   stubs: PortalHoursRetainer["assignments"],
 ): Assignment[] {
   return stubs.map((a, i) => ({
-    id: `portal-${i}`,
+    id: a.id || `portal-${i}`,
     organization_id: "portal",
     person_id: a.person_id,
     project_id: projectId,
@@ -166,7 +178,7 @@ function portalChartExpenses(
   stubs: PortalHoursRetainer["expenses"] | undefined,
 ): ProjectContractorExpense[] {
   return (stubs ?? []).map((e, i) => ({
-    id: `portal-exp-${i}`,
+    id: e.id || `portal-exp-${i}`,
     organization_id: "portal",
     project_id: projectId,
     person_id: e.person_id,
@@ -304,6 +316,11 @@ export default function ProjectSharePage() {
             portal.hoursRetainer.budgetHours,
             portal.project.start_date,
             portal.project.end_date,
+            {
+              assignmentTimeReporting:
+                portal.hoursRetainer.assignmentTimeReporting,
+              managerPersonId: portal.manager?.id ?? null,
+            },
           ),
           portalChartAssignments(
             portal.project.id,
@@ -327,6 +344,11 @@ export default function ProjectSharePage() {
             portal.hoursRetainer.budgetHours,
             portal.project.start_date,
             portal.project.end_date,
+            {
+              assignmentTimeReporting:
+                portal.hoursRetainer.assignmentTimeReporting,
+              managerPersonId: portal.manager?.id ?? null,
+            },
           ),
           portalChartAssignments(
             portal.project.id,
@@ -387,6 +409,10 @@ export default function ProjectSharePage() {
       retainer.budgetHours,
       portal.project.start_date,
       portal.project.end_date,
+      {
+        assignmentTimeReporting: retainer.assignmentTimeReporting,
+        managerPersonId: portal.manager?.id ?? null,
+      },
     );
     const assignments = portalChartAssignments(
       portal.project.id,
@@ -493,6 +519,82 @@ export default function ProjectSharePage() {
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
   }, [portal, periodRange]);
+
+  const assignmentTimeSections = useMemo(() => {
+    const retainer = portal?.hoursRetainer;
+    if (!portal || !retainer?.assignmentTimeReporting) return [];
+    const project = portalChartProject(
+      portal.project.id,
+      retainer.budgetHours,
+      portal.project.start_date,
+      portal.project.end_date,
+      {
+        assignmentTimeReporting: true,
+        managerPersonId: portal.manager?.id ?? null,
+      },
+    );
+    const months =
+      periodMode === "term"
+        ? assignmentTimeTermMonths(project)
+        : [
+            {
+              year: selectedMonth.year,
+              monthIndex: selectedMonth.monthIndex,
+            },
+          ];
+    if (months.length === 0) return [];
+
+    const boundTasks: AssignmentBoundTask[] = (retainer.boundTasks ?? []).map(
+      (b) => ({
+        assignment_id: b.assignment_id,
+        task_id: b.task_id,
+        organization_id: "portal",
+        sort_order: b.sort_order,
+        bound_source: "schedule",
+        out_of_sync: false,
+      }),
+    );
+    const tasks: Task[] = (retainer.boundTasks ?? []).map((b) => ({
+      id: b.task_id,
+      organization_id: "portal",
+      project_id: portal.project.id,
+      list_id: "",
+      parent_id: null,
+      assignee_person_id: null,
+      title: b.title,
+      is_divider: false,
+      is_client_review: false,
+      status: "upcoming",
+      start_date: null,
+      due_date: null,
+      notes: "",
+      sort_order: b.sort_order,
+      created_at: "",
+      created_by_profile_id: null,
+      edited_at: null,
+      edited_by_profile_id: null,
+      status_changed_at: null,
+      status_changed_by_profile_id: null,
+      assignee_notified_at: null,
+    }));
+
+    return buildAssignmentTimeReport({
+      project,
+      assignments: portalChartAssignments(
+        portal.project.id,
+        retainer.assignments,
+      ),
+      boundTasks,
+      tasks,
+      people: portalChartPeople(retainer.people),
+      contractorExpenses: portalChartExpenses(
+        portal.project.id,
+        retainer.expenses,
+      ),
+      todayKey: toDateKey(new Date()),
+      months,
+    });
+  }, [portal, periodMode, selectedMonth.year, selectedMonth.monthIndex]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1022,6 +1124,89 @@ export default function ProjectSharePage() {
                 </div>
               </li>
             ))}
+            {portal.hoursRetainer
+              ? (() => {
+                  const teamCount =
+                    (manager ? 1 : 0) + teamWithoutManager.length;
+                  const remainder = teamCount % 4;
+                  if (remainder === 0) return null;
+                  const span = 4 - remainder;
+                  const clientLabel = portal.clientName?.trim() || "the client";
+                  return (
+                    <li
+                      className={cn(
+                        "flex flex-col gap-3 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-left",
+                        span === 1 && "lg:col-span-1",
+                        span === 2 && "lg:col-span-2",
+                        span === 3 && "lg:col-span-3",
+                      )}
+                    >
+                      <h3 className="text-sm font-semibold">Information</h3>
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                          Task chips
+                        </p>
+                        <ul className="space-y-1.5 text-xs text-[var(--text-muted)]">
+                          <li className="flex flex-wrap items-center gap-2">
+                            <TaskStatusTag status="upcoming" />
+                            <span>
+                              Active: A task is ready to be worked on or is in
+                              progress
+                            </span>
+                          </li>
+                          <li className="flex flex-wrap items-center gap-2">
+                            <TaskStatusTag status="active" />
+                            <span>
+                              In Review: A task is being reviewed for quality
+                              assurance
+                            </span>
+                          </li>
+                          <li className="flex flex-wrap items-center gap-2">
+                            <TaskStatusTag status="complete" />
+                            <span>
+                              Complete: A task has been completed and approved
+                              by {clientLabel}
+                            </span>
+                          </li>
+                        </ul>
+                      </div>
+                      <div className="space-y-2 border-t border-[var(--border)] pt-2">
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+                          Calendar time
+                        </p>
+                        <ul className="space-y-1.5 text-xs text-[var(--text-muted)]">
+                          <li className="flex items-center gap-2">
+                            <span
+                              className="inline-block h-3 w-5 rounded-sm bg-[var(--accent)]"
+                              aria-hidden
+                            />
+                            Solid blue = time used
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span
+                              className="inline-block h-3 w-5 rounded-sm border border-[var(--accent)]"
+                              style={{
+                                backgroundImage:
+                                  "repeating-linear-gradient(-45deg, transparent, transparent 2px, var(--accent) 2px, var(--accent) 3px)",
+                                opacity: 0.7,
+                              }}
+                              aria-hidden
+                            />
+                            Hatched blue = planned estimate
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span
+                              className="inline-block h-3 w-5 rounded-sm bg-[var(--status-over)]"
+                              aria-hidden
+                            />
+                            Red = over budgeted hours
+                          </li>
+                        </ul>
+                      </div>
+                    </li>
+                  );
+                })()
+              : null}
           </ul>
         </section>
       ) : null}
@@ -1050,9 +1235,12 @@ export default function ProjectSharePage() {
 
       {portal.hoursRetainer ? (
         <>
-          <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-            {tasksSection}
-            <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+            <div className="flex min-h-0 flex-col">
+              {tasksSection}
+              <div className="mt-auto hidden min-h-0 flex-1 lg:block" aria-hidden />
+            </div>
+            <div className="flex min-h-0 flex-col gap-4">
               <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold">
@@ -1104,7 +1292,7 @@ export default function ProjectSharePage() {
                     onSelect={() => setPeriodMode("month")}
                   />
                 </li>
-{portal.project.start_date && portal.project.end_date ? (
+                {portal.project.start_date && portal.project.end_date ? (
                   <li>
                     <PeriodChip
                       label="Contract Term"
@@ -1141,8 +1329,16 @@ export default function ProjectSharePage() {
               </section>
 
               {essentialsSection}
+              <div className="mt-auto hidden min-h-0 flex-1 lg:block" aria-hidden />
             </div>
           </div>
+          {assignmentTimeSections.length > 0 ? (
+            <AssignmentTimeTable
+              sections={assignmentTimeSections}
+              people={portalChartPeople(portal.hoursRetainer.people)}
+              termMode={periodMode === "term"}
+            />
+          ) : null}
           {hasGantt ? (
             <section className="rounded-md border border-[var(--border)] bg-[var(--bg)] p-4">
               <PortalGanttProvider portal={portal}>
