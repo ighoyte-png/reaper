@@ -19,17 +19,21 @@ function TaskChipsLegend({ clientLabel }: { clientLabel: string }) {
         Task chips
       </p>
       <ul className="space-y-1.5 text-xs text-[var(--text-muted)]">
-        <li className="flex flex-wrap items-center gap-2">
-          <TaskStatusTag status="upcoming" />
-          <span>A task is ready to be worked on or is in progress</span>
+        <li className="flex items-start gap-2">
+          <TaskStatusTag status="upcoming" className="shrink-0" />
+          <span className="min-w-0">
+            A task is ready to be worked on or is in progress
+          </span>
         </li>
-        <li className="flex flex-wrap items-center gap-2">
-          <TaskStatusTag status="active" />
-          <span>A task is being reviewed for quality assurance</span>
+        <li className="flex items-start gap-2">
+          <TaskStatusTag status="active" className="shrink-0" />
+          <span className="min-w-0">
+            A task is being reviewed for quality assurance
+          </span>
         </li>
-        <li className="flex flex-wrap items-center gap-2">
-          <TaskStatusTag status="complete" />
-          <span>
+        <li className="flex items-start gap-2">
+          <TaskStatusTag status="complete" className="shrink-0" />
+          <span className="min-w-0">
             A task has been completed and approved by {clientLabel}
           </span>
         </li>
