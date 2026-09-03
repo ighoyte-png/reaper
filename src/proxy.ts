@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { sessionNeedsRefresh } from "@/lib/supabase/session-cookie-expiry";
 
 function buildCsp(nonce: string, isDev: boolean): string {
   const scriptSrc = [
@@ -83,6 +84,11 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
+  // Only hit Auth when the access token is missing/unreadable or near expiry.
+  if (!sessionNeedsRefresh(request)) {
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -107,7 +113,7 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  // Refresh session cookies on document navigations and authenticated APIs.
+  // Refresh session cookies when the access token is near expiry.
   await supabase.auth.getUser();
   return response;
 }

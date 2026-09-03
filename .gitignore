@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Local one-off tooling (not part of the product repo)
 /local/
+
+# Marketing site (separate from the Next.js app)
+/website/

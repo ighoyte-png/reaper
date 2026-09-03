@@ -17,6 +17,7 @@ import {
 import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { FavoritesDrawerSection } from "@/components/nav/favorite-project-tabs";
+import { HoverPrefetchLink } from "@/components/nav/hover-prefetch-link";
 import { useMobileNav } from "@/components/nav/mobile-nav";
 import { primaryNavLinks } from "@/components/nav/nav-links";
 import { PlatformAdminNavLink } from "@/components/nav/platform-admin-link";
@@ -208,7 +209,7 @@ export function AppNavbar() {
               pathForNav === href || pathForNav.startsWith(`${href}/`);
             const showDot = href === "/dashboard" && hasDashboardDot;
             return (
-              <Link
+              <HoverPrefetchLink
                 key={href}
                 href={fullHref}
                 className={navLinkClass(active)}
@@ -221,7 +222,7 @@ export function AppNavbar() {
                     aria-label="New dashboard notifications"
                   />
                 ) : null}
-              </Link>
+              </HoverPrefetchLink>
             );
           })}
         </nav>
@@ -478,7 +479,7 @@ export function AppNavbar() {
                   pathForNav === href || pathForNav.startsWith(`${href}/`);
                 const showDot = href === "/dashboard" && hasDashboardDot;
                 return (
-                  <Link
+                  <HoverPrefetchLink
                     key={href}
                     href={fullHref}
                     onClick={() => setOpen(false)}
@@ -497,7 +498,7 @@ export function AppNavbar() {
                         aria-label="New dashboard notifications"
                       />
                     ) : null}
-                  </Link>
+                  </HoverPrefetchLink>
                 );
               })}
             </nav>

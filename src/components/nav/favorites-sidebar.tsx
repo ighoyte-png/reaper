@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo } from "react";
 import { Star } from "lucide-react";
+import { HoverPrefetchLink } from "@/components/nav/hover-prefetch-link";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -65,7 +65,7 @@ export function FavoritesSidebar({
             state.clients,
           );
           return (
-            <Link
+            <HoverPrefetchLink
               key={project.id}
               href={favoriteHref(project)}
               className={cn(
@@ -81,7 +81,7 @@ export function FavoritesSidebar({
                 size="sm"
               />
               <span className="min-w-0 truncate">{label}</span>
-            </Link>
+            </HoverPrefetchLink>
           );
         })}
       </nav>

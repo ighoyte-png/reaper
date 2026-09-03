@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import {
   Suspense,
   useEffect,
@@ -27,6 +26,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { HoverPrefetchLink } from "@/components/nav/hover-prefetch-link";
 import { ProjectColorBar } from "@/components/ui/project-color-bar";
 import { cn } from "@/lib/cn";
 import { useData } from "@/lib/data/store";
@@ -92,7 +92,7 @@ function FavoriteBookmark({
       {...attributes}
       {...(dragDisabled ? {} : listeners)}
     >
-      <Link
+      <HoverPrefetchLink
         href={href}
         title={fullLabel}
         draggable={false}
@@ -118,7 +118,7 @@ function FavoriteBookmark({
             project.name
           )}
         </span>
-      </Link>
+      </HoverPrefetchLink>
     </div>
   );
 }
@@ -403,7 +403,7 @@ function FavoritesDrawerSectionInner({
             : project.name;
           return (
             <li key={project.id}>
-              <Link
+              <HoverPrefetchLink
                 href={favoriteHref(project)}
                 title={fullLabel}
                 onClick={() => onNavigate?.()}
@@ -426,7 +426,7 @@ function FavoritesDrawerSectionInner({
                     <span className="text-[var(--text)]">{project.name}</span>
                   )}
                 </span>
-              </Link>
+              </HoverPrefetchLink>
             </li>
           );
         })}
