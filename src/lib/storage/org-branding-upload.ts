@@ -20,8 +20,6 @@ export async function uploadOrgBrandingLogoFile(input: {
     throw new Error("Logos must be an image (png, jpg, gif, svg, or webp)");
   }
 
-  const entityId = `${input.organizationId}:${input.variant}`;
-
   if (input.mode === "demo") {
     const src = await readFileAsDataUrl(input.file);
     return {
@@ -31,10 +29,11 @@ export async function uploadOrgBrandingLogoFile(input: {
     };
   }
 
+  // attachments.entity_id is uuid — light/dark is stored on organization_settings.
   const { attachmentId } = await uploadFileToR2({
     file: input.file,
     entityType: "org_branding",
-    entityId,
+    entityId: input.organizationId,
     imagesOnly: true,
   });
   return { attachmentId, src: null };

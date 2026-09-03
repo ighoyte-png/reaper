@@ -140,7 +140,9 @@ export async function assertCanAttachToEntity(
         error: "Only workspace managers can upload Client Portal branding",
       };
     }
-    // entityId is organizationId:light|dark (or organization id).
+    if (entityId !== organizationId) {
+      return { ok: false, status: 400, error: "Invalid branding entity" };
+    }
     return { ok: true };
   }
 
