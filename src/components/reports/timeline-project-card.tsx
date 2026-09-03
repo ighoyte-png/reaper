@@ -8,11 +8,12 @@ import { ProgressBar } from "@/components/projects/progress-bar";
 import { ProjectStatusTag } from "@/components/projects/project-status-tag";
 import { panelClass } from "@/components/ui/panel";
 import {
+  findListAttachedToMilestone,
   milestoneDateProgress,
   projectDateProgress,
 } from "@/lib/domain/progress";
 import { cn } from "@/lib/cn";
-import type { Milestone, Project } from "@/lib/types";
+import type { Milestone, Project, TaskList } from "@/lib/types";
 
 function formatDisplayDate(dateKey: string | null | undefined): string {
   if (!dateKey) return "No date";
@@ -56,11 +57,13 @@ function approvedByline(milestone: Milestone): string | null {
 export function TimelineProjectCard({
   project,
   milestones,
+  taskLists = [],
   href,
   today,
 }: {
   project: Project;
   milestones: Milestone[];
+  taskLists?: TaskList[];
   href: string;
   today: string;
 }) {
@@ -100,7 +103,16 @@ export function TimelineProjectCard({
         ) : (
           <div className="space-y-4">
             {sorted.map((milestone) => {
-              const pct = milestoneDateProgress(milestone, project, today);
+              const attached = findListAttachedToMilestone(
+                taskLists,
+                milestone.id,
+              );
+              const pct = milestoneDateProgress(
+                milestone,
+                project,
+                today,
+                attached,
+              );
               const dateLabel = milestone.due_date
                 ? formatDisplayDate(milestone.due_date)
                 : "No date";
@@ -128,11 +140,13 @@ export function TimelineProjectCard({
 export function TimelineProjectListRow({
   project,
   milestones,
+  taskLists = [],
   href,
   today,
 }: {
   project: Project;
   milestones: Milestone[];
+  taskLists?: TaskList[];
   href: string;
   today: string;
 }) {
@@ -189,7 +203,16 @@ export function TimelineProjectListRow({
       {expanded && hasMilestones ? (
         <div className="space-y-3 border-t border-[var(--border)] px-3 py-3 pl-12">
           {sorted.map((milestone) => {
-            const pct = milestoneDateProgress(milestone, project, today);
+            const attached = findListAttachedToMilestone(
+              taskLists,
+              milestone.id,
+            );
+            const pct = milestoneDateProgress(
+              milestone,
+              project,
+              today,
+              attached,
+            );
             const dateLabel = milestone.due_date
               ? formatDisplayDate(milestone.due_date)
               : "No date";

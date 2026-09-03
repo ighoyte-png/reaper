@@ -20,11 +20,14 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Check, GripVertical, Pencil } from "lucide-react";
 import { ProgressBar } from "@/components/projects/progress-bar";
-import { milestoneDateProgress } from "@/lib/domain/progress";
+import {
+  findListAttachedToMilestone,
+  milestoneDateProgress,
+} from "@/lib/domain/progress";
 import { cn } from "@/lib/cn";
 import { scrollIntoNearest } from "@/lib/scroll-into-nearest";
 import { useIsPhone } from "@/lib/hooks/use-media-query";
-import type { Milestone, Project } from "@/lib/types";
+import type { Milestone, Project, TaskList } from "@/lib/types";
 import { format, parseISO } from "date-fns";
 
 function approvedByline(milestone: Milestone): string | null {
@@ -48,6 +51,7 @@ function approvedByline(milestone: Milestone): string | null {
 export function SortableMilestoneList({
   milestones,
   project,
+  taskLists = [],
   today,
   canManage,
   formatDisplayDate,
@@ -58,6 +62,8 @@ export function SortableMilestoneList({
 }: {
   milestones: Milestone[];
   project: Project;
+  /** Project task lists — used when a milestone is attached to a list. */
+  taskLists?: TaskList[];
   today: string;
   canManage: boolean;
   formatDisplayDate: (dateKey: string | null) => string;
@@ -110,6 +116,7 @@ export function SortableMilestoneList({
               key={m.id}
               milestone={m}
               project={project}
+              taskLists={taskLists}
               today={today}
               canManage={canManage}
               formatDisplayDate={formatDisplayDate}
@@ -127,6 +134,7 @@ export function SortableMilestoneList({
 function SortableMilestoneRow({
   milestone,
   project,
+  taskLists,
   today,
   canManage,
   formatDisplayDate,
@@ -136,6 +144,7 @@ function SortableMilestoneRow({
 }: {
   milestone: Milestone;
   project: Project;
+  taskLists: TaskList[];
   today: string;
   canManage: boolean;
   formatDisplayDate: (dateKey: string | null) => string;
@@ -146,7 +155,8 @@ function SortableMilestoneRow({
   const isPhone = useIsPhone();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: milestone.id, disabled: !canManage || isPhone });
-  const pct = milestoneDateProgress(milestone, project, today);
+  const attachedList = findListAttachedToMilestone(taskLists, milestone.id);
+  const pct = milestoneDateProgress(milestone, project, today, attachedList);
   const dateLabel = milestone.due_date
     ? formatDisplayDate(milestone.due_date)
     : "No date";

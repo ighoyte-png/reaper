@@ -85,6 +85,18 @@ export function clampDateRange(
     : { startKey: endKey, endKey: startKey };
 }
 
+/** Clamp a single date key into an inclusive [rangeStart, rangeEnd] window. */
+export function clampDateKeyToRange(
+  key: string,
+  rangeStart: string,
+  rangeEnd: string,
+): string {
+  const { startKey, endKey } = clampDateRange(rangeStart, rangeEnd);
+  if (key < startKey) return startKey;
+  if (key > endKey) return endKey;
+  return key;
+}
+
 export function calendarDayDelta(fromKey: string, toKey: string): number {
   return differenceInCalendarDays(parseISO(toKey), parseISO(fromKey));
 }

@@ -710,6 +710,9 @@ export default function ProjectDetailPage() {
                     <SortableMilestoneList
                       milestones={milestones}
                       project={project}
+                      taskLists={state.task_lists.filter(
+                        (l) => l.project_id === project.id,
+                      )}
                       today={today}
                       canManage={canEdit && progressEditMode}
                       formatDisplayDate={formatDisplayDate}
@@ -1017,6 +1020,9 @@ export default function ProjectDetailPage() {
                     <SortableMilestoneList
                       milestones={milestones}
                       project={project}
+                      taskLists={state.task_lists.filter(
+                        (l) => l.project_id === project.id,
+                      )}
                       today={today}
                       canManage={canEdit && progressEditMode}
                       formatDisplayDate={formatDisplayDate}
@@ -1732,6 +1738,25 @@ export default function ProjectDetailPage() {
                           editingMilestone.essential_url.trim()
                             ? editingMilestone.essential_kind
                             : editingMilestone.essential_kind,
+                        ...(editingMilestoneListId
+                          ? (() => {
+                              const target = state.task_lists.find(
+                                (l) => l.id === editingMilestoneListId,
+                              );
+                              // Seed dates only when newly linking / switching lists.
+                              if (
+                                target?.start_date &&
+                                target?.end_date &&
+                                target.milestone_id !== editingMilestone.id
+                              ) {
+                                return {
+                                  start_date: target.start_date,
+                                  due_date: target.end_date,
+                                };
+                              }
+                              return {};
+                            })()
+                          : {}),
                       });
                       if (project) {
                         for (const list of state.task_lists) {

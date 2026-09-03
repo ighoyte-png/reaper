@@ -52,6 +52,7 @@ import {
 } from "@/lib/domain/dates";
 import {
   barPastFutureSplit,
+  clampDateKeyToRange,
   clampDateRange,
   ganttListsForProject,
   ganttTasksForList,
@@ -1409,12 +1410,23 @@ export function ProjectGanttBoard({
         if (delta === 0) return;
         snap.dirty = true;
         snap.didMove = true;
-        const key = shiftWorkingDays(snap.originStart, delta);
+        let key = shiftWorkingDays(snap.originStart, delta);
+        const milestoneId = snap.target.milestoneId;
+        const attachedList = ganttLists.find(
+          (l) => l.milestone_id === milestoneId,
+        );
+        if (attachedList?.start_date && attachedList?.end_date) {
+          key = clampDateKeyToRange(
+            key,
+            attachedList.start_date,
+            attachedList.end_date,
+          );
+        }
         const next = { startKey: key, endKey: key };
         snap.previewStart = key;
         snap.previewEnd = key;
         bumpDragPreview(
-          new Map([[`milestone:${snap.target.milestoneId}`, next]]),
+          new Map([[`milestone:${milestoneId}`, next]]),
         );
         return;
       }
@@ -1447,9 +1459,22 @@ export function ProjectGanttBoard({
             });
           }
           for (const [msId, orig] of snap.cascadeMilestoneOrigins) {
+            const shifted = shiftWorkingDays(orig.endKey, delta);
+            const ownerList = ganttLists.find((l) => l.milestone_id === msId);
+            const ownerPreview = ownerList
+              ? preview.get(`list:${ownerList.id}`) ??
+                (ownerList.id === list.id ? newList : null)
+              : null;
+            const key = ownerPreview
+              ? clampDateKeyToRange(
+                  shifted,
+                  ownerPreview.startKey,
+                  ownerPreview.endKey,
+                )
+              : shifted;
             preview.set(`milestone:${msId}`, {
-              startKey: shiftWorkingDays(orig.startKey, delta),
-              endKey: shiftWorkingDays(orig.endKey, delta),
+              startKey: key,
+              endKey: key,
             });
           }
           snap.previewStart = newList.startKey;
@@ -1733,11 +1758,26 @@ export function ProjectGanttBoard({
       const preview = previewMap.get(`milestone:${milestoneId}`);
       if (ms && preview) {
         pushUndo({ milestones: [cloneMilestone(ms)] });
-        upsertMilestone({
-          ...ms,
-          start_date: preview.startKey,
-          due_date: preview.endKey,
-        });
+        const attachedList = ganttLists.find((l) => l.milestone_id === ms.id);
+        if (attachedList?.start_date && attachedList?.end_date) {
+          const due = clampDateKeyToRange(
+            preview.endKey,
+            attachedList.start_date,
+            attachedList.end_date,
+          );
+          upsertMilestone({
+            ...ms,
+            // Keep list-aligned start; only the Gantt star (due) moves.
+            start_date: ms.start_date ?? attachedList.start_date,
+            due_date: due,
+          });
+        } else {
+          upsertMilestone({
+            ...ms,
+            start_date: preview.startKey,
+            due_date: preview.endKey,
+          });
+        }
       }
       setDragVersion((v) => v + 1);
       return;
@@ -1776,6 +1816,9 @@ export function ProjectGanttBoard({
             const ms = projectMilestones.find((m) => m.id === msId);
             if (ms) undoMilestones.push(cloneMilestone(ms));
           }
+        } else if (list.milestone_id) {
+          const ms = projectMilestones.find((m) => m.id === list.milestone_id);
+          if (ms) undoMilestones.push(cloneMilestone(ms));
         }
         for (const [taskId] of snap.listTaskOrigins) {
           const task = projectTasks.find((t) => t.id === taskId);
@@ -1818,11 +1861,51 @@ export function ProjectGanttBoard({
             ) {
               continue;
             }
-            upsertMilestone({
-              ...ms,
-              start_date: preview.startKey,
-              due_date: preview.endKey,
-            });
+            const ownerList =
+              ganttLists.find((l) => l.milestone_id === msId) ?? null;
+            const ownerPreview = ownerList
+              ? previewMap.get(`list:${ownerList.id}`) ??
+                (ownerList.id === list.id ? listDates : null)
+              : null;
+            if (ownerPreview) {
+              const due = clampDateKeyToRange(
+                preview.endKey,
+                ownerPreview.startKey,
+                ownerPreview.endKey,
+              );
+              upsertMilestone({
+                ...ms,
+                start_date: ownerPreview.startKey,
+                due_date: due,
+              });
+            } else {
+              upsertMilestone({
+                ...ms,
+                start_date: preview.startKey,
+                due_date: preview.endKey,
+              });
+            }
+          }
+        } else if (list.milestone_id) {
+          // List resize: keep attached milestone inside the new list window.
+          const ms = projectMilestones.find((m) => m.id === list.milestone_id);
+          if (ms) {
+            const day = ms.due_date ?? ms.start_date ?? listDates.endKey;
+            const due = clampDateKeyToRange(
+              day,
+              listDates.startKey,
+              listDates.endKey,
+            );
+            if (
+              ms.start_date !== listDates.startKey ||
+              ms.due_date !== due
+            ) {
+              upsertMilestone({
+                ...ms,
+                start_date: listDates.startKey,
+                due_date: due,
+              });
+            }
           }
         }
         for (const [taskId, orig] of snap.listTaskOrigins) {

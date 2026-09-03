@@ -156,6 +156,16 @@ function TimelinesReportContent() {
     return map;
   }, [state.milestones]);
 
+  const taskListsByProject = useMemo(() => {
+    const map = new Map<string, typeof state.task_lists>();
+    for (const list of state.task_lists) {
+      const bucket = map.get(list.project_id) ?? [];
+      bucket.push(list);
+      map.set(list.project_id, bucket);
+    }
+    return map;
+  }, [state.task_lists]);
+
   return (
     <PageContainer className="overflow-y-auto">
       <PageHeader title={<ReportBreadcrumb current="Project Timelines" />} />
@@ -219,6 +229,7 @@ function TimelinesReportContent() {
                       key={project.id}
                       project={project}
                       milestones={milestonesByProject.get(project.id) ?? []}
+                      taskLists={taskListsByProject.get(project.id) ?? []}
                       href={projectHref(project)}
                       today={today}
                     />
@@ -249,6 +260,7 @@ function TimelinesReportContent() {
                       key={project.id}
                       project={project}
                       milestones={milestonesByProject.get(project.id) ?? []}
+                      taskLists={taskListsByProject.get(project.id) ?? []}
                       href={projectHref(project)}
                       today={today}
                     />
@@ -293,6 +305,7 @@ function TimelinesReportContent() {
                         key={project.id}
                         project={project}
                         milestones={milestonesByProject.get(project.id) ?? []}
+                        taskLists={taskListsByProject.get(project.id) ?? []}
                         href={projectHref(project)}
                         today={today}
                       />
