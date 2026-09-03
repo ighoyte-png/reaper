@@ -20,15 +20,15 @@ function TaskChipsLegend({ clientLabel }: { clientLabel: string }) {
       </p>
       <ul className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1.5 text-xs text-[var(--text-muted)]">
         <li className="contents">
-          <TaskStatusTag status="upcoming" className="shrink-0" />
+          <TaskStatusTag status="upcoming" className="justify-self-start" />
           <span>A task is ready to be worked on or is in progress</span>
         </li>
         <li className="contents">
-          <TaskStatusTag status="active" className="shrink-0" />
+          <TaskStatusTag status="active" className="justify-self-start" />
           <span>A task is being reviewed for quality assurance</span>
         </li>
         <li className="contents">
-          <TaskStatusTag status="complete" className="shrink-0" />
+          <TaskStatusTag status="complete" className="justify-self-start" />
           <span>
             A task has been completed and approved by {clientLabel}
           </span>
