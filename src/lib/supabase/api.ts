@@ -812,10 +812,15 @@ export type OrgForecastRow = {
   over_budget: boolean;
 };
 
+type CommentExtrasQueryResult = {
+  data: unknown[] | null;
+  error: { message: string; code?: string } | null;
+};
+
 function attachCommentExtras(
   commentsRaw: TaskComment[],
-  mentionsRes: { data: unknown[] | null; error: { message: string; code?: string } | null },
-  reactionsRes: { data: unknown[] | null; error: { message: string; code?: string } | null },
+  mentionsRes: CommentExtrasQueryResult,
+  reactionsRes: CommentExtrasQueryResult,
 ): TaskComment[] {
   const mentionByComment = new Map<string, string[]>();
   if (!mentionsRes.error) {
@@ -857,6 +862,70 @@ function attachCommentExtras(
     reactions: reactionsByComment.get(c.id) ?? [],
   }));
 }
+
+/** Mentions/reactions for a known comment id set (never org-wide). */
+async function fetchCommentExtrasForIds(
+  supabase: SupabaseClient,
+  orgId: string,
+  commentIds: string[],
+): Promise<{
+  mentionsRes: CommentExtrasQueryResult;
+  reactionsRes: CommentExtrasQueryResult;
+}> {
+  const ids = [...new Set(commentIds.filter(Boolean))];
+  if (ids.length === 0) {
+    return {
+      mentionsRes: { data: [], error: null },
+      reactionsRes: { data: [], error: null },
+    };
+  }
+  const [mentionsRes, reactionsRes] = await Promise.all([
+    supabase
+      .from("task_comment_mentions")
+      .select("comment_id, person_id")
+      .eq("organization_id", orgId)
+      .in("comment_id", ids),
+    supabase
+      .from("task_comment_reactions")
+      .select("comment_id, emoji, profile_id")
+      .eq("organization_id", orgId)
+      .in("comment_id", ids),
+  ]);
+  return { mentionsRes, reactionsRes };
+}
+
+/** Field lists for public share / portal (omit notes & unused inbox tables). */
+const SHARE_ORG_COLS = "id, name, slug, disabled_at, share_enabled";
+const SHARE_ORG_SETTINGS_COLS =
+  "organization_id, default_cost_rate, default_bill_rate, hours_warning_pct, hours_over_pct, target_profit_margin_pct, amount_warning_pct, amount_over_pct, capacity_low_max_pct, capacity_near_pct, capacity_over_pct, currency_enabled, usd_to_cad_rate, client_portal_enabled, client_portal_company_name, client_portal_logo_light_attachment_id, client_portal_logo_dark_attachment_id";
+const SHARE_CLIENT_COLS =
+  "id, organization_id, name, slug, color, status, hide_from_public_share";
+const SHARE_PROJECT_COLS =
+  "id, organization_id, client_id, name, slug, status, priority, color, start_date, end_date, budget_hours, budget_amount, budget_mode, bill_rate, budget_monthly_reset, assignment_time_reporting, manager_person_id, share_enabled, share_token, hide_from_public_share, sandbox_mode, currency";
+const SHARE_PERSON_COLS =
+  "id, organization_id, profile_id, name, email, role_title, department, office, capacity_hours_week, cost_rate, timezone, holiday_calendar_id, avatar_url, avatar_attachment_id, hide_from_schedule, hide_from_utilization, is_contractor, avatar_color, deleted_at, currency";
+const SHARE_MEMBER_COLS =
+  "project_id, person_id, organization_id, contractor_mode, contractor_fixed_fee, contractor_hours";
+const SHARE_EXPENSE_COLS =
+  "id, organization_id, project_id, person_id, month_key, amount, hours, notes, repeat_monthly, repeat_end_month, created_at, updated_at, created_by_profile_id";
+const SHARE_MILESTONE_COLS =
+  "id, organization_id, project_id, name, start_date, due_date, status, client_approved, sort_order, approval_enabled, approval_name, approval_email, essential_kind, essential_label, essential_url, approved_by_name, approved_at, approved_by_client";
+const SHARE_ASSET_COLS =
+  "id, organization_id, project_id, kind, label, url, body, sort_order, hide_from_client";
+const SHARE_TASK_LIST_COLS =
+  "id, organization_id, project_id, milestone_id, name, color, sort_order, archived, hide_from_client, gantt_enabled, start_date, end_date";
+const SHARE_TASK_COLS =
+  "id, organization_id, project_id, list_id, parent_id, assignee_person_id, title, is_divider, is_client_review, status, start_date, due_date, sort_order, created_at, created_by_profile_id, edited_at, edited_by_profile_id, status_changed_at, status_changed_by_profile_id, assignee_notified_at";
+const SHARE_ASSIGNMENT_COLS =
+  "id, organization_id, person_id, project_id, start_date, end_date, hours_per_day, allocation_pct, status, recurrence, recurrence_end_date, recurrence_exceptions, created_at, edited_at, edited_by_profile_id";
+const SHARE_BOUND_TASK_COLS =
+  "assignment_id, task_id, organization_id, sort_order, bound_source, out_of_sync";
+const SHARE_BULLETIN_COLS =
+  "id, organization_id, project_id, task_id, milestone_id, title, body, pinned, audience, audience_person_ids, audience_pod_ids, tone, created_by_profile_id, created_at";
+const SHARE_HOLIDAY_CAL_COLS = "id, organization_id, name, region";
+const SHARE_HOLIDAY_DAY_COLS = "id, organization_id, calendar_id, date, name";
+const SHARE_LEAVE_COLS =
+  "id, organization_id, person_id, date, kind, status, hours_per_day, notes";
 
 export async function fetchWorkspace(
   supabase: SupabaseClient,
@@ -1588,28 +1657,21 @@ export async function loadMentionComments(
     return { tasks: [], task_comments: [] };
   }
 
-  const [commentsRes, mentionsRes, reactionsRes] = await Promise.all([
-    supabase
-      .from("task_comments")
-      .select("*")
-      .eq("organization_id", orgId)
-      .in("id", ids),
-    supabase
-      .from("task_comment_mentions")
-      .select("*")
-      .eq("organization_id", orgId)
-      .in("comment_id", ids),
-    supabase
-      .from("task_comment_reactions")
-      .select("*")
-      .eq("organization_id", orgId)
-      .in("comment_id", ids),
-  ]);
+  const commentsRes = await supabase
+    .from("task_comments")
+    .select("*")
+    .eq("organization_id", orgId)
+    .in("id", ids);
 
   if (commentsRes.error) throw commentsRes.error;
 
   const task_commentsRaw = (commentsRes.data ?? []).map((row) =>
     mapTaskComment(row as Record<string, unknown>),
+  );
+  const { mentionsRes, reactionsRes } = await fetchCommentExtrasForIds(
+    supabase,
+    orgId,
+    task_commentsRaw.map((c) => c.id),
   );
   const task_comments = attachCommentExtras(
     task_commentsRaw,
@@ -1666,20 +1728,12 @@ export async function loadCommentsForTaskIds(
     return { tasks: [], task_comments: [] };
   }
 
-  const [commentsRes, mentionsRes, reactionsRes, tasksRes] = await Promise.all([
+  const [commentsRes, tasksRes] = await Promise.all([
     supabase
       .from("task_comments")
       .select("*")
       .eq("organization_id", orgId)
       .in("task_id", ids),
-    supabase
-      .from("task_comment_mentions")
-      .select("*")
-      .eq("organization_id", orgId),
-    supabase
-      .from("task_comment_reactions")
-      .select("*")
-      .eq("organization_id", orgId),
     supabase.from("tasks").select("*").eq("organization_id", orgId).in("id", ids),
   ]);
 
@@ -1688,6 +1742,11 @@ export async function loadCommentsForTaskIds(
 
   const task_commentsRaw = (commentsRes.data ?? []).map((row) =>
     mapTaskComment(row as Record<string, unknown>),
+  );
+  const { mentionsRes, reactionsRes } = await fetchCommentExtrasForIds(
+    supabase,
+    orgId,
+    task_commentsRaw.map((c) => c.id),
   );
   const task_comments = attachCommentExtras(
     task_commentsRaw,
@@ -1726,7 +1785,15 @@ export async function loadProjectData(
   supabase: SupabaseClient,
   orgId: string,
   projectId: string,
+  options: { includeComments?: boolean; slimSelects?: boolean } = {},
 ): Promise<ProjectDataBundle> {
+  const includeComments = options.includeComments !== false;
+  const slim = options.slimSelects === true;
+  const milestoneCols = slim ? SHARE_MILESTONE_COLS : "*";
+  const taskListCols = slim ? SHARE_TASK_LIST_COLS : "*";
+  const taskCols = slim ? SHARE_TASK_COLS : "*";
+  const assetCols = slim ? SHARE_ASSET_COLS : "*";
+  const assignmentCols = slim ? SHARE_ASSIGNMENT_COLS : "*";
   const [
     milestonesRes,
     taskListsRes,
@@ -1736,27 +1803,27 @@ export async function loadProjectData(
   ] = await Promise.all([
     supabase
       .from("milestones")
-      .select("*")
+      .select(milestoneCols)
       .eq("organization_id", orgId)
       .eq("project_id", projectId),
     supabase
       .from("task_lists")
-      .select("*")
+      .select(taskListCols)
       .eq("organization_id", orgId)
       .eq("project_id", projectId),
     supabase
       .from("tasks")
-      .select("*")
+      .select(taskCols)
       .eq("organization_id", orgId)
       .eq("project_id", projectId),
     supabase
       .from("project_assets")
-      .select("*")
+      .select(assetCols)
       .eq("organization_id", orgId)
       .eq("project_id", projectId),
     supabase
       .from("assignments")
-      .select("*")
+      .select(assignmentCols)
       .eq("organization_id", orgId)
       .eq("project_id", projectId),
   ]);
@@ -1773,34 +1840,25 @@ export async function loadProjectData(
   const taskIds = tasks.map((t) => t.id);
 
   let task_comments: TaskComment[] = [];
-  if (taskIds.length > 0) {
-    const [taskCommentsRes, taskCommentMentionsRes, taskCommentReactionsRes] =
-      await Promise.all([
-        supabase
-          .from("task_comments")
-          .select("*")
-          .eq("organization_id", orgId)
-          .in("task_id", taskIds),
-        supabase
-          .from("task_comment_mentions")
-          .select("*")
-          .eq("organization_id", orgId),
-        supabase
-          .from("task_comment_reactions")
-          .select("*")
-          .eq("organization_id", orgId),
-      ]);
+  if (includeComments && taskIds.length > 0) {
+    const taskCommentsRes = await supabase
+      .from("task_comments")
+      .select("*")
+      .eq("organization_id", orgId)
+      .in("task_id", taskIds);
     const task_commentsRaw: TaskComment[] = taskCommentsRes.error
       ? []
       : (taskCommentsRes.data ?? []).map((row) =>
           mapTaskComment(row as Record<string, unknown>),
         );
     const idSet = new Set(taskIds);
-    task_comments = attachCommentExtras(
-      task_commentsRaw.filter((c) => idSet.has(c.task_id)),
-      taskCommentMentionsRes,
-      taskCommentReactionsRes,
+    const scoped = task_commentsRaw.filter((c) => idSet.has(c.task_id));
+    const { mentionsRes, reactionsRes } = await fetchCommentExtrasForIds(
+      supabase,
+      orgId,
+      scoped.map((c) => c.id),
     );
+    task_comments = attachCommentExtras(scoped, mentionsRes, reactionsRes);
   }
 
   return {
@@ -1887,23 +1945,52 @@ export async function loadPublicOrgShareData(
   leave_days: LeaveDay[];
   task_comments: TaskComment[];
 }> {
+  const assignmentsQuery = supabase
+    .from("assignments")
+    .select(SHARE_ASSIGNMENT_COLS)
+    .eq("organization_id", orgId)
+    .or(
+      [
+        `and(recurrence.eq.none,start_date.lte.${rangeEnd},end_date.gte.${rangeStart})`,
+        `and(recurrence.eq.weekly,start_date.lte.${rangeEnd},or(recurrence_end_date.is.null,recurrence_end_date.gte.${rangeStart}))`,
+        `and(recurrence.is.null,start_date.lte.${rangeEnd},end_date.gte.${rangeStart})`,
+      ].join(","),
+    );
+
   const [
     milestonesRes,
     taskListsRes,
     projectAssetsRes,
-    tasks,
-    assignments,
-    leave_days,
+    tasksRes,
+    assignmentsRes,
+    leaveRes,
   ] = await Promise.all([
-    supabase.from("milestones").select("*").eq("organization_id", orgId),
-    supabase.from("task_lists").select("*").eq("organization_id", orgId),
-    supabase.from("project_assets").select("*").eq("organization_id", orgId),
-    loadOrgTasks(supabase, orgId),
-    loadAssignmentsForRange(supabase, orgId, rangeStart, rangeEnd),
-    loadLeaveForRange(supabase, orgId, rangeStart, rangeEnd),
+    supabase
+      .from("milestones")
+      .select(SHARE_MILESTONE_COLS)
+      .eq("organization_id", orgId),
+    supabase
+      .from("task_lists")
+      .select(SHARE_TASK_LIST_COLS)
+      .eq("organization_id", orgId),
+    supabase
+      .from("project_assets")
+      .select(SHARE_ASSET_COLS)
+      .eq("organization_id", orgId),
+    supabase.from("tasks").select(SHARE_TASK_COLS).eq("organization_id", orgId),
+    assignmentsQuery,
+    supabase
+      .from("leave_days")
+      .select(SHARE_LEAVE_COLS)
+      .eq("organization_id", orgId)
+      .gte("date", rangeStart)
+      .lte("date", rangeEnd),
   ]);
 
   if (milestonesRes.error) throw milestonesRes.error;
+  if (assignmentsRes.error) throw assignmentsRes.error;
+  if (leaveRes.error) throw leaveRes.error;
+  if (tasksRes.error) throw tasksRes.error;
 
   return {
     milestones: (milestonesRes.data ?? []).map((row) =>
@@ -1919,9 +2006,15 @@ export async function loadPublicOrgShareData(
       : (projectAssetsRes.data ?? []).map((row) =>
           mapProjectAsset(row as Record<string, unknown>),
         ),
-    tasks,
-    assignments,
-    leave_days,
+    tasks: (tasksRes.data ?? []).map((row) =>
+      mapTask(row as Record<string, unknown>),
+    ),
+    assignments: (assignmentsRes.data ?? []).map((row) =>
+      mapAssignment(row as Record<string, unknown>),
+    ),
+    leave_days: (leaveRes.data ?? []).map((row) =>
+      mapLeaveDay(row as Record<string, unknown>),
+    ),
     task_comments: [],
   };
 }
@@ -2129,7 +2222,206 @@ async function resolvePeopleAvatars(
   );
 }
 
-/** Org public share: bootstrap + scoped share body (not full historical assignments). */
+/**
+ * Lightweight org shell for public share / client portal.
+ * Skips templates, pods, emojis, favorites, and session inbox tables.
+ */
+export async function loadShareOrgShell(
+  supabase: SupabaseClient,
+  orgId: string,
+  options: { projectId?: string; includeBulletins?: boolean } = {},
+): Promise<DemoState> {
+  const projectId = options.projectId ?? null;
+  const includeBulletins = options.includeBulletins === true;
+
+  let membersQuery = supabase
+    .from("project_members")
+    .select(SHARE_MEMBER_COLS)
+    .eq("organization_id", orgId);
+  let expensesQuery = supabase
+    .from("project_contractor_expenses")
+    .select(SHARE_EXPENSE_COLS)
+    .eq("organization_id", orgId);
+  if (projectId) {
+    membersQuery = membersQuery.eq("project_id", projectId);
+    expensesQuery = expensesQuery.eq("project_id", projectId);
+  }
+
+  const [
+    orgRes,
+    orgSettingsRes,
+    clientsRes,
+    projectsRes,
+    peopleRes,
+    projectMembersRes,
+    contractorExpensesRes,
+    calendarsRes,
+    calendarDaysRes,
+    bulletinsRes,
+    assignmentBoundTasksRes,
+  ] = await Promise.all([
+    supabase.from("organizations").select(SHARE_ORG_COLS).eq("id", orgId).single(),
+    supabase
+      .from("organization_settings")
+      .select(SHARE_ORG_SETTINGS_COLS)
+      .eq("organization_id", orgId)
+      .maybeSingle(),
+    supabase.from("clients").select(SHARE_CLIENT_COLS).eq("organization_id", orgId),
+    supabase
+      .from("projects")
+      .select(SHARE_PROJECT_COLS)
+      .eq("organization_id", orgId),
+    supabase
+      .from("people")
+      .select(SHARE_PERSON_COLS)
+      .eq("organization_id", orgId)
+      .is("deleted_at", null),
+    membersQuery,
+    expensesQuery,
+    supabase
+      .from("holiday_calendars")
+      .select(SHARE_HOLIDAY_CAL_COLS)
+      .eq("organization_id", orgId),
+    supabase
+      .from("holiday_calendar_days")
+      .select(SHARE_HOLIDAY_DAY_COLS)
+      .eq("organization_id", orgId),
+    includeBulletins
+      ? supabase
+          .from("bulletins")
+          .select(SHARE_BULLETIN_COLS)
+          .eq("organization_id", orgId)
+      : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
+    projectId
+      ? Promise.resolve({ data: [] as Record<string, unknown>[], error: null })
+      : supabase
+          .from("assignment_bound_tasks")
+          .select(SHARE_BOUND_TASK_COLS)
+          .eq("organization_id", orgId)
+          .order("sort_order", { ascending: true }),
+  ]);
+
+  for (const res of [orgRes, clientsRes, projectsRes, peopleRes]) {
+    if (res.error) throw res.error;
+  }
+
+  const organization = orgRes.data as Organization;
+  const organization_settings = normalizeOrgBudgetSettings(
+    orgSettingsRes.error || !orgSettingsRes.data
+      ? { organization_id: orgId }
+      : (orgSettingsRes.data as Partial<OrganizationSettings>),
+    orgId,
+  );
+
+  const holiday_calendars: HolidayCalendar[] = calendarsRes.error
+    ? []
+    : (calendarsRes.data ?? []).map((row) => ({
+        id: String(row.id),
+        organization_id: String(row.organization_id),
+        name: String(row.name ?? ""),
+        region: String(row.region ?? ""),
+      }));
+  const holiday_calendar_days: HolidayCalendarDay[] = calendarDaysRes.error
+    ? []
+    : (calendarDaysRes.data ?? []).map((row) => ({
+        id: String(row.id),
+        organization_id: String(row.organization_id),
+        calendar_id: String(row.calendar_id),
+        date: String(row.date),
+        name: String(row.name ?? ""),
+      }));
+
+  const project_members: ProjectMember[] = projectMembersRes.error
+    ? []
+    : (projectMembersRes.data ?? []).map((row) =>
+        mapProjectMember(row as Record<string, unknown>),
+      );
+
+  let assignment_bound_tasks: AssignmentBoundTask[] = [];
+  if (assignmentBoundTasksRes.error) {
+    if (
+      missingAssignmentBoundTasksTable(
+        assignmentBoundTasksRes.error.message,
+        assignmentBoundTasksRes.error.code,
+      )
+    ) {
+      console.warn(
+        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
+      );
+    } else {
+      throw assignmentBoundTasksRes.error;
+    }
+  } else {
+    assignment_bound_tasks = (assignmentBoundTasksRes.data ?? []).map((row) =>
+      mapAssignmentBoundTask(row as Record<string, unknown>),
+    );
+  }
+
+  let project_contractor_expenses: ProjectContractorExpense[] = [];
+  if (contractorExpensesRes.error) {
+    if (
+      /relation .*project_contractor_expenses.* does not exist/i.test(
+        contractorExpensesRes.error.message,
+      ) ||
+      contractorExpensesRes.error.code === "42P01"
+    ) {
+      console.warn(
+        "project_contractor_expenses missing — apply supabase/migrations/093_monthly_amount_reset_contractor_expenses.sql",
+      );
+    } else {
+      throw contractorExpensesRes.error;
+    }
+  } else {
+    project_contractor_expenses = (contractorExpensesRes.data ?? []).map((row) =>
+      mapProjectContractorExpense(row as Record<string, unknown>),
+    );
+  }
+
+  const bulletins: Bulletin[] = bulletinsRes.error
+    ? []
+    : (bulletinsRes.data ?? []).map((row) =>
+        mapBulletin(row as Record<string, unknown>),
+      );
+
+  return {
+    ...emptyWorkspace(),
+    organization: {
+      id: organization.id,
+      name: organization.name,
+      slug:
+        String((organization as { slug?: string }).slug ?? "") ||
+        String(organization.name ?? "workspace")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "") ||
+        String(organization.id).slice(0, 8),
+      disabled_at:
+        (organization as { disabled_at?: string | null }).disabled_at ?? null,
+      share_enabled: Boolean(
+        (organization as { share_enabled?: boolean }).share_enabled,
+      ),
+    },
+    organization_settings,
+    clients: (clientsRes.data ?? []).map((row) =>
+      mapClient(row as Record<string, unknown>),
+    ),
+    projects: (projectsRes.data ?? []).map((row) =>
+      mapProject(row as Record<string, unknown>),
+    ),
+    people: (peopleRes.data ?? []).map((row) =>
+      mapPerson(row as Record<string, unknown>),
+    ),
+    project_members,
+    project_contractor_expenses,
+    assignment_bound_tasks,
+    holiday_calendars,
+    holiday_calendar_days,
+    bulletins,
+    sessionProfileId: null,
+  };
+}
+
+/** Org public share: slim shell + scoped share body (not full historical assignments). */
 export async function loadOrgWorkspace(
   supabase: SupabaseClient,
   orgId: string,
@@ -2153,7 +2445,7 @@ export async function loadOrgWorkspace(
     })();
 
   const [boot, share] = await Promise.all([
-    loadOrgBootstrap(supabase, orgId, sessionProfileId),
+    loadShareOrgShell(supabase, orgId, { includeBulletins: true }),
     loadPublicOrgShareData(supabase, orgId, start, end),
   ]);
   return {
@@ -2163,24 +2455,57 @@ export async function loadOrgWorkspace(
   };
 }
 
-/** Project portal: bootstrap shell + one project bundle (no org-wide heavy). */
+/** Project portal: slim shell + one project bundle (no comments / org-wide extras). */
 export async function loadProjectPortalWorkspace(
   supabase: SupabaseClient,
   orgId: string,
   projectId: string,
 ): Promise<DemoState> {
   const [boot, bundle] = await Promise.all([
-    loadOrgBootstrap(supabase, orgId, null),
-    loadProjectData(supabase, orgId, projectId),
+    loadShareOrgShell(supabase, orgId, {
+      projectId,
+      includeBulletins: false,
+    }),
+    loadProjectData(supabase, orgId, projectId, {
+      includeComments: false,
+      slimSelects: true,
+    }),
   ]);
+
+  let assignment_bound_tasks: AssignmentBoundTask[] = [];
+  const assignmentIds = bundle.assignments.map((a) => a.id);
+  if (assignmentIds.length > 0) {
+    const boundRes = await supabase
+      .from("assignment_bound_tasks")
+      .select(SHARE_BOUND_TASK_COLS)
+      .eq("organization_id", orgId)
+      .in("assignment_id", assignmentIds)
+      .order("sort_order", { ascending: true });
+    if (boundRes.error) {
+      if (
+        !missingAssignmentBoundTasksTable(
+          boundRes.error.message,
+          boundRes.error.code,
+        )
+      ) {
+        throw boundRes.error;
+      }
+    } else {
+      assignment_bound_tasks = (boundRes.data ?? []).map((row) =>
+        mapAssignmentBoundTask(row as Record<string, unknown>),
+      );
+    }
+  }
+
   return {
     ...boot,
     milestones: bundle.milestones,
     task_lists: bundle.task_lists,
     tasks: bundle.tasks,
-    task_comments: bundle.task_comments,
+    task_comments: [],
     project_assets: bundle.project_assets,
     assignments: bundle.assignments,
+    assignment_bound_tasks,
     leave_days: [],
     sessionProfileId: null,
   };

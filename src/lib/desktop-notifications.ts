@@ -50,7 +50,7 @@ function absoluteUrl(pathOrUrl: string): string {
 
 /** Prefer PWA icon PNG over SVG for OS notification chrome / badge. */
 export function reaperNotificationBadgeUrl(): string {
-  return absoluteUrl("/pwa-icons/192");
+  return absoluteUrl("/pwa-icons/icon-192.png");
 }
 
 function initialsFromName(name: string): string {

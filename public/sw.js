@@ -64,8 +64,8 @@ self.addEventListener("push", (event) => {
 
       await self.registration.showNotification(payload.title, {
         body: payload.body,
-        icon: "/pwa-icons/192",
-        badge: "/pwa-icons/192",
+        icon: "/pwa-icons/icon-192.png",
+        badge: "/pwa-icons/icon-192.png",
         tag: payload.tag || payload.notificationId || "reaper",
         data: {
           href: payload.href,
