@@ -947,6 +947,44 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     state.organization_settings,
   ]);
 
+  const assignmentTimeSections = useMemo(() => {
+    if (!project || !showAssignmentTimeReport(project)) return [];
+    if (!isRetainer || (periodMode !== "month" && periodMode !== "term")) {
+      return [];
+    }
+    const months =
+      periodMode === "term"
+        ? assignmentTimeTermMonths(project)
+        : [
+            {
+              year: selectedMonth.year,
+              monthIndex: selectedMonth.monthIndex,
+            },
+          ];
+    if (months.length === 0) return [];
+    return buildAssignmentTimeReport({
+      project,
+      assignments: state.assignments,
+      boundTasks: state.assignment_bound_tasks,
+      tasks: state.tasks,
+      people: state.people,
+      contractorExpenses: state.project_contractor_expenses,
+      todayKey: toDateKey(new Date()),
+      months,
+    });
+  }, [
+    project,
+    isRetainer,
+    periodMode,
+    selectedMonth.year,
+    selectedMonth.monthIndex,
+    state.assignments,
+    state.assignment_bound_tasks,
+    state.tasks,
+    state.people,
+    state.project_contractor_expenses,
+  ]);
+
   function goBack() {
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
@@ -1262,44 +1300,6 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
         : periodMode === "lifetime"
           ? "Total Plan"
           : "Contract Term";
-
-  const assignmentTimeSections = useMemo(() => {
-    if (!project || !showAssignmentTimeReport(project)) return [];
-    if (!isRetainer || (periodMode !== "month" && periodMode !== "term")) {
-      return [];
-    }
-    const months =
-      periodMode === "term"
-        ? assignmentTimeTermMonths(project)
-        : [
-            {
-              year: selectedMonth.year,
-              monthIndex: selectedMonth.monthIndex,
-            },
-          ];
-    if (months.length === 0) return [];
-    return buildAssignmentTimeReport({
-      project,
-      assignments: state.assignments,
-      boundTasks: state.assignment_bound_tasks,
-      tasks: state.tasks,
-      people: state.people,
-      contractorExpenses: state.project_contractor_expenses,
-      todayKey: toDateKey(new Date()),
-      months,
-    });
-  }, [
-    project,
-    isRetainer,
-    periodMode,
-    selectedMonth.year,
-    selectedMonth.monthIndex,
-    state.assignments,
-    state.assignment_bound_tasks,
-    state.tasks,
-    state.people,
-    state.project_contractor_expenses,
-  ]);
 
   return (
     <PageContainer className="overflow-y-auto">
