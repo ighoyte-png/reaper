@@ -398,6 +398,12 @@ export function ScheduleGrid() {
     /** Strip these assignment ids from bind preview (post-split clear). */
     clearedAssignmentIds?: string[];
   }>(null);
+  /**
+   * Weekly split changes `activeAssignmentId` mid-bind. Skip the bind-chrome
+   * reset effect so it does not clear the follow-up gantt/dates confirm (or
+   * wipe draft ids before apply finishes).
+   */
+  const suppressBindChromeResetRef = useRef(false);
   const [ganttMoveLockedNotice, setGanttMoveLockedNotice] = useState(false);
   const [ganttScheduleMoveNotice, setGanttScheduleMoveNotice] = useState(false);
   const [cutBoundConfirm, setCutBoundConfirm] = useState<null | {
@@ -1052,6 +1058,10 @@ export function ScheduleGrid() {
       // Keep bind drafts seeded by finishProjectBindFlow / createAssignment.
       return;
     }
+    if (suppressBindChromeResetRef.current) {
+      // Weekly bind split selected a new assignment id; keep draft + confirm.
+      return;
+    }
     const ids = !activeAssignmentId
       ? []
       : state.assignment_bound_tasks
@@ -1065,6 +1075,11 @@ export function ScheduleGrid() {
     // Reset bind chrome when the selected assignment changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- assignment switch only
   }, [activeAssignmentId, pendingCreate?.id]);
+
+  function clearBindConfirm() {
+    suppressBindChromeResetRef.current = false;
+    setBindConfirm(null);
+  }
 
   function syncBoundTaskDatesFromAssignment(assignment: Assignment) {
     const boundIds = state.assignment_bound_tasks
@@ -1234,7 +1249,10 @@ export function ScheduleGrid() {
     },
   ) {
     const assignment = opts?.assignment ?? editForm ?? selected;
-    if (!assignment || !canManage) return;
+    if (!assignment || !canManage) {
+      suppressBindChromeResetRef.current = false;
+      return;
+    }
     const unique = sortBoundTaskIdsByListOrder(
       [...new Set(taskIds)],
       state.tasks,
@@ -1379,6 +1397,7 @@ export function ScheduleGrid() {
     setBindDraftIds(new Set(unique));
     setBindEditingSelection(false);
     setBindToAssignment(true);
+    suppressBindChromeResetRef.current = false;
     setBindConfirm(null);
     pendingProjectBindTaskIdRef.current = null;
     push(
@@ -1586,6 +1605,9 @@ export function ScheduleGrid() {
     const taskIds = bindConfirm.taskIds;
     const series = editForm ?? selected;
     if (!series || (series.recurrence ?? "none") !== "weekly") return;
+    // Selecting the post-split target changes activeAssignmentId; suppress the
+    // chrome-reset effect until bind apply/cancel finishes.
+    suppressBindChromeResetRef.current = true;
     setBindConfirm(null);
 
     const occurrenceStart = selectedOccurrence?.start ?? series.start_date;
@@ -6833,7 +6855,7 @@ export function ScheduleGrid() {
       {bindConfirm?.step === "weekly" ? (
         <Modal
           title="Bind to recurring assignment"
-          onClose={() => setBindConfirm(null)}
+          onClose={clearBindConfirm}
         >
           <p className="mb-4 text-sm text-[var(--text-muted)]">
             This is a weekly series. Binding can apply from this week forward
@@ -6858,7 +6880,7 @@ export function ScheduleGrid() {
             <button
               type="button"
               className="h-9 cursor-pointer text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
-              onClick={() => setBindConfirm(null)}
+              onClick={clearBindConfirm}
             >
               Cancel
             </button>
@@ -6885,7 +6907,7 @@ export function ScheduleGrid() {
           tone="accent"
           confirmLabel={bindConfirm.step === "gantt" ? "Got it" : "Continue"}
           onConfirm={() => advanceBindConfirm()}
-          onCancel={() => setBindConfirm(null)}
+          onCancel={clearBindConfirm}
         />
       ) : null}
       {ganttMoveLockedNotice ? (
