@@ -389,8 +389,14 @@ export function ScheduleGrid() {
   const [bindEditingSelection, setBindEditingSelection] = useState(false);
   const [bindDraftIds, setBindDraftIds] = useState<Set<string>>(() => new Set());
   const [bindConfirm, setBindConfirm] = useState<null | {
-    step: "dates" | "overwrite" | "gantt";
+    step: "dates" | "overwrite" | "gantt" | "weekly";
     taskIds: string[];
+    /** After weekly split, bind against this assignment. */
+    targetAssignment?: Assignment;
+    /** Non-Gantt date span for “from this date forward” weekly binds. */
+    dateSpanOverride?: { start: string; end: string };
+    /** Strip these assignment ids from bind preview (post-split clear). */
+    clearedAssignmentIds?: string[];
   }>(null);
   const [ganttMoveLockedNotice, setGanttMoveLockedNotice] = useState(false);
   const [ganttScheduleMoveNotice, setGanttScheduleMoveNotice] = useState(false);
@@ -1221,21 +1227,28 @@ export function ScheduleGrid() {
   async function applyAssignmentBind(
     taskIds: string[],
     boundSource: "project" | "schedule" = "schedule",
+    opts?: {
+      assignment?: Assignment;
+      dateSpanOverride?: { start: string; end: string };
+      clearedAssignmentIds?: string[];
+    },
   ) {
-    const assignment = editForm ?? selected;
+    const assignment = opts?.assignment ?? editForm ?? selected;
     if (!assignment || !canManage) return;
     const unique = sortBoundTaskIdsByListOrder(
       [...new Set(taskIds)],
       state.tasks,
       state.task_lists,
     );
+    const cleared = new Set(opts?.clearedAssignmentIds ?? []);
     const assignments = [
       ...state.assignments.filter((a) => a.id !== assignment.id),
       assignment,
     ];
     const bindsPreview = [
       ...state.assignment_bound_tasks.filter(
-        (r) => r.assignment_id !== assignment.id,
+        (r) =>
+          r.assignment_id !== assignment.id && !cleared.has(r.assignment_id),
       ),
       ...unique.map((task_id, sort_order) => ({
         assignment_id: assignment.id,
@@ -1246,29 +1259,64 @@ export function ScheduleGrid() {
         out_of_sync: false,
       })),
     ];
-    const patches = syncNonGanttTaskDatesFromBindings(
-      bindsPreview,
-      state.tasks,
-      state.task_lists,
-      assignments,
-      unique,
-    );
+    const override = opts?.dateSpanOverride;
+    const patches = override
+      ? unique.flatMap((taskId) => {
+          const task = state.tasks.find((t) => t.id === taskId);
+          if (!task || task.is_divider || isGanttTask(task, state.task_lists)) {
+            return [];
+          }
+          if (
+            task.start_date === override.start &&
+            task.due_date === override.end
+          ) {
+            return [];
+          }
+          return [
+            {
+              taskId,
+              start_date: override.start,
+              due_date: override.end,
+            },
+          ];
+        })
+      : syncNonGanttTaskDatesFromBindings(
+          bindsPreview,
+          state.tasks,
+          state.task_lists,
+          assignments,
+          unique,
+        );
     const tasksAfterSync = state.tasks.map((t) => {
       const patch = patches.find((p) => p.taskId === t.id);
       return patch
         ? { ...t, start_date: patch.start_date, due_date: patch.due_date }
         : t;
     });
-    const bindRows = unique.map((task_id) => ({
-      task_id,
-      bound_source: boundSource,
-      out_of_sync: !taskBoundDatesMatchSpan(
+    const bindRows = unique.map((task_id) => {
+      const task = tasksAfterSync.find((t) => t.id === task_id);
+      const useOverride =
+        Boolean(override) &&
+        task &&
+        !task.is_divider &&
+        !isGanttTask(task, state.task_lists);
+      const outOfSync = useOverride
+        ? !(
+            task.start_date === override!.start &&
+            task.due_date === override!.end
+          )
+        : !taskBoundDatesMatchSpan(
+            task_id,
+            bindsPreview,
+            tasksAfterSync,
+            assignments,
+          );
+      return {
         task_id,
-        bindsPreview,
-        tasksAfterSync,
-        assignments,
-      ),
-    }));
+        bound_source: boundSource,
+        out_of_sync: outOfSync,
+      };
+    });
     await setAssignmentBoundTasks(assignment.id, bindRows);
     // One upsert per task: assignee (if missing) + non-Gantt date patches.
     // Never follow with a second upsert from a stale task snapshot.
@@ -1290,7 +1338,8 @@ export function ScheduleGrid() {
     }
     const finalBinds: AssignmentBoundTask[] = [
       ...state.assignment_bound_tasks.filter(
-        (r) => r.assignment_id !== assignment.id,
+        (r) =>
+          r.assignment_id !== assignment.id && !cleared.has(r.assignment_id),
       ),
       ...unique.map((task_id, sort_order) => ({
         assignment_id: assignment.id,
@@ -1302,13 +1351,30 @@ export function ScheduleGrid() {
           bindRows.find((r) => r.task_id === task_id)?.out_of_sync ?? false,
       })),
     ];
-    const outOfSync = assignmentIsOutOfSync(
-      finalBinds,
-      tasksAfterSync,
-      state.task_lists,
-      assignments,
-      assignment.id,
-    );
+    const outOfSync = override
+      ? unique.some((taskId) => {
+          const task = tasksAfterSync.find((t) => t.id === taskId);
+          if (!task || task.is_divider) return false;
+          if (isGanttTask(task, state.task_lists)) {
+            return !taskBoundDatesMatchSpan(
+              taskId,
+              bindsPreview,
+              tasksAfterSync,
+              assignments,
+            );
+          }
+          return (
+            task.start_date !== override.start ||
+            task.due_date !== override.end
+          );
+        })
+      : assignmentIsOutOfSync(
+          finalBinds,
+          tasksAfterSync,
+          state.task_lists,
+          assignments,
+          assignment.id,
+        );
     refreshBoundAssignmentNotes(assignment, unique, outOfSync);
     setBindDraftIds(new Set(unique));
     setBindEditingSelection(false);
@@ -1361,6 +1427,48 @@ export function ScheduleGrid() {
       setBindConfirm(null);
       return;
     }
+    if ((assignment.recurrence ?? "none") === "weekly") {
+      setBindConfirm({ step: "weekly", taskIds });
+      return;
+    }
+    continueBindConfirms(taskIds, { assignment });
+  }
+
+  /** Last occurrence end_date for a weekly series (not template Friday alone). */
+  function lastWeeklyOccurrenceEnd(
+    series: Assignment,
+    projectEnd?: string | null,
+  ): string {
+    const seriesEnd = weeklySeriesEndDate(series, projectEnd);
+    const occs = expandAssignmentInRange(
+      series,
+      series.start_date,
+      seriesEnd,
+      projectEnd,
+    );
+    if (occs.length === 0) return series.end_date;
+    return occs[occs.length - 1]!.end_date;
+  }
+
+  function continueBindConfirms(
+    taskIds: string[],
+    opts?: {
+      assignment?: Assignment;
+      dateSpanOverride?: { start: string; end: string };
+      clearedAssignmentIds?: string[];
+    },
+  ) {
+    const assignment = opts?.assignment ?? editForm ?? selected;
+    if (!assignment) return;
+    const dateSpanOverride = opts?.dateSpanOverride;
+    const clearedAssignmentIds = opts?.clearedAssignmentIds;
+    const confirmBase = {
+      taskIds,
+      targetAssignment: opts?.assignment,
+      dateSpanOverride,
+      clearedAssignmentIds,
+    };
+
     const selectedTasks = taskIds
       .map((id) => state.tasks.find((t) => t.id === id))
       .filter((t): t is NonNullable<typeof t> => Boolean(t));
@@ -1375,112 +1483,305 @@ export function ScheduleGrid() {
     // Schedule-source binds do not lock; show Gantt notice only for awareness
     // when any Gantt tasks are in the selection.
     if (hasGantt && nonGantt.length === 0) {
-      setBindConfirm({ step: "gantt", taskIds });
+      setBindConfirm({ step: "gantt", ...confirmBase });
       return;
     }
     if (hasGantt && nonGantt.length > 0) {
       // Mixed: show Gantt notice first; dates for non-Gantt handled after.
-      setBindConfirm({ step: "gantt", taskIds });
+      setBindConfirm({ step: "gantt", ...confirmBase });
       return;
     }
 
     // Non-Gantt only: skip no-op date warnings.
-    const bindsPreview = [
-      ...state.assignment_bound_tasks.filter(
-        (r) => r.assignment_id !== assignment.id,
-      ),
-      ...taskIds.map((task_id, sort_order) => ({
-        assignment_id: assignment.id,
-        task_id,
-        organization_id: assignment.organization_id,
-        sort_order,
-        bound_source: "schedule" as const,
-        out_of_sync: false,
-      })),
-    ];
-    const assignments = [
-      ...state.assignments.filter((a) => a.id !== assignment.id),
-      assignment,
-    ];
     const wouldChange = nonGantt.some((t) => {
-      const span = syncNonGanttTaskDatesFromBindings(
-        bindsPreview,
-        [t],
-        state.task_lists,
-        assignments,
-        [t.id],
+      if (dateSpanOverride) {
+        return (
+          t.start_date !== dateSpanOverride.start ||
+          t.due_date !== dateSpanOverride.end
+        );
+      }
+      const cleared = new Set(clearedAssignmentIds ?? []);
+      const bindsPreview = [
+        ...state.assignment_bound_tasks.filter(
+          (r) =>
+            r.assignment_id !== assignment.id && !cleared.has(r.assignment_id),
+        ),
+        ...taskIds.map((task_id, sort_order) => ({
+          assignment_id: assignment.id,
+          task_id,
+          organization_id: assignment.organization_id,
+          sort_order,
+          bound_source: "schedule" as const,
+          out_of_sync: false,
+        })),
+      ];
+      const assignments = [
+        ...state.assignments.filter((a) => a.id !== assignment.id),
+        assignment,
+      ];
+      return (
+        syncNonGanttTaskDatesFromBindings(
+          bindsPreview,
+          [t],
+          state.task_lists,
+          assignments,
+          [t.id],
+        ).length > 0
       );
-      return span.length > 0;
     });
     if (!wouldChange) {
-      void applyAssignmentBind(taskIds, "schedule");
+      void applyAssignmentBind(taskIds, "schedule", {
+        assignment,
+        dateSpanOverride,
+        clearedAssignmentIds,
+      });
       return;
     }
     const hasDifferingExisting = nonGantt.some((t) => {
       if (!t.start_date && !t.due_date) return false;
-      const patches = syncNonGanttTaskDatesFromBindings(
-        bindsPreview,
-        [t],
-        state.task_lists,
-        assignments,
-        [t.id],
+      if (dateSpanOverride) {
+        return (
+          t.start_date !== dateSpanOverride.start ||
+          t.due_date !== dateSpanOverride.end
+        );
+      }
+      const cleared = new Set(clearedAssignmentIds ?? []);
+      const bindsPreview = [
+        ...state.assignment_bound_tasks.filter(
+          (r) =>
+            r.assignment_id !== assignment.id && !cleared.has(r.assignment_id),
+        ),
+        ...taskIds.map((task_id, sort_order) => ({
+          assignment_id: assignment.id,
+          task_id,
+          organization_id: assignment.organization_id,
+          sort_order,
+          bound_source: "schedule" as const,
+          out_of_sync: false,
+        })),
+      ];
+      const assignments = [
+        ...state.assignments.filter((a) => a.id !== assignment.id),
+        assignment,
+      ];
+      return (
+        syncNonGanttTaskDatesFromBindings(
+          bindsPreview,
+          [t],
+          state.task_lists,
+          assignments,
+          [t.id],
+        ).length > 0
       );
-      return patches.length > 0;
     });
     // Always confirm date update when dates would change.
     setBindConfirm({
       step: hasDifferingExisting ? "overwrite" : "dates",
-      taskIds,
+      ...confirmBase,
+    });
+  }
+
+  async function applyBindWeeklyChoice(scope: "future" | "instance") {
+    if (!bindConfirm || bindConfirm.step !== "weekly") return;
+    const taskIds = bindConfirm.taskIds;
+    const series = editForm ?? selected;
+    if (!series || (series.recurrence ?? "none") !== "weekly") return;
+    setBindConfirm(null);
+
+    const occurrenceStart = selectedOccurrence?.start ?? series.start_date;
+    const occurrenceEnd = selectedOccurrence?.end ?? series.end_date;
+    const {
+      id: _seriesId,
+      organization_id: _orgId,
+      ...seriesFields
+    } = series;
+
+    if (scope === "future") {
+      const split = splitWeeklySeriesForFuture({
+        series,
+        occurrenceStart,
+        occurrenceEnd,
+        future: {
+          ...seriesFields,
+          start_date: occurrenceStart,
+          end_date: occurrenceEnd,
+        },
+        newId,
+        organizationId: state.organization.id,
+      });
+      const keepSeries = split.keepSeries
+        ? {
+            ...split.keepSeries,
+            notes: isBoundTasksNotes(split.keepSeries.notes)
+              ? ""
+              : split.keepSeries.notes,
+          }
+        : null;
+      const upserts = keepSeries
+        ? [keepSeries, split.futureSeries]
+        : [split.futureSeries];
+      const undoRemoveIds =
+        split.futureSeries.id === series.id ? [] : [split.futureSeries.id];
+      trackedAssignmentBatch({
+        upserts,
+        undoRestore: [series],
+        undoRemoveIds,
+      });
+      const clearedAssignmentIds =
+        split.futureSeries.id !== series.id ? [series.id] : [];
+      if (clearedAssignmentIds.length > 0) {
+        await clearAssignmentBoundTasks(series.id);
+      }
+      const target = split.futureSeries;
+      setEditForm(target);
+      selectAssignment(target.id, {
+        start: target.start_date,
+        end: target.end_date,
+      });
+      const projectEnd = projectsById.get(target.project_id)?.end_date;
+      const dateSpanOverride = {
+        start: occurrenceStart,
+        end: lastWeeklyOccurrenceEnd(target, projectEnd),
+      };
+      continueBindConfirms(taskIds, {
+        assignment: target,
+        dateSpanOverride,
+        clearedAssignmentIds,
+      });
+      return;
+    }
+
+    const split = splitWeeklySeriesForInstance({
+      series,
+      occurrenceStart,
+      occurrenceEnd,
+      instance: {
+        ...seriesFields,
+        start_date: occurrenceStart,
+        end_date: occurrenceEnd,
+        recurrence: "none",
+        recurrence_end_date: null,
+        recurrence_exceptions: [],
+      },
+      newId,
+      organizationId: state.organization.id,
+    });
+    const keepSeries = {
+      ...split.keepSeries,
+      notes: isBoundTasksNotes(split.keepSeries.notes)
+        ? ""
+        : split.keepSeries.notes,
+    };
+    trackedAssignmentBatch({
+      upserts: [keepSeries, split.instance],
+      undoRestore: [series],
+      undoRemoveIds: [split.instance.id],
+    });
+    await clearAssignmentBoundTasks(series.id);
+    const target = split.instance;
+    setEditForm(target);
+    selectAssignment(target.id, {
+      start: target.start_date,
+      end: target.end_date,
+    });
+    continueBindConfirms(taskIds, {
+      assignment: target,
+      clearedAssignmentIds: [series.id],
     });
   }
 
   function advanceBindConfirm() {
     if (!bindConfirm) return;
-    const { step, taskIds } = bindConfirm;
+    const {
+      step,
+      taskIds,
+      targetAssignment,
+      dateSpanOverride,
+      clearedAssignmentIds,
+    } = bindConfirm;
+    if (step === "weekly") return;
+    const assignment = targetAssignment ?? editForm ?? selected;
+    const applyOpts = {
+      assignment: targetAssignment,
+      dateSpanOverride,
+      clearedAssignmentIds,
+    };
     const selectedTasks = taskIds
       .map((id) => state.tasks.find((t) => t.id === id))
       .filter((t): t is NonNullable<typeof t> => Boolean(t));
     const nonGantt = selectedTasks.filter(
       (t) => !isGanttTask(t, state.task_lists),
     );
-    const hasGantt = selectedTasks.some((t) =>
-      isGanttTask(t, state.task_lists),
-    );
-    const assignment = editForm ?? selected;
 
     if (step === "gantt") {
       // After Gantt notice, if there are non-Gantt tasks that need date confirm, continue.
       if (nonGantt.length > 0 && assignment) {
-        const bindsPreview = [
-          ...state.assignment_bound_tasks.filter(
-            (r) => r.assignment_id !== assignment.id,
-          ),
-          ...taskIds.map((task_id, sort_order) => ({
-            assignment_id: assignment.id,
-            task_id,
-            organization_id: assignment.organization_id,
-            sort_order,
-            bound_source: "schedule" as const,
-            out_of_sync: false,
-          })),
-        ];
-        const assignments = [
-          ...state.assignments.filter((a) => a.id !== assignment.id),
-          assignment,
-        ];
         const wouldChange = nonGantt.some((t) => {
-          const patches = syncNonGanttTaskDatesFromBindings(
-            bindsPreview,
-            [t],
-            state.task_lists,
-            assignments,
-            [t.id],
+          if (dateSpanOverride) {
+            return (
+              t.start_date !== dateSpanOverride.start ||
+              t.due_date !== dateSpanOverride.end
+            );
+          }
+          const cleared = new Set(clearedAssignmentIds ?? []);
+          const bindsPreview = [
+            ...state.assignment_bound_tasks.filter(
+              (r) =>
+                r.assignment_id !== assignment.id &&
+                !cleared.has(r.assignment_id),
+            ),
+            ...taskIds.map((task_id, sort_order) => ({
+              assignment_id: assignment.id,
+              task_id,
+              organization_id: assignment.organization_id,
+              sort_order,
+              bound_source: "schedule" as const,
+              out_of_sync: false,
+            })),
+          ];
+          const assignments = [
+            ...state.assignments.filter((a) => a.id !== assignment.id),
+            assignment,
+          ];
+          return (
+            syncNonGanttTaskDatesFromBindings(
+              bindsPreview,
+              [t],
+              state.task_lists,
+              assignments,
+              [t.id],
+            ).length > 0
           );
-          return patches.length > 0;
         });
         if (wouldChange) {
           const hasDifferingExisting = nonGantt.some((t) => {
             if (!t.start_date && !t.due_date) return false;
+            if (dateSpanOverride) {
+              return (
+                t.start_date !== dateSpanOverride.start ||
+                t.due_date !== dateSpanOverride.end
+              );
+            }
+            const cleared = new Set(clearedAssignmentIds ?? []);
+            const bindsPreview = [
+              ...state.assignment_bound_tasks.filter(
+                (r) =>
+                  r.assignment_id !== assignment.id &&
+                  !cleared.has(r.assignment_id),
+              ),
+              ...taskIds.map((task_id, sort_order) => ({
+                assignment_id: assignment.id,
+                task_id,
+                organization_id: assignment.organization_id,
+                sort_order,
+                bound_source: "schedule" as const,
+                out_of_sync: false,
+              })),
+            ];
+            const assignments = [
+              ...state.assignments.filter((a) => a.id !== assignment.id),
+              assignment,
+            ];
             return (
               syncNonGanttTaskDatesFromBindings(
                 bindsPreview,
@@ -1494,20 +1795,23 @@ export function ScheduleGrid() {
           setBindConfirm({
             step: hasDifferingExisting ? "overwrite" : "dates",
             taskIds,
+            targetAssignment,
+            dateSpanOverride,
+            clearedAssignmentIds,
           });
           return;
         }
       }
-      void applyAssignmentBind(taskIds, "schedule");
+      void applyAssignmentBind(taskIds, "schedule", applyOpts);
       return;
     }
     if (step === "dates") {
       // Overwrite step only when dates differ from existing non-matching dates.
       // beginBindSave already chose overwrite vs dates; continue to apply.
-      void applyAssignmentBind(taskIds, "schedule");
+      void applyAssignmentBind(taskIds, "schedule", applyOpts);
       return;
     }
-    void applyAssignmentBind(taskIds, "schedule");
+    void applyAssignmentBind(taskIds, "schedule", applyOpts);
   }
 
   function isAssignmentScheduleLocked(assignmentId: string): boolean {
@@ -6526,7 +6830,42 @@ export function ScheduleGrid() {
           </div>
         </Modal>
       ) : null}
-      {bindConfirm ? (
+      {bindConfirm?.step === "weekly" ? (
+        <Modal
+          title="Bind to recurring assignment"
+          onClose={() => setBindConfirm(null)}
+        >
+          <p className="mb-4 text-sm text-[var(--text-muted)]">
+            This is a weekly series. Binding can apply from this week forward
+            through the end of the series, or only to this week (removed from
+            the series as a standalone assignment).
+          </p>
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              className="h-9 cursor-pointer rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)]"
+              onClick={() => void applyBindWeeklyChoice("future")}
+            >
+              From this date forward
+            </button>
+            <button
+              type="button"
+              className="h-9 cursor-pointer rounded-md border border-[var(--border)] text-sm hover:bg-[var(--row-hover)]"
+              onClick={() => void applyBindWeeklyChoice("instance")}
+            >
+              This occurrence only
+            </button>
+            <button
+              type="button"
+              className="h-9 cursor-pointer text-sm text-[var(--text-muted)] hover:text-[var(--text)]"
+              onClick={() => setBindConfirm(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      ) : null}
+      {bindConfirm && bindConfirm.step !== "weekly" ? (
         <ConfirmDialog
           title={
             bindConfirm.step === "dates"
