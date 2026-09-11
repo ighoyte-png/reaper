@@ -42,16 +42,19 @@ export function ClickUpAddonSettingsPanel() {
   >([]);
   const [userMaps, setUserMaps] = useState<Record<string, string>>({});
 
-  const load = useCallback(async () => {
-    const res = await fetch("/api/addons/clickup/settings");
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? "Failed to load settings");
-    const s = json.settings as AddonClickupSettingsPublic;
+  async function applyPublicSettings(s: AddonClickupSettingsPublic) {
     setSettings(s);
     setEnabled(s.enabled);
     setTeamId(s.clickup_team_id ?? "");
     setSpaceId(s.space_id ?? "");
     setStatusMap(s.status_map ?? emptyStatusMap());
+  }
+
+  const load = useCallback(async () => {
+    const res = await fetch("/api/addons/clickup/settings");
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "Failed to load settings");
+    await applyPublicSettings(json.settings as AddonClickupSettingsPublic);
   }, []);
 
   useEffect(() => {
@@ -85,7 +88,6 @@ export function ClickUpAddonSettingsPanel() {
         body: JSON.stringify({
           oauth_client_id: clientIdInput.trim() || undefined,
           oauth_client_secret: clientSecretInput.trim() || undefined,
-          enabled: false,
           clickup_team_id: teamId || null,
           space_id: spaceId || null,
           status_map: statusMap,
@@ -93,7 +95,7 @@ export function ClickUpAddonSettingsPanel() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Save failed");
-      setSettings(json.settings);
+      await applyPublicSettings(json.settings as AddonClickupSettingsPublic);
       setClientIdInput("");
       setClientSecretInput("");
       push("OAuth app saved", "success");
@@ -173,6 +175,39 @@ export function ClickUpAddonSettingsPanel() {
     }
   }
 
+  /** Persist status mapping only (does not touch budget “Save Admin Settings”). */
+  async function saveStatusMapping() {
+    const next = {
+      upcoming: statusMap.upcoming.trim(),
+      active: statusMap.active.trim(),
+      complete: statusMap.complete.trim(),
+    };
+    if (!next.upcoming || !next.active || !next.complete) {
+      push("Map all three statuses before saving", "warning");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/addons/clickup/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status_map: next }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Save failed");
+      const s = json.settings as AddonClickupSettingsPublic;
+      await applyPublicSettings(s);
+      push(
+        `Status mapping saved (${s.status_map.upcoming} / ${s.status_map.active} / ${s.status_map.complete})`,
+        "success",
+      );
+    } catch (e) {
+      push(e instanceof Error ? e.message : "Failed", "warning");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveAndEnable() {
     setBusy(true);
     try {
@@ -188,12 +223,16 @@ export function ClickUpAddonSettingsPanel() {
           clickup_team_id: teamId || null,
           space_id: spaceId || null,
           space_name: space?.name ?? settings?.space_name ?? null,
-          status_map: statusMap,
+          status_map: {
+            upcoming: statusMap.upcoming.trim(),
+            active: statusMap.active.trim(),
+            complete: statusMap.complete.trim(),
+          },
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Save failed");
-      setSettings(json.settings);
+      await applyPublicSettings(json.settings as AddonClickupSettingsPublic);
       setClientIdInput("");
       setClientSecretInput("");
       setLegacyTokenInput("");
@@ -397,31 +436,78 @@ export function ClickUpAddonSettingsPanel() {
         </div>
 
         <p className="text-xs font-medium text-[var(--text)]">Status mapping</p>
+        <p className="text-xs text-[var(--text-muted)]">
+          Use the ClickUp status names from your Space. Load workspaces above if
+          the lists look empty. This is separate from the budget “Save Admin
+          Settings” button further up the page.
+        </p>
+        {statusOptions.length === 0 ? (
+          <p className="text-xs text-[var(--status-near)]">
+            No Space statuses loaded yet — click “Load workspaces” then reselect
+            the Space, or type the exact ClickUp status names below.
+          </p>
+        ) : null}
         <div className="grid gap-2 sm:grid-cols-3">
           <Field label="Active (upcoming)">
-            <Select
-              value={statusMap.upcoming}
-              onChange={(v) =>
-                setStatusMap((m) => ({ ...m, upcoming: v }))
-              }
-              options={statusSelectOptions}
-            />
+            {statusOptions.length > 0 ? (
+              <Select
+                value={statusMap.upcoming}
+                onChange={(v) =>
+                  setStatusMap((m) => ({ ...m, upcoming: v }))
+                }
+                options={statusSelectOptions}
+                searchable
+              />
+            ) : (
+              <input
+                className={inputClass}
+                value={statusMap.upcoming}
+                onChange={(e) =>
+                  setStatusMap((m) => ({ ...m, upcoming: e.target.value }))
+                }
+                placeholder="e.g. to do"
+              />
+            )}
           </Field>
           <Field label="In Review (active)">
-            <Select
-              value={statusMap.active}
-              onChange={(v) => setStatusMap((m) => ({ ...m, active: v }))}
-              options={statusSelectOptions}
-            />
+            {statusOptions.length > 0 ? (
+              <Select
+                value={statusMap.active}
+                onChange={(v) => setStatusMap((m) => ({ ...m, active: v }))}
+                options={statusSelectOptions}
+                searchable
+              />
+            ) : (
+              <input
+                className={inputClass}
+                value={statusMap.active}
+                onChange={(e) =>
+                  setStatusMap((m) => ({ ...m, active: e.target.value }))
+                }
+                placeholder="e.g. in progress"
+              />
+            )}
           </Field>
           <Field label="Complete">
-            <Select
-              value={statusMap.complete}
-              onChange={(v) =>
-                setStatusMap((m) => ({ ...m, complete: v }))
-              }
-              options={statusSelectOptions}
-            />
+            {statusOptions.length > 0 ? (
+              <Select
+                value={statusMap.complete}
+                onChange={(v) =>
+                  setStatusMap((m) => ({ ...m, complete: v }))
+                }
+                options={statusSelectOptions}
+                searchable
+              />
+            ) : (
+              <input
+                className={inputClass}
+                value={statusMap.complete}
+                onChange={(e) =>
+                  setStatusMap((m) => ({ ...m, complete: e.target.value }))
+                }
+                placeholder="e.g. complete"
+              />
+            )}
           </Field>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -429,14 +515,24 @@ export function ClickUpAddonSettingsPanel() {
             type="button"
             size="sm"
             disabled={busy}
+            onClick={() => void saveStatusMapping()}
+          >
+            Save status mapping
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy}
             onClick={() => void saveAndEnable()}
           >
             Save ClickUp settings
           </Button>
-          <span className="text-xs text-[var(--text-muted)]">
-            Saves Space, status mapping, and whether the addon is enabled.
-          </span>
         </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          “Save status mapping” writes only the three statuses. “Save ClickUp
+          settings” also saves Space and the enable checkbox.
+        </p>
 
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Checkbox

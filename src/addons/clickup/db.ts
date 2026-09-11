@@ -148,15 +148,25 @@ export async function upsertSettings(
     .select("*")
     .single();
   if (error) throw new Error(error.message);
-  return {
-    ...(data as AddonClickupSettingsRow),
-    status_map: normalizeStatusMap(
-      (data as AddonClickupSettingsRow).status_map,
-    ),
-    webhook_enabled: Boolean(
-      (data as AddonClickupSettingsRow).webhook_enabled,
-    ),
-  };
+
+  // Explicit status_map write — some PostgREST upsert paths have dropped jsonb
+  // patches when other columns dominate; force the map the caller asked for.
+  if (patch.status_map !== undefined) {
+    const mapped = normalizeStatusMap(patch.status_map);
+    const { data: forced, error: mapError } = await admin
+      .from("addon_clickup_settings")
+      .update({
+        status_map: mapped,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("organization_id", orgId)
+      .select("*")
+      .single();
+    if (mapError) throw new Error(mapError.message);
+    return normalizeSettingsRow(forced as AddonClickupSettingsRow);
+  }
+
+  return normalizeSettingsRow(data as AddonClickupSettingsRow);
 }
 
 export async function loadOAuthToken(
