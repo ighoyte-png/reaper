@@ -70,5 +70,5 @@ export function isUnauthorizedClickUpError(e: unknown): boolean {
 export function isNotFoundClickUpError(e: unknown): boolean {
   if (!(e instanceof ClickUpApiError)) return false;
   if (e.status === 404) return true;
-  return /not found|deleted|ITEM_013|FOLDER_|\bLIST_/i.test(e.body);
+  return /not found|deleted|ITEM_013|ACCESS_100|FOLDER_|LIST_/i.test(e.body);
 }
