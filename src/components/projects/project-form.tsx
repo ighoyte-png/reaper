@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import {
   addMonths,
   addYears,
@@ -64,6 +64,12 @@ import type {
   ProjectStatus,
   ProjectTemplate,
 } from "@/lib/types";
+
+const ClickUpProjectSyncToggle = lazy(() =>
+  import("@/addons/clickup").then((m) => ({
+    default: m.ClickUpProjectSyncToggle,
+  })),
+);
 
 const DEFAULT_PROJECT_COLOR = "#3498DB";
 
@@ -486,6 +492,14 @@ export function ProjectForm({
                   </span>
                 </span>
               </label>
+              {canManage && project.id ? (
+                <Suspense fallback={null}>
+                  <ClickUpProjectSyncToggle
+                    projectId={project.id}
+                    sandboxMode={Boolean(project.sandbox_mode)}
+                  />
+                </Suspense>
+              ) : null}
             </>
           ) : null}
 

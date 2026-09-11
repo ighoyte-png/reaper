@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { PageContainer } from "@/components/nav/page-container";
@@ -39,6 +39,17 @@ import {
   type ScheduleViewOffset,
   type UserViewPrefs,
 } from "@/lib/user-view-prefs";
+
+const ClickUpAddonSettingsPanel = lazy(() =>
+  import("@/addons/clickup").then((m) => ({
+    default: m.ClickUpAddonSettingsPanel,
+  })),
+);
+const ClickUpUserConnectPanel = lazy(() =>
+  import("@/addons/clickup").then((m) => ({
+    default: m.ClickUpUserConnectPanel,
+  })),
+);
 
 type SettingsTab =
   | "account"
@@ -275,6 +286,21 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!tabs.some((t) => t.id === tab)) setTab("account");
   }, [tabs, tab]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    if (
+      t === "account" ||
+      t === "preferences" ||
+      t === "sharing" ||
+      t === "holidays" ||
+      t === "admin" ||
+      t === "advanced"
+    ) {
+      setTab(t);
+    }
+  }, []);
 
   const prefsDirty =
     themeDraft !== theme ||
@@ -783,6 +809,12 @@ export default function SettingsPage() {
                     </Button>
                   </form>
                 </Panel>
+              ) : null}
+
+              {mode === "supabase" ? (
+                <Suspense fallback={null}>
+                  <ClickUpUserConnectPanel />
+                </Suspense>
               ) : null}
 
               <Button
@@ -1338,6 +1370,11 @@ export default function SettingsPage() {
               </div>
               <ClientPortalSettings />
               {admin ? <CustomEmojisSettings /> : null}
+              {admin ? (
+                <Suspense fallback={null}>
+                  <ClickUpAddonSettingsPanel />
+                </Suspense>
+              ) : null}
             </Panel>
           ) : null}
 

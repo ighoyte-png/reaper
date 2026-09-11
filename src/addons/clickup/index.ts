@@ -1,0 +1,5 @@
+/** Public barrel for dynamic imports — keep ClickUp logic out of core. */
+
+export { ClickUpAddonSettingsPanel } from "@/addons/clickup/ui/clickup-addon-settings-panel";
+export { ClickUpProjectSyncToggle } from "@/addons/clickup/ui/clickup-project-sync-toggle";
+export { ClickUpUserConnectPanel } from "@/addons/clickup/ui/clickup-user-connect-panel";
