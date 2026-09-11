@@ -298,6 +298,15 @@ export async function updateTask(
   });
 }
 
+export async function deleteTask(
+  auth: ClickUpAuth,
+  taskId: string,
+): Promise<void> {
+  await cuFetch<unknown>(auth, `/task/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+  });
+}
+
 export function assigneeUpdateDiff(
   desiredIds: number[],
   currentIds: number[],

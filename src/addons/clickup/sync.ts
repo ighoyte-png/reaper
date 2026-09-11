@@ -920,6 +920,21 @@ async function pushEntityWithAuth(args: {
   } = args;
 
   if (op === "delete") {
+    const clickupId = await getLink(admin, orgId, entityType as ClickUpLinkEntityType, reaperId);
+
+    // Tasks (and milestone mirrors) → hard-delete in ClickUp. Folders/lists
+    // stay link-only so hierarchy wipe from Reaper does not nuke the Space.
+    if (
+      clickupId &&
+      (entityType === "task" || entityType === "milestone")
+    ) {
+      try {
+        await cu.deleteTask(auth, clickupId);
+      } catch (e) {
+        if (!isNotFoundClickUpError(e)) throw e;
+      }
+    }
+
     await admin
       .from("addon_clickup_links")
       .delete()
