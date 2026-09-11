@@ -34,6 +34,7 @@ export type ClickUpWebhookHistoryItem = {
   date?: string | number;
   field?: string;
   type?: number;
+  parent_id?: string | number;
   user?: { id?: number; email?: string; username?: string };
   before?: unknown;
   after?: unknown;
@@ -50,6 +51,14 @@ export type ClickUpWebhookPayload = {
   task_id?: string;
   history_items?: ClickUpWebhookHistoryItem[];
 };
+
+const IMPORTABLE_EVENTS = new Set([
+  "taskCreated",
+  "taskUpdated",
+  "taskStatusUpdated",
+  "taskAssigneeUpdated",
+  "taskDueDateUpdated",
+]);
 
 export function verifyClickUpWebhookSignature(
   rawBody: string,
@@ -116,36 +125,49 @@ async function resolvePersonFromClickUpUser(
   clickUpUserId: number | string | null | undefined,
   email?: string | null,
 ): Promise<string | null> {
-  if (clickUpUserId != null && clickUpUserId !== "") {
-    const id = String(clickUpUserId);
-    const { data: mapped } = await admin
-      .from("addon_clickup_user_map")
-      .select("person_id")
-      .eq("organization_id", orgId)
-      .eq("clickup_user_id", id)
-      .maybeSingle();
-    if (mapped?.person_id) return mapped.person_id as string;
-
-    const profileId = await resolveProfileFromClickUpUser(admin, orgId, id);
-    if (profileId) {
-      const { data: person } = await admin
-        .from("people")
-        .select("id")
+  try {
+    if (clickUpUserId != null && clickUpUserId !== "") {
+      const id = String(clickUpUserId);
+      const { data: mapped } = await admin
+        .from("addon_clickup_user_map")
+        .select("person_id")
         .eq("organization_id", orgId)
-        .eq("profile_id", profileId)
+        .eq("clickup_user_id", id)
+        .limit(1)
         .maybeSingle();
-      if (person?.id) return person.id as string;
-    }
-  }
+      if (mapped?.person_id) return mapped.person_id as string;
 
-  if (email?.trim()) {
-    const { data: byEmail } = await admin
-      .from("people")
-      .select("id")
-      .eq("organization_id", orgId)
-      .ilike("email", email.trim())
-      .maybeSingle();
-    if (byEmail?.id) return byEmail.id as string;
+      const profileId = await resolveProfileFromClickUpUser(admin, orgId, id);
+      if (profileId) {
+        const { data: person } = await admin
+          .from("people")
+          .select("id")
+          .eq("organization_id", orgId)
+          .eq("profile_id", profileId)
+          .is("deleted_at", null)
+          .limit(1)
+          .maybeSingle();
+        if (person?.id) return person.id as string;
+      }
+    }
+
+    const emailKey = email?.trim().toLowerCase();
+    if (emailKey) {
+      const { data: people } = await admin
+        .from("people")
+        .select("id, email")
+        .eq("organization_id", orgId)
+        .is("deleted_at", null)
+        .limit(500);
+      const match = (people ?? []).find(
+        (p) =>
+          typeof p.email === "string" &&
+          p.email.trim().toLowerCase() === emailKey,
+      );
+      if (match?.id) return match.id as string;
+    }
+  } catch {
+    /* assignee mapping is best-effort — never block task import */
   }
   return null;
 }
@@ -448,9 +470,12 @@ async function importClickUpTask(args: {
   cuTask: cu.ClickUpTask;
   eventMs: number;
   actorProfileId: string | null;
+  listIdHint?: string | null;
 }): Promise<"created" | "ignored"> {
   const { admin, orgId, statusMap, cuTask, eventMs, actorProfileId } = args;
-  const listId = cuTask.list?.id;
+  const listId = String(
+    cuTask.list?.id ?? args.listIdHint ?? "",
+  ).trim();
   if (!listId) return "ignored";
 
   const listLink = await getLinkByClickUpId(admin, orgId, "task_list", listId);
@@ -467,13 +492,18 @@ async function importClickUpTask(args: {
     return "ignored";
   }
 
-  const existing = await getLinkByClickUpId(admin, orgId, "task", cuTask.id);
+  const existing = await getLinkByClickUpId(
+    admin,
+    orgId,
+    "task",
+    String(cuTask.id),
+  );
   if (existing) return "ignored";
 
   const mappedStatus =
     mapClickUpStatusToReaper(cuTask.status?.status, statusMap) ?? "upcoming";
   const notes = stripReaperLinkFooter(cuTask.description);
-  const assigneePersonId = await resolvePersonFromClickUpUser(
+  let assigneePersonId = await resolvePersonFromClickUpUser(
     admin,
     orgId,
     cuTask.assignees?.[0]?.id,
@@ -499,11 +529,18 @@ async function importClickUpTask(args: {
   });
 
   // Claim ClickUp id before insert so concurrent webhooks cannot double-create.
-  const claim = await tryClaimLink(admin, orgId, "task", taskId, cuTask.id, {
-    content_hash: hash,
-    last_inbound_at: new Date().toISOString(),
-    last_pushed_at: new Date().toISOString(),
-  });
+  const claim = await tryClaimLink(
+    admin,
+    orgId,
+    "task",
+    taskId,
+    String(cuTask.id),
+    {
+      content_hash: hash,
+      last_inbound_at: new Date().toISOString(),
+      last_pushed_at: new Date().toISOString(),
+    },
+  );
   if (claim === "exists") return "ignored";
 
   const row = {
@@ -539,7 +576,13 @@ async function importClickUpTask(args: {
 
   await suppressOutbound(admin, orgId, "task", taskId, 45);
 
-  const { error } = await admin.from("tasks").insert(row);
+  let { error } = await admin.from("tasks").insert(row);
+  // If assignee FK/org checks fail, still create the task unassigned.
+  if (error && assigneePersonId) {
+    assigneePersonId = null;
+    row.assignee_person_id = null;
+    ({ error } = await admin.from("tasks").insert(row));
+  }
   if (error) {
     await deleteLink(admin, orgId, "task", taskId);
     throw new Error(error.message);
@@ -647,22 +690,42 @@ async function applyDeleted(args: {
   orgId: string;
   clickUpTaskId: string;
 }): Promise<"applied" | "ignored"> {
-  const link = await getLinkByClickUpId(
-    args.admin,
-    args.orgId,
-    "task",
-    args.clickUpTaskId,
-  );
+  const { admin, orgId, clickUpTaskId } = args;
+  const link = await getLinkByClickUpId(admin, orgId, "task", clickUpTaskId);
   if (!link) return "ignored";
-  await deleteLink(args.admin, args.orgId, "task", link.reaper_id);
-  const { data: comments } = await args.admin
-    .from("task_comments")
-    .select("id")
-    .eq("organization_id", args.orgId)
-    .eq("task_id", link.reaper_id);
-  for (const c of comments ?? []) {
-    await deleteLink(args.admin, args.orgId, "comment", c.id as string);
+
+  const { data: task } = await admin
+    .from("tasks")
+    .select("id, project_id")
+    .eq("id", link.reaper_id)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+
+  if (task) {
+    if (!(await projectSyncEnabled(admin, orgId, task.project_id as string))) {
+      return "ignored";
+    }
+
+    const { data: comments } = await admin
+      .from("task_comments")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("task_id", link.reaper_id);
+    for (const c of comments ?? []) {
+      await suppressOutbound(admin, orgId, "comment", c.id as string, 45);
+      await deleteLink(admin, orgId, "comment", c.id as string);
+    }
+
+    await suppressOutbound(admin, orgId, "task", link.reaper_id, 45);
+    const { error } = await admin
+      .from("tasks")
+      .delete()
+      .eq("id", link.reaper_id)
+      .eq("organization_id", orgId);
+    if (error) throw new Error(error.message);
   }
+
+  await deleteLink(admin, orgId, "task", link.reaper_id);
   return "applied";
 }
 
@@ -766,19 +829,30 @@ export async function applyInboundEvent(args: {
 
   const link = await getLinkByClickUpId(admin, orgId, "task", taskId);
 
-  // Only taskCreated imports. taskUpdated/status/etc. must not create — ClickUp
-  // fires several of those for one create and they race into duplicates.
-  if (!link && eventName === "taskCreated") {
-    const cuTask = await cu.getTask(auth, taskId);
-    const r = await importClickUpTask({
-      admin,
-      orgId,
-      statusMap,
-      cuTask,
-      eventMs,
-      actorProfileId,
-    });
-    return r === "created" ? "processed" : "ignored";
+  // Import when unlinked. Claim lock prevents duplicates across ClickUp's
+  // burst of create/status/assignee webhooks.
+  if (!link && IMPORTABLE_EVENTS.has(eventName)) {
+    const listIdHint =
+      history.find((h) => h.parent_id != null)?.parent_id != null
+        ? String(history.find((h) => h.parent_id != null)!.parent_id)
+        : null;
+    try {
+      const cuTask = await cu.getTask(auth, taskId);
+      const r = await importClickUpTask({
+        admin,
+        orgId,
+        statusMap,
+        cuTask,
+        eventMs,
+        actorProfileId,
+        listIdHint,
+      });
+      return r === "created" ? "processed" : "ignored";
+    } catch (e) {
+      // taskCreated can race ahead of ClickUp's task GET right after assign.
+      if (eventName === "taskCreated") throw e;
+      return "ignored";
+    }
   }
 
   if (!link) return "ignored";
