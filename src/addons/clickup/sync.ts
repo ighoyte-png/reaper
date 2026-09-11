@@ -275,7 +275,9 @@ async function createTaskInClickUp(
     try {
       await cu.updateTask(auth, created.id, {
         status,
-        ...(assigneeIds.length ? { assignees: assigneeIds } : {}),
+        ...(assigneeIds.length
+          ? { assignees: { add: assigneeIds, rem: [] } }
+          : {}),
       });
     } catch {
       /* status/assignee apply best-effort after create */
@@ -323,7 +325,27 @@ async function pushTask(
   const existing = await getLink(admin, orgId, "task", task.id);
   if (existing) {
     try {
-      await cu.updateTask(auth, existing, body);
+      // ClickUp update ignores flat assignees[]; must send { add, rem }.
+      const { assignees: _flatAssignees, ...updateFields } = body;
+      void _flatAssignees;
+      let currentAssigneeIds: number[] = [];
+      try {
+        const cuTask = await cu.getTask(auth, existing);
+        currentAssigneeIds = (cuTask.assignees ?? [])
+          .map((a) => a.id)
+          .filter((id) => Number.isFinite(id));
+      } catch {
+        /* best-effort; rem may be incomplete */
+      }
+      const assigneeDiff = cu.assigneeUpdateDiff(
+        assigneeIds,
+        currentAssigneeIds,
+      );
+      const updateBody: cu.UpdateTaskBody = { ...updateFields };
+      if (assigneeDiff.add.length || assigneeDiff.rem.length) {
+        updateBody.assignees = assigneeDiff;
+      }
+      await cu.updateTask(auth, existing, updateBody);
       await touchLinkPushMeta(admin, orgId, "task", task.id, hash);
       return "updated";
     } catch (e) {

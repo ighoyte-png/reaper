@@ -265,8 +265,15 @@ export type CreateTaskBody = {
   start_date?: number;
   due_date?: number;
   parent?: string;
+  /** Flat ids — only accepted on create. */
   assignees?: number[];
   markdown_content?: string;
+};
+
+/** ClickUp update ignores flat assignee arrays; use add/rem. */
+export type UpdateTaskBody = Omit<Partial<CreateTaskBody>, "assignees"> & {
+  name?: string;
+  assignees?: { add: number[]; rem: number[] };
 };
 
 export async function createTask(
@@ -283,12 +290,24 @@ export async function createTask(
 export async function updateTask(
   auth: ClickUpAuth,
   taskId: string,
-  body: Partial<CreateTaskBody> & { name?: string },
+  body: UpdateTaskBody,
 ): Promise<ClickUpTask> {
   return cuFetch<ClickUpTask>(auth, `/task/${taskId}`, {
     method: "PUT",
     body: JSON.stringify(body),
   });
+}
+
+export function assigneeUpdateDiff(
+  desiredIds: number[],
+  currentIds: number[],
+): { add: number[]; rem: number[] } {
+  const want = new Set(desiredIds);
+  const have = new Set(currentIds);
+  return {
+    add: desiredIds.filter((id) => !have.has(id)),
+    rem: currentIds.filter((id) => !want.has(id)),
+  };
 }
 
 export async function getTask(
