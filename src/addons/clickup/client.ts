@@ -216,11 +216,18 @@ export async function getTasksInList(
   auth: ClickUpAuth,
   listId: string,
 ): Promise<ClickUpTask[]> {
-  const data = await cuFetch<{ tasks: ClickUpTask[] }>(
-    auth,
-    `/list/${listId}/task?archived=false&subtasks=true&include_closed=true`,
-  );
-  return data.tasks ?? [];
+  const all: ClickUpTask[] = [];
+  for (let page = 0; page < 50; page += 1) {
+    const data = await cuFetch<{ tasks: ClickUpTask[] }>(
+      auth,
+      `/list/${listId}/task?archived=false&subtasks=true&include_closed=true&page=${page}`,
+    );
+    const batch = data.tasks ?? [];
+    all.push(...batch);
+    // ClickUp page size is 100; stop when a short page arrives.
+    if (batch.length < 100) break;
+  }
+  return all;
 }
 
 export type CreateTaskBody = {

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireClickUpManagerApi } from "@/addons/clickup/api-auth";
+import { requireAuthApiAccess } from "@/lib/api/require-auth";
 import { processOutbox } from "@/addons/clickup/sync";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 /**
  * Process pending ClickUp outbox rows.
- * Auth: signed-in manager for their org, OR shared secret header for webhooks.
+ * Auth: any signed-in org member for their org, OR shared secret header.
  */
 export async function POST(request: Request) {
   try {
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json(result);
     }
 
-    const auth = await requireClickUpManagerApi(request);
+    const auth = await requireAuthApiAccess(request);
     if ("error" in auth) return auth.error;
     const result = await processOutbox(
       auth.admin,

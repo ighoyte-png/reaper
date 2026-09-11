@@ -165,9 +165,118 @@ async function pushTask(
     await cu.updateTask(auth, existing, body);
     return "updated";
   }
-  const created = await cu.createTask(auth, listClickUpId, body);
+  // Create without closed status first — ClickUp often ignores closed on create.
+  const { status, ...createBody } = body;
+  const created = await cu.createTask(auth, listClickUpId, createBody);
   await setLink(admin, orgId, "task", task.id, created.id);
+  if (status) {
+    try {
+      await cu.updateTask(auth, created.id, {
+        status,
+        ...(assigneeIds.length ? { assignees: assigneeIds } : {}),
+      });
+    } catch {
+      /* status/assignee apply best-effort after create */
+    }
+  }
   return "created";
+}
+
+/** Resolve ClickUp user ids for a Reaper person (map → OAuth → email). */
+async function resolveAssigneeClickUpIds(
+  admin: SupabaseClient,
+  orgId: string,
+  personId: string | null | undefined,
+  personToCu: Map<string, number>,
+  emailToCu: Map<string, number>,
+): Promise<number[]> {
+  if (!personId) return [];
+  const mapped = personToCu.get(personId);
+  if (Number.isFinite(mapped)) return [mapped!];
+
+  const { data: person } = await admin
+    .from("people")
+    .select("id, email, profile_id")
+    .eq("id", personId)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (!person) return [];
+
+  if (person.profile_id) {
+    const { data: oauth } = await admin
+      .from("addon_clickup_oauth_tokens")
+      .select("clickup_user_id")
+      .eq("organization_id", orgId)
+      .eq("profile_id", person.profile_id)
+      .maybeSingle();
+    if (oauth?.clickup_user_id) {
+      const n = Number(oauth.clickup_user_id);
+      if (Number.isFinite(n)) return [n];
+    }
+  }
+
+  const email = typeof person.email === "string" ? person.email.trim().toLowerCase() : "";
+  if (email && emailToCu.has(email)) {
+    return [emailToCu.get(email)!];
+  }
+  return [];
+}
+
+async function loadAssigneeLookups(
+  admin: SupabaseClient,
+  orgId: string,
+  teamId: string | null,
+  auth: ClickUpAuth,
+): Promise<{ personToCu: Map<string, number>; emailToCu: Map<string, number> }> {
+  const { data: userMaps } = await admin
+    .from("addon_clickup_user_map")
+    .select("person_id, clickup_user_id")
+    .eq("organization_id", orgId);
+  const personToCu = new Map(
+    (userMaps ?? []).map((r) => [
+      r.person_id as string,
+      Number(r.clickup_user_id),
+    ]),
+  );
+
+  const emailToCu = new Map<string, number>();
+  if (teamId) {
+    try {
+      const members = await cu.getTeamMembers(auth, teamId);
+      for (const m of members) {
+        if (m.email) emailToCu.set(m.email.trim().toLowerCase(), m.id);
+      }
+    } catch {
+      /* optional */
+    }
+  }
+
+  // OAuth connections → person via profile_id
+  const { data: tokens } = await admin
+    .from("addon_clickup_oauth_tokens")
+    .select("profile_id, clickup_user_id")
+    .eq("organization_id", orgId)
+    .not("clickup_user_id", "is", null);
+  if (tokens?.length) {
+    const profileIds = tokens.map((t) => t.profile_id as string);
+    const { data: people } = await admin
+      .from("people")
+      .select("id, profile_id")
+      .eq("organization_id", orgId)
+      .in("profile_id", profileIds);
+    const byProfile = new Map(
+      (people ?? []).map((p) => [p.profile_id as string, p.id as string]),
+    );
+    for (const t of tokens) {
+      const personId = byProfile.get(t.profile_id as string);
+      const n = Number(t.clickup_user_id);
+      if (personId && Number.isFinite(n) && !personToCu.has(personId)) {
+        personToCu.set(personId, n);
+      }
+    }
+  }
+
+  return { personToCu, emailToCu };
 }
 
 export async function reconcileProject(args: {
@@ -276,15 +385,11 @@ export async function reconcileProject(args: {
 
   const taskRows = ((tasks ?? []) as Task[]).filter((t) => !t.is_divider);
 
-  const { data: userMaps } = await admin
-    .from("addon_clickup_user_map")
-    .select("person_id, clickup_user_id")
-    .eq("organization_id", orgId);
-  const personToCu = new Map(
-    (userMaps ?? []).map((r) => [
-      r.person_id as string,
-      Number(r.clickup_user_id),
-    ]),
+  const { personToCu, emailToCu } = await loadAssigneeLookups(
+    admin,
+    orgId,
+    settings.clickup_team_id,
+    auth,
   );
 
   const cuTaskIds = new Set<string>();
@@ -339,11 +444,13 @@ export async function reconcileProject(args: {
         parentCu = await getLink(admin, orgId, "task", task.parent_id);
       }
       const existing = await getLink(admin, orgId, "task", task.id);
-      const assignees: number[] = [];
-      if (task.assignee_person_id) {
-        const n = personToCu.get(task.assignee_person_id);
-        if (Number.isFinite(n)) assignees.push(n!);
-      }
+      const assignees = await resolveAssigneeClickUpIds(
+        admin,
+        orgId,
+        task.assignee_person_id,
+        personToCu,
+        emailToCu,
+      );
 
       if (existing) {
         let inSync = false;
@@ -523,6 +630,7 @@ export async function pushEntityFromOutbox(args: {
       auth,
       spaceId,
       statusMap,
+      teamId: settings.clickup_team_id,
     });
   } catch (e) {
     if (
@@ -545,9 +653,19 @@ async function pushEntityWithAuth(args: {
   auth: ClickUpAuth;
   spaceId: string;
   statusMap: ClickUpStatusMap;
+  teamId: string | null;
 }): Promise<void> {
-  const { admin, orgId, entityType, reaperId, op, auth, spaceId, statusMap } =
-    args;
+  const {
+    admin,
+    orgId,
+    entityType,
+    reaperId,
+    op,
+    auth,
+    spaceId,
+    statusMap,
+    teamId,
+  } = args;
 
   if (op === "delete") {
     await admin
@@ -661,14 +779,19 @@ async function pushEntityWithAuth(args: {
     if (task.parent_id) {
       parentCu = await getLink(admin, orgId, "task", task.parent_id);
     }
-    const { data: um } = await admin
-      .from("addon_clickup_user_map")
-      .select("clickup_user_id")
-      .eq("organization_id", orgId)
-      .eq("person_id", task.assignee_person_id ?? "")
-      .maybeSingle();
-    const assignees: number[] = [];
-    if (um?.clickup_user_id) assignees.push(Number(um.clickup_user_id));
+    const { personToCu, emailToCu } = await loadAssigneeLookups(
+      admin,
+      orgId,
+      teamId,
+      auth,
+    );
+    const assignees = await resolveAssigneeClickUpIds(
+      admin,
+      orgId,
+      task.assignee_person_id,
+      personToCu,
+      emailToCu,
+    );
 
     const existing = await getLink(admin, orgId, "task", task.id);
     const body = taskToClickUpBody(task as Task, statusMap, {
@@ -678,8 +801,19 @@ async function pushEntityWithAuth(args: {
     if (existing) {
       await cu.updateTask(auth, existing, body);
     } else {
-      const created = await cu.createTask(auth, listCu, body);
+      const { status, ...createBody } = body;
+      const created = await cu.createTask(auth, listCu, createBody);
       await setLink(admin, orgId, "task", task.id, created.id);
+      if (status) {
+        try {
+          await cu.updateTask(auth, created.id, {
+            status,
+            ...(assignees.length ? { assignees } : {}),
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
     }
     return;
   }

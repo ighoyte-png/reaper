@@ -210,13 +210,23 @@ export function ClickUpProjectSyncToggle({
       )}
 
       {summary ? (
-        <p className="mt-2 text-xs text-[var(--text-muted)]">
-          Last reconcile: created {summary.created}, updated {summary.updated},
-          in sync {summary.in_sync}, ClickUp orphans {summary.orphans}
-          {summary.errors?.length
-            ? ` · ${summary.errors.length} error(s)`
-            : ""}
-        </p>
+        <div className="mt-2 space-y-1 text-xs text-[var(--text-muted)]">
+          <p>
+            Last reconcile: created {summary.created}, updated{" "}
+            {summary.updated}, in sync {summary.in_sync}, ClickUp orphans{" "}
+            {summary.orphans}
+            {summary.errors?.length
+              ? ` · ${summary.errors.length} error(s)`
+              : ""}
+          </p>
+          {summary.errors?.length ? (
+            <ul className="list-inside list-disc text-[var(--status-over)]">
+              {summary.errors.slice(0, 5).map((err) => (
+                <li key={err}>{err}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
       {sync?.last_error ? (
         <p className="mt-1 text-xs text-[var(--status-over)]">{sync.last_error}</p>

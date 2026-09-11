@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { AppNavbar } from "@/components/nav/app-navbar";
@@ -16,6 +16,12 @@ import { NotificationPermissionBanner } from "@/components/notifications/notific
 import { NotificationCenter } from "@/components/notifications/notification-center";
 import { fetchIsPlatformAdmin } from "@/components/nav/platform-admin-link";
 import { UtilityNotificationsProvider } from "@/lib/utility-notifications";
+
+const ClickUpOutboxPoller = lazy(() =>
+  import("@/addons/clickup").then((m) => ({
+    default: m.ClickUpOutboxPoller,
+  })),
+);
 
 function isSchedulePath(pathname: string, workspaceSlug: string): boolean {
   const path = stripWorkspacePrefix(pathname, workspaceSlug);
@@ -146,6 +152,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
             {children}
             <NotificationCenter />
+            <Suspense fallback={null}>
+              <ClickUpOutboxPoller />
+            </Suspense>
           </div>
         </div>
       </UtilityNotificationsProvider>
