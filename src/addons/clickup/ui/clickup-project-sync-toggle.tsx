@@ -17,6 +17,8 @@ export function ClickUpProjectSyncToggle({
 }) {
   const { push } = useToast();
   const [addonEnabled, setAddonEnabled] = useState(false);
+  const [twoWayOn, setTwoWayOn] = useState(false);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
   const [sync, setSync] = useState<AddonClickupProjectSyncRow | null>(null);
   const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [linkMode, setLinkMode] = useState<"create" | "link">("create");
@@ -35,6 +37,8 @@ export function ClickUpProjectSyncToggle({
     }
     const enabled = Boolean(sJson.settings?.enabled);
     setAddonEnabled(enabled);
+    setTwoWayOn(Boolean(sJson.settings?.webhook_enabled));
+    setWebhookError(sJson.settings?.last_webhook_error ?? null);
     if (!enabled) {
       setLoaded(true);
       return;
@@ -165,7 +169,8 @@ export function ClickUpProjectSyncToggle({
       </div>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
         Default off. Turning on links or creates this project in ClickUp and
-        runs a full reconcile (Reaper wins).
+        runs a full reconcile (Reaper wins). With workspace two-way sync on,
+        ClickUp edits and new tasks in linked lists also flow into this project.
       </p>
 
       {!on ? (
@@ -230,6 +235,11 @@ export function ClickUpProjectSyncToggle({
       ) : null}
       {sync?.last_error ? (
         <p className="mt-1 text-xs text-[var(--status-over)]">{sync.last_error}</p>
+      ) : null}
+      {twoWayOn && webhookError ? (
+        <p className="mt-1 text-xs text-[var(--status-over)]">
+          Inbound webhook: {webhookError}
+        </p>
       ) : null}
     </div>
   );

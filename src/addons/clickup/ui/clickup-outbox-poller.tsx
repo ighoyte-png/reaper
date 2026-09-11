@@ -4,9 +4,8 @@ import { useEffect } from "react";
 import { useData } from "@/lib/data/store";
 
 /**
- * Drains the ClickUp outbox while the user is signed in.
- * Project-form polling alone missed creates made from the task board.
- * processOutbox no-ops when the addon is off / outbox is empty.
+ * Drains ClickUp outbox + inbound webhook queue while the user is signed in.
+ * process* no-ops when the addon is off / queues are empty.
  */
 export function ClickUpOutboxPoller() {
   const { ready, isAuthenticated, isPublicShare, mode } = useData();
@@ -18,7 +17,10 @@ export function ClickUpOutboxPoller() {
 
     async function drain() {
       try {
-        await fetch("/api/addons/clickup/process-outbox", { method: "POST" });
+        await Promise.all([
+          fetch("/api/addons/clickup/process-outbox", { method: "POST" }),
+          fetch("/api/addons/clickup/process-inbound", { method: "POST" }),
+        ]);
       } catch {
         /* ignore transient failures */
       }

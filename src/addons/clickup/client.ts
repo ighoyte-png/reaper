@@ -32,7 +32,35 @@ export type ClickUpTask = {
   start_date?: string | null;
   due_date?: string | null;
   parent?: string | null;
+  list?: { id: string };
+  assignees?: { id: number; email?: string; username?: string }[];
 };
+
+export type ClickUpWebhook = {
+  id: string;
+  webhook_id?: string;
+  endpoint?: string;
+  client_id?: string;
+  events?: string[];
+  task_id?: string | null;
+  list_id?: string | null;
+  folder_id?: string | null;
+  space_id?: string | null;
+  health?: { status?: string; fail_count?: number };
+  secret?: string;
+};
+
+export const CLICKUP_TASK_WEBHOOK_EVENTS = [
+  "taskCreated",
+  "taskUpdated",
+  "taskStatusUpdated",
+  "taskAssigneeUpdated",
+  "taskDueDateUpdated",
+  "taskCommentPosted",
+  "taskCommentUpdated",
+  "taskDeleted",
+  "taskMoved",
+] as const;
 
 export type ClickUpUser = {
   id: number;
@@ -263,6 +291,16 @@ export async function updateTask(
   });
 }
 
+export async function getTask(
+  auth: ClickUpAuth,
+  taskId: string,
+): Promise<ClickUpTask> {
+  return cuFetch<ClickUpTask>(
+    auth,
+    `/task/${encodeURIComponent(taskId)}?include_subtasks=true`,
+  );
+}
+
 export async function createTaskComment(
   auth: ClickUpAuth,
   taskId: string,
@@ -272,6 +310,77 @@ export async function createTaskComment(
     method: "POST",
     body: JSON.stringify({ comment_text: commentText }),
   });
+}
+
+export async function updateTaskComment(
+  auth: ClickUpAuth,
+  commentId: string,
+  commentText: string,
+): Promise<{ id?: string }> {
+  return cuFetch<{ id?: string }>(
+    auth,
+    `/comment/${encodeURIComponent(commentId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ comment_text: commentText }),
+    },
+  );
+}
+
+export async function createWebhook(
+  auth: ClickUpAuth,
+  teamId: string,
+  body: {
+    endpoint: string;
+    events: string[];
+    space_id?: string | number;
+  },
+): Promise<ClickUpWebhook> {
+  const data = await cuFetch<{ webhook?: ClickUpWebhook } | ClickUpWebhook>(
+    auth,
+    `/team/${teamId}/webhook`,
+    {
+      method: "POST",
+      body: JSON.stringify(body),
+    },
+  );
+  if (data && typeof data === "object" && "webhook" in data && data.webhook) {
+    return data.webhook;
+  }
+  return data as ClickUpWebhook;
+}
+
+export async function deleteWebhook(
+  auth: ClickUpAuth,
+  webhookId: string,
+): Promise<void> {
+  await cuFetch<unknown>(auth, `/webhook/${encodeURIComponent(webhookId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function updateWebhook(
+  auth: ClickUpAuth,
+  webhookId: string,
+  body: {
+    endpoint?: string;
+    events?: string[];
+    status?: "active" | "paused";
+    space_id?: string | number;
+  },
+): Promise<ClickUpWebhook> {
+  const data = await cuFetch<{ webhook?: ClickUpWebhook } | ClickUpWebhook>(
+    auth,
+    `/webhook/${encodeURIComponent(webhookId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(body),
+    },
+  );
+  if (data && typeof data === "object" && "webhook" in data && data.webhook) {
+    return data.webhook;
+  }
+  return data as ClickUpWebhook;
 }
 
 export async function getTeamMembers(

@@ -32,6 +32,11 @@ export type AddonClickupSettingsRow = {
   space_id: string | null;
   space_name: string | null;
   status_map: ClickUpStatusMap | Record<string, string>;
+  webhook_enabled: boolean;
+  webhook_id: string | null;
+  webhook_secret: string | null;
+  last_webhook_at: string | null;
+  last_webhook_error: string | null;
   last_error: string | null;
   last_synced_at: string | null;
   updated_at: string;
@@ -51,6 +56,11 @@ export type AddonClickupSettingsPublic = {
   space_id: string | null;
   space_name: string | null;
   status_map: ClickUpStatusMap;
+  webhook_enabled: boolean;
+  has_webhook: boolean;
+  webhook_endpoint: string | null;
+  last_webhook_at: string | null;
+  last_webhook_error: string | null;
   last_error: string | null;
   last_synced_at: string | null;
   oauth_redirect_uri: string | null;
@@ -119,6 +129,7 @@ export function toPublicSettings(
   opts?: {
     hasServiceConnection?: boolean;
     oauthRedirectUri?: string | null;
+    webhookEndpoint?: string | null;
   },
 ): AddonClickupSettingsPublic {
   const hasOAuthApp = Boolean(
@@ -138,6 +149,11 @@ export function toPublicSettings(
     space_id: row.space_id,
     space_name: row.space_name,
     status_map: normalizeStatusMap(row.status_map),
+    webhook_enabled: Boolean(row.webhook_enabled),
+    has_webhook: Boolean(row.webhook_id?.trim()),
+    webhook_endpoint: opts?.webhookEndpoint ?? null,
+    last_webhook_at: row.last_webhook_at ?? null,
+    last_webhook_error: row.last_webhook_error ?? null,
     last_error: row.last_error,
     last_synced_at: row.last_synced_at,
     oauth_redirect_uri: opts?.oauthRedirectUri ?? null,

@@ -17,6 +17,7 @@ import {
   setLink,
   deleteLink,
   linksForProjectTasks,
+  touchLinkPushMeta,
 } from "@/addons/clickup/db";
 import type { ClickUpLinkEntityType } from "@/addons/clickup/types";
 import {
@@ -24,6 +25,7 @@ import {
   normalizeDescription,
   taskFieldsMatchClickUp,
   taskToClickUpBody,
+  taskContentHash,
 } from "@/addons/clickup/mappers";
 import type {
   ClickUpAuth,
@@ -264,6 +266,7 @@ async function createTaskInClickUp(
   body: ReturnType<typeof taskToClickUpBody>,
   taskId: string,
   assigneeIds: number[],
+  task: Task,
 ): Promise<string> {
   const { status, ...createBody } = body;
   const created = await cu.createTask(auth, listClickUpId, createBody);
@@ -278,6 +281,20 @@ async function createTaskInClickUp(
       /* status/assignee apply best-effort after create */
     }
   }
+  await touchLinkPushMeta(
+    admin,
+    orgId,
+    "task",
+    taskId,
+    taskContentHash({
+      title: task.title,
+      status: task.status,
+      start_date: task.start_date,
+      due_date: task.due_date,
+      notes: task.notes,
+      assignee_person_id: task.assignee_person_id,
+    }),
+  );
   return created.id;
 }
 
@@ -295,10 +312,19 @@ async function pushTask(
     parentClickUpId,
     assigneeClickUpIds: assigneeIds.length ? assigneeIds : undefined,
   });
+  const hash = taskContentHash({
+    title: task.title,
+    status: task.status,
+    start_date: task.start_date,
+    due_date: task.due_date,
+    notes: task.notes,
+    assignee_person_id: task.assignee_person_id,
+  });
   const existing = await getLink(admin, orgId, "task", task.id);
   if (existing) {
     try {
       await cu.updateTask(auth, existing, body);
+      await touchLinkPushMeta(admin, orgId, "task", task.id, hash);
       return "updated";
     } catch (e) {
       if (!isNotFoundClickUpError(e)) throw e;
@@ -319,6 +345,7 @@ async function pushTask(
     body,
     task.id,
     assigneeIds,
+    task,
   );
   return "created";
 }
@@ -1047,15 +1074,38 @@ async function pushEntityWithAuth(args: {
       .eq("id", reaperId)
       .maybeSingle();
     if (!comment) return;
-    if (await getLink(admin, orgId, "comment", comment.id)) return;
     const taskCu = await getLink(admin, orgId, "task", comment.task_id);
     if (!taskCu) return;
-    const created = await cu.createTaskComment(
-      auth,
-      taskCu,
-      notesToDescription(comment.body) || String(comment.body ?? ""),
-    );
-    await setLink(admin, orgId, "comment", comment.id, String(created.id));
+    const text =
+      notesToDescription(comment.body) || String(comment.body ?? "");
+    if (!text.trim()) return;
+    const existing = await getLink(admin, orgId, "comment", comment.id);
+    if (existing) {
+      try {
+        await cu.updateTaskComment(auth, existing, text);
+        await touchLinkPushMeta(
+          admin,
+          orgId,
+          "comment",
+          comment.id,
+          `c:${normalizeDescription(text)}`,
+        );
+      } catch (e) {
+        if (!isNotFoundClickUpError(e)) throw e;
+        await clearStaleLink(admin, orgId, "comment", comment.id);
+        const created = await cu.createTaskComment(auth, taskCu, text);
+        await setLink(admin, orgId, "comment", comment.id, String(created.id), {
+          content_hash: `c:${normalizeDescription(text)}`,
+          last_pushed_at: new Date().toISOString(),
+        });
+      }
+      return;
+    }
+    const created = await cu.createTaskComment(auth, taskCu, text);
+    await setLink(admin, orgId, "comment", comment.id, String(created.id), {
+      content_hash: `c:${normalizeDescription(text)}`,
+      last_pushed_at: new Date().toISOString(),
+    });
     return;
   }
 

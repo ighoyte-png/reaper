@@ -239,10 +239,10 @@ export function ClickUpAddonSettingsPanel() {
     <div className="mt-8 border-t border-[var(--border)] pt-6">
       <h3 className="text-sm font-semibold">Addons · ClickUp</h3>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
-        One-way sync from Reaper → ClickUp with per-user OAuth so creates and
-        comments appear as the real actor. Configure the OAuth app once, connect
-        a service account for backfill, then enable. Each teammate connects under
-        Account.
+        Sync Reaper ↔ ClickUp with per-user OAuth so creates and comments appear
+        as the real actor. Configure the OAuth app once, connect a service
+        account for backfill, enable the addon, then optionally turn on two-way
+        webhooks. Each teammate connects under Account.
       </p>
 
       <div className="mt-4 space-y-3">
@@ -423,6 +423,81 @@ export function ClickUpAddonSettingsPanel() {
           />
           Enable ClickUp addon for this workspace
         </label>
+
+        {settings?.enabled ? (
+          <div className="space-y-2 rounded-md border border-[var(--border)] p-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+              <Checkbox
+                checked={Boolean(settings.webhook_enabled)}
+                disabled={busy}
+                onChange={(e) => {
+                  void (async () => {
+                    setBusy(true);
+                    try {
+                      const res = await fetch("/api/addons/clickup/settings", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          enabled: true,
+                          webhook_enabled: e.target.checked,
+                          clickup_team_id: teamId || null,
+                          space_id: spaceId || null,
+                          space_name:
+                            spaces.find((s) => s.id === spaceId)?.name ??
+                            settings.space_name,
+                          status_map: statusMap,
+                        }),
+                      });
+                      const json = await res.json();
+                      if (!res.ok) throw new Error(json.error ?? "Failed");
+                      setSettings(json.settings);
+                      push(
+                        e.target.checked
+                          ? "Two-way sync enabled (webhook registered)"
+                          : "Two-way sync disabled",
+                        "success",
+                      );
+                    } catch (err) {
+                      push(
+                        err instanceof Error ? err.message : "Failed",
+                        "warning",
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  })();
+                }}
+              />
+              Two-way sync (ClickUp → Reaper)
+            </label>
+            <p className="text-xs text-[var(--text-muted)]">
+              Registers a Space webhook so edits and new tasks in linked lists
+              flow into sync-enabled projects. Last-write-wins; Re-sync still
+              overwrites ClickUp.
+            </p>
+            {settings.webhook_endpoint ? (
+              <Field label="Webhook endpoint">
+                <input
+                  className={inputClass}
+                  readOnly
+                  value={settings.webhook_endpoint}
+                  onFocus={(ev) => ev.target.select()}
+                />
+              </Field>
+            ) : null}
+            <p className="text-xs text-[var(--text-muted)]">
+              {settings.has_webhook ? "Webhook registered" : "No webhook yet"}
+              {settings.last_webhook_at
+                ? ` · last event ${new Date(settings.last_webhook_at).toLocaleString()}`
+                : ""}
+            </p>
+            {settings.last_webhook_error ? (
+              <p className="text-xs text-[var(--status-over)]">
+                Webhook error: {settings.last_webhook_error}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <Button
           type="button"

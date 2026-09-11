@@ -19,6 +19,16 @@ export type AddonClickupOAuthTokenRow = {
   updated_at: string;
 };
 
+function normalizeSettingsRow(
+  data: AddonClickupSettingsRow,
+): AddonClickupSettingsRow {
+  return {
+    ...data,
+    status_map: normalizeStatusMap(data.status_map),
+    webhook_enabled: Boolean(data.webhook_enabled),
+  };
+}
+
 export async function loadSettings(
   admin: SupabaseClient,
   orgId: string,
@@ -30,12 +40,21 @@ export async function loadSettings(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return {
-    ...(data as AddonClickupSettingsRow),
-    status_map: normalizeStatusMap(
-      (data as AddonClickupSettingsRow).status_map,
-    ),
-  };
+  return normalizeSettingsRow(data as AddonClickupSettingsRow);
+}
+
+export async function loadSettingsByWebhookId(
+  admin: SupabaseClient,
+  webhookId: string,
+): Promise<AddonClickupSettingsRow | null> {
+  const { data, error } = await admin
+    .from("addon_clickup_settings")
+    .select("*")
+    .eq("webhook_id", webhookId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return normalizeSettingsRow(data as AddonClickupSettingsRow);
 }
 
 export async function upsertSettings(
@@ -51,6 +70,11 @@ export async function upsertSettings(
     space_id: string | null;
     space_name: string | null;
     status_map: ClickUpStatusMap;
+    webhook_enabled: boolean;
+    webhook_id: string | null;
+    webhook_secret: string | null;
+    last_webhook_at: string | null;
+    last_webhook_error: string | null;
     last_error: string | null;
     last_synced_at: string | null;
   }>,
@@ -88,6 +112,26 @@ export async function upsertSettings(
     status_map: normalizeStatusMap(
       patch.status_map ?? existing?.status_map ?? {},
     ),
+    webhook_enabled:
+      patch.webhook_enabled !== undefined
+        ? patch.webhook_enabled
+        : (existing?.webhook_enabled ?? false),
+    webhook_id:
+      patch.webhook_id !== undefined
+        ? patch.webhook_id
+        : (existing?.webhook_id ?? null),
+    webhook_secret:
+      patch.webhook_secret !== undefined
+        ? patch.webhook_secret
+        : (existing?.webhook_secret ?? null),
+    last_webhook_at:
+      patch.last_webhook_at !== undefined
+        ? patch.last_webhook_at
+        : (existing?.last_webhook_at ?? null),
+    last_webhook_error:
+      patch.last_webhook_error !== undefined
+        ? patch.last_webhook_error
+        : (existing?.last_webhook_error ?? null),
     last_error:
       patch.last_error !== undefined
         ? patch.last_error
@@ -104,7 +148,15 @@ export async function upsertSettings(
     .select("*")
     .single();
   if (error) throw new Error(error.message);
-  return data as AddonClickupSettingsRow;
+  return {
+    ...(data as AddonClickupSettingsRow),
+    status_map: normalizeStatusMap(
+      (data as AddonClickupSettingsRow).status_map,
+    ),
+    webhook_enabled: Boolean(
+      (data as AddonClickupSettingsRow).webhook_enabled,
+    ),
+  };
 }
 
 export async function loadOAuthToken(
@@ -206,12 +258,38 @@ export async function getLink(
   return data?.clickup_id ?? null;
 }
 
+export async function getLinkByClickUpId(
+  admin: SupabaseClient,
+  orgId: string,
+  entityType: ClickUpLinkEntityType,
+  clickupId: string,
+): Promise<{ reaper_id: string; content_hash: string | null; last_pushed_at: string | null } | null> {
+  const { data } = await admin
+    .from("addon_clickup_links")
+    .select("reaper_id, content_hash, last_pushed_at")
+    .eq("organization_id", orgId)
+    .eq("entity_type", entityType)
+    .eq("clickup_id", clickupId)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    reaper_id: data.reaper_id as string,
+    content_hash: (data.content_hash as string | null) ?? null,
+    last_pushed_at: (data.last_pushed_at as string | null) ?? null,
+  };
+}
+
 export async function setLink(
   admin: SupabaseClient,
   orgId: string,
   entityType: ClickUpLinkEntityType,
   reaperId: string,
   clickupId: string,
+  meta?: {
+    content_hash?: string | null;
+    last_pushed_at?: string | null;
+    last_inbound_at?: string | null;
+  },
 ): Promise<void> {
   const { error } = await admin.from("addon_clickup_links").upsert({
     organization_id: orgId,
@@ -219,8 +297,36 @@ export async function setLink(
     reaper_id: reaperId,
     clickup_id: clickupId,
     updated_at: new Date().toISOString(),
+    ...(meta?.content_hash !== undefined
+      ? { content_hash: meta.content_hash }
+      : {}),
+    ...(meta?.last_pushed_at !== undefined
+      ? { last_pushed_at: meta.last_pushed_at }
+      : {}),
+    ...(meta?.last_inbound_at !== undefined
+      ? { last_inbound_at: meta.last_inbound_at }
+      : {}),
   });
   if (error) throw new Error(error.message);
+}
+
+export async function touchLinkPushMeta(
+  admin: SupabaseClient,
+  orgId: string,
+  entityType: ClickUpLinkEntityType,
+  reaperId: string,
+  contentHash: string,
+): Promise<void> {
+  await admin
+    .from("addon_clickup_links")
+    .update({
+      content_hash: contentHash,
+      last_pushed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", orgId)
+    .eq("entity_type", entityType)
+    .eq("reaper_id", reaperId);
 }
 
 export async function deleteLink(
@@ -254,4 +360,33 @@ export async function linksForProjectTasks(
     map.set(row.reaper_id, row.clickup_id);
   }
   return map;
+}
+
+export async function suppressOutbound(
+  admin: SupabaseClient,
+  orgId: string,
+  entityType: string,
+  reaperId: string,
+  seconds = 45,
+): Promise<void> {
+  const { error } = await admin.rpc("addon_clickup_suppress_outbound", {
+    p_org: orgId,
+    p_entity_type: entityType,
+    p_reaper_id: reaperId,
+    p_seconds: seconds,
+  });
+  if (error) {
+    // Fallback direct upsert if RPC not migrated yet
+    const until = new Date(Date.now() + Math.max(seconds, 5) * 1000).toISOString();
+    await admin.from("addon_clickup_suppress").upsert({
+      organization_id: orgId,
+      entity_type: entityType,
+      reaper_id: reaperId,
+      until,
+    });
+  }
+}
+
+export function webhookEndpointUri(origin: string): string {
+  return `${origin.replace(/\/$/, "")}/api/addons/clickup/webhook`;
 }
