@@ -65,3 +65,10 @@ export async function markOAuthNeedsReauth(
 export function isUnauthorizedClickUpError(e: unknown): boolean {
   return e instanceof ClickUpApiError && (e.status === 401 || e.status === 403);
 }
+
+/** Deleted / missing ClickUp entity (stale id-map after manual delete). */
+export function isNotFoundClickUpError(e: unknown): boolean {
+  if (!(e instanceof ClickUpApiError)) return false;
+  if (e.status === 404) return true;
+  return /not found|deleted|ITEM_013|FOLDER_|\bLIST_/i.test(e.body);
+}

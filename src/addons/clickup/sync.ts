@@ -8,14 +8,17 @@ import {
   resolveClickUpAuth,
   resolveOrgClickUpAuth,
   isUnauthorizedClickUpError,
+  isNotFoundClickUpError,
   markOAuthNeedsReauth,
 } from "@/addons/clickup/auth";
 import {
   getLink,
   loadSettings,
   setLink,
+  deleteLink,
   linksForProjectTasks,
 } from "@/addons/clickup/db";
+import type { ClickUpLinkEntityType } from "@/addons/clickup/types";
 import {
   notesToDescription,
   normalizeDescription,
@@ -43,6 +46,29 @@ function requireStatusMap(map: ClickUpStatusMap): ClickUpStatusMap {
   return m;
 }
 
+/** Drop a stale id-map row (and comment links when a task was deleted in ClickUp). */
+async function clearStaleLink(
+  admin: SupabaseClient,
+  orgId: string,
+  entityType: ClickUpLinkEntityType,
+  reaperId: string,
+): Promise<void> {
+  await deleteLink(admin, orgId, entityType, reaperId);
+  if (entityType === "task") {
+    const { data: comments } = await admin
+      .from("task_comments")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("task_id", reaperId);
+    for (const c of comments ?? []) {
+      await deleteLink(admin, orgId, "comment", c.id);
+    }
+  }
+  if (entityType === "milestone") {
+    /* milestone is a ClickUp task; no nested comments in our map */
+  }
+}
+
 async function ensureClientFolder(
   admin: SupabaseClient,
   orgId: string,
@@ -54,10 +80,14 @@ async function ensureClientFolder(
   if (existing) {
     try {
       await cu.updateFolder(auth, existing, client.name);
-    } catch {
-      /* ignore rename failures */
+      return existing;
+    } catch (e) {
+      if (!isNotFoundClickUpError(e)) {
+        /* rename failed but folder may still exist — keep link */
+        return existing;
+      }
+      await clearStaleLink(admin, orgId, "client", client.id);
     }
-    return existing;
   }
   const folders = await cu.getFolders(auth, spaceId);
   const byName = folders.find(
@@ -95,10 +125,11 @@ async function ensureProjectFolder(
   if (existing) {
     try {
       await cu.updateFolder(auth, existing, project.name);
-    } catch {
-      /* ignore */
+      return existing;
+    } catch (e) {
+      if (!isNotFoundClickUpError(e)) return existing;
+      await clearStaleLink(admin, orgId, "project", project.id);
     }
-    return existing;
   }
   // Prefer subfolder under client when API supports parent; fallback: folder in space
   try {
@@ -128,10 +159,11 @@ async function ensureTaskList(
   if (existing) {
     try {
       await cu.updateList(auth, existing, list.name);
-    } catch {
-      /* ignore */
+      return existing;
+    } catch (e) {
+      if (!isNotFoundClickUpError(e)) return existing;
+      await clearStaleLink(admin, orgId, "task_list", list.id);
     }
-    return existing;
   }
   const lists = await cu.getListsInFolder(auth, projectFolderId);
   const byName = lists.find(
@@ -143,6 +175,31 @@ async function ensureTaskList(
   }
   const created = await cu.createList(auth, projectFolderId, list.name);
   await setLink(admin, orgId, "task_list", list.id, created.id);
+  return created.id;
+}
+
+async function createTaskInClickUp(
+  admin: SupabaseClient,
+  orgId: string,
+  auth: ClickUpAuth,
+  listClickUpId: string,
+  body: ReturnType<typeof taskToClickUpBody>,
+  taskId: string,
+  assigneeIds: number[],
+): Promise<string> {
+  const { status, ...createBody } = body;
+  const created = await cu.createTask(auth, listClickUpId, createBody);
+  await setLink(admin, orgId, "task", taskId, created.id);
+  if (status) {
+    try {
+      await cu.updateTask(auth, created.id, {
+        status,
+        ...(assigneeIds.length ? { assignees: assigneeIds } : {}),
+      });
+    } catch {
+      /* status/assignee apply best-effort after create */
+    }
+  }
   return created.id;
 }
 
@@ -162,23 +219,23 @@ async function pushTask(
   });
   const existing = await getLink(admin, orgId, "task", task.id);
   if (existing) {
-    await cu.updateTask(auth, existing, body);
-    return "updated";
-  }
-  // Create without closed status first — ClickUp often ignores closed on create.
-  const { status, ...createBody } = body;
-  const created = await cu.createTask(auth, listClickUpId, createBody);
-  await setLink(admin, orgId, "task", task.id, created.id);
-  if (status) {
     try {
-      await cu.updateTask(auth, created.id, {
-        status,
-        ...(assigneeIds.length ? { assignees: assigneeIds } : {}),
-      });
-    } catch {
-      /* status/assignee apply best-effort after create */
+      await cu.updateTask(auth, existing, body);
+      return "updated";
+    } catch (e) {
+      if (!isNotFoundClickUpError(e)) throw e;
+      await clearStaleLink(admin, orgId, "task", task.id);
     }
   }
+  await createTaskInClickUp(
+    admin,
+    orgId,
+    auth,
+    listClickUpId,
+    body,
+    task.id,
+    assigneeIds,
+  );
   return "created";
 }
 
@@ -453,11 +510,15 @@ export async function reconcileProject(args: {
       );
 
       if (existing) {
+        let foundInInventory = false;
         let inSync = false;
         for (const cuTasks of cuTasksByList.values()) {
           const found = cuTasks.find((t) => t.id === existing);
-          if (found && taskFieldsMatchClickUp(task, found, statusMap)) {
-            inSync = true;
+          if (found) {
+            foundInInventory = true;
+            if (taskFieldsMatchClickUp(task, found, statusMap)) {
+              inSync = true;
+            }
             break;
           }
         }
@@ -465,15 +526,51 @@ export async function reconcileProject(args: {
           summary.in_sync += 1;
           continue;
         }
-        await cu.updateTask(
-          auth,
-          existing,
-          taskToClickUpBody(task, statusMap, {
-            parentClickUpId: parentCu,
-            assigneeClickUpIds: assignees,
-          }),
-        );
-        summary.updated += 1;
+        if (!foundInInventory) {
+          // Stale link after ClickUp delete — recreate
+          await clearStaleLink(admin, orgId, "task", task.id);
+          const result = await pushTask(
+            admin,
+            orgId,
+            auth,
+            statusMap,
+            cuListId,
+            task,
+            parentCu,
+            assignees,
+          );
+          if (result === "created") summary.created += 1;
+          else if (result === "updated") summary.updated += 1;
+          else summary.in_sync += 1;
+          continue;
+        }
+        try {
+          await cu.updateTask(
+            auth,
+            existing,
+            taskToClickUpBody(task, statusMap, {
+              parentClickUpId: parentCu,
+              assigneeClickUpIds: assignees,
+            }),
+          );
+          summary.updated += 1;
+        } catch (e) {
+          if (!isNotFoundClickUpError(e)) throw e;
+          await clearStaleLink(admin, orgId, "task", task.id);
+          const result = await pushTask(
+            admin,
+            orgId,
+            auth,
+            statusMap,
+            cuListId,
+            task,
+            parentCu,
+            assignees,
+          );
+          if (result === "created") summary.created += 1;
+          else if (result === "updated") summary.updated += 1;
+          else summary.in_sync += 1;
+        }
       } else {
         const cuTasks = cuTasksByList.get(cuListId) ?? [];
         const byName = cuTasks.find(
@@ -545,8 +642,16 @@ export async function reconcileProject(args: {
           due_date: cu.dateKeyToClickUpMs(m.due_date ?? undefined),
         };
         if (existing) {
-          await cu.updateTask(auth, existing, body);
-          summary.updated += 1;
+          try {
+            await cu.updateTask(auth, existing, body);
+            summary.updated += 1;
+          } catch (e) {
+            if (!isNotFoundClickUpError(e)) throw e;
+            await clearStaleLink(admin, orgId, "milestone", m.id);
+            const created = await cu.createTask(auth, milestoneListId, body);
+            await setLink(admin, orgId, "milestone", m.id, created.id);
+            summary.created += 1;
+          }
         } else {
           const created = await cu.createTask(auth, milestoneListId, body);
           await setLink(admin, orgId, "milestone", m.id, created.id);
@@ -757,7 +862,40 @@ async function pushEntityWithAuth(args: {
 
     let listCu = await getLink(admin, orgId, "task_list", task.list_id);
     if (!listCu) {
-      const folderId = await getLink(admin, orgId, "project", task.project_id);
+      let folderId = await getLink(admin, orgId, "project", task.project_id);
+      if (!folderId) {
+        // Project folder link missing/stale — rebuild via reconcile helpers
+        const { data: project } = await admin
+          .from("projects")
+          .select("*")
+          .eq("id", task.project_id)
+          .maybeSingle();
+        const { data: client } = project
+          ? await admin
+              .from("clients")
+              .select("*")
+              .eq("id", project.client_id)
+              .maybeSingle()
+          : { data: null };
+        if (project && client) {
+          const clientFolderId = await ensureClientFolder(
+            admin,
+            orgId,
+            auth,
+            spaceId,
+            client as Client,
+          );
+          folderId = await ensureProjectFolder(
+            admin,
+            orgId,
+            auth,
+            spaceId,
+            clientFolderId,
+            project as Project,
+            "create",
+          );
+        }
+      }
       if (!folderId) return;
       const { data: list } = await admin
         .from("task_lists")
@@ -793,28 +931,16 @@ async function pushEntityWithAuth(args: {
       emailToCu,
     );
 
-    const existing = await getLink(admin, orgId, "task", task.id);
-    const body = taskToClickUpBody(task as Task, statusMap, {
-      parentClickUpId: parentCu,
-      assigneeClickUpIds: assignees,
-    });
-    if (existing) {
-      await cu.updateTask(auth, existing, body);
-    } else {
-      const { status, ...createBody } = body;
-      const created = await cu.createTask(auth, listCu, createBody);
-      await setLink(admin, orgId, "task", task.id, created.id);
-      if (status) {
-        try {
-          await cu.updateTask(auth, created.id, {
-            status,
-            ...(assignees.length ? { assignees } : {}),
-          });
-        } catch {
-          /* best-effort */
-        }
-      }
-    }
+    await pushTask(
+      admin,
+      orgId,
+      auth,
+      statusMap,
+      listCu,
+      task as Task,
+      parentCu,
+      assignees,
+    );
     return;
   }
 
@@ -861,7 +987,14 @@ async function pushEntityWithAuth(args: {
     };
     const existing = await getLink(admin, orgId, "milestone", m.id);
     if (existing) {
-      await cu.updateTask(auth, existing, body);
+      try {
+        await cu.updateTask(auth, existing, body);
+      } catch (e) {
+        if (!isNotFoundClickUpError(e)) throw e;
+        await clearStaleLink(admin, orgId, "milestone", m.id);
+        const created = await cu.createTask(auth, listId, body);
+        await setLink(admin, orgId, "milestone", m.id, created.id);
+      }
     } else {
       const created = await cu.createTask(auth, listId, body);
       await setLink(admin, orgId, "milestone", m.id, created.id);
