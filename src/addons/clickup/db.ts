@@ -279,6 +279,40 @@ export async function getLinkByClickUpId(
   };
 }
 
+export async function tryClaimLink(
+  admin: SupabaseClient,
+  orgId: string,
+  entityType: ClickUpLinkEntityType,
+  reaperId: string,
+  clickupId: string,
+  meta?: {
+    content_hash?: string | null;
+    last_pushed_at?: string | null;
+    last_inbound_at?: string | null;
+  },
+): Promise<"claimed" | "exists"> {
+  const { error } = await admin.from("addon_clickup_links").insert({
+    organization_id: orgId,
+    entity_type: entityType,
+    reaper_id: reaperId,
+    clickup_id: clickupId,
+    updated_at: new Date().toISOString(),
+    ...(meta?.content_hash !== undefined
+      ? { content_hash: meta.content_hash }
+      : {}),
+    ...(meta?.last_pushed_at !== undefined
+      ? { last_pushed_at: meta.last_pushed_at }
+      : {}),
+    ...(meta?.last_inbound_at !== undefined
+      ? { last_inbound_at: meta.last_inbound_at }
+      : {}),
+  });
+  if (!error) return "claimed";
+  // Unique violation on reaper_id or clickup_id — another worker already linked.
+  if (error.code === "23505") return "exists";
+  throw new Error(error.message);
+}
+
 export async function setLink(
   admin: SupabaseClient,
   orgId: string,

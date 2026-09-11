@@ -13,6 +13,7 @@ import {
   setLink,
   suppressOutbound,
   touchLinkPushMeta,
+  tryClaimLink,
   upsertSettings,
   webhookEndpointUri,
 } from "@/addons/clickup/db";
@@ -487,7 +488,26 @@ async function importClickUpTask(args: {
     .limit(1)
     .maybeSingle();
 
+  const taskId = crypto.randomUUID();
+  const hash = taskContentHash({
+    title: cuTask.name || "Untitled",
+    status: mappedStatus,
+    start_date: cu.clickUpMsToDateKey(cuTask.start_date),
+    due_date: cu.clickUpMsToDateKey(cuTask.due_date),
+    notes,
+    assignee_person_id: assigneePersonId,
+  });
+
+  // Claim ClickUp id before insert so concurrent webhooks cannot double-create.
+  const claim = await tryClaimLink(admin, orgId, "task", taskId, cuTask.id, {
+    content_hash: hash,
+    last_inbound_at: new Date().toISOString(),
+    last_pushed_at: new Date().toISOString(),
+  });
+  if (claim === "exists") return "ignored";
+
   const row = {
+    id: taskId,
     organization_id: orgId,
     project_id: taskList.project_id,
     list_id: taskList.id,
@@ -517,29 +537,13 @@ async function importClickUpTask(args: {
     if (parentLink) row.parent_id = parentLink.reaper_id;
   }
 
-  const taskId = crypto.randomUUID();
   await suppressOutbound(admin, orgId, "task", taskId, 45);
 
-  const { data: created, error } = await admin
-    .from("tasks")
-    .insert({ ...row, id: taskId })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-
-  const hash = taskContentHash({
-    title: row.title,
-    status: row.status,
-    start_date: row.start_date,
-    due_date: row.due_date,
-    notes: row.notes,
-    assignee_person_id: row.assignee_person_id,
-  });
-  await setLink(admin, orgId, "task", created.id, cuTask.id, {
-    content_hash: hash,
-    last_inbound_at: new Date().toISOString(),
-    last_pushed_at: new Date().toISOString(),
-  });
+  const { error } = await admin.from("tasks").insert(row);
+  if (error) {
+    await deleteLink(admin, orgId, "task", taskId);
+    throw new Error(error.message);
+  }
   return "created";
 }
 
@@ -762,7 +766,9 @@ export async function applyInboundEvent(args: {
 
   const link = await getLinkByClickUpId(admin, orgId, "task", taskId);
 
-  if (!link && (eventName === "taskCreated" || eventName === "taskUpdated")) {
+  // Only taskCreated imports. taskUpdated/status/etc. must not create — ClickUp
+  // fires several of those for one create and they race into duplicates.
+  if (!link && eventName === "taskCreated") {
     const cuTask = await cu.getTask(auth, taskId);
     const r = await importClickUpTask({
       admin,
@@ -832,10 +838,15 @@ export async function processInbound(
 
   for (const row of rows ?? []) {
     const now = new Date().toISOString();
-    await admin
+    const { data: locked } = await admin
       .from("addon_clickup_inbound_events")
       .update({ locked_at: now })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .eq("status", "pending")
+      .is("locked_at", null)
+      .select("id")
+      .maybeSingle();
+    if (!locked) continue;
 
     try {
       const result = await applyInboundEvent({

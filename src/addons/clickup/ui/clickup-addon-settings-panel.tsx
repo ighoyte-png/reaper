@@ -232,7 +232,16 @@ export function ClickUpAddonSettingsPanel() {
 
   const statusSelectOptions = [
     { value: "", label: "Select status…" },
-    ...statusOptions.map((s) => ({ value: s, label: s })),
+    ...Array.from(
+      new Set([
+        ...statusOptions,
+        statusMap.upcoming,
+        statusMap.active,
+        statusMap.complete,
+      ]),
+    )
+      .filter(Boolean)
+      .map((s) => ({ value: s, label: s })),
   ];
 
   return (
@@ -415,6 +424,19 @@ export function ClickUpAddonSettingsPanel() {
             />
           </Field>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy}
+            onClick={() => void saveAndEnable()}
+          >
+            Save ClickUp settings
+          </Button>
+          <span className="text-xs text-[var(--text-muted)]">
+            Saves Space, status mapping, and whether the addon is enabled.
+          </span>
+        </div>
 
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Checkbox
@@ -498,15 +520,6 @@ export function ClickUpAddonSettingsPanel() {
             ) : null}
           </div>
         ) : null}
-
-        <Button
-          type="button"
-          size="sm"
-          disabled={busy}
-          onClick={() => void saveAndEnable()}
-        >
-          Save ClickUp settings
-        </Button>
 
         {settings?.last_error ? (
           <p className="text-xs text-[var(--status-over)]">
