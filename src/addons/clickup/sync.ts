@@ -868,7 +868,12 @@ export async function pushEntityFromOutbox(args: {
   const { admin, orgId, entityType, reaperId, op, actorProfileId } = args;
   const settings = await loadSettings(admin, orgId);
   if (!settings?.enabled) return;
-  const auth = await resolveClickUpAuth(admin, orgId, actorProfileId);
+  // Prefer service/org credentials for deletes so CU-imported tasks (created by
+  // other users) still get removed; actor OAuth alone may lack delete rights.
+  const auth =
+    op === "delete"
+      ? await resolveOrgClickUpAuth(admin, orgId)
+      : await resolveClickUpAuth(admin, orgId, actorProfileId);
   const spaceId = requireSpace(settings.space_id);
   const statusMap = requireStatusMap(normalizeStatusMap(settings.status_map));
 
@@ -888,7 +893,8 @@ export async function pushEntityFromOutbox(args: {
     if (
       isUnauthorizedClickUpError(e) &&
       actorProfileId &&
-      auth.type === "oauth"
+      auth.type === "oauth" &&
+      op !== "delete"
     ) {
       await markOAuthNeedsReauth(admin, orgId, actorProfileId);
     }
