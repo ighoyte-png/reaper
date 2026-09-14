@@ -8,8 +8,10 @@ import {
   resolveClickUpAuth,
   resolveOrgClickUpAuth,
   isInvalidTokenClickUpError,
+  isUnauthorizedClickUpError,
   isNotFoundClickUpError,
   markOAuthNeedsReauth,
+  ClickUpActorAuthRequiredError,
 } from "@/addons/clickup/auth";
 import {
   getLink,
@@ -869,8 +871,11 @@ export async function reconcileProject(args: {
       if (!text.trim()) continue;
       // Prefer comment author's OAuth token for native attribution.
       const commentAuth = c.author_profile_id
-        ? await resolveClickUpAuth(admin, orgId, c.author_profile_id, {
-            requireActor: true,
+        ? await resolveAttributionAuth({
+            admin,
+            orgId,
+            actorProfileId: c.author_profile_id,
+            orgAuth: auth,
           })
         : auth;
       const created = await cu.createTaskComment(commentAuth, taskCu, text);
@@ -929,6 +934,53 @@ async function resolveOutboxActorProfileId(args: {
   return null;
 }
 
+/**
+ * Prefer the editor's OAuth for attribution; fall back to org/service so sync
+ * still works when they have not connected (or their token cannot write).
+ */
+async function resolveAttributionAuth(args: {
+  admin: SupabaseClient;
+  orgId: string;
+  actorProfileId: string | null;
+  orgAuth: ClickUpAuth;
+}): Promise<ClickUpAuth> {
+  if (!args.actorProfileId) return args.orgAuth;
+  try {
+    return await resolveClickUpAuth(args.admin, args.orgId, args.actorProfileId, {
+      requireActor: true,
+    });
+  } catch (e) {
+    if (e instanceof ClickUpActorAuthRequiredError) return args.orgAuth;
+    throw e;
+  }
+}
+
+/** Run a ClickUp write with actor auth; on permission failure retry as org. */
+async function withAttributionWriteFallback<T>(args: {
+  actorAuth: ClickUpAuth;
+  orgAuth: ClickUpAuth;
+  actorProfileId: string | null;
+  admin: SupabaseClient;
+  orgId: string;
+  write: (auth: ClickUpAuth) => Promise<T>;
+}): Promise<T> {
+  const sameToken = args.actorAuth.token === args.orgAuth.token;
+  try {
+    return await args.write(args.actorAuth);
+  } catch (e) {
+    if (isInvalidTokenClickUpError(e) && args.actorProfileId && !sameToken) {
+      await markOAuthNeedsReauth(args.admin, args.orgId, args.actorProfileId);
+    }
+    if (
+      !sameToken &&
+      isUnauthorizedClickUpError(e)
+    ) {
+      return await args.write(args.orgAuth);
+    }
+    throw e;
+  }
+}
+
 export async function pushEntityFromOutbox(args: {
   admin: SupabaseClient;
   orgId: string;
@@ -942,9 +994,8 @@ export async function pushEntityFromOutbox(args: {
   if (!settings?.enabled) return;
 
   // Deletes + folder/list structure use org/service credentials (permissions).
-  // Task/comment content writes use the editor's OAuth only — ClickUp has no
-  // act-as, and mixing structure 403s into the actor token was marking
-  // needs_reauth then silently creating tasks as the service account.
+  // Task/comment content prefers the editor's OAuth for attribution, then
+  // falls back to org so sync does not stall when they are not connected.
   const orgAuth = await resolveOrgClickUpAuth(admin, orgId);
   const attributionSensitive =
     op !== "delete" && (entityType === "task" || entityType === "comment");
@@ -957,37 +1008,30 @@ export async function pushEntityFromOutbox(args: {
       })
     : actorProfileId ?? null;
   const actorAuth = attributionSensitive
-    ? await resolveClickUpAuth(admin, orgId, resolvedActorId, {
-        requireActor: true,
+    ? await resolveAttributionAuth({
+        admin,
+        orgId,
+        actorProfileId: resolvedActorId,
+        orgAuth,
       })
     : orgAuth;
 
   const spaceId = requireSpace(settings.space_id);
   const statusMap = requireStatusMap(normalizeStatusMap(settings.status_map));
 
-  try {
-    await pushEntityWithAuth({
-      admin,
-      orgId,
-      entityType,
-      reaperId,
-      op,
-      auth: orgAuth,
-      actorAuth,
-      spaceId,
-      statusMap,
-      teamId: settings.clickup_team_id,
-    });
-  } catch (e) {
-    if (
-      isInvalidTokenClickUpError(e) &&
-      resolvedActorId &&
-      attributionSensitive
-    ) {
-      await markOAuthNeedsReauth(admin, orgId, resolvedActorId);
-    }
-    throw e;
-  }
+  await pushEntityWithAuth({
+    admin,
+    orgId,
+    entityType,
+    reaperId,
+    op,
+    auth: orgAuth,
+    actorAuth,
+    actorProfileId: resolvedActorId,
+    spaceId,
+    statusMap,
+    teamId: settings.clickup_team_id,
+  });
 }
 
 async function pushEntityWithAuth(args: {
@@ -998,8 +1042,9 @@ async function pushEntityWithAuth(args: {
   op: string;
   /** Org/service auth — folders, lists, deletes, assignee lookups. */
   auth: ClickUpAuth;
-  /** Editor auth — task/comment create & update (attribution). */
+  /** Editor auth (or org fallback) — task/comment create & update. */
   actorAuth: ClickUpAuth;
+  actorProfileId: string | null;
   spaceId: string;
   statusMap: ClickUpStatusMap;
   teamId: string | null;
@@ -1012,6 +1057,7 @@ async function pushEntityWithAuth(args: {
     op,
     auth,
     actorAuth,
+    actorProfileId,
     spaceId,
     statusMap,
     teamId,
@@ -1189,16 +1235,24 @@ async function pushEntityWithAuth(args: {
       emailToCu,
     );
 
-    await pushTask(
+    await withAttributionWriteFallback({
+      actorAuth,
+      orgAuth: auth,
+      actorProfileId,
       admin,
       orgId,
-      actorAuth,
-      statusMap,
-      listCu,
-      task as Task,
-      parentCu,
-      assignees,
-    );
+      write: (writeAuth) =>
+        pushTask(
+          admin,
+          orgId,
+          writeAuth,
+          statusMap,
+          listCu!,
+          task as Task,
+          parentCu,
+          assignees,
+        ),
+    });
     return;
   }
 
@@ -1217,29 +1271,67 @@ async function pushEntityWithAuth(args: {
     const existing = await getLink(admin, orgId, "comment", comment.id);
     if (existing) {
       try {
-        await cu.updateTaskComment(actorAuth, existing, text);
-        await touchLinkPushMeta(
+        await withAttributionWriteFallback({
+          actorAuth,
+          orgAuth: auth,
+          actorProfileId,
           admin,
           orgId,
-          "comment",
-          comment.id,
-          `c:${normalizeDescription(text)}`,
-        );
+          write: async (writeAuth) => {
+            await cu.updateTaskComment(writeAuth, existing, text);
+            await touchLinkPushMeta(
+              admin,
+              orgId,
+              "comment",
+              comment.id,
+              `c:${normalizeDescription(text)}`,
+            );
+          },
+        });
       } catch (e) {
         if (!isNotFoundClickUpError(e)) throw e;
         await clearStaleLink(admin, orgId, "comment", comment.id);
-        const created = await cu.createTaskComment(actorAuth, taskCu, text);
-        await setLink(admin, orgId, "comment", comment.id, String(created.id), {
-          content_hash: `c:${normalizeDescription(text)}`,
-          last_pushed_at: new Date().toISOString(),
+        await withAttributionWriteFallback({
+          actorAuth,
+          orgAuth: auth,
+          actorProfileId,
+          admin,
+          orgId,
+          write: async (writeAuth) => {
+            const created = await cu.createTaskComment(
+              writeAuth,
+              taskCu,
+              text,
+            );
+            await setLink(
+              admin,
+              orgId,
+              "comment",
+              comment.id,
+              String(created.id),
+              {
+                content_hash: `c:${normalizeDescription(text)}`,
+                last_pushed_at: new Date().toISOString(),
+              },
+            );
+          },
         });
       }
       return;
     }
-    const created = await cu.createTaskComment(actorAuth, taskCu, text);
-    await setLink(admin, orgId, "comment", comment.id, String(created.id), {
-      content_hash: `c:${normalizeDescription(text)}`,
-      last_pushed_at: new Date().toISOString(),
+    await withAttributionWriteFallback({
+      actorAuth,
+      orgAuth: auth,
+      actorProfileId,
+      admin,
+      orgId,
+      write: async (writeAuth) => {
+        const created = await cu.createTaskComment(writeAuth, taskCu, text);
+        await setLink(admin, orgId, "comment", comment.id, String(created.id), {
+          content_hash: `c:${normalizeDescription(text)}`,
+          last_pushed_at: new Date().toISOString(),
+        });
+      },
     });
     return;
   }

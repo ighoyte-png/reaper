@@ -66,9 +66,9 @@ export function ClickUpUserConnectPanel() {
     <Panel>
       <h2 className="text-sm font-semibold">ClickUp</h2>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
-        Required for correct attribution: ClickUp shows the connected account as
-        the author of your creates, edits, and comments. Without this, sync waits
-        until you connect (it will not post as the workspace service account).
+        Connect so your creates, edits, and comments show as you in ClickUp when
+        your account can write there. If you skip this, sync still works via the
+        workspace service account.
       </p>
       {connection?.connected ? (
         <div className="mt-3 space-y-2">
