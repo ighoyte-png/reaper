@@ -990,6 +990,8 @@ export function ProjectGanttBoard({
     verticalEl: HTMLElement | null;
   } | null>(null);
   const pendingScrollToKeyRef = useRef<string | null>(null);
+  /** Scroll to current week once per project mount (timeline canvas may start earlier). */
+  const initialTodayScrollProjectRef = useRef<string | null>(null);
   const [reorderGhost, setReorderGhost] = useState<{
     title: string;
     x: number;
@@ -2270,6 +2272,21 @@ export function ProjectGanttBoard({
     if (header) header.scrollLeft = el.scrollLeft;
     pendingScrollToKeyRef.current = null;
   }, [columns, dayW, scrollNonce]);
+
+  // Full timeline stays in the canvas; open scrolled to the current week.
+  // Portal and project both use this board.
+  useLayoutEffect(() => {
+    if (initialTodayScrollProjectRef.current === projectId) return;
+    if (columns.length === 0) return;
+    const idx = columns.findIndex((c) => c.startKey === today);
+    if (idx < 0) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    initialTodayScrollProjectRef.current = projectId;
+    el.scrollLeft = Math.max(0, columnOffsetPx(columns, idx) - dayW * 2);
+    const header = headerScrollRef.current;
+    if (header) header.scrollLeft = el.scrollLeft;
+  }, [projectId, columns, today, dayW]);
 
   function shiftAnchorWeek(delta: number) {
     setAnchor((a) => shiftWeek(a, delta));
