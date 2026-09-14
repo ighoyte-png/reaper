@@ -287,10 +287,12 @@ export function ClickUpAddonSettingsPanel() {
     <div className="mt-8 border-t border-[var(--border)] pt-6">
       <h3 className="text-sm font-semibold">Addons · ClickUp</h3>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
-        Sync Reaper ↔ ClickUp with per-user OAuth so creates and comments appear
-        as the real actor. Configure the OAuth app once, connect a service
-        account for backfill, enable the addon, then optionally turn on two-way
-        webhooks. Each teammate connects under Account.
+        Sync Reaper ↔ ClickUp with per-user OAuth so creates, edits, and comments
+        appear as the real actor. Configure the OAuth app once, connect a
+        service account for structure/backfill/deletes, enable the addon, then
+        optionally turn on two-way webhooks. Each teammate must Connect ClickUp
+        under Account — task/comment sync will not fall back to the service
+        account (that would mis-attribute their work).
       </p>
 
       <div className="mt-4 space-y-3">

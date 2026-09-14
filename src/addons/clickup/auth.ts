@@ -5,11 +5,45 @@ import type { ClickUpAuth } from "@/addons/clickup/types";
 import { loadSettings, loadOAuthToken } from "@/addons/clickup/db";
 import { ClickUpApiError } from "@/addons/clickup/client";
 
+/** Thrown when an edit must use the actor’s token but they have not connected ClickUp. */
+export class ClickUpActorAuthRequiredError extends Error {
+  readonly actorProfileId: string | null;
+
+  constructor(actorProfileId: string | null) {
+    super(
+      actorProfileId
+        ? "Connect ClickUp in Account settings so your Reaper edits are attributed to you in ClickUp (not the workspace service account)."
+        : "ClickUp task/comment sync needs a known editor. Re-save the item in Reaper after the editor connects ClickUp.",
+    );
+    this.name = "ClickUpActorAuthRequiredError";
+    this.actorProfileId = actorProfileId;
+  }
+}
+
 export async function resolveClickUpAuth(
   admin: SupabaseClient,
   orgId: string,
   actorProfileId?: string | null,
+  opts?: {
+    /**
+     * When true, never fall back to the org service account / PAT. ClickUp
+     * attributes writes to the token owner, so silent fallback mis-credits
+     * the service user.
+     */
+    requireActor?: boolean;
+  },
 ): Promise<ClickUpAuth> {
+  if (opts?.requireActor) {
+    if (!actorProfileId) {
+      throw new ClickUpActorAuthRequiredError(null);
+    }
+    const actor = await loadOAuthToken(admin, orgId, actorProfileId);
+    if (actor?.access_token && !actor.needs_reauth) {
+      return { token: actor.access_token, type: "oauth" };
+    }
+    throw new ClickUpActorAuthRequiredError(actorProfileId);
+  }
+
   if (actorProfileId) {
     const actor = await loadOAuthToken(admin, orgId, actorProfileId);
     if (actor?.access_token && !actor.needs_reauth) {
@@ -60,6 +94,11 @@ export async function markOAuthNeedsReauth(
     })
     .eq("organization_id", orgId)
     .eq("profile_id", profileId);
+}
+
+/** True auth failure — token expired/revoked. Do not treat 403 (permissions) as reauth. */
+export function isInvalidTokenClickUpError(e: unknown): boolean {
+  return e instanceof ClickUpApiError && e.status === 401;
 }
 
 export function isUnauthorizedClickUpError(e: unknown): boolean {

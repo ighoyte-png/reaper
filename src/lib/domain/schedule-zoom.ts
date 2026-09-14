@@ -1,8 +1,15 @@
-import { addMonths, addWeeks, format, getWeek } from "date-fns";
+import {
+  addMonths,
+  addWeeks,
+  differenceInCalendarWeeks,
+  format,
+  getWeek,
+} from "date-fns";
 import {
   endOfMonth,
   getWeekdays,
   monthWorkingBounds,
+  parseDateKey,
   startOfMonth,
   toDateKey,
   weekEnd,
@@ -40,6 +47,50 @@ function weekMeta(ws: Date) {
   };
 }
 
+/** Default day-zoom week count for Gantt / schedule (phone handled separately). */
+export function defaultDayWeeksShown(isNarrow: boolean): number {
+  return isNarrow ? 8 : 20;
+}
+
+/**
+ * Day-column window for project Gantt: when both start/end are set, expand so
+ * the canvas always covers project start → end (pannable without week arrows).
+ * Week arrows still shift `anchor` to pad before start / after end.
+ */
+export function ganttDayColumnWindow(opts: {
+  anchor: Date;
+  startDate: string | null | undefined;
+  endDate: string | null | undefined;
+  isNarrow: boolean;
+}): { columnAnchor: Date; weeksShown: number } {
+  const defaultWeeks = defaultDayWeeksShown(opts.isNarrow);
+  const anchorWeek = weekStart(opts.anchor);
+
+  if (!opts.startDate || !opts.endDate) {
+    return { columnAnchor: anchorWeek, weeksShown: defaultWeeks };
+  }
+
+  let timelineStart = weekStart(parseDateKey(opts.startDate));
+  let timelineEnd = weekStart(parseDateKey(opts.endDate));
+  if (timelineEnd.getTime() < timelineStart.getTime()) {
+    const tmp = timelineStart;
+    timelineStart = timelineEnd;
+    timelineEnd = tmp;
+  }
+
+  const windowEnd = addWeeks(anchorWeek, defaultWeeks - 1);
+  const columnAnchor =
+    anchorWeek.getTime() <= timelineStart.getTime()
+      ? anchorWeek
+      : timelineStart;
+  const rangeEnd =
+    windowEnd.getTime() >= timelineEnd.getTime() ? windowEnd : timelineEnd;
+  const weeksShown =
+    differenceInCalendarWeeks(rangeEnd, columnAnchor, { weekStartsOn: 1 }) + 1;
+
+  return { columnAnchor, weeksShown: Math.max(weeksShown, 1) };
+}
+
 export function buildScheduleColumns(opts: {
   zoom: ScheduleZoom;
   anchor: Date;
@@ -48,11 +99,15 @@ export function buildScheduleColumns(opts: {
   isNarrow: boolean;
   /** Phone (<768): one page of columns so the canvas does not pan. */
   isPhone?: boolean;
+  /** Override day-zoom week count (e.g. Gantt timeline-aware window). */
+  weeksShown?: number;
 }): { columns: ScheduleColumn[]; totalWidth: number; rangeLabel: string } {
   const { zoom, anchor, todayKey, dayW, isNarrow, isPhone = false } = opts;
 
   if (zoom === "day") {
-    const weeksShown = isPhone ? 1 : isNarrow ? 8 : 20;
+    const weeksShown =
+      opts.weeksShown ??
+      (isPhone ? 1 : defaultDayWeeksShown(isNarrow));
     const columns: ScheduleColumn[] = [];
     for (let w = 0; w < weeksShown; w++) {
       const ws = addWeeks(weekStart(anchor), w);

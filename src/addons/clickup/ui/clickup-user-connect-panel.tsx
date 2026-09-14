@@ -66,8 +66,9 @@ export function ClickUpUserConnectPanel() {
     <Panel>
       <h2 className="text-sm font-semibold">ClickUp</h2>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
-        Connect once so your creates and comments show as you in ClickUp. You
-        won’t need to reconnect each time you open Reaper.
+        Required for correct attribution: ClickUp shows the connected account as
+        the author of your creates, edits, and comments. Without this, sync waits
+        until you connect (it will not post as the workspace service account).
       </p>
       {connection?.connected ? (
         <div className="mt-3 space-y-2">

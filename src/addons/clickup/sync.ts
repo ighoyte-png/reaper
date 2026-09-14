@@ -7,7 +7,7 @@ import * as cu from "@/addons/clickup/client";
 import {
   resolveClickUpAuth,
   resolveOrgClickUpAuth,
-  isUnauthorizedClickUpError,
+  isInvalidTokenClickUpError,
   isNotFoundClickUpError,
   markOAuthNeedsReauth,
 } from "@/addons/clickup/auth";
@@ -869,7 +869,9 @@ export async function reconcileProject(args: {
       if (!text.trim()) continue;
       // Prefer comment author's OAuth token for native attribution.
       const commentAuth = c.author_profile_id
-        ? await resolveClickUpAuth(admin, orgId, c.author_profile_id)
+        ? await resolveClickUpAuth(admin, orgId, c.author_profile_id, {
+            requireActor: true,
+          })
         : auth;
       const created = await cu.createTaskComment(commentAuth, taskCu, text);
       await setLink(admin, orgId, "comment", c.id, String(created.id));
@@ -894,6 +896,39 @@ export async function reconcileProject(args: {
   return summary;
 }
 
+async function resolveOutboxActorProfileId(args: {
+  admin: SupabaseClient;
+  entityType: string;
+  reaperId: string;
+  actorProfileId?: string | null;
+}): Promise<string | null> {
+  if (args.actorProfileId) return args.actorProfileId;
+  if (args.entityType === "task") {
+    const { data } = await args.admin
+      .from("tasks")
+      .select(
+        "edited_by_profile_id, status_changed_by_profile_id, created_by_profile_id",
+      )
+      .eq("id", args.reaperId)
+      .maybeSingle();
+    return (
+      data?.edited_by_profile_id ??
+      data?.status_changed_by_profile_id ??
+      data?.created_by_profile_id ??
+      null
+    );
+  }
+  if (args.entityType === "comment") {
+    const { data } = await args.admin
+      .from("task_comments")
+      .select("author_profile_id")
+      .eq("id", args.reaperId)
+      .maybeSingle();
+    return data?.author_profile_id ?? null;
+  }
+  return null;
+}
+
 export async function pushEntityFromOutbox(args: {
   admin: SupabaseClient;
   orgId: string;
@@ -905,12 +940,28 @@ export async function pushEntityFromOutbox(args: {
   const { admin, orgId, entityType, reaperId, op, actorProfileId } = args;
   const settings = await loadSettings(admin, orgId);
   if (!settings?.enabled) return;
-  // Prefer service/org credentials for deletes so CU-imported tasks (created by
-  // other users) still get removed; actor OAuth alone may lack delete rights.
-  const auth =
-    op === "delete"
-      ? await resolveOrgClickUpAuth(admin, orgId)
-      : await resolveClickUpAuth(admin, orgId, actorProfileId);
+
+  // Deletes + folder/list structure use org/service credentials (permissions).
+  // Task/comment content writes use the editor's OAuth only — ClickUp has no
+  // act-as, and mixing structure 403s into the actor token was marking
+  // needs_reauth then silently creating tasks as the service account.
+  const orgAuth = await resolveOrgClickUpAuth(admin, orgId);
+  const attributionSensitive =
+    op !== "delete" && (entityType === "task" || entityType === "comment");
+  const resolvedActorId = attributionSensitive
+    ? await resolveOutboxActorProfileId({
+        admin,
+        entityType,
+        reaperId,
+        actorProfileId,
+      })
+    : actorProfileId ?? null;
+  const actorAuth = attributionSensitive
+    ? await resolveClickUpAuth(admin, orgId, resolvedActorId, {
+        requireActor: true,
+      })
+    : orgAuth;
+
   const spaceId = requireSpace(settings.space_id);
   const statusMap = requireStatusMap(normalizeStatusMap(settings.status_map));
 
@@ -921,19 +972,19 @@ export async function pushEntityFromOutbox(args: {
       entityType,
       reaperId,
       op,
-      auth,
+      auth: orgAuth,
+      actorAuth,
       spaceId,
       statusMap,
       teamId: settings.clickup_team_id,
     });
   } catch (e) {
     if (
-      isUnauthorizedClickUpError(e) &&
-      actorProfileId &&
-      auth.type === "oauth" &&
-      op !== "delete"
+      isInvalidTokenClickUpError(e) &&
+      resolvedActorId &&
+      attributionSensitive
     ) {
-      await markOAuthNeedsReauth(admin, orgId, actorProfileId);
+      await markOAuthNeedsReauth(admin, orgId, resolvedActorId);
     }
     throw e;
   }
@@ -945,7 +996,10 @@ async function pushEntityWithAuth(args: {
   entityType: string;
   reaperId: string;
   op: string;
+  /** Org/service auth — folders, lists, deletes, assignee lookups. */
   auth: ClickUpAuth;
+  /** Editor auth — task/comment create & update (attribution). */
+  actorAuth: ClickUpAuth;
   spaceId: string;
   statusMap: ClickUpStatusMap;
   teamId: string | null;
@@ -957,6 +1011,7 @@ async function pushEntityWithAuth(args: {
     reaperId,
     op,
     auth,
+    actorAuth,
     spaceId,
     statusMap,
     teamId,
@@ -1137,7 +1192,7 @@ async function pushEntityWithAuth(args: {
     await pushTask(
       admin,
       orgId,
-      auth,
+      actorAuth,
       statusMap,
       listCu,
       task as Task,
@@ -1162,7 +1217,7 @@ async function pushEntityWithAuth(args: {
     const existing = await getLink(admin, orgId, "comment", comment.id);
     if (existing) {
       try {
-        await cu.updateTaskComment(auth, existing, text);
+        await cu.updateTaskComment(actorAuth, existing, text);
         await touchLinkPushMeta(
           admin,
           orgId,
@@ -1173,7 +1228,7 @@ async function pushEntityWithAuth(args: {
       } catch (e) {
         if (!isNotFoundClickUpError(e)) throw e;
         await clearStaleLink(admin, orgId, "comment", comment.id);
-        const created = await cu.createTaskComment(auth, taskCu, text);
+        const created = await cu.createTaskComment(actorAuth, taskCu, text);
         await setLink(admin, orgId, "comment", comment.id, String(created.id), {
           content_hash: `c:${normalizeDescription(text)}`,
           last_pushed_at: new Date().toISOString(),
@@ -1181,7 +1236,7 @@ async function pushEntityWithAuth(args: {
       }
       return;
     }
-    const created = await cu.createTaskComment(auth, taskCu, text);
+    const created = await cu.createTaskComment(actorAuth, taskCu, text);
     await setLink(admin, orgId, "comment", comment.id, String(created.id), {
       content_hash: `c:${normalizeDescription(text)}`,
       last_pushed_at: new Date().toISOString(),

@@ -88,6 +88,7 @@ import {
   buildScheduleColumns,
   columnAtOffsetPx,
   columnOffsetPx,
+  ganttDayColumnWindow,
   spanColumnsPx,
   type ScheduleColumn,
 } from "@/lib/domain/schedule-zoom";
@@ -1024,6 +1025,7 @@ export function ProjectGanttBoard({
   }, [projectId]);
 
   const [anchor, setAnchor] = useState(() => weekStart(new Date()));
+  const [scrollNonce, setScrollNonce] = useState(0);
   const [expandedLists, setExpandedLists] = useState<Set<string>>(() => new Set());
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -1074,16 +1076,28 @@ export function ProjectGanttBoard({
     [anchor],
   );
 
+  const dayColumnWindow = useMemo(
+    () =>
+      ganttDayColumnWindow({
+        anchor,
+        startDate: project?.start_date,
+        endDate: project?.end_date,
+        isNarrow: containerNarrow,
+      }),
+    [anchor, project?.start_date, project?.end_date, containerNarrow],
+  );
+
   const { columns, totalWidth, rangeLabel } = useMemo(
     () =>
       buildScheduleColumns({
         zoom: "day",
-        anchor,
+        anchor: dayColumnWindow.columnAnchor,
         todayKey: today,
         dayW,
         isNarrow: containerNarrow,
+        weeksShown: dayColumnWindow.weeksShown,
       }),
-    [anchor, today, dayW, containerNarrow],
+    [dayColumnWindow, today, dayW, containerNarrow],
   );
 
   useLayoutEffect(() => {
@@ -2213,9 +2227,9 @@ export function ProjectGanttBoard({
   }
 
   function goToday() {
+    pendingScrollToKeyRef.current = today;
     setAnchor(weekStart(new Date()));
-    if (scrollRef.current) scrollRef.current.scrollLeft = 0;
-    if (headerScrollRef.current) headerScrollRef.current.scrollLeft = 0;
+    setScrollNonce((n) => n + 1);
   }
 
   const earliestGanttStartKey = useMemo(() => {
@@ -2241,6 +2255,7 @@ export function ProjectGanttBoard({
     if (!earliestGanttStartKey) return;
     pendingScrollToKeyRef.current = earliestGanttStartKey;
     setAnchor(weekStart(parseDateKey(earliestGanttStartKey)));
+    setScrollNonce((n) => n + 1);
   }
 
   useLayoutEffect(() => {
@@ -2254,7 +2269,7 @@ export function ProjectGanttBoard({
     const header = headerScrollRef.current;
     if (header) header.scrollLeft = el.scrollLeft;
     pendingScrollToKeyRef.current = null;
-  }, [columns, dayW]);
+  }, [columns, dayW, scrollNonce]);
 
   function shiftAnchorWeek(delta: number) {
     setAnchor((a) => shiftWeek(a, delta));
