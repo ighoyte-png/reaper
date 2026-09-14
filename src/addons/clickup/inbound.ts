@@ -186,6 +186,21 @@ async function projectSyncEnabled(
   return Boolean(data?.enabled) && !data?.reconciling;
 }
 
+/** Gantt lists are Reaper-authoritative — inbound must not rewrite schedule/structure. */
+async function listIsGanttProtected(
+  admin: SupabaseClient,
+  orgId: string,
+  listId: string,
+): Promise<boolean> {
+  const { data } = await admin
+    .from("task_lists")
+    .select("gantt_enabled")
+    .eq("id", listId)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  return Boolean(data?.gantt_enabled);
+}
+
 function commentTextFromHistory(
   item: ClickUpWebhookHistoryItem | undefined,
 ): string {
@@ -425,7 +440,17 @@ async function applyTaskSnapshot(args: {
   if ((applyAll || fields?.description) && eventMs >= reaperEditedMs) {
     patch.notes = notes;
   }
-  if ((applyAll || fields?.dates) && eventMs >= reaperEditedMs) {
+  // Gantt lists: Reaper owns start/due dates — never overwrite from ClickUp.
+  const ganttProtected = await listIsGanttProtected(
+    admin,
+    orgId,
+    task.list_id as string,
+  );
+  if (
+    !ganttProtected &&
+    (applyAll || fields?.dates) &&
+    eventMs >= reaperEditedMs
+  ) {
     patch.start_date = start;
     patch.due_date = due;
   }
@@ -489,6 +514,10 @@ async function importClickUpTask(args: {
     .maybeSingle();
   if (!taskList || taskList.archived) return "ignored";
   if (!(await projectSyncEnabled(admin, orgId, taskList.project_id as string))) {
+    return "ignored";
+  }
+  // Do not import ClickUp-created tasks into Gantt lists — Reaper owns that schedule.
+  if (await listIsGanttProtected(admin, orgId, taskList.id as string)) {
     return "ignored";
   }
 
@@ -696,7 +725,7 @@ async function applyDeleted(args: {
 
   const { data: task } = await admin
     .from("tasks")
-    .select("id, project_id")
+    .select("id, project_id, list_id")
     .eq("id", link.reaper_id)
     .eq("organization_id", orgId)
     .maybeSingle();
@@ -712,11 +741,19 @@ async function applyDeleted(args: {
       .eq("organization_id", orgId)
       .eq("task_id", link.reaper_id);
     for (const c of comments ?? []) {
-      await suppressOutbound(admin, orgId, "comment", c.id as string, 45);
       await deleteLink(admin, orgId, "comment", c.id as string);
     }
 
+    // Gantt lists: Reaper keeps the task; only drop the ClickUp link.
+    if (await listIsGanttProtected(admin, orgId, task.list_id as string)) {
+      await deleteLink(admin, orgId, "task", link.reaper_id);
+      return "applied";
+    }
+
     await suppressOutbound(admin, orgId, "task", link.reaper_id, 45);
+    for (const c of comments ?? []) {
+      await suppressOutbound(admin, orgId, "comment", c.id as string, 45);
+    }
     const { error } = await admin
       .from("tasks")
       .delete()
@@ -752,6 +789,19 @@ async function applyMoved(args: {
     .maybeSingle();
   if (!taskList) return "ignored";
   if (!(await projectSyncEnabled(admin, orgId, taskList.project_id as string))) {
+    return "ignored";
+  }
+
+  const { data: current } = await admin
+    .from("tasks")
+    .select("list_id")
+    .eq("id", link.reaper_id)
+    .maybeSingle();
+  if (
+    (current?.list_id &&
+      (await listIsGanttProtected(admin, orgId, current.list_id as string))) ||
+    (await listIsGanttProtected(admin, orgId, taskList.id as string))
+  ) {
     return "ignored";
   }
 

@@ -171,6 +171,8 @@ export function ClickUpProjectSyncToggle({
         Default off. Turning on links or creates this project in ClickUp and
         runs a full reconcile (Reaper wins). With workspace two-way sync on,
         ClickUp edits and new tasks in linked lists also flow into this project.
+        Gantt-enabled lists stay Reaper-authoritative: ClickUp cannot change
+        dates, move/delete those tasks, or create into those lists.
       </p>
 
       {!on ? (

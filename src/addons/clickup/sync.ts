@@ -312,7 +312,8 @@ async function pushTask(
 ): Promise<"created" | "updated" | "in_sync"> {
   const body = taskToClickUpBody(task, statusMap, {
     parentClickUpId,
-    assigneeClickUpIds: assigneeIds.length ? assigneeIds : undefined,
+    // Flat assignees only on create; updates use add/rem via pushAssigneeDiff.
+    assigneeClickUpIds: undefined,
   });
   const hash = taskContentHash({
     title: task.title,
@@ -325,27 +326,10 @@ async function pushTask(
   const existing = await getLink(admin, orgId, "task", task.id);
   if (existing) {
     try {
-      // ClickUp update ignores flat assignees[]; must send { add, rem }.
       const { assignees: _flatAssignees, ...updateFields } = body;
       void _flatAssignees;
-      let currentAssigneeIds: number[] = [];
-      try {
-        const cuTask = await cu.getTask(auth, existing);
-        currentAssigneeIds = (cuTask.assignees ?? [])
-          .map((a) => a.id)
-          .filter((id) => Number.isFinite(id));
-      } catch {
-        /* best-effort; rem may be incomplete */
-      }
-      const assigneeDiff = cu.assigneeUpdateDiff(
-        assigneeIds,
-        currentAssigneeIds,
-      );
-      const updateBody: cu.UpdateTaskBody = { ...updateFields };
-      if (assigneeDiff.add.length || assigneeDiff.rem.length) {
-        updateBody.assignees = assigneeDiff;
-      }
-      await cu.updateTask(auth, existing, updateBody);
+      await cu.updateTask(auth, existing, updateFields);
+      await pushAssigneeDiff(auth, existing, assigneeIds);
       await touchLinkPushMeta(admin, orgId, "task", task.id, hash);
       return "updated";
     } catch (e) {
@@ -359,12 +343,16 @@ async function pushTask(
       await clearStaleLink(admin, orgId, "task", task.id);
     }
   }
+  const createBody = taskToClickUpBody(task, statusMap, {
+    parentClickUpId,
+    assigneeClickUpIds: assigneeIds.length ? assigneeIds : undefined,
+  });
   await createTaskInClickUp(
     admin,
     orgId,
     auth,
     listClickUpId,
-    body,
+    createBody,
     task.id,
     assigneeIds,
     task,
@@ -456,7 +444,7 @@ async function resolveAssigneeClickUpIds(
 ): Promise<number[]> {
   if (!personId) return [];
   const mapped = personToCu.get(personId);
-  if (Number.isFinite(mapped)) return [mapped!];
+  if (mapped != null && Number.isFinite(mapped)) return [mapped];
 
   const { data: person } = await admin
     .from("people")
@@ -479,11 +467,39 @@ async function resolveAssigneeClickUpIds(
     }
   }
 
-  const email = typeof person.email === "string" ? person.email.trim().toLowerCase() : "";
+  const email =
+    typeof person.email === "string" ? person.email.trim().toLowerCase() : "";
   if (email && emailToCu.has(email)) {
     return [emailToCu.get(email)!];
   }
   return [];
+}
+
+/**
+ * Require a ClickUp user id when Reaper has an assignee. Silent empty resolve
+ * left CU assignees unchanged while Reaper showed a different person.
+ */
+async function requireAssigneeClickUpIds(
+  admin: SupabaseClient,
+  orgId: string,
+  personId: string | null | undefined,
+  personToCu: Map<string, number>,
+  emailToCu: Map<string, number>,
+): Promise<number[]> {
+  if (!personId) return [];
+  const ids = await resolveAssigneeClickUpIds(
+    admin,
+    orgId,
+    personId,
+    personToCu,
+    emailToCu,
+  );
+  if (ids.length === 0) {
+    throw new Error(
+      "Cannot map task assignee to a ClickUp user — connect ClickUp for that person or set them in the Admin assignee map",
+    );
+  }
+  return ids;
 }
 
 async function loadAssigneeLookups(
@@ -496,12 +512,13 @@ async function loadAssigneeLookups(
     .from("addon_clickup_user_map")
     .select("person_id, clickup_user_id")
     .eq("organization_id", orgId);
-  const personToCu = new Map(
-    (userMaps ?? []).map((r) => [
-      r.person_id as string,
-      Number(r.clickup_user_id),
-    ]),
-  );
+  const personToCu = new Map<string, number>();
+  for (const r of userMaps ?? []) {
+    const n = Number(r.clickup_user_id);
+    if (r.person_id && Number.isFinite(n)) {
+      personToCu.set(r.person_id as string, n);
+    }
+  }
 
   const emailToCu = new Map<string, number>();
   if (teamId) {
@@ -541,6 +558,26 @@ async function loadAssigneeLookups(
   }
 
   return { personToCu, emailToCu };
+}
+
+async function pushAssigneeDiff(
+  auth: ClickUpAuth,
+  clickUpTaskId: string,
+  desiredIds: number[],
+): Promise<void> {
+  let currentAssigneeIds: number[] = [];
+  try {
+    const cuTask = await cu.getTask(auth, clickUpTaskId);
+    currentAssigneeIds = (cuTask.assignees ?? [])
+      .map((a) => a.id)
+      .filter((id) => Number.isFinite(id));
+  } catch {
+    /* rem may be incomplete if GET fails */
+  }
+  const diff = cu.assigneeUpdateDiff(desiredIds, currentAssigneeIds);
+  if (!diff.add.length && !diff.rem.length) return;
+  // Dedicated call — combined field+assignee PUTs have been observed to drop assignees.
+  await cu.updateTask(auth, clickUpTaskId, { assignees: diff });
 }
 
 export async function reconcileProject(args: {
@@ -1089,7 +1126,7 @@ async function pushEntityWithAuth(args: {
       teamId,
       auth,
     );
-    const assignees = await resolveAssigneeClickUpIds(
+    const assignees = await requireAssigneeClickUpIds(
       admin,
       orgId,
       task.assignee_person_id,
