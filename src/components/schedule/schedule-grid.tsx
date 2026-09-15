@@ -2075,32 +2075,45 @@ export function ScheduleGrid() {
   ]);
 
   const projectsByPersonId = useMemo(() => {
-    // Keep assignment rows visible for every project status (on hold, archived,
-    // completed, etc.) — only the "add project" picker is limited to active.
+    // Only show project rows that have an assignment overlapping the visible
+    // schedule window (plus manually added empty rows). Navigating the timeline
+    // updates which projects appear.
     const sorted = sortProjectsByClientThenName(state.projects, state.clients);
     const map = new Map<string, Project[]>();
 
-    if (projectFilter !== "all") {
-      const filtered = projectsById.get(projectFilter);
-      const list = filtered ? [filtered] : EMPTY_PROJECTS;
-      for (const person of visiblePeople) {
-        map.set(person.id, list);
-      }
-      return map;
-    }
-
-    const assigned = new Map<string, Set<string>>();
+    const assignedInView = new Map<string, Set<string>>();
     for (const a of state.assignments) {
-      let set = assigned.get(a.person_id);
+      const projectEnd = projectsById.get(a.project_id)?.end_date;
+      if (!assignmentOverlapsDateRange(a, startKey, endKey, projectEnd)) {
+        continue;
+      }
+      let set = assignedInView.get(a.person_id);
       if (!set) {
         set = new Set();
-        assigned.set(a.person_id, set);
+        assignedInView.set(a.person_id, set);
       }
       set.add(a.project_id);
     }
 
+    if (projectFilter !== "all") {
+      const filtered = projectsById.get(projectFilter);
+      for (const person of visiblePeople) {
+        const fromAssignments = assignedInView.get(person.id) ?? new Set();
+        const extras = new Set(extraProjectsByPerson[person.id] ?? []);
+        if (
+          filtered &&
+          (fromAssignments.has(filtered.id) || extras.has(filtered.id))
+        ) {
+          map.set(person.id, [filtered]);
+        } else {
+          map.set(person.id, EMPTY_PROJECTS);
+        }
+      }
+      return map;
+    }
+
     for (const person of visiblePeople) {
-      const fromAssignments = assigned.get(person.id) ?? new Set<string>();
+      const fromAssignments = assignedInView.get(person.id) ?? new Set();
       const extras = new Set(extraProjectsByPerson[person.id] ?? []);
       map.set(
         person.id,
@@ -2116,6 +2129,8 @@ export function ScheduleGrid() {
     projectsById,
     visiblePeople,
     extraProjectsByPerson,
+    startKey,
+    endKey,
   ]);
 
   const occurrencesByPersonId = useMemo(() => {
