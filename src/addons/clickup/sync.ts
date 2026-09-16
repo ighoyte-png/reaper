@@ -458,19 +458,27 @@ async function pushTaskWithListRepair(
   parentClickUpId: string | null,
   assigneeIds: number[],
   listRows: TaskList[],
+  fallbackListId: string | null,
 ): Promise<"created" | "updated" | "in_sync"> {
-  let cuListId = listIdMap.get(task.list_id);
+  let cuListId = listIdMap.get(task.list_id) ?? null;
   if (!cuListId) {
     const list = listRows.find((l) => l.id === task.list_id);
-    if (!list) throw new Error("no ClickUp list");
-    cuListId = await ensureTaskList(
-      admin,
-      orgId,
-      auth,
-      projectFolderId,
-      list,
-    );
-    listIdMap.set(task.list_id, cuListId);
+    if (list) {
+      cuListId = await ensureTaskList(
+        admin,
+        orgId,
+        auth,
+        projectFolderId,
+        list,
+      );
+      listIdMap.set(task.list_id, cuListId);
+    } else if (fallbackListId) {
+      // Orphaned / missing list_id (e.g. after project recreate) — still sync.
+      cuListId = fallbackListId;
+      if (task.list_id) listIdMap.set(task.list_id, cuListId);
+    } else {
+      throw new Error("no ClickUp list");
+    }
   }
 
   try {
@@ -495,25 +503,40 @@ async function pushTaskWithListRepair(
     await clearStaleLink(admin, orgId, "task_list", task.list_id);
     await clearStaleLink(admin, orgId, "task", task.id);
     const list = listRows.find((l) => l.id === task.list_id);
-    if (!list) throw e;
-    const freshListId = await ensureTaskList(
-      admin,
-      orgId,
-      auth,
-      projectFolderId,
-      list,
-    );
-    listIdMap.set(task.list_id, freshListId);
-    return pushTask(
-      admin,
-      orgId,
-      auth,
-      statusMap,
-      freshListId,
-      task,
-      parentClickUpId,
-      assigneeIds,
-    );
+    if (list) {
+      const freshListId = await ensureTaskList(
+        admin,
+        orgId,
+        auth,
+        projectFolderId,
+        list,
+      );
+      listIdMap.set(task.list_id, freshListId);
+      return pushTask(
+        admin,
+        orgId,
+        auth,
+        statusMap,
+        freshListId,
+        task,
+        parentClickUpId,
+        assigneeIds,
+      );
+    }
+    if (fallbackListId) {
+      if (task.list_id) listIdMap.set(task.list_id, fallbackListId);
+      return pushTask(
+        admin,
+        orgId,
+        auth,
+        statusMap,
+        fallbackListId,
+        task,
+        parentClickUpId,
+        assigneeIds,
+      );
+    }
+    throw e;
   }
 }
 
@@ -728,10 +751,11 @@ export async function reconcileProject(args: {
     .order("sort_order", { ascending: true });
 
   const listRows = (lists ?? []) as TaskList[];
-  const activeLists = listRows.filter((l) => !l.archived);
+  // Include archived lists so tasks still pointing at them can map to ClickUp.
+  const listsToEnsure = listRows;
 
   const listIdMap = new Map<string, string>();
-  for (const list of activeLists) {
+  for (const list of listsToEnsure) {
     try {
       const cuListId = await ensureTaskList(
         admin,
@@ -748,14 +772,15 @@ export async function reconcileProject(args: {
     }
   }
 
+  // Always ensure a fallback list exists in the project folder before pushing tasks.
   let fallbackListId: string | null =
     [...listIdMap.values()][0] ?? null;
   if (!fallbackListId) {
     try {
       const listsInFolder = await cu.getListsInFolder(auth, projectFolderId);
-      const byName = listsInFolder.find(
-        (l) => folderNameKey(l.name) === "tasks",
-      );
+      const byName =
+        listsInFolder.find((l) => folderNameKey(l.name) === "tasks") ??
+        listsInFolder[0];
       if (byName) {
         fallbackListId = byName.id;
       } else {
@@ -769,9 +794,12 @@ export async function reconcileProject(args: {
     }
   }
 
-  // Any Reaper list that failed ensure still maps tasks onto a working list.
-  if (fallbackListId) {
-    for (const list of activeLists) {
+  if (!fallbackListId) {
+    summary.errors.push(
+      "No ClickUp list available under the project folder — cannot sync tasks",
+    );
+  } else {
+    for (const list of listsToEnsure) {
       if (!listIdMap.has(list.id)) {
         listIdMap.set(list.id, fallbackListId);
       }
@@ -889,7 +917,8 @@ export async function reconcileProject(args: {
         task,
         parentCu,
         assignees,
-        activeLists,
+        listRows,
+        fallbackListId,
       );
       if (result === "created") summary.created += 1;
       else if (result === "updated") summary.updated += 1;
