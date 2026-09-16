@@ -1086,6 +1086,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }
 
+  /** Replace binds for the given assignments; keep binds for every other assignment. */
+  function mergeAssignmentBoundTasksForAssignments(
+    prev: AssignmentBoundTask[],
+    assignmentIds: Set<string>,
+    incoming: AssignmentBoundTask[],
+  ): AssignmentBoundTask[] {
+    if (assignmentIds.size === 0) {
+      return incoming.length === 0 ? prev : [...prev, ...incoming];
+    }
+    return [
+      ...prev.filter((b) => !assignmentIds.has(b.assignment_id)),
+      ...incoming,
+    ];
+  }
+
   const noteLocalWrite = useCallback((table: string, id: string) => {
     if (!id) return;
     localWritesRef.current.set(
@@ -1325,6 +1340,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
               .filter((t) => t.project_id === projectId)
               .map((t) => t.id),
           );
+          const assignmentIds = new Set(
+            bundle.assignments.map((a) => a.id),
+          );
           return {
             ...prev,
             milestones: [
@@ -1347,6 +1365,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
               ...prev.project_assets.filter((a) => a.project_id !== projectId),
               ...bundle.project_assets,
             ],
+            assignment_bound_tasks: mergeAssignmentBoundTasksForAssignments(
+              prev.assignment_bound_tasks,
+              assignmentIds,
+              bundle.assignment_bound_tasks ?? [],
+            ),
             assignments: (() => {
               const serverIds = new Set(
                 bundle.assignments.map((a) => a.id),
@@ -2569,12 +2592,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
             const assignmentIds = new Set(
               bundle.assignments.map((a) => a.id),
             );
-            const nextBound = [
-              ...prev.assignment_bound_tasks.filter(
-                (b) => !assignmentIds.has(b.assignment_id),
-              ),
-              ...(bundle.assignment_bound_tasks ?? []),
-            ];
             return {
               ...prev,
               milestones: [
@@ -2599,7 +2616,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 ),
                 ...bundle.project_assets,
               ],
-              assignment_bound_tasks: nextBound,
+              assignment_bound_tasks: mergeAssignmentBoundTasksForAssignments(
+                prev.assignment_bound_tasks,
+                assignmentIds,
+                bundle.assignment_bound_tasks ?? [],
+              ),
               assignments: (() => {
                 const serverIds = new Set(
                   bundle.assignments.map((a) => a.id),
@@ -2643,69 +2664,70 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const client = supabaseRef.current ?? createClient();
 
-    if (!boundTasksRowsLoadedRef.current) {
-      if (boundAssignmentTasksInflight.current) {
-        await boundAssignmentTasksInflight.current;
-      } else {
-        const loadRows = (async () => {
-          try {
-            const rows = await loadOrgAssignmentBoundTasks(
-              client,
-              organizationId,
-            );
-            boundTasksRowsLoadedRef.current = true;
-            setState((prev) => ({
-              ...prev,
-              assignment_bound_tasks: rows,
-            }));
-          } catch (err) {
-            console.error(err);
-          } finally {
-            boundAssignmentTasksInflight.current = null;
-          }
-        })();
-        boundAssignmentTasksInflight.current = loadRows;
-        await loadRows;
-      }
-    }
-
-    const missingTaskIds = () => {
+    const missingTaskIdsFrom = (binds: AssignmentBoundTask[]) => {
       const known = new Set(stateRef.current.tasks.map((t) => t.id));
       return [
         ...new Set(
-          stateRef.current.assignment_bound_tasks
+          binds
             .map((r) => r.task_id)
-            .filter((id) => id && !known.has(id)),
+            .filter((id) => Boolean(id) && !known.has(id)),
         ),
       ];
     };
 
-    let missing = missingTaskIds();
-    if (missing.length === 0) return;
-
-    if (boundAssignmentTasksInflight.current) {
-      await boundAssignmentTasksInflight.current;
-      missing = missingTaskIds();
-      if (missing.length === 0) return;
-    }
-
-    const run = (async () => {
+    const doWork = async () => {
       try {
+        if (!boundTasksRowsLoadedRef.current) {
+          const rows = await loadOrgAssignmentBoundTasks(
+            client,
+            organizationId,
+          );
+          boundTasksRowsLoadedRef.current = true;
+          // Eagerly sync so chained callers see rows before React re-renders.
+          stateRef.current = {
+            ...stateRef.current,
+            assignment_bound_tasks: rows,
+          };
+          setState((prev) => ({
+            ...prev,
+            assignment_bound_tasks: rows,
+          }));
+        }
+
+        const missing = missingTaskIdsFrom(
+          stateRef.current.assignment_bound_tasks,
+        );
+        if (missing.length === 0) return;
+
         const tasks = await loadMentionTasks(client, organizationId, missing);
         if (tasks.length === 0) return;
         setState((prev) => {
           const byId = new Map(prev.tasks.map((t) => [t.id, t]));
           for (const t of tasks) byId.set(t.id, t);
-          return { ...prev, tasks: [...byId.values()] };
+          const nextTasks = [...byId.values()];
+          stateRef.current = { ...stateRef.current, tasks: nextTasks };
+          return { ...prev, tasks: nextTasks };
         });
       } catch (err) {
         console.error(err);
-      } finally {
-        boundAssignmentTasksInflight.current = null;
       }
+    };
+
+    // Serialize callers so a follow-up pass can hydrate task bodies after
+    // bind rows land (including binds merged in from ensureProjectData).
+    const prev = boundAssignmentTasksInflight.current;
+    const run = (async () => {
+      if (prev) await prev;
+      await doWork();
     })();
     boundAssignmentTasksInflight.current = run;
-    await run;
+    try {
+      await run;
+    } finally {
+      if (boundAssignmentTasksInflight.current === run) {
+        boundAssignmentTasksInflight.current = null;
+      }
+    }
   }, [mode, state.organization.id]);
 
   const ensureOrgTemplates = useCallback(async () => {

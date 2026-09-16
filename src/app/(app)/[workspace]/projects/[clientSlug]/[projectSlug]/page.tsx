@@ -116,6 +116,7 @@ export default function ProjectDetailPage() {
     profile,
     myPerson,
     ensureProjectData,
+    ensureBoundAssignmentTasks,
     setActiveRealtimeProjectIds,
     dataStatus,
     upsertProjectContractorExpense,
@@ -179,9 +180,15 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (!project?.id) return;
     void ensureProjectData(project.id);
+    void ensureBoundAssignmentTasks();
     setActiveRealtimeProjectIds([project.id]);
     return () => setActiveRealtimeProjectIds([]);
-  }, [project?.id, ensureProjectData, setActiveRealtimeProjectIds]);
+  }, [
+    project?.id,
+    ensureProjectData,
+    ensureBoundAssignmentTasks,
+    setActiveRealtimeProjectIds,
+  ]);
 
   const projectDataReady =
     isPublicShare ||
