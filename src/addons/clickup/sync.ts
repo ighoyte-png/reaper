@@ -196,32 +196,27 @@ async function findFolderByName(
 async function clickUpListAlive(
   auth: ClickUpAuth,
   listId: string,
-  folderId?: string,
+  folderLists: cu.ClickUpList[],
 ): Promise<{ alive: boolean; list?: cu.ClickUpList }> {
+  // Prefer folder inventory — trashed lists often still GET by id but are
+  // absent from the folder and reject new tasks with ACCESS_100.
+  const inFolder = folderLists.find((l) => l.id === listId);
+  if (inFolder) return { alive: true, list: inFolder };
   try {
-    const list = await cu.getList(auth, listId);
-    // Trashed lists often still GET by id and still reserve their name, but they
-    // do not appear in the folder listing and cannot accept new tasks.
-    if (folderId) {
-      const inFolder = await cu.getAllListsInFolder(auth, folderId);
-      if (!inFolder.some((l) => l.id === listId)) {
-        return { alive: false };
-      }
-    }
-    return { alive: true, list };
+    // Confirm id is truly gone / trashed (not merely a cache miss).
+    await cu.getList(auth, listId);
+    return { alive: false };
   } catch {
     return { alive: false };
   }
 }
 
-async function findListByNameInFolder(
-  auth: ClickUpAuth,
-  folderId: string,
+function findListByNameInCache(
+  folderLists: cu.ClickUpList[],
   name: string,
-): Promise<cu.ClickUpList | null> {
+): cu.ClickUpList | null {
   const key = folderNameKey(name);
-  const lists = await cu.getAllListsInFolder(auth, folderId);
-  const matches = lists.filter((l) => folderNameKey(l.name) === key);
+  const matches = folderLists.filter((l) => folderNameKey(l.name) === key);
   if (!matches.length) return null;
   return matches.find((l) => !l.archived) ?? matches[0] ?? null;
 }
@@ -252,40 +247,57 @@ async function adoptOrUnarchiveList(
   return list.id;
 }
 
+/** Always create a brand-new list with a unique name (trash-safe). */
+async function createFreshList(
+  auth: ClickUpAuth,
+  folderId: string,
+  baseName: string,
+  folderLists: cu.ClickUpList[],
+): Promise<string> {
+  const label = (baseName.trim() || "Tasks").slice(0, 80);
+  const candidates = [
+    `${label} · ${crypto.randomUUID().slice(0, 8)}`,
+    `Reaper ${crypto.randomUUID().slice(0, 8)}`,
+    `Reaper ${Date.now().toString(36)}`,
+  ];
+  let lastErr: unknown;
+  for (const candidate of candidates) {
+    try {
+      const created = await cu.createList(auth, folderId, candidate);
+      folderLists.push({ ...created, name: candidate, archived: false });
+      return created.id;
+    } catch (e) {
+      lastErr = e;
+      if (!isListNameTakenError(e)) throw e;
+    }
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(`Could not create ClickUp list "${label}"`);
+}
+
 /**
- * Create a list, or adopt an existing active/archived one. When ClickUp still
- * reserves a name for a trashed list (invisible in listings), use a unique name.
+ * Create a list, or adopt an existing active/archived one in the folder cache.
+ * When the name is reserved by trash (not in listing), create a fresh unique list.
  */
 async function createListOrAdopt(
   auth: ClickUpAuth,
   folderId: string,
   name: string,
+  folderLists: cu.ClickUpList[],
 ): Promise<string> {
-  const existing = await findListByNameInFolder(auth, folderId, name);
+  const existing = findListByNameInCache(folderLists, name);
   if (existing) return adoptOrUnarchiveList(auth, existing, name);
 
-  const candidates = [
-    name,
-    `${name} (Reaper)`,
-    `${name} · ${Date.now().toString(36)}`,
-    `Reaper ${crypto.randomUUID().slice(0, 8)}`,
-  ];
-
-  let lastErr: unknown;
-  for (const candidate of candidates) {
-    try {
-      const created = await cu.createList(auth, folderId, candidate);
-      return created.id;
-    } catch (e) {
-      lastErr = e;
-      if (!isListNameTakenError(e)) throw e;
-      const again = await findListByNameInFolder(auth, folderId, candidate);
-      if (again) return adoptOrUnarchiveList(auth, again, candidate);
-    }
+  try {
+    const created = await cu.createList(auth, folderId, name);
+    folderLists.push({ ...created, name, archived: false });
+    return created.id;
+  } catch (e) {
+    if (!isListNameTakenError(e)) throw e;
+    // Name held by trash / invisible list — do not reuse; create unique.
+    return createFreshList(auth, folderId, name, folderLists);
   }
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error(`Could not create ClickUp list "${name}"`);
 }
 
 async function ensureClientFolder(
@@ -425,13 +437,14 @@ async function ensureTaskList(
   auth: ClickUpAuth,
   projectFolderId: string,
   list: TaskList,
+  folderLists: cu.ClickUpList[],
 ): Promise<string> {
   const existing = await getLink(admin, orgId, "task_list", list.id);
   if (existing) {
     const { alive, list: cuList } = await clickUpListAlive(
       auth,
       existing,
-      projectFolderId,
+      folderLists,
     );
     if (alive && cuList) {
       try {
@@ -444,14 +457,19 @@ async function ensureTaskList(
     await clearStaleLink(admin, orgId, "task_list", list.id);
   }
 
-  const byName = await findListByNameInFolder(auth, projectFolderId, list.name);
+  const byName = findListByNameInCache(folderLists, list.name);
   if (byName) {
     const id = await adoptOrUnarchiveList(auth, byName, list.name);
     await setLink(admin, orgId, "task_list", list.id, id);
     return id;
   }
 
-  const createdId = await createListOrAdopt(auth, projectFolderId, list.name);
+  const createdId = await createListOrAdopt(
+    auth,
+    projectFolderId,
+    list.name,
+    folderLists,
+  );
   await setLink(admin, orgId, "task_list", list.id, createdId);
   return createdId;
 }
@@ -461,9 +479,10 @@ async function ensureFallbackList(
   auth: ClickUpAuth,
   projectFolderId: string,
   preferredIds: string[],
+  folderLists: cu.ClickUpList[],
 ): Promise<string | null> {
   for (const id of preferredIds) {
-    const { alive, list } = await clickUpListAlive(auth, id, projectFolderId);
+    const { alive, list } = await clickUpListAlive(auth, id, folderLists);
     if (alive && list && !list.archived) return id;
     if (alive && list?.archived) {
       try {
@@ -475,18 +494,17 @@ async function ensureFallbackList(
     }
   }
 
-  const lists = await cu.getAllListsInFolder(auth, projectFolderId);
   const active =
-    lists.find((l) => !l.archived && folderNameKey(l.name) === "tasks") ??
-    lists.find((l) => !l.archived) ??
-    lists.find((l) => folderNameKey(l.name) === "tasks") ??
-    lists[0];
+    folderLists.find((l) => !l.archived && folderNameKey(l.name) === "tasks") ??
+    folderLists.find((l) => !l.archived) ??
+    folderLists.find((l) => folderNameKey(l.name) === "tasks") ??
+    folderLists[0];
   if (active) {
     return adoptOrUnarchiveList(auth, active, active.name);
   }
 
   try {
-    return await createListOrAdopt(auth, projectFolderId, "Tasks");
+    return await createFreshList(auth, projectFolderId, "Tasks", folderLists);
   } catch {
     return null;
   }
@@ -593,8 +611,8 @@ async function pushTask(
 }
 
 /**
- * Push task; if ClickUp says the list is deleted, rebuild the list under the
- * project folder and retry once (then fall back to a shared list).
+ * Push task; if ClickUp says the list is deleted/trashed, create a fresh list
+ * and retry once. Remap every Reaper list that pointed at the dead ClickUp id.
  */
 async function pushTaskWithListRepair(
   admin: SupabaseClient,
@@ -607,7 +625,8 @@ async function pushTaskWithListRepair(
   parentClickUpId: string | null,
   assigneeIds: number[],
   listRows: TaskList[],
-  fallbackListId: string | null,
+  fallbackListIdRef: { id: string | null },
+  folderLists: cu.ClickUpList[],
 ): Promise<"created" | "updated" | "in_sync"> {
   let cuListId = listIdMap.get(task.list_id) ?? null;
   if (!cuListId) {
@@ -619,11 +638,11 @@ async function pushTaskWithListRepair(
         auth,
         projectFolderId,
         list,
+        folderLists,
       );
       listIdMap.set(task.list_id, cuListId);
-    } else if (fallbackListId) {
-      // Orphaned / missing list_id (e.g. after project recreate) — still sync.
-      cuListId = fallbackListId;
+    } else if (fallbackListIdRef.id) {
+      cuListId = fallbackListIdRef.id;
       if (task.list_id) listIdMap.set(task.list_id, cuListId);
     } else {
       throw new Error("no ClickUp list");
@@ -644,36 +663,34 @@ async function pushTaskWithListRepair(
   } catch (e) {
     if (!isListDeletedError(e) && !isListNameTakenError(e)) throw e;
 
+    const deadId = cuListId;
     await clearStaleLink(admin, orgId, "task_list", task.list_id);
     await clearStaleLink(admin, orgId, "task", task.id);
 
-    let repairListId: string | null = null;
-    const list = listRows.find((l) => l.id === task.list_id);
-    if (list) {
-      try {
-        repairListId = await ensureTaskList(
-          admin,
-          orgId,
-          auth,
-          projectFolderId,
-          list,
-        );
-      } catch {
-        repairListId = null;
-      }
+    // Drop dead id from the in-memory folder cache / maps.
+    for (let i = folderLists.length - 1; i >= 0; i -= 1) {
+      if (folderLists[i]?.id === deadId) folderLists.splice(i, 1);
     }
-    if (!repairListId) {
-      // Do not prefer the list id that just failed (often a trashed list).
-      const preferred = [...listIdMap.values()].filter((id) => id !== cuListId);
-      repairListId = await ensureFallbackList(
-        auth,
-        projectFolderId,
-        preferred,
-      );
+    for (const [reaperListId, mapped] of [...listIdMap.entries()]) {
+      if (mapped === deadId) listIdMap.delete(reaperListId);
     }
-    if (!repairListId) throw e;
+    if (fallbackListIdRef.id === deadId) fallbackListIdRef.id = null;
 
+    const list = listRows.find((l) => l.id === task.list_id);
+    const baseName = list?.name?.trim() || "Tasks";
+    // Always mint a new writable list — never reuse trashed ids.
+    const repairListId = await createFreshList(
+      auth,
+      projectFolderId,
+      baseName,
+      folderLists,
+    );
+    if (list) {
+      await setLink(admin, orgId, "task_list", list.id, repairListId);
+    }
     if (task.list_id) listIdMap.set(task.list_id, repairListId);
+    if (!fallbackListIdRef.id) fallbackListIdRef.id = repairListId;
+
     return pushTask(
       admin,
       orgId,
@@ -901,6 +918,9 @@ export async function reconcileProject(args: {
   // Include archived lists so tasks still pointing at them can map to ClickUp.
   const listsToEnsure = listRows;
 
+  // One inventory per reconcile — avoids rate-limit storms from per-list GETs.
+  const folderLists = await cu.getAllListsInFolder(auth, projectFolderId);
+
   const listIdMap = new Map<string, string>();
   for (const list of listsToEnsure) {
     try {
@@ -910,6 +930,7 @@ export async function reconcileProject(args: {
         auth,
         projectFolderId,
         list,
+        folderLists,
       );
       listIdMap.set(list.id, cuListId);
     } catch (e) {
@@ -920,25 +941,28 @@ export async function reconcileProject(args: {
   }
 
   // Always ensure a fallback list exists in the project folder before pushing tasks.
-  let fallbackListId: string | null = await ensureFallbackList(
-    auth,
-    projectFolderId,
-    [...listIdMap.values()],
-  );
-  if (!fallbackListId) {
+  const fallbackListIdRef = {
+    id: await ensureFallbackList(
+      auth,
+      projectFolderId,
+      [...listIdMap.values()],
+      folderLists,
+    ),
+  };
+  if (!fallbackListIdRef.id) {
     summary.errors.push(
       "Default list: could not find or create a ClickUp list under the project folder",
     );
   }
 
-  if (!fallbackListId) {
+  if (!fallbackListIdRef.id) {
     summary.errors.push(
       "No ClickUp list available under the project folder — cannot sync tasks",
     );
   } else {
     for (const list of listsToEnsure) {
       if (!listIdMap.has(list.id)) {
-        listIdMap.set(list.id, fallbackListId);
+        listIdMap.set(list.id, fallbackListIdRef.id);
       }
     }
   }
@@ -966,14 +990,14 @@ export async function reconcileProject(args: {
   >();
   for (const cuListId of new Set([
     ...listIdMap.values(),
-    ...(fallbackListId ? [fallbackListId] : []),
+    ...(fallbackListIdRef.id ? [fallbackListIdRef.id] : []),
   ])) {
     try {
       const cuTasks = await cu.getTasksInList(auth, cuListId);
       cuTasksByList.set(cuListId, cuTasks);
       for (const t of cuTasks) cuTaskIds.add(t.id);
     } catch {
-      /* ignore */
+      /* ignore — trashed/deleted lists fail here; tasks will recreate */
     }
   }
   const linkedTaskIds = await linksForProjectTasks(
@@ -1001,13 +1025,13 @@ export async function reconcileProject(args: {
 
   for (const task of ordered) {
     try {
-      if (!listIdMap.has(task.list_id) && !fallbackListId) {
+      if (!listIdMap.has(task.list_id) && !fallbackListIdRef.id) {
         summary.errors.push(`Task ${task.title}: no ClickUp list`);
         continue;
       }
       // Seed fallback into map so repair helper can use it
-      if (!listIdMap.has(task.list_id) && fallbackListId) {
-        listIdMap.set(task.list_id, fallbackListId);
+      if (!listIdMap.has(task.list_id) && fallbackListIdRef.id) {
+        listIdMap.set(task.list_id, fallbackListIdRef.id);
       }
       let parentCu: string | null = null;
       if (task.parent_id) {
@@ -1055,7 +1079,8 @@ export async function reconcileProject(args: {
         parentCu,
         assignees,
         listRows,
-        fallbackListId,
+        fallbackListIdRef,
+        folderLists,
       );
       if (result === "created") summary.created += 1;
       else if (result === "updated") summary.updated += 1;
@@ -1074,7 +1099,7 @@ export async function reconcileProject(args: {
     .eq("organization_id", orgId)
     .order("sort_order", { ascending: true });
 
-  const milestoneListId = [...listIdMap.values()][0] ?? fallbackListId;
+  const milestoneListId = [...listIdMap.values()][0] ?? fallbackListIdRef.id;
   if (milestoneListId) {
     for (const m of (milestones ?? []) as Milestone[]) {
       try {
@@ -1412,7 +1437,15 @@ async function pushEntityWithAuth(args: {
     if (!list || list.archived) return;
     const folderId = await getLink(admin, orgId, "project", list.project_id);
     if (!folderId) return;
-    await ensureTaskList(admin, orgId, auth, folderId, list as TaskList);
+    const folderLists = await cu.getAllListsInFolder(auth, folderId);
+    await ensureTaskList(
+      admin,
+      orgId,
+      auth,
+      folderId,
+      list as TaskList,
+      folderLists,
+    );
     return;
   }
 
@@ -1473,13 +1506,15 @@ async function pushEntityWithAuth(args: {
       .eq("id", task.list_id)
       .maybeSingle();
     if (!list || list.archived) return;
-    // Always re-ensure so deleted lists are detected via folder membership.
+    // Always re-ensure so deleted/trashed lists are detected via folder inventory.
+    const folderLists = await cu.getAllListsInFolder(auth, folderId);
     listCu = await ensureTaskList(
       admin,
       orgId,
       auth,
       folderId,
       list as TaskList,
+      folderLists,
     );
     if (!listCu) return;
     let parentCu: string | null = null;
@@ -1610,8 +1645,11 @@ async function pushEntityWithAuth(args: {
     if (!m) return;
     const folderId = await getLink(admin, orgId, "project", m.project_id);
     if (!folderId) return;
-    const lists = await cu.getAllListsInFolder(auth, folderId);
-    const listId = lists.find((l) => !l.archived)?.id ?? lists[0]?.id;
+    let folderLists = await cu.getAllListsInFolder(auth, folderId);
+    let listId = folderLists.find((l) => !l.archived)?.id ?? folderLists[0]?.id;
+    if (!listId) {
+      listId = await createFreshList(auth, folderId, "Tasks", folderLists);
+    }
     if (!listId) return;
     const status =
       m.status === "done" || m.status === "missed"

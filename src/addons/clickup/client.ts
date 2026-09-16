@@ -86,19 +86,41 @@ async function cuFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`https://api.clickup.com/api/v2${path}`, {
-    ...init,
-    headers: {
-      ...authHeaders(auth),
-      ...(init?.headers ?? {}),
-    },
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    throw new ClickUpApiError(res.status, text.slice(0, 500));
+  const maxAttempts = 5;
+  let lastStatus = 0;
+  let lastText = "";
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const res = await fetch(`https://api.clickup.com/api/v2${path}`, {
+      ...init,
+      headers: {
+        ...authHeaders(auth),
+        ...(init?.headers ?? {}),
+      },
+    });
+    const text = await res.text();
+    if (res.ok) {
+      if (!text) return {} as T;
+      return JSON.parse(text) as T;
+    }
+
+    lastStatus = res.status;
+    lastText = text.slice(0, 500);
+
+    const rateLimited =
+      res.status === 429 || /rate limit|APP_002/i.test(lastText);
+    if (!rateLimited || attempt === maxAttempts - 1) {
+      throw new ClickUpApiError(res.status, lastText);
+    }
+
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter * 1000, 20_000)
+      : Math.min(1000 * 2 ** attempt, 12_000);
+    await new Promise((r) => setTimeout(r, waitMs));
   }
-  if (!text) return {} as T;
-  return JSON.parse(text) as T;
+
+  throw new ClickUpApiError(lastStatus, lastText);
 }
 
 export async function exchangeOAuthCode(args: {
