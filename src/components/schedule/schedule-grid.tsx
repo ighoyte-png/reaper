@@ -4046,22 +4046,19 @@ export function ScheduleGrid() {
 
   const addableProjectsForPerson = useMemo(() => {
     if (!addProjectForPerson) return [];
-    // Use person assignments + extras only — ignore the global project filter so
-    // “already shown” is accurate for the add dialog.
-    const shown = new Set<string>([
-      ...state.assignments
-        .filter((a) => a.person_id === addProjectForPerson)
-        .map((a) => a.project_id),
-      ...(extraProjectsByPerson[addProjectForPerson] ?? []),
-    ]);
+    // Exclude only rows currently on the schedule for this person (in-window
+    // assignments + manually added extras). Projects with assignments outside
+    // the visible window must stay addable so an empty row can be brought back.
+    const shown = new Set(
+      (projectsByPersonId.get(addProjectForPerson) ?? []).map((p) => p.id),
+    );
     return sortedProjects.filter(
       (p) => p.status === "active" && !shown.has(p.id),
     );
   }, [
     addProjectForPerson,
     sortedProjects,
-    state.assignments,
-    extraProjectsByPerson,
+    projectsByPersonId,
   ]);
 
   const addProjectClientOptions = useMemo(() => {
