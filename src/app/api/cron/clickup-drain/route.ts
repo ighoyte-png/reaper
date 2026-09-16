@@ -29,7 +29,7 @@ function authorize(request: Request): boolean {
 /**
  * Vercel Cron safety net: drain pending ClickUp outbox + inbound for orgs
  * that have queued work. Event-driven drains handle the hot path; this runs
- * every 2 minutes for misses/failures.
+ * once daily (Hobby-compatible) for misses/failures.
  */
 async function drainAll() {
   if (!isSupabaseConfigured() || !isServiceRoleConfigured()) {
