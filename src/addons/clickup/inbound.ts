@@ -46,6 +46,7 @@ export type ClickUpWebhookHistoryItem = {
     text_content?: string;
     /** Rich-text segments when text_content / comment_text are absent. */
     comment?: Array<{ text?: string } | string>;
+    user?: { id?: number; email?: string; username?: string };
   };
 };
 
@@ -111,16 +112,56 @@ async function resolveProfileFromClickUpUser(
   admin: SupabaseClient,
   orgId: string,
   clickUpUserId: number | string | null | undefined,
+  email?: string | null,
 ): Promise<string | null> {
-  if (clickUpUserId == null || clickUpUserId === "") return null;
-  const id = String(clickUpUserId);
-  const { data: oauth } = await admin
-    .from("addon_clickup_oauth_tokens")
-    .select("profile_id")
-    .eq("organization_id", orgId)
-    .eq("clickup_user_id", id)
-    .maybeSingle();
-  return (oauth?.profile_id as string | undefined) ?? null;
+  if (clickUpUserId != null && clickUpUserId !== "") {
+    const id = String(clickUpUserId);
+    const { data: oauth } = await admin
+      .from("addon_clickup_oauth_tokens")
+      .select("profile_id")
+      .eq("organization_id", orgId)
+      .eq("clickup_user_id", id)
+      .maybeSingle();
+    if (oauth?.profile_id) return oauth.profile_id as string;
+
+    const { data: mapped } = await admin
+      .from("addon_clickup_user_map")
+      .select("person_id")
+      .eq("organization_id", orgId)
+      .eq("clickup_user_id", id)
+      .limit(1)
+      .maybeSingle();
+    if (mapped?.person_id) {
+      const { data: person } = await admin
+        .from("people")
+        .select("profile_id")
+        .eq("id", mapped.person_id)
+        .eq("organization_id", orgId)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (person?.profile_id) return person.profile_id as string;
+    }
+  }
+
+  const emailKey = email?.trim().toLowerCase();
+  if (emailKey) {
+    const { data: people } = await admin
+      .from("people")
+      .select("profile_id, email")
+      .eq("organization_id", orgId)
+      .is("deleted_at", null)
+      .not("profile_id", "is", null)
+      .limit(500);
+    const match = (people ?? []).find(
+      (p) =>
+        typeof p.email === "string" &&
+        p.email.trim().toLowerCase() === emailKey &&
+        p.profile_id,
+    );
+    if (match?.profile_id) return match.profile_id as string;
+  }
+
+  return null;
 }
 
 async function resolvePersonFromClickUpUser(
@@ -679,10 +720,12 @@ async function applyCommentInbound(args: {
   const body = commentTextFromHistory(historyItem);
   if (!body.trim()) return "ignored";
   const eventMs = historyEventMs(historyItem);
+  const authorUser = historyItem.user ?? historyItem.comment?.user;
   const authorProfileId = await resolveProfileFromClickUpUser(
     admin,
     orgId,
-    historyItem.user?.id,
+    authorUser?.id,
+    authorUser?.email,
   );
 
   const existing = await getLinkByClickUpId(
@@ -695,7 +738,7 @@ async function applyCommentInbound(args: {
   if (existing) {
     const { data: comment } = await admin
       .from("task_comments")
-      .select("id, body, updated_at, created_at")
+      .select("id, body, updated_at, created_at, author_profile_id")
       .eq("id", existing.reaper_id)
       .maybeSingle();
     if (!comment) return "ignored";
@@ -707,6 +750,12 @@ async function applyCommentInbound(args: {
       normalizeDescription(notesToDescription(comment.body as string)) ===
       normalizeDescription(body)
     ) {
+      if (!comment.author_profile_id && authorProfileId) {
+        await admin
+          .from("task_comments")
+          .update({ author_profile_id: authorProfileId })
+          .eq("id", comment.id);
+      }
       return "echo";
     }
     await suppressOutbound(admin, orgId, "comment", comment.id as string, 45);
@@ -715,6 +764,9 @@ async function applyCommentInbound(args: {
       .update({
         body,
         updated_at: new Date(eventMs).toISOString(),
+        ...(!comment.author_profile_id && authorProfileId
+          ? { author_profile_id: authorProfileId }
+          : {}),
       })
       .eq("id", comment.id);
     if (error) throw new Error(error.message);
@@ -727,24 +779,33 @@ async function applyCommentInbound(args: {
   if (isUpdate) return "ignored";
 
   const commentId = crypto.randomUUID();
+  // Claim before insert so concurrent taskCommentPosted + taskUpdated cannot double-create.
+  const claim = await tryClaimLink(
+    admin,
+    orgId,
+    "comment",
+    commentId,
+    String(cuCommentId),
+    {
+      last_inbound_at: new Date().toISOString(),
+      last_pushed_at: new Date().toISOString(),
+    },
+  );
+  if (claim === "exists") return "echo";
+
   await suppressOutbound(admin, orgId, "comment", commentId, 45);
-  const { data: created, error } = await admin
-    .from("task_comments")
-    .insert({
-      id: commentId,
-      organization_id: orgId,
-      task_id: task.id,
-      author_profile_id: authorProfileId,
-      body,
-      created_at: new Date(eventMs).toISOString(),
-    })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  await setLink(admin, orgId, "comment", created.id, String(cuCommentId), {
-    last_inbound_at: new Date().toISOString(),
-    last_pushed_at: new Date().toISOString(),
+  const { error } = await admin.from("task_comments").insert({
+    id: commentId,
+    organization_id: orgId,
+    task_id: task.id,
+    author_profile_id: authorProfileId,
+    body,
+    created_at: new Date(eventMs).toISOString(),
   });
+  if (error) {
+    await deleteLink(admin, orgId, "comment", commentId);
+    throw new Error(error.message);
+  }
   return "applied";
 }
 
@@ -872,6 +933,7 @@ export async function applyInboundEvent(args: {
     admin,
     orgId,
     actorUserId,
+    history[0]?.user?.email,
   );
 
   if (eventName === "taskDeleted") {
@@ -941,26 +1003,14 @@ export async function applyInboundEvent(args: {
 
   if (!link) return "ignored";
 
-  // taskUpdated is also fired for new comments (same history id as
-  // taskCommentPosted). Apply comment rows here so we still sync if the
-  // dedicated comment event was skipped or delayed.
-  const commentItems = history.filter(
-    (h) => h.field === "comment" || h.comment != null,
-  );
-  if (commentItems.length && eventName === "taskUpdated") {
-    let anyComment = false;
-    for (const item of commentItems) {
-      const r = await applyCommentInbound({
-        admin,
-        orgId,
-        clickUpTaskId: taskId,
-        historyItem: item,
-        isUpdate: false,
-      });
-      if (r === "applied") anyComment = true;
-    }
-    if (anyComment) return "processed";
-    // Fall through — may still be a normal field update without usable comment body.
+  // Skip taskUpdated payloads that are only comment history — comments are
+  // handled by taskCommentPosted / taskCommentUpdated (avoids duplicate rows).
+  if (
+    eventName === "taskUpdated" &&
+    history.length > 0 &&
+    history.every((h) => h.field === "comment" || h.comment != null)
+  ) {
+    return "ignored";
   }
 
   const cuTask = await cu.getTask(auth, taskId);

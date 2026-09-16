@@ -110,7 +110,12 @@ import { cn } from "@/lib/cn";
 import { scrollIntoNearest } from "@/lib/scroll-into-nearest";
 import { PRESET_COLORS } from "@/lib/domain/colors";
 import { projectTeamPersonIds, projectAssigneePeople, canEditProject } from "@/lib/domain/project-access";
-import { personAvatarColor, resolveAuthorLabel } from "@/lib/domain/people";
+import {
+  personAvatarColor,
+  resolveAuthorLabel,
+  DELETED_USER_LABEL,
+  UNKNOWN_AUTHOR_LABEL,
+} from "@/lib/domain/people";
 import {
   canCompleteTask,
   dueDateToneClass,
@@ -5718,7 +5723,11 @@ function CommentItem({
   const authorPerson = comment.author_profile_id
     ? ctx.people.find((p) => p.profile_id === comment.author_profile_id)
     : undefined;
-  const displayName = resolveAuthorLabel(author, authorPerson);
+  const displayName = resolveAuthorLabel(author, authorPerson, {
+    missingLabel: comment.author_profile_id
+      ? DELETED_USER_LABEL
+      : UNKNOWN_AUTHOR_LABEL,
+  });
   const isAuthor = Boolean(
     ctx.profileId &&
       comment.author_profile_id &&

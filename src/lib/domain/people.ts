@@ -36,6 +36,9 @@ export function personAvatarColor(
 /** Label for removed teammates / missing authorship. */
 export const DELETED_USER_LABEL = "Deleted user";
 
+/** Label when authorship is unknown (e.g. unmapped ClickUp inbound). */
+export const UNKNOWN_AUTHOR_LABEL = "Unknown author";
+
 export function isActivePerson(
   person: Pick<Person, "deleted_at"> | null | undefined,
 ): boolean {
@@ -46,6 +49,7 @@ export function isActivePerson(
 export function resolveAuthorLabel(
   profile: { full_name?: string; email?: string } | null | undefined,
   person: Pick<Person, "name" | "deleted_at"> | null | undefined,
+  opts?: { missingLabel?: string },
 ): string {
   if (person?.deleted_at) return DELETED_USER_LABEL;
   const fromProfile =
@@ -53,5 +57,5 @@ export function resolveAuthorLabel(
   if (fromProfile) return fromProfile;
   const fromPerson = person?.name?.trim() || "";
   if (fromPerson) return fromPerson;
-  return DELETED_USER_LABEL;
+  return opts?.missingLabel ?? DELETED_USER_LABEL;
 }
