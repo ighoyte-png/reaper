@@ -1052,9 +1052,9 @@ export default function ProjectSharePage() {
       {showTeamSection ? (
         <section>
           <h2 className="mb-3 text-sm font-semibold">Team</h2>
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {manager ? (
-              <li className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center">
+              <li className="flex flex-col items-center justify-center gap-2 self-start rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center">
                 <PersonAvatar
                   avatarUrl={manager.avatar_url}
                   avatarAttachmentId={manager.avatar_attachment_id}
@@ -1090,7 +1090,7 @@ export default function ProjectSharePage() {
             {teamWithoutManager.map((member) => (
               <li
                 key={member.id}
-                className="flex flex-col items-center gap-2 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center"
+                className="flex flex-col items-center justify-start gap-2 self-start rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-center"
               >
                 <PersonAvatar
                   avatarUrl={member.avatar_url}

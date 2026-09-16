@@ -775,6 +775,7 @@ export type ProjectDataBundle = {
   task_comments: TaskComment[];
   project_assets: ProjectAsset[];
   assignments: Assignment[];
+  assignment_bound_tasks: AssignmentBoundTask[];
 };
 
 export type LoadOrgTasksOptions = {
@@ -1871,6 +1872,35 @@ export async function loadProjectData(
         mapTask(row as Record<string, unknown>),
       );
   const taskIds = tasks.map((t) => t.id);
+  const assignments = (assignmentsRes.data ?? []).map((row) =>
+    mapAssignment(row as Record<string, unknown>),
+  );
+
+  let assignment_bound_tasks: AssignmentBoundTask[] = [];
+  const assignmentIds = assignments.map((a) => a.id);
+  if (assignmentIds.length > 0) {
+    const boundCols: string = slim ? SHARE_BOUND_TASK_COLS : "*";
+    const boundRes = await supabase
+      .from("assignment_bound_tasks")
+      .select(cols(boundCols))
+      .eq("organization_id", orgId)
+      .in("assignment_id", assignmentIds)
+      .order("sort_order", { ascending: true });
+    if (boundRes.error) {
+      if (
+        !missingAssignmentBoundTasksTable(
+          boundRes.error.message,
+          boundRes.error.code,
+        )
+      ) {
+        throw boundRes.error;
+      }
+    } else {
+      assignment_bound_tasks = (boundRes.data ?? []).map((row) =>
+        mapAssignmentBoundTask(row as Record<string, unknown>),
+      );
+    }
+  }
 
   let task_comments: TaskComment[] = [];
   if (includeComments && taskIds.length > 0) {
@@ -1910,9 +1940,8 @@ export async function loadProjectData(
       : (projectAssetsRes.data ?? []).map((row) =>
           mapProjectAsset(row as Record<string, unknown>),
         ),
-    assignments: (assignmentsRes.data ?? []).map((row) =>
-      mapAssignment(row as Record<string, unknown>),
-    ),
+    assignments,
+    assignment_bound_tasks,
   };
 }
 
@@ -2505,31 +2534,6 @@ export async function loadProjectPortalWorkspace(
     }),
   ]);
 
-  let assignment_bound_tasks: AssignmentBoundTask[] = [];
-  const assignmentIds = bundle.assignments.map((a) => a.id);
-  if (assignmentIds.length > 0) {
-    const boundRes = await supabase
-      .from("assignment_bound_tasks")
-      .select(cols(SHARE_BOUND_TASK_COLS))
-      .eq("organization_id", orgId)
-      .in("assignment_id", assignmentIds)
-      .order("sort_order", { ascending: true });
-    if (boundRes.error) {
-      if (
-        !missingAssignmentBoundTasksTable(
-          boundRes.error.message,
-          boundRes.error.code,
-        )
-      ) {
-        throw boundRes.error;
-      }
-    } else {
-      assignment_bound_tasks = (boundRes.data ?? []).map((row) =>
-        mapAssignmentBoundTask(row as Record<string, unknown>),
-      );
-    }
-  }
-
   return {
     ...boot,
     milestones: bundle.milestones,
@@ -2538,7 +2542,7 @@ export async function loadProjectPortalWorkspace(
     task_comments: [],
     project_assets: bundle.project_assets,
     assignments: bundle.assignments,
-    assignment_bound_tasks,
+    assignment_bound_tasks: bundle.assignment_bound_tasks,
     leave_days: [],
     sessionProfileId: null,
   };

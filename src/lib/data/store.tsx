@@ -2566,6 +2566,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 .filter((t) => t.project_id === projectId)
                 .map((t) => t.id),
             );
+            const assignmentIds = new Set(
+              bundle.assignments.map((a) => a.id),
+            );
+            const nextBound = [
+              ...prev.assignment_bound_tasks.filter(
+                (b) => !assignmentIds.has(b.assignment_id),
+              ),
+              ...(bundle.assignment_bound_tasks ?? []),
+            ];
             return {
               ...prev,
               milestones: [
@@ -2590,6 +2599,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 ),
                 ...bundle.project_assets,
               ],
+              assignment_bound_tasks: nextBound,
               assignments: (() => {
                 const serverIds = new Set(
                   bundle.assignments.map((a) => a.id),

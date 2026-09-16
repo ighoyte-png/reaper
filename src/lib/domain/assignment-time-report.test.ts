@@ -199,4 +199,96 @@ describe("assignment time report", () => {
     );
     expect(section.totalHours).toBe(2 + 8 + 3);
   });
+
+  it("keeps bound PM assignments as dated rows, not Project Management time", () => {
+    const project = makeProject();
+    const people = [makePerson("pm", "Pat Manager"), makePerson("dev", "Dev")];
+    const assignments = [
+      makeAssignment({
+        id: "a-pm-bound",
+        person_id: "pm",
+        start_date: "2026-03-04",
+        end_date: "2026-03-04",
+        hours_per_day: 3,
+      }),
+      makeAssignment({
+        id: "a-pm-unbound",
+        person_id: "pm",
+        start_date: "2026-03-10",
+        end_date: "2026-03-10",
+        hours_per_day: 2,
+      }),
+      makeAssignment({
+        id: "a-dev",
+        person_id: "dev",
+        start_date: "2026-03-02",
+        end_date: "2026-03-02",
+        hours_per_day: 4,
+      }),
+    ];
+    const tasks: Task[] = [
+      {
+        id: "t-pm",
+        organization_id: "org",
+        project_id: "proj",
+        list_id: "l1",
+        parent_id: null,
+        assignee_person_id: "pm",
+        title: "Kickoff workshop",
+        is_divider: false,
+        is_client_review: false,
+        status: "upcoming",
+        start_date: null,
+        due_date: null,
+        notes: "",
+        sort_order: 0,
+        created_at: "",
+        created_by_profile_id: null,
+        edited_at: null,
+        edited_by_profile_id: null,
+        status_changed_at: null,
+        status_changed_by_profile_id: null,
+        assignee_notified_at: null,
+      },
+    ];
+    const boundTasks: AssignmentBoundTask[] = [
+      {
+        assignment_id: "a-pm-bound",
+        task_id: "t-pm",
+        organization_id: "org",
+        sort_order: 0,
+        bound_source: "schedule",
+        out_of_sync: false,
+      },
+    ];
+
+    const sections = buildAssignmentTimeReport({
+      project,
+      assignments,
+      boundTasks,
+      tasks,
+      people,
+      contractorExpenses: [],
+      todayKey: "2026-03-15",
+      months: [{ year: 2026, monthIndex: 2 }],
+    });
+
+    const section = sections[0]!;
+    const body = section.rows.filter(
+      (r) => r.kind === "assignment" || r.kind === "project_management",
+    );
+    expect(body.map((r) => r.kind)).toEqual([
+      "assignment",
+      "assignment",
+      "project_management",
+    ]);
+    expect(body[0]!.personName).toBe("Dev");
+    expect(body[0]!.startDate).toBe("2026-03-02");
+    expect(body[1]!.personName).toBe("Pat Manager");
+    expect(body[1]!.taskLabels).toEqual(["Kickoff workshop"]);
+    expect(body[1]!.startDate).toBe("2026-03-04");
+    expect(body[2]!.taskLabels).toEqual(["Project Management time"]);
+    expect(body[2]!.hours).toBe(2);
+    expect(section.pmHours).toBe(2);
+  });
 });

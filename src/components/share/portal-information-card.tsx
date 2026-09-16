@@ -95,7 +95,7 @@ export function PortalInformationCard({
   return (
     <li
       className={cn(
-        "flex flex-col gap-3 rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-left",
+        "flex flex-col gap-3 self-start rounded-md border border-[var(--border)] bg-[var(--bg)] p-3 text-left",
         span === 1 && "lg:col-span-1",
         span === 2 && "lg:col-span-2",
         span === 3 && "lg:col-span-3",

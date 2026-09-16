@@ -131,37 +131,61 @@ function MonthBarColumn({
   const hasContractor = contractor > 0;
 
   /**
-   * Stack from bottom → top: solid used (blue under cap, red over), then
-   * hatched planned (blue under remaining cap, red over). Used stays continuous.
+   * Paint from the bottom of the bar in absolute hours so the budget cap
+   * (red line) always splits blue/green below from red above — including
+   * when a contractor segment sits under internal hours.
    */
   function renderBurnStack(heightPct: number) {
-    const hasCap = cap > 0;
-    const usedWithin = hasCap ? Math.min(used, cap) : used;
-    const usedOver = hasCap ? Math.max(0, used - cap) : 0;
-    const remCap = hasCap ? Math.max(0, cap - usedWithin) : Number.POSITIVE_INFINITY;
-    const futureWithin = hasCap ? Math.min(future, remCap) : future;
-    const futureOver = hasCap ? Math.max(0, future - futureWithin) : 0;
+    type Band = {
+      h: number;
+      kind: "used" | "future" | "c-used" | "c-future";
+    };
+    const bands: Band[] = [];
+    if (hasContractor) {
+      if (contractorUsed > 0) bands.push({ h: contractorUsed, kind: "c-used" });
+      if (contractorFuture > 0) {
+        bands.push({ h: contractorFuture, kind: "c-future" });
+      }
+    }
+    if (used > 0) bands.push({ h: used, kind: "used" });
+    if (future > 0) bands.push({ h: future, kind: "future" });
 
+    const hasCap = cap > 0;
     const parts: Array<{ h: number; color: string; hatch: boolean }> = [];
-    if (usedWithin > 0) {
-      parts.push({ h: usedWithin, color: "var(--accent)", hatch: false });
-    }
-    if (usedOver > 0) {
-      parts.push({ h: usedOver, color: "var(--status-over)", hatch: false });
-    }
-    if (futureWithin > 0) {
-      parts.push({
-        h: futureWithin,
-        color: "var(--accent)",
-        hatch: true,
-      });
-    }
-    if (futureOver > 0) {
-      parts.push({
-        h: futureOver,
-        color: "var(--status-over)",
-        hatch: true,
-      });
+    let cursor = 0;
+
+    for (const band of bands) {
+      let remaining = band.h;
+      while (remaining > 0.0001) {
+        const hatch = band.kind === "future" || band.kind === "c-future";
+        const underColor =
+          band.kind === "c-used" || band.kind === "c-future"
+            ? contractorColor
+            : "var(--accent)";
+        // No budget line — paint the full band in used/planned colors.
+        if (!hasCap) {
+          parts.push({ h: remaining, color: underColor, hatch });
+          cursor += remaining;
+          remaining = 0;
+          continue;
+        }
+        const underRoom = Math.max(0, cap - cursor);
+        if (cursor < cap && underRoom > 0) {
+          const takeUnder = Math.min(remaining, underRoom);
+          parts.push({ h: takeUnder, color: underColor, hatch });
+          cursor += takeUnder;
+          remaining -= takeUnder;
+          continue;
+        }
+        // Above the budget line — always solid/hatched over-budget red.
+        parts.push({
+          h: remaining,
+          color: "var(--status-over)",
+          hatch,
+        });
+        cursor += remaining;
+        remaining = 0;
+      }
     }
 
     if (parts.length === 0) {
@@ -169,7 +193,7 @@ function MonthBarColumn({
     }
 
     const stackTotal = parts.reduce((s, p) => s + p.h, 0) || 1;
-    // flex-col justify-end: last child at bottom — reverse so used is last.
+    // flex-col justify-end: last DOM child at bottom.
     const ordered = [...parts].reverse();
 
     return (
@@ -191,67 +215,6 @@ function MonthBarColumn({
             ) : null}
           </div>
         ))}
-      </div>
-    );
-  }
-
-  function renderContractorBar(heightPct: number) {
-    const cTotal = contractorUsed + contractorFuture;
-    const usedPct = cTotal > 0 ? (contractorUsed / cTotal) * 100 : 0;
-    const futurePct = cTotal > 0 ? (contractorFuture / cTotal) * 100 : 0;
-    const hatchAll =
-      futureMonth || (contractorFuture > 0 && contractorUsed <= 0);
-    if (contractorUsed > 0 && contractorFuture > 0) {
-      return (
-        <div
-          className="relative flex w-full flex-col justify-end overflow-hidden"
-          style={{ height: `${heightPct}%` }}
-        >
-          <div
-            className="relative w-full overflow-hidden"
-            style={{
-              height: `${futurePct}%`,
-              backgroundColor: contractorColor,
-            }}
-          >
-            <div className="absolute inset-0" style={hatchStyle} aria-hidden />
-          </div>
-          <div
-            className="w-full"
-            style={{
-              height: `${usedPct}%`,
-              backgroundColor: contractorColor,
-            }}
-          />
-        </div>
-      );
-    }
-    return (
-      <div
-        className="relative w-full overflow-hidden"
-        style={{ height: `${heightPct}%`, backgroundColor: contractorColor }}
-      >
-        {hatchAll ? (
-          <div className="absolute inset-0" style={hatchStyle} aria-hidden />
-        ) : null}
-      </div>
-    );
-  }
-
-  /** justify-end: last child sits at the bottom — contractor green at bottom. */
-  function renderStackedBar(heightPct: number, baseTotal: number) {
-    const base = baseTotal > 0 ? baseTotal : total;
-    const contractorPct = base > 0 ? (contractor / base) * 100 : 0;
-    const internalPct = base > 0 ? ((used + future) / base) * 100 : 0;
-    return (
-      <div
-        className="relative flex w-full flex-col justify-end overflow-hidden"
-        style={{ height: `${heightPct}%` }}
-      >
-        {internalPct > 0 ? (
-          <div className="min-h-0 w-full flex-1">{renderBurnStack(100)}</div>
-        ) : null}
-        {hasContractor ? renderContractorBar(contractorPct) : null}
       </div>
     );
   }
@@ -322,9 +285,7 @@ function MonthBarColumn({
           )}
           style={{ height: `${Math.max(valuePct, 4)}%` }}
         >
-          {hasContractor
-            ? renderStackedBar(100, total)
-            : renderBurnStack(100)}
+          {renderBurnStack(100)}
         </div>
       )}
     </div>
