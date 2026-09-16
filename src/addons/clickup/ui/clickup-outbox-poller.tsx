@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * @deprecated Continuous 4s polling removed — use requestClickUpDrain after
- * writes; Vercel Cron (/api/cron/clickup-drain) is the idle safety net.
- * Kept as a no-op so existing lazy imports in AppShell do not break.
+ * No continuous polling. ClickUp sync is event-driven:
+ * - Reaper writes that enqueue outbox → requestClickUpOutboxDrain()
+ * - ClickUp webhooks → processInbound after enqueue
+ * - Enable/resync project → processOutbox on the API route
+ *
+ * Kept as a no-op so AppShell’s lazy import stays valid.
  */
 export function ClickUpOutboxPoller() {
   return null;

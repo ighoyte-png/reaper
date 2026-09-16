@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Marketing site (separate from the Next.js app)
 /website/
+
+.vercel
+.env*

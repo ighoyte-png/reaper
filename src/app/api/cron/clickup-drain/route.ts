@@ -27,9 +27,10 @@ function authorize(request: Request): boolean {
 }
 
 /**
- * Vercel Cron safety net: drain pending ClickUp outbox + inbound for orgs
- * that have queued work. Event-driven drains handle the hot path; this runs
- * once daily (Hobby-compatible) for misses/failures.
+ * Secret-auth ClickUp queue drain (cron / external scheduler / manual).
+ * Event-driven drains handle the hot path; call this on a short interval from
+ * an external cron if you need coverage when no Reaper tab is open
+ * (Vercel Hobby only allows daily native crons).
  */
 async function drainAll() {
   if (!isSupabaseConfigured() || !isServiceRoleConfigured()) {
