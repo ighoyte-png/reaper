@@ -407,7 +407,9 @@ export default function ProjectSharePage() {
       members.map((m) => [m.person_id, m] as const),
     );
     const asOf = new Date();
-    const rows: TeamHoursRow[] = [];
+    const staffRows: TeamHoursRow[] = [];
+    const contractorRows: TeamHoursRow[] = [];
+    const managerId = portal.manager?.id ?? null;
 
     for (const person of people.filter((p) => !p.is_contractor)) {
       const split = personHoursSplitInRange(
@@ -417,7 +419,7 @@ export default function ProjectSharePage() {
         periodRange.start,
         periodRange.end,
       );
-      rows.push({
+      staffRows.push({
         id: person.id,
         personId: person.id,
         name: person.name,
@@ -462,16 +464,17 @@ export default function ProjectSharePage() {
         );
         const totalHours = fromExpenses > 0 ? fromExpenses : leftover;
         if (totalHours <= 0) continue;
-        rows.push({
+        contractorRows.push({
           id: `${person.id}:hours`,
           personId: person.id,
           name: person.name,
           avatar_url: person.avatar_url,
           avatar_attachment_id: person.avatar_attachment_id,
           avatar_color: person.avatar_color,
-          usedHours: totalHours,
-          plannedHours: totalHours,
+          usedHours: 0,
+          plannedHours: 0,
           totalHours,
+          dashUsedPlanned: true,
         });
         continue;
       }
@@ -484,7 +487,7 @@ export default function ProjectSharePage() {
           periodRange.start,
           periodRange.end,
         );
-        rows.push({
+        contractorRows.push({
           id: person.id,
           personId: person.id,
           name: person.name,
@@ -498,9 +501,19 @@ export default function ProjectSharePage() {
       }
     }
 
-    return rows.sort((a, b) =>
-      a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
-    );
+    const byName = (a: TeamHoursRow, b: TeamHoursRow) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    const managerRow = managerId
+      ? staffRows.find((r) => r.personId === managerId)
+      : undefined;
+    const otherStaff = staffRows
+      .filter((r) => r.personId !== managerId)
+      .sort(byName);
+    return [
+      ...(managerRow ? [managerRow] : []),
+      ...otherStaff,
+      ...contractorRows.sort(byName),
+    ];
   }, [portal, periodRange]);
 
   const assignmentTimeSections = useMemo(() => {

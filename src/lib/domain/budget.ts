@@ -1119,9 +1119,6 @@ export function budgetBurn(
   );
 
   const todayKey = toDateKey(asOf);
-  const tomorrow = new Date(asOf);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = toDateKey(tomorrow);
 
   let rangeStart = "1970-01-01";
   let rangeEnd = "2099-12-31";
@@ -1130,8 +1127,11 @@ export function budgetBurn(
     rangeEnd = toDateKey(endOfMonth(asOf));
   }
 
-  const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
-  const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
+  const { usedEnd, futureStart } = usedFutureSplitBounds(
+    rangeStart,
+    rangeEnd,
+    asOf,
+  );
 
   const hasContractorTerms = projectMembers.some(
     (m) => m.project_id === project.id,
@@ -1652,11 +1652,11 @@ export function monthBurnSplit(
   } = classifiedPeople;
 
   const todayKey = toDateKey(asOf);
-  const tomorrow = new Date(asOf);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = toDateKey(tomorrow);
-  const usedEnd = todayKey < monthEnd ? todayKey : monthEnd;
-  const futureStart = tomorrowKey > monthStart ? tomorrowKey : monthStart;
+  const { usedEnd, futureStart } = usedFutureSplitBounds(
+    monthStart,
+    monthEnd,
+    asOf,
+  );
 
   let internalUsedHours = 0;
   let internalFutureHours = 0;
@@ -1828,7 +1828,22 @@ export function monthBurnSplit(
   };
 }
 
-/** Used vs future hours/$ in [rangeStart, rangeEnd] using today/tomorrow split. */
+/** Used = days strictly before today; planned = today through range end. */
+export function usedFutureSplitBounds(
+  rangeStart: string,
+  rangeEnd: string,
+  asOf: Date = new Date(),
+): { usedEnd: string; futureStart: string; todayKey: string } {
+  const todayKey = toDateKey(asOf);
+  const yesterday = new Date(asOf);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayKey = toDateKey(yesterday);
+  const usedEnd = yesterdayKey < rangeEnd ? yesterdayKey : rangeEnd;
+  const futureStart = todayKey > rangeStart ? todayKey : rangeStart;
+  return { usedEnd, futureStart, todayKey };
+}
+
+/** Used vs future hours/$ in [rangeStart, rangeEnd] using yesterday/today split. */
 export function projectHoursSplitInRange(
   projectId: string,
   assignments: Assignment[],
@@ -1844,13 +1859,11 @@ export function projectHoursSplitInRange(
   usedAmount: number;
   futureAmount: number;
 } {
-  const todayKey = toDateKey(asOf);
-  const tomorrow = new Date(asOf);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = toDateKey(tomorrow);
-
-  const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
-  const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
+  const { usedEnd, futureStart } = usedFutureSplitBounds(
+    rangeStart,
+    rangeEnd,
+    asOf,
+  );
 
   const usedHours =
     usedEnd >= rangeStart
@@ -1915,13 +1928,11 @@ export function personHoursSplitInRange(
       a.person_id === personId &&
       a.status === "confirmed",
   );
-  const todayKey = toDateKey(asOf);
-  const tomorrow = new Date(asOf);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowKey = toDateKey(tomorrow);
-
-  const usedEnd = todayKey < rangeEnd ? todayKey : rangeEnd;
-  const futureStart = tomorrowKey > rangeStart ? tomorrowKey : rangeStart;
+  const { usedEnd, futureStart } = usedFutureSplitBounds(
+    rangeStart,
+    rangeEnd,
+    asOf,
+  );
 
   let usedHours = 0;
   let futureHours = 0;

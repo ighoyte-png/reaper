@@ -19,10 +19,12 @@ function AssignmentTimeBodyRows({
   rows,
   peopleById,
   totalLabel,
+  budgetHours,
 }: {
   rows: AssignmentTimeRow[];
   peopleById: Map<string, Person>;
   totalLabel: string;
+  budgetHours: number;
 }) {
   return (
     <>
@@ -37,7 +39,14 @@ function AssignmentTimeBodyRows({
                 colSpan={4}
                 className="px-3 py-2.5 text-sm font-semibold"
               >
-                Total Hours · {totalLabel}
+                <span className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                  <span>Total Hours · {totalLabel}</span>
+                  {budgetHours > 0 ? (
+                    <span className="font-medium text-[var(--text-muted)]">
+                      Budget {formatAssignmentTimeHours(budgetHours)}
+                    </span>
+                  ) : null}
+                </span>
               </td>
               <td className="px-3 py-2.5 text-right text-sm font-semibold tabular-nums">
                 {formatAssignmentTimeHours(row.hours)}
@@ -179,12 +188,17 @@ export function AssignmentTimeTable({
                     </tr>
                   </thead>
                   <tbody>
-                    {section.rows.some((r) => r.kind === "assignment" || r.kind === "contractor") ||
-                    section.pmHours > 0 ? (
+                    {section.rows.some(
+                      (r) =>
+                        r.kind === "assignment" ||
+                        r.kind === "contractor" ||
+                        r.kind === "project_management",
+                    ) ? (
                       <AssignmentTimeBodyRows
                         rows={section.rows}
                         peopleById={peopleById}
                         totalLabel={totalLabel}
+                        budgetHours={section.budgetHours}
                       />
                     ) : (
                       <tr>

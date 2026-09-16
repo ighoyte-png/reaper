@@ -90,10 +90,10 @@ function MonthBarColumn({
   contractor,
   maxValue,
   cap,
-  showCapLine,
+  showCapLine: _showCapLine,
   compact,
   selected,
-  currentMonth,
+  currentMonth: _currentMonth,
   isHovered,
   interactive,
   onHoverStart,
@@ -119,58 +119,78 @@ function MonthBarColumn({
   onMonthSelect?: (bar: MonthBurnBar) => void;
 }) {
   const futureMonth = isFutureMonth(bar.year, bar.monthIndex, new Date());
-  const current = currentMonth;
 
   const valuePct =
     maxValue <= 0 ? 0 : Math.min(100, Math.max(0, (total / maxValue) * 100));
-  const withinCap = Math.min(total, cap > 0 ? cap : total);
-  const overCap = cap > 0 ? Math.max(0, total - cap) : 0;
-  const withinPct =
-    maxValue <= 0 ? 0 : Math.min(100, (withinCap / maxValue) * 100);
-  const overPct =
-    maxValue <= 0 ? 0 : Math.min(100, (overCap / maxValue) * 100);
 
   function formatValue(n: number): string {
     if (unit === "amount") return formatMoney(n);
     return formatHours(n);
   }
 
-  const showSplit = current && used > 0 && future > 0;
   const hasContractor = contractor > 0;
 
-  function renderInternalBar(heightPct: number) {
-    if (showSplit) {
-      const internalTotal = used + future;
-      const usedPct = internalTotal > 0 ? (used / internalTotal) * 100 : 0;
-      const futurePct = internalTotal > 0 ? (future / internalTotal) * 100 : 0;
-      return (
-        <div
-          className="relative flex w-full flex-col justify-end overflow-hidden"
-          style={{ height: `${heightPct}%` }}
-        >
-          <div
-            className="relative w-full overflow-hidden border-b border-[var(--progress-approved-hatch)] bg-[var(--accent)]"
-            style={{ height: `${futurePct}%` }}
-          >
-            <div className="absolute inset-0" style={hatchStyle} aria-hidden />
-          </div>
-          <div
-            className="w-full bg-[var(--accent)]"
-            style={{ height: `${usedPct}%` }}
-          />
-        </div>
-      );
+  /**
+   * Stack from bottom → top: solid used (blue under cap, red over), then
+   * hatched planned (blue under remaining cap, red over). Used stays continuous.
+   */
+  function renderBurnStack(heightPct: number) {
+    const hasCap = cap > 0;
+    const usedWithin = hasCap ? Math.min(used, cap) : used;
+    const usedOver = hasCap ? Math.max(0, used - cap) : 0;
+    const remCap = hasCap ? Math.max(0, cap - usedWithin) : Number.POSITIVE_INFINITY;
+    const futureWithin = hasCap ? Math.min(future, remCap) : future;
+    const futureOver = hasCap ? Math.max(0, future - futureWithin) : 0;
+
+    const parts: Array<{ h: number; color: string; hatch: boolean }> = [];
+    if (usedWithin > 0) {
+      parts.push({ h: usedWithin, color: "var(--accent)", hatch: false });
+    }
+    if (usedOver > 0) {
+      parts.push({ h: usedOver, color: "var(--status-over)", hatch: false });
+    }
+    if (futureWithin > 0) {
+      parts.push({
+        h: futureWithin,
+        color: "var(--accent)",
+        hatch: true,
+      });
+    }
+    if (futureOver > 0) {
+      parts.push({
+        h: futureOver,
+        color: "var(--status-over)",
+        hatch: true,
+      });
     }
 
-    const hatched = futureMonth || (current && future > 0 && used <= 0);
+    if (parts.length === 0) {
+      return <div className="w-full" style={{ height: `${heightPct}%` }} />;
+    }
+
+    const stackTotal = parts.reduce((s, p) => s + p.h, 0) || 1;
+    // flex-col justify-end: last child at bottom — reverse so used is last.
+    const ordered = [...parts].reverse();
+
     return (
       <div
-        className="relative w-full overflow-hidden bg-[var(--accent)]"
+        className="relative flex w-full flex-col justify-end overflow-hidden"
         style={{ height: `${heightPct}%` }}
       >
-        {hatched ? (
-          <div className="absolute inset-0" style={hatchStyle} aria-hidden />
-        ) : null}
+        {ordered.map((p, i) => (
+          <div
+            key={`${p.color}-${p.hatch}-${i}`}
+            className="relative w-full overflow-hidden"
+            style={{
+              height: `${(p.h / stackTotal) * 100}%`,
+              backgroundColor: p.color,
+            }}
+          >
+            {p.hatch ? (
+              <div className="absolute inset-0" style={hatchStyle} aria-hidden />
+            ) : null}
+          </div>
+        ))}
       </div>
     );
   }
@@ -229,38 +249,9 @@ function MonthBarColumn({
         style={{ height: `${heightPct}%` }}
       >
         {internalPct > 0 ? (
-          <div className="min-h-0 w-full flex-1">{renderInternalBar(100)}</div>
+          <div className="min-h-0 w-full flex-1">{renderBurnStack(100)}</div>
         ) : null}
         {hasContractor ? renderContractorBar(contractorPct) : null}
-      </div>
-    );
-  }
-
-  function renderOverageBar(heightPct: number) {
-    const futureAll = future + contractorFuture;
-    const futureOver = Math.min(overCap, Math.max(0, futureAll));
-    const usedOver = Math.max(0, overCap - futureOver);
-    const futureOverPct = overCap > 0 ? (futureOver / overCap) * 100 : 0;
-    const usedOverPct = overCap > 0 ? (usedOver / overCap) * 100 : 0;
-    return (
-      <div
-        className="relative flex w-full flex-col justify-end overflow-hidden"
-        style={{ height: `${heightPct}%` }}
-      >
-        {futureOverPct > 0 ? (
-          <div
-            className="relative w-full overflow-hidden bg-[var(--status-over)]"
-            style={{ height: `${futureOverPct}%` }}
-          >
-            <div className="absolute inset-0" style={hatchStyle} aria-hidden />
-          </div>
-        ) : null}
-        {usedOverPct > 0 ? (
-          <div
-            className="w-full bg-[var(--status-over)]"
-            style={{ height: `${usedOverPct}%` }}
-          />
-        ) : null}
       </div>
     );
   }
@@ -323,19 +314,6 @@ function MonthBarColumn({
             compact ? "max-w-[28px] h-0.5" : "max-w-[37px] h-1",
           )}
         />
-      ) : showCapLine && overCap > 0 ? (
-        <div
-          className={cn(
-            "relative z-[1] flex w-full flex-col justify-end overflow-hidden rounded-t",
-            compact ? "max-w-[28px]" : "max-w-[37px]",
-          )}
-          style={{ height: `${valuePct}%` }}
-        >
-          {renderOverageBar((overPct / valuePct) * 100)}
-          {hasContractor
-            ? renderStackedBar((withinPct / valuePct) * 100, withinCap)
-            : renderInternalBar((withinPct / valuePct) * 100)}
-        </div>
       ) : (
         <div
           className={cn(
@@ -344,7 +322,9 @@ function MonthBarColumn({
           )}
           style={{ height: `${Math.max(valuePct, 4)}%` }}
         >
-          {hasContractor ? renderStackedBar(100, total) : renderInternalBar(100)}
+          {hasContractor
+            ? renderStackedBar(100, total)
+            : renderBurnStack(100)}
         </div>
       )}
     </div>

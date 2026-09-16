@@ -45,6 +45,8 @@ export type AssignmentTimeMonthSection = {
   rows: AssignmentTimeRow[];
   pmHours: number;
   totalHours: number;
+  /** Monthly project budget hours (for the total row label). */
+  budgetHours: number;
 };
 
 export type AssignmentTimeReportInput = {
@@ -171,7 +173,8 @@ export function buildAssignmentTimeReport(
       year,
       monthIndex,
     );
-    const bodyRows: AssignmentTimeRow[] = [];
+    const assignmentRows: AssignmentTimeRow[] = [];
+    const contractorRows: AssignmentTimeRow[] = [];
     let pmHours = 0;
     const scheduledPersonIds = new Set<string>();
 
@@ -210,7 +213,7 @@ export function buildAssignmentTimeReport(
         }
 
         const person = peopleById.get(assignment.person_id);
-        bodyRows.push({
+        assignmentRows.push({
           id: `asg:${assignment.id}:${slice.startDate}:${slice.endDate}`,
           kind: "assignment",
           startDate: slice.startDate,
@@ -233,7 +236,7 @@ export function buildAssignmentTimeReport(
       const hours = contractorExpenseEntryHours(expense, person);
       if (hours <= 0) continue;
       const note = expense.notes?.trim();
-      bodyRows.push({
+      contractorRows.push({
         id: `exp:${expense.id}:${monthKey}`,
         kind: "contractor",
         startDate: startKey,
@@ -246,18 +249,14 @@ export function buildAssignmentTimeReport(
       });
     }
 
-    bodyRows.sort((a, b) => {
+    assignmentRows.sort((a, b) => {
       if (a.startDate !== b.startDate) return a.startDate.localeCompare(b.startDate);
       if (a.endDate !== b.endDate) return a.endDate.localeCompare(b.endDate);
-      if (a.kind !== b.kind) {
-        // Contractors after schedule assignments within the same dates.
-        if (a.kind === "contractor") return 1;
-        if (b.kind === "contractor") return -1;
-      }
       return a.personName.localeCompare(b.personName);
     });
+    contractorRows.sort((a, b) => a.personName.localeCompare(b.personName));
 
-    const rows: AssignmentTimeRow[] = [...bodyRows];
+    const rows: AssignmentTimeRow[] = [...assignmentRows];
 
     if (pmHours > 0) {
       const pmPerson = pmId ? peopleById.get(pmId) : undefined;
@@ -274,8 +273,13 @@ export function buildAssignmentTimeReport(
       });
     }
 
+    // Contractors sit below the PM row with the full month date range.
+    rows.push(...contractorRows);
+
     const totalHours =
-      bodyRows.reduce((sum, r) => sum + r.hours, 0) + pmHours;
+      assignmentRows.reduce((sum, r) => sum + r.hours, 0) +
+      pmHours +
+      contractorRows.reduce((sum, r) => sum + r.hours, 0);
 
     rows.push({
       id: `total:${monthKey}`,
@@ -297,6 +301,7 @@ export function buildAssignmentTimeReport(
       rows,
       pmHours,
       totalHours,
+      budgetHours: project.budget_hours ?? 0,
     };
   });
 }

@@ -85,6 +85,7 @@ export default function ProjectBudgetDetailPage() {
   const {
     state,
     ensureProjectData,
+    ensureBoundAssignmentTasks,
     setActiveRealtimeProjectIds,
     dataStatus,
   } = useData();
@@ -98,9 +99,15 @@ export default function ProjectBudgetDetailPage() {
   useEffect(() => {
     if (!project?.id) return;
     void ensureProjectData(project.id);
+    void ensureBoundAssignmentTasks();
     setActiveRealtimeProjectIds([project.id]);
     return () => setActiveRealtimeProjectIds([]);
-  }, [project?.id, ensureProjectData, setActiveRealtimeProjectIds]);
+  }, [
+    project?.id,
+    ensureProjectData,
+    ensureBoundAssignmentTasks,
+    setActiveRealtimeProjectIds,
+  ]);
 
   const projectDataReady =
     !project?.id || dataStatus.projects[project.id] === "ready";
