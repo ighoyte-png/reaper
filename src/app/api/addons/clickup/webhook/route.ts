@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import {
   enqueueInboundFromWebhook,
   processInbound,
@@ -11,7 +11,9 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 /**
  * ClickUp Space webhook receiver.
- * Verifies HMAC, enqueues idempotent inbound events, returns quickly.
+ * Verifies HMAC, enqueues idempotent inbound events, then drains the queue.
+ * Drain must complete in-process — there is no client poller anymore, and
+ * fire-and-forget work is dropped when the serverless function returns.
  */
 export async function POST(request: Request) {
   try {
@@ -54,15 +56,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, skipped: "addon_disabled" });
     }
 
+    const orgId = settings.organization_id;
+
     await enqueueInboundFromWebhook({
       admin,
-      orgId: settings.organization_id,
+      orgId,
       payload,
     });
 
-    // Best-effort drain so edits appear without waiting for the 2-min cron.
-    void processInbound(admin, settings.organization_id, 10).catch(() => {
-      /* cron will retry */
+    // Apply the just-enqueued event (and a small backlog) before responding.
+    await processInbound(admin, orgId, 40);
+
+    // Continue draining any remaining pending rows after the response.
+    after(() => {
+      void processInbound(admin, orgId, 40).catch(() => {
+        /* next webhook / manual drain will retry */
+      });
     });
 
     return NextResponse.json({ ok: true });

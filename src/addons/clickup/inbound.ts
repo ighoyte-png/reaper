@@ -42,6 +42,10 @@ export type ClickUpWebhookHistoryItem = {
     id?: string | number;
     text?: string;
     comment_text?: string;
+    /** Official ClickUp webhook field for plain comment body. */
+    text_content?: string;
+    /** Rich-text segments when text_content / comment_text are absent. */
+    comment?: Array<{ text?: string } | string>;
   };
 };
 
@@ -206,10 +210,39 @@ function commentTextFromHistory(
 ): string {
   const c = item?.comment;
   if (!c) {
-    if (typeof item?.after === "string") return item.after;
+    // `after` on comment events is the comment id, not the body.
     return "";
   }
-  return String(c.comment_text ?? c.text ?? "").trim();
+  const direct = String(
+    c.text_content ?? c.comment_text ?? c.text ?? "",
+  ).trim();
+  if (direct) return direct;
+  if (Array.isArray(c.comment)) {
+    return c.comment
+      .map((part) =>
+        typeof part === "string" ? part : String(part?.text ?? ""),
+      )
+      .join("")
+      .trim();
+  }
+  return "";
+}
+
+function commentIdFromHistory(
+  item: ClickUpWebhookHistoryItem | undefined,
+): string | null {
+  const fromComment = item?.comment?.id;
+  if (fromComment != null && String(fromComment).trim()) {
+    return String(fromComment).trim();
+  }
+  // ClickUp sets history_items[].after to the new comment id.
+  if (
+    (typeof item?.after === "string" || typeof item?.after === "number") &&
+    String(item.after).trim()
+  ) {
+    return String(item.after).trim();
+  }
+  return null;
 }
 
 export async function ensureSpaceWebhook(args: {
@@ -640,7 +673,7 @@ async function applyCommentInbound(args: {
     return "ignored";
   }
 
-  const cuCommentId = historyItem.comment?.id;
+  const cuCommentId = commentIdFromHistory(historyItem);
   if (cuCommentId == null) return "ignored";
   const body = commentTextFromHistory(historyItem);
   if (!body.trim()) return "ignored";

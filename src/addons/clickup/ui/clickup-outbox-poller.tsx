@@ -3,7 +3,7 @@
 /**
  * No continuous polling. ClickUp sync is event-driven:
  * - Reaper writes that enqueue outbox → requestClickUpOutboxDrain()
- * - ClickUp webhooks → processInbound after enqueue
+ * - ClickUp webhooks → await processInbound after enqueue (+ after() backlog)
  * - Enable/resync project → processOutbox on the API route
  *
  * Kept as a no-op so AppShell’s lazy import stays valid.
