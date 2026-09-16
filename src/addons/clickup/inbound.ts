@@ -321,8 +321,9 @@ export function idempotencyKeysForPayload(
   const event = payload.event ?? "unknown";
   const items = payload.history_items ?? [];
   if (items.length > 0 && items[0]?.id) {
-    // One delivery → one queue row (ClickUp may send many history items).
-    return [`${webhookId}:${items[0].id}`];
+    // Include event — ClickUp sends taskCommentPosted and taskUpdated with the
+    // same history_item id; omitting event dropped the comment half of the pair.
+    return [`${webhookId}:${event}:${items[0].id}`];
   }
   return [`${webhookId}:${event}:${payload.task_id ?? "none"}`];
 }
@@ -939,6 +940,28 @@ export async function applyInboundEvent(args: {
   }
 
   if (!link) return "ignored";
+
+  // taskUpdated is also fired for new comments (same history id as
+  // taskCommentPosted). Apply comment rows here so we still sync if the
+  // dedicated comment event was skipped or delayed.
+  const commentItems = history.filter(
+    (h) => h.field === "comment" || h.comment != null,
+  );
+  if (commentItems.length && eventName === "taskUpdated") {
+    let anyComment = false;
+    for (const item of commentItems) {
+      const r = await applyCommentInbound({
+        admin,
+        orgId,
+        clickUpTaskId: taskId,
+        historyItem: item,
+        isUpdate: false,
+      });
+      if (r === "applied") anyComment = true;
+    }
+    if (anyComment) return "processed";
+    // Fall through — may still be a normal field update without usable comment body.
+  }
 
   const cuTask = await cu.getTask(auth, taskId);
   const fieldHints: {

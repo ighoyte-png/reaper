@@ -22,7 +22,9 @@ export type ClickUpFolder = { id: string; name: string };
 export type ClickUpList = {
   id: string;
   name: string;
+  archived?: boolean;
   statuses?: { status: string }[];
+  folder?: { id?: string; name?: string };
 };
 export type ClickUpTask = {
   id: string;
@@ -212,12 +214,37 @@ export async function updateFolder(
 export async function getListsInFolder(
   auth: ClickUpAuth,
   folderId: string,
+  opts?: { archived?: boolean },
 ): Promise<ClickUpList[]> {
+  const archived = opts?.archived === true;
   const data = await cuFetch<{ lists: ClickUpList[] }>(
     auth,
-    `/folder/${folderId}/list?archived=false`,
+    `/folder/${folderId}/list?archived=${archived ? "true" : "false"}`,
   );
   return data.lists ?? [];
+}
+
+/** Active + archived lists in a folder (ClickUp requires two requests). */
+export async function getAllListsInFolder(
+  auth: ClickUpAuth,
+  folderId: string,
+): Promise<ClickUpList[]> {
+  const [active, archived] = await Promise.all([
+    getListsInFolder(auth, folderId, { archived: false }),
+    getListsInFolder(auth, folderId, { archived: true }),
+  ]);
+  const byId = new Map<string, ClickUpList>();
+  for (const list of [...active, ...archived]) {
+    byId.set(list.id, list);
+  }
+  return [...byId.values()];
+}
+
+export async function getList(
+  auth: ClickUpAuth,
+  listId: string,
+): Promise<ClickUpList> {
+  return cuFetch<ClickUpList>(auth, `/list/${encodeURIComponent(listId)}`);
 }
 
 export async function createList(
@@ -245,11 +272,11 @@ export async function createListInSpace(
 export async function updateList(
   auth: ClickUpAuth,
   listId: string,
-  name: string,
+  patch: { name?: string; archived?: boolean },
 ): Promise<ClickUpList> {
   return cuFetch<ClickUpList>(auth, `/list/${listId}`, {
     method: "PUT",
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(patch),
   });
 }
 
