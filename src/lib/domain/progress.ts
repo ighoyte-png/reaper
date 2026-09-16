@@ -2,7 +2,7 @@ import type { Milestone, Project, Task, TaskList } from "@/lib/types";
 
 /** Calendar progress from project start→end (0–100). */
 export function projectDateProgress(
-  project: Project,
+  project: Pick<Project, "start_date" | "end_date">,
   todayKey: string,
 ): number | null {
   if (!project.start_date || !project.end_date) return null;
@@ -39,7 +39,10 @@ export function milestoneTaskProgress(
 
 /** Task list linked to a milestone via `task_lists.milestone_id`. */
 export function findListAttachedToMilestone(
-  lists: readonly Pick<TaskList, "id" | "milestone_id" | "start_date" | "end_date">[],
+  lists: readonly Pick<
+    TaskList,
+    "id" | "milestone_id" | "start_date" | "end_date"
+  >[],
   milestoneId: string,
 ): Pick<TaskList, "id" | "milestone_id" | "start_date" | "end_date"> | null {
   return lists.find((l) => l.milestone_id === milestoneId) ?? null;
@@ -64,8 +67,8 @@ function calendarProgressBetween(
  * When attached to a task list with both start and end dates, uses that list’s window.
  */
 export function milestoneDateProgress(
-  milestone: Milestone,
-  project: Project,
+  milestone: Pick<Milestone, "start_date" | "due_date">,
+  project: Pick<Project, "start_date">,
   todayKey: string,
   attachedList?: Pick<TaskList, "start_date" | "end_date"> | null,
 ): number | null {

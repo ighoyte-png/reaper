@@ -224,6 +224,7 @@ export interface ProjectPortalPayload {
   milestones: {
     id: string;
     name: string;
+    start_date: string | null;
     due_date: string | null;
     status: string;
     client_approved: boolean;
@@ -506,6 +507,7 @@ export function sanitizeProjectPortal(
       .map((m) => ({
         id: m.id,
         name: m.name,
+        start_date: m.start_date,
         due_date: m.due_date,
         status: m.status,
         client_approved: m.client_approved,

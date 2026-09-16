@@ -49,7 +49,13 @@ import {
   isProjectBasisContractor,
 } from "@/lib/domain/contractor";
 import { parseAssetKind } from "@/lib/domain/milestones";
+import {
+  findListAttachedToMilestone,
+  milestoneDateProgress,
+  projectDateProgress,
+} from "@/lib/domain/progress";
 import { compareTaskOrder } from "@/lib/domain/tasks";
+import { toDateKey } from "@/lib/domain/dates";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { ProjectGanttBoard } from "@/components/projects/project-gantt-board";
 import {
@@ -72,7 +78,6 @@ import type {
   Task,
   TaskStatus,
 } from "@/lib/types";
-import { toDateKey } from "@/lib/domain/dates";
 import { cn } from "@/lib/cn";
 import type { DemoState } from "@/lib/types";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
@@ -221,29 +226,6 @@ function loadDemoPortal(token: string): ProjectPortalPayload | null {
   } catch {
     return null;
   }
-}
-
-function dateProgress(
-  startDate: string | null,
-  endDate: string | null,
-  todayKey: string,
-): number | null {
-  if (!startDate || !endDate || endDate <= startDate) return null;
-  const s = new Date(`${startDate}T12:00:00`).getTime();
-  const e = new Date(`${endDate}T12:00:00`).getTime();
-  const t = new Date(`${todayKey}T12:00:00`).getTime();
-  if (t <= s) return 0;
-  if (t >= e) return 100;
-  return Math.round(((t - s) / (e - s)) * 100);
-}
-
-function taskCompletionPct(
-  tasks: { parent_id: string | null; status: string }[],
-): number {
-  const parents = tasks.filter((t) => !t.parent_id);
-  if (parents.length === 0) return 0;
-  const done = parents.filter((t) => t.status === "complete").length;
-  return Math.round((done / parents.length) * 100);
 }
 
 function formatDisplayDate(dateKey: string | null | undefined): string {
@@ -825,8 +807,7 @@ export default function ProjectSharePage() {
 
   const todayKey = toDateKey(new Date());
   const overallPct =
-    dateProgress(portal.project.start_date, portal.project.end_date, todayKey) ??
-    0;
+    projectDateProgress(portal.project, todayKey) ?? 0;
 
   const milestonesSorted = [...portal.milestones].sort(
     (a, b) =>
@@ -857,20 +838,13 @@ export default function ProjectSharePage() {
         <h2 className="mb-3 text-sm font-semibold">Milestones</h2>
         <div className="space-y-6">
           {milestonesSorted.map((m) => {
-            const listIds = portal.taskLists
-              .filter((l) => l.milestone_id === m.id)
-              .map((l) => l.id);
-            const milestoneTasks = portal.tasks.filter((t) =>
-              listIds.includes(t.list_id),
+            const attachedList = findListAttachedToMilestone(
+              portal.taskLists,
+              m.id,
             );
             const pct =
-              listIds.length > 0
-                ? taskCompletionPct(milestoneTasks)
-                : dateProgress(
-                    portal.project.start_date,
-                    m.due_date,
-                    todayKey,
-                  ) ?? 0;
+              milestoneDateProgress(m, portal.project, todayKey, attachedList) ??
+              0;
             const readyForApproval = m.approval_enabled && !m.client_approved;
             const byline =
               m.approved_by_client && m.approved_by_name
