@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireManagerApiAccess } from "@/lib/api/require-manager";
+import { requireAdminApiAccess } from "@/lib/api/require-manager";
 import { generateShareToken, publicShareUrl } from "@/lib/share/token";
 
 /** Current public-link status for the signed-in org. */
 export async function GET(request: Request) {
   try {
-    const auth = await requireManagerApiAccess(request, {
-      roleError: "Only admins and managers can manage the public link",
+    const auth = await requireAdminApiAccess(request, {
+      roleError: "Only admins can manage the public link",
     });
     if ("error" in auth) return auth.error;
     const { caller, admin, origin } = auth;
@@ -48,8 +48,8 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const auth = await requireManagerApiAccess(request, {
-      roleError: "Only admins and managers can manage the public link",
+    const auth = await requireAdminApiAccess(request, {
+      roleError: "Only admins can manage the public link",
     });
     if ("error" in auth) return auth.error;
     const { caller, admin, origin } = auth;

@@ -121,11 +121,11 @@ export async function assertCanAttachToEntity(
   }
 
   if (entityType === "custom_emoji") {
-    if (role !== "admin") {
+    if (role !== "admin" && role !== "manager") {
       return {
         ok: false,
         status: 403,
-        error: "Only workspace admins can upload custom emojis",
+        error: "Only workspace admins and managers can upload custom emojis",
       };
     }
     // entityId is the emoji row id (may not exist yet until after upload).
@@ -133,11 +133,11 @@ export async function assertCanAttachToEntity(
   }
 
   if (entityType === "org_branding") {
-    if (role !== "admin" && role !== "manager") {
+    if (role !== "admin") {
       return {
         ok: false,
         status: 403,
-        error: "Only workspace managers can upload Client Portal branding",
+        error: "Only workspace admins can upload Client Portal branding",
       };
     }
     if (entityId !== organizationId) {

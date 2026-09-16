@@ -54,10 +54,34 @@ const ClickUpUserConnectPanel = lazy(() =>
 type SettingsTab =
   | "account"
   | "preferences"
+  | "project-defaults"
+  | "currency"
+  | "client-portal"
+  | "custom-emojis"
   | "sharing"
   | "holidays"
-  | "admin"
-  | "advanced";
+  | "advanced"
+  | "integrations";
+
+const SETTINGS_TABS: SettingsTab[] = [
+  "account",
+  "preferences",
+  "project-defaults",
+  "currency",
+  "client-portal",
+  "custom-emojis",
+  "sharing",
+  "holidays",
+  "advanced",
+  "integrations",
+];
+
+function parseSettingsTab(raw: string | null): SettingsTab | null {
+  if (!raw) return null;
+  if (raw === "admin") return "project-defaults";
+  if ((SETTINGS_TABS as string[]).includes(raw)) return raw as SettingsTab;
+  return null;
+}
 
 export default function SettingsPage() {
   const {
@@ -204,7 +228,7 @@ export default function SettingsPage() {
   }, [profile?.id, setPrefs]);
 
   useEffect(() => {
-    if (!canManage) return;
+    if (!admin) return;
     let cancelled = false;
     async function loadShare() {
       if (mode === "demo") {
@@ -254,34 +278,48 @@ export default function SettingsPage() {
       cancelled = true;
     };
   }, [
-    canManage,
+    admin,
     mode,
     state.organization.share_enabled,
     state.organization.share_token,
   ]);
 
+  // Workspace Admins always see Advanced. Managers do not. Members only when
+  // platform admin or demo multi-profile switcher.
   const showAdvancedTab =
-    (mode === "demo" && state.profiles.length > 1) ||
-    canManage ||
-    isPlatformAdmin;
+    admin ||
+    isPlatformAdmin ||
+    (mode === "demo" && state.profiles.length > 1);
+
+  const canEditEmojis = canManage;
 
   const tabs = useMemo(() => {
     const items: { id: SettingsTab; label: string }[] = [
       { id: "account", label: "Account" },
       { id: "preferences", label: "Preferences" },
     ];
-    if (canManage) {
+    if (admin) {
+      items.push(
+        { id: "project-defaults", label: "Project Defaults" },
+        { id: "currency", label: "Currency Settings" },
+        { id: "client-portal", label: "Client Portal" },
+      );
+    }
+    if (canEditEmojis) {
+      items.push({ id: "custom-emojis", label: "Custom Emojis" });
+    }
+    if (admin) {
       items.push(
         { id: "sharing", label: "Sharing" },
         { id: "holidays", label: "Holidays" },
-        { id: "admin", label: "Admin" },
       );
     }
     if (showAdvancedTab) {
       items.push({ id: "advanced", label: "Advanced" });
     }
+    items.push({ id: "integrations", label: "Integrations" });
     return items;
-  }, [canManage, showAdvancedTab]);
+  }, [admin, canEditEmojis, showAdvancedTab]);
 
   useEffect(() => {
     if (!tabs.some((t) => t.id === tab)) setTab("account");
@@ -289,17 +327,8 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const t = params.get("tab");
-    if (
-      t === "account" ||
-      t === "preferences" ||
-      t === "sharing" ||
-      t === "holidays" ||
-      t === "admin" ||
-      t === "advanced"
-    ) {
-      setTab(t);
-    }
+    const t = parseSettingsTab(params.get("tab"));
+    if (t) setTab(t);
   }, []);
 
   const prefsDirty =
@@ -811,12 +840,6 @@ export default function SettingsPage() {
                 </Panel>
               ) : null}
 
-              {mode === "supabase" ? (
-                <Suspense fallback={null}>
-                  <ClickUpUserConnectPanel />
-                </Suspense>
-              ) : null}
-
               <Button
                 variant="secondary"
                 size="lg"
@@ -973,7 +996,7 @@ export default function SettingsPage() {
             </Panel>
           ) : null}
 
-          {tab === "sharing" && canManage ? (
+          {tab === "sharing" && admin ? (
             <Panel>
               <h2 className="text-sm font-semibold">Public Link</h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -1040,7 +1063,7 @@ export default function SettingsPage() {
             </Panel>
           ) : null}
 
-          {tab === "holidays" && canManage ? (
+          {tab === "holidays" && admin ? (
             <Panel>
               <h2 className="text-sm font-semibold">Holiday Calendars</h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -1328,22 +1351,45 @@ export default function SettingsPage() {
             </Panel>
           ) : null}
 
-          {tab === "admin" && canManage ? (
+          {tab === "project-defaults" && admin ? (
             <Panel>
-              <h2 className="text-sm font-semibold">Admin</h2>
+              <h2 className="text-sm font-semibold">Project Defaults</h2>
               <p className="mt-1 text-xs text-[var(--text-muted)]">
                 Workspace defaults for rates, project budget health colors, and
                 capacity utilization thresholds.
               </p>
               <div className="mt-4">
                 <AdminBudgetSettingsForm
+                  sections="project-defaults"
                   initial={normalizeOrgBudgetSettings(
                     state.organization_settings,
                     state.organization.id,
                   )}
                   onSave={async (next) => {
                     await upsertOrganizationSettings(next);
-                    push("Admin settings saved", "success");
+                    push("Project defaults saved", "success");
+                  }}
+                />
+              </div>
+            </Panel>
+          ) : null}
+
+          {tab === "currency" && admin ? (
+            <Panel>
+              <h2 className="text-sm font-semibold">Currency Settings</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Multi-currency reporting and the USD → CAD conversion rate.
+              </p>
+              <div className="mt-4">
+                <AdminBudgetSettingsForm
+                  sections="currency"
+                  initial={normalizeOrgBudgetSettings(
+                    state.organization_settings,
+                    state.organization.id,
+                  )}
+                  onSave={async (next) => {
+                    await upsertOrganizationSettings(next);
+                    push("Currency settings saved", "success");
                   }}
                   onEnableMultiCurrency={async (next) => {
                     await upsertOrganizationSettings({
@@ -1368,14 +1414,49 @@ export default function SettingsPage() {
                   }}
                 />
               </div>
-              <ClientPortalSettings />
-              {admin ? <CustomEmojisSettings /> : null}
-              {admin ? (
+            </Panel>
+          ) : null}
+
+          {tab === "client-portal" && admin ? (
+            <Panel>
+              <h2 className="text-sm font-semibold">Client Portal</h2>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Workspace client portal switch and white-label branding.
+              </p>
+              <div className="mt-4">
+                <ClientPortalSettings />
+              </div>
+            </Panel>
+          ) : null}
+
+          {tab === "custom-emojis" && canEditEmojis ? (
+            <Panel>
+              <CustomEmojisSettings />
+            </Panel>
+          ) : null}
+
+          {tab === "integrations" ? (
+            <>
+              {mode === "supabase" ? (
+                <Suspense fallback={null}>
+                  <ClickUpUserConnectPanel />
+                </Suspense>
+              ) : null}
+              {admin && mode === "supabase" ? (
                 <Suspense fallback={null}>
                   <ClickUpAddonSettingsPanel />
                 </Suspense>
               ) : null}
-            </Panel>
+              {mode !== "supabase" ? (
+                <Panel>
+                  <h2 className="text-sm font-semibold">Integrations</h2>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Connect workspace integrations when using a live Supabase
+                    backend.
+                  </p>
+                </Panel>
+              ) : null}
+            </>
           ) : null}
 
           {tab === "advanced" ? (
@@ -1412,7 +1493,7 @@ export default function SettingsPage() {
                 </Panel>
               ) : null}
 
-              {canManage ? (
+              {admin ? (
                 <Panel>
                   <h2 className="text-sm font-semibold">Demo Data</h2>
                   <p className="mt-1 text-sm text-[var(--text-muted)]">

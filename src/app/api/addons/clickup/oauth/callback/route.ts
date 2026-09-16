@@ -19,7 +19,7 @@ import { originFromRequest } from "@/lib/security/request";
 function settingsRedirect(
   origin: string,
   workspaceSlug: string,
-  tab: "account" | "admin",
+  tab: "integrations",
   params: Record<string, string>,
 ) {
   const path = workspaceSlug
@@ -49,13 +49,13 @@ export async function GET(request: Request) {
     const err = url.searchParams.get("error");
 
     if (err) {
-      return settingsRedirect(origin, workspaceSlug, "account", {
+      return settingsRedirect(origin, workspaceSlug, "integrations", {
         clickup: "error",
         message: err,
       });
     }
     if (!code || !state) {
-      return settingsRedirect(origin, workspaceSlug, "account", {
+      return settingsRedirect(origin, workspaceSlug, "integrations", {
         clickup: "error",
         message: "missing_code",
       });
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
       payload = verifyOAuthState(state);
       workspaceSlug = payload.workspaceSlug || "";
     } catch {
-      return settingsRedirect(origin, workspaceSlug, "account", {
+      return settingsRedirect(origin, workspaceSlug, "integrations", {
         clickup: "error",
         message: "invalid_state",
       });
@@ -85,7 +85,7 @@ export async function GET(request: Request) {
     const settings = await loadSettings(admin, payload.orgId);
     const creds = resolveOAuthAppCredentials(settings);
     if (!creds) {
-      return settingsRedirect(origin, workspaceSlug, "admin", {
+      return settingsRedirect(origin, workspaceSlug, "integrations", {
         clickup: "error",
         message: "oauth_app_missing",
       });
@@ -130,18 +130,18 @@ export async function GET(request: Request) {
         service_profile_id: payload.profileId,
         last_error: null,
       });
-      return settingsRedirect(origin, workspaceSlug, "admin", {
+      return settingsRedirect(origin, workspaceSlug, "integrations", {
         clickup: "service_connected",
       });
     }
 
-    return settingsRedirect(origin, workspaceSlug, "account", {
+    return settingsRedirect(origin, workspaceSlug, "integrations", {
       clickup: "connected",
     });
   } catch (e) {
     const message =
       e instanceof Error ? e.message.slice(0, 120) : "oauth_failed";
-    return settingsRedirect(origin, workspaceSlug, "account", {
+    return settingsRedirect(origin, workspaceSlug, "integrations", {
       clickup: "error",
       message,
     });

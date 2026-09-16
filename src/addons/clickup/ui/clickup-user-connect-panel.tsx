@@ -6,7 +6,7 @@ import { Panel } from "@/components/ui/panel";
 import { useToast } from "@/components/toast/toast-provider";
 import type { AddonClickupOAuthConnectionPublic } from "@/addons/clickup/types";
 
-/** Per-user Connect ClickUp (Account settings). */
+/** Per-user Connect ClickUp (Integrations settings). */
 export function ClickUpUserConnectPanel() {
   const { push } = useToast();
   const [connection, setConnection] =
@@ -36,7 +36,7 @@ export function ClickUpUserConnectPanel() {
     if (status === "connected") {
       push("ClickUp connected — stays linked across sessions", "success");
       void load();
-    } else if (status === "error" && params.get("tab") !== "admin") {
+    } else if (status === "error") {
       push(params.get("message") || "ClickUp connection failed", "warning");
     }
   }, [load, push]);

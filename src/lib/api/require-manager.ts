@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canManage } from "@/lib/auth/roles";
+import { canManage, isAdmin } from "@/lib/auth/roles";
 import { assertAllowedSiteOrigin } from "@/lib/security/request";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -20,9 +20,12 @@ export type ManagerApiContext = {
 export type ManagerApiFailure = { error: NextResponse };
 export type ManagerApiResult = ManagerApiFailure | ManagerApiContext;
 
-export async function requireManagerApiAccess(
+async function requireMembershipApiAccess(
   request: Request,
-  options?: { roleError?: string },
+  options: {
+    allow: (role: Role) => boolean;
+    roleError: string;
+  },
 ): Promise<ManagerApiResult> {
   if (!isSupabaseConfigured()) {
     return {
@@ -92,16 +95,9 @@ export async function requireManagerApiAccess(
     .maybeSingle();
 
   const role = membership.role as Role;
-  if (!canManage(role)) {
+  if (!options.allow(role)) {
     return {
-      error: NextResponse.json(
-        {
-          error:
-            options?.roleError ??
-            "Only admins and managers can perform this action",
-        },
-        { status: 403 },
-      ),
+      error: NextResponse.json({ error: options.roleError }, { status: 403 }),
     };
   }
 
@@ -115,4 +111,27 @@ export async function requireManagerApiAccess(
     admin: createAdminClient(),
     origin: originCheck.origin,
   };
+}
+
+export async function requireManagerApiAccess(
+  request: Request,
+  options?: { roleError?: string },
+): Promise<ManagerApiResult> {
+  return requireMembershipApiAccess(request, {
+    allow: canManage,
+    roleError:
+      options?.roleError ??
+      "Only admins and managers can perform this action",
+  });
+}
+
+/** Workspace Admin only (elevated settings such as public share). */
+export async function requireAdminApiAccess(
+  request: Request,
+  options?: { roleError?: string },
+): Promise<ManagerApiResult> {
+  return requireMembershipApiAccess(request, {
+    allow: isAdmin,
+    roleError: options?.roleError ?? "Only admins can perform this action",
+  });
 }

@@ -159,6 +159,7 @@ export function AdminBudgetSettingsForm({
   onSave,
   onEnableMultiCurrency,
   onDisableMultiCurrency,
+  sections = "all",
 }: {
   initial: OrganizationSettings;
   onSave: (next: OrganizationSettings) => Promise<void>;
@@ -167,7 +168,12 @@ export function AdminBudgetSettingsForm({
     next: OrganizationSettings,
     saveAs: "usd" | "cad",
   ) => Promise<void>;
+  /** Which blocks to show (split across Settings tabs). */
+  sections?: "project-defaults" | "currency" | "all";
 }) {
+  const showDefaults = sections === "project-defaults" || sections === "all";
+  const showCurrency = sections === "currency" || sections === "all";
+
   const [draft, setDraft] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,7 +203,10 @@ export function AdminBudgetSettingsForm({
     draft.currency_enabled &&
     (!(draft.usd_to_cad_rate > 0) || !Number.isFinite(draft.usd_to_cad_rate));
 
-  const invalid = Boolean(hoursErr || amountErr || capacityErr || rateInvalid);
+  const invalid = Boolean(
+    (showDefaults && (hoursErr || amountErr || capacityErr)) ||
+      (showCurrency && rateInvalid),
+  );
 
   async function persist() {
     if (invalid) {
@@ -208,15 +217,17 @@ export function AdminBudgetSettingsForm({
       );
       return;
     }
-    const turningOn = !initial.currency_enabled && draft.currency_enabled;
-    const turningOff = initial.currency_enabled && !draft.currency_enabled;
-    if (turningOn && onEnableMultiCurrency) {
-      setConfirmEnable(true);
-      return;
-    }
-    if (turningOff && onDisableMultiCurrency) {
-      setConfirmDisable(true);
-      return;
+    if (showCurrency) {
+      const turningOn = !initial.currency_enabled && draft.currency_enabled;
+      const turningOff = initial.currency_enabled && !draft.currency_enabled;
+      if (turningOn && onEnableMultiCurrency) {
+        setConfirmEnable(true);
+        return;
+      }
+      if (turningOff && onDisableMultiCurrency) {
+        setConfirmDisable(true);
+        return;
+      }
     }
     setBusy(true);
     setError(null);
@@ -243,9 +254,17 @@ export function AdminBudgetSettingsForm({
   }
 
   const healthyCost = targetCostPct(draft);
+  const saveLabel =
+    sections === "currency"
+      ? "Save Currency Settings"
+      : sections === "project-defaults"
+        ? "Save Project Defaults"
+        : "Save Admin Settings";
 
   return (
     <div className="space-y-8">
+      {showDefaults ? (
+        <>
       <section className="space-y-3">
         <h3 className="text-sm font-semibold">Default Rates</h3>
         <p className="text-xs text-[var(--text-muted)]">
@@ -470,7 +489,10 @@ export function AdminBudgetSettingsForm({
           <p className="text-xs text-[var(--status-over)]">{capacityErr}</p>
         ) : null}
       </section>
+        </>
+      ) : null}
 
+      {showCurrency ? (
       <section className="space-y-3">
         <h3 className="text-sm font-semibold">Currency Settings</h3>
         <label className="flex items-start gap-2 text-sm">
@@ -512,6 +534,7 @@ export function AdminBudgetSettingsForm({
           </Field>
         ) : null}
       </section>
+      ) : null}
 
       {error ? (
         <p className="text-sm text-[var(--status-over)]">{error}</p>
@@ -524,7 +547,7 @@ export function AdminBudgetSettingsForm({
           disabled={busy || invalid}
           onClick={() => void save()}
         >
-          {busy ? "Saving…" : "Save Admin Settings"}
+          {busy ? "Saving…" : saveLabel}
         </button>
       </div>
 
