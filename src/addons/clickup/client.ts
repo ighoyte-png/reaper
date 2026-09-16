@@ -170,6 +170,19 @@ export async function getFolders(
   return data.folders ?? [];
 }
 
+/** Fetch one folder by id (works for nested folders; 404 if deleted). */
+export async function getFolder(
+  auth: ClickUpAuth,
+  folderId: string,
+  opts?: { includeSubfolders?: boolean },
+): Promise<ClickUpFolder & { folders?: ClickUpFolder[] }> {
+  const q = opts?.includeSubfolders ? "?include_subfolders=true" : "";
+  return cuFetch<ClickUpFolder & { folders?: ClickUpFolder[] }>(
+    auth,
+    `/folder/${folderId}${q}`,
+  );
+}
+
 export async function createFolder(
   auth: ClickUpAuth,
   spaceId: string,

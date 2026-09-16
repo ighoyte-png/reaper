@@ -120,15 +120,57 @@ async function purgeProjectSubtreeLinks(
 
 async function clickUpFolderAlive(
   auth: ClickUpAuth,
-  spaceId: string,
+  _spaceId: string,
   folderId: string,
 ): Promise<boolean> {
   try {
-    const folders = await cu.getFolders(auth, spaceId);
-    return folders.some((f) => f.id === folderId);
+    // GET /folder/{id} works for nested folders; space listing often does not.
+    await cu.getFolder(auth, folderId);
+    return true;
   } catch {
     return false;
   }
+}
+
+function folderNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function isFolderNameTakenError(e: unknown): boolean {
+  const body =
+    e instanceof cu.ClickUpApiError
+      ? e.body
+      : e instanceof Error
+        ? e.message
+        : String(e);
+  return /Folder name taken|CAT_014/i.test(body);
+}
+
+/** Find an existing space/client folder by name (case-insensitive). */
+async function findFolderByName(
+  auth: ClickUpAuth,
+  spaceId: string,
+  name: string,
+  parentFolderId?: string | null,
+): Promise<cu.ClickUpFolder | null> {
+  const key = folderNameKey(name);
+  if (!key) return null;
+
+  if (parentFolderId) {
+    try {
+      const parent = await cu.getFolder(auth, parentFolderId, {
+        includeSubfolders: true,
+      });
+      const nested = parent.folders ?? [];
+      const hit = nested.find((f) => folderNameKey(f.name) === key);
+      if (hit) return hit;
+    } catch {
+      /* fall through to space list */
+    }
+  }
+
+  const folders = await cu.getFolders(auth, spaceId);
+  return folders.find((f) => folderNameKey(f.name) === key) ?? null;
 }
 
 async function clickUpListAlive(
@@ -172,9 +214,19 @@ async function ensureClientFolder(
     await setLink(admin, orgId, "client", client.id, byName.id);
     return byName.id;
   }
-  const created = await cu.createFolder(auth, spaceId, client.name);
-  await setLink(admin, orgId, "client", client.id, created.id);
-  return created.id;
+  try {
+    const created = await cu.createFolder(auth, spaceId, client.name);
+    await setLink(admin, orgId, "client", client.id, created.id);
+    return created.id;
+  } catch (e) {
+    if (!isFolderNameTakenError(e)) throw e;
+    const again = await findFolderByName(auth, spaceId, client.name);
+    if (again) {
+      await setLink(admin, orgId, "client", client.id, again.id);
+      return again.id;
+    }
+    throw e;
+  }
 }
 
 async function ensureProjectFolder(
@@ -210,20 +262,49 @@ async function ensureProjectFolder(
     await clearStaleLink(admin, orgId, "project", project.id);
     await purgeProjectSubtreeLinks(admin, orgId, project.id);
   }
-  // Prefer subfolder under client when API supports parent; fallback: folder in space
+
+  // After delete/recreate in Reaper, ClickUp often still has the folder.
+  const adopted = await findFolderByName(
+    auth,
+    spaceId,
+    project.name,
+    clientFolderId,
+  );
+  if (adopted) {
+    await setLink(admin, orgId, "project", project.id, adopted.id);
+    return { folderId: adopted.id, rebuilt: false };
+  }
+
+  async function createOrAdopt(parentId?: string): Promise<string> {
+    try {
+      const created = await cu.createFolder(
+        auth,
+        spaceId,
+        project.name,
+        parentId,
+      );
+      return created.id;
+    } catch (e) {
+      if (!isFolderNameTakenError(e)) throw e;
+      const again = await findFolderByName(
+        auth,
+        spaceId,
+        project.name,
+        parentId ?? clientFolderId,
+      );
+      if (again) return again.id;
+      throw e;
+    }
+  }
+
   try {
-    const created = await cu.createFolder(
-      auth,
-      spaceId,
-      project.name,
-      clientFolderId,
-    );
-    await setLink(admin, orgId, "project", project.id, created.id);
-    return { folderId: created.id, rebuilt: true };
+    const folderId = await createOrAdopt(clientFolderId);
+    await setLink(admin, orgId, "project", project.id, folderId);
+    return { folderId, rebuilt: true };
   } catch {
-    const created = await cu.createFolder(auth, spaceId, `${project.name}`);
-    await setLink(admin, orgId, "project", project.id, created.id);
-    return { folderId: created.id, rebuilt: true };
+    const folderId = await createOrAdopt(undefined);
+    await setLink(admin, orgId, "project", project.id, folderId);
+    return { folderId, rebuilt: true };
   }
 }
 
@@ -667,15 +748,33 @@ export async function reconcileProject(args: {
     }
   }
 
-  let fallbackListId: string | null = null;
-  if (listIdMap.size === 0) {
+  let fallbackListId: string | null =
+    [...listIdMap.values()][0] ?? null;
+  if (!fallbackListId) {
     try {
-      const created = await cu.createList(auth, projectFolderId, "Tasks");
-      fallbackListId = created.id;
+      const listsInFolder = await cu.getListsInFolder(auth, projectFolderId);
+      const byName = listsInFolder.find(
+        (l) => folderNameKey(l.name) === "tasks",
+      );
+      if (byName) {
+        fallbackListId = byName.id;
+      } else {
+        const created = await cu.createList(auth, projectFolderId, "Tasks");
+        fallbackListId = created.id;
+      }
     } catch (e) {
       summary.errors.push(
         `Default list: ${e instanceof Error ? e.message : String(e)}`,
       );
+    }
+  }
+
+  // Any Reaper list that failed ensure still maps tasks onto a working list.
+  if (fallbackListId) {
+    for (const list of activeLists) {
+      if (!listIdMap.has(list.id)) {
+        listIdMap.set(list.id, fallbackListId);
+      }
     }
   }
 
