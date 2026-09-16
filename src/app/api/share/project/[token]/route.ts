@@ -3,7 +3,7 @@ import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { loadProjectPortalWorkspace } from "@/lib/supabase/api";
 import { sanitizeProjectPortal } from "@/lib/share/sanitize";
-import { resolveAvatarUrl } from "@/lib/supabase/avatar";
+import { avatarContentPath } from "@/lib/storage/avatar-url";
 import { resolveOrgBrandingLogoUrl } from "@/lib/storage/resolve-org-branding";
 import { normalizeOrgBudgetSettings } from "@/lib/domain/org-settings";
 
@@ -91,12 +91,13 @@ export async function GET(_request: Request, { params }: Params) {
       ...workspace.organization_settings,
       ...orgSettings,
     };
-    workspace.people = await Promise.all(
-      workspace.people.map(async (p) => ({
-        ...p,
-        avatar_url: await resolveAvatarUrl(admin, p.avatar_url),
-      })),
-    );
+    workspace.people = workspace.people.map((p) => {
+      const attachmentId = p.avatar_attachment_id?.trim();
+      if (attachmentId) {
+        return { ...p, avatar_url: avatarContentPath(attachmentId) };
+      }
+      return p;
+    });
     const portal = sanitizeProjectPortal(workspace, String(project.id));
     if (!portal) {
       return notFound();

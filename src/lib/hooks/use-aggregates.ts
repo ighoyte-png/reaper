@@ -82,9 +82,8 @@ function loadYearBarsRpcOnce(
 }
 
 /**
- * Org-wide burns via RPC (no full assignment dump). Prefer precise client
- * `budgetBurn` (contractor roster terms) only for projects already loaded
- * into the store via ensureProjectData.
+ * Org-wide burns. Prefer client `budgetBurn` from schedule/project rows in the
+ * store; only fall back to the heavy org RPC when no assignments are loaded yet.
  */
 export function useProjectBurnsMap(): {
   burns: Map<string, BudgetBurn>;
@@ -114,6 +113,13 @@ export function useProjectBurnsMap(): {
         setReady(true);
         return;
       }
+      // Prefer client budget math from schedule/project rows already in the
+      // store — skip the heavy org-wide burns RPC when assignments are loaded.
+      if (state.assignments.length > 0) {
+        setRpcBurns(null);
+        setReady(true);
+        return;
+      }
       const cached = burnsRpcCache.get(orgId);
       if (cached?.status === "done") {
         setRpcBurns(cached.value);
@@ -137,7 +143,7 @@ export function useProjectBurnsMap(): {
     return () => {
       cancelled = true;
     };
-  }, [mode, orgId, fetchProjectBudgetBurnsRpc]);
+  }, [mode, orgId, fetchProjectBudgetBurnsRpc, state.assignments.length]);
 
   const burns = useMemo(() => {
     const map = new Map<string, BudgetBurn>();
@@ -231,6 +237,11 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
         setReady(true);
         return;
       }
+      if (state.assignments.length > 0) {
+        setRpcRows(null);
+        setReady(true);
+        return;
+      }
       const key = `${orgId}:${year}`;
       const cached = yearBarsRpcCache.get(key);
       if (cached?.status === "done") {
@@ -259,7 +270,13 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
     return () => {
       cancelled = true;
     };
-  }, [mode, orgId, year, fetchMonthlyRetainerYearBarsRpc]);
+  }, [
+    mode,
+    orgId,
+    year,
+    fetchMonthlyRetainerYearBarsRpc,
+    state.assignments.length,
+  ]);
 
   const barsByProject = useMemo(() => {
     const map = new Map<string, MonthBurnBar[]>();
@@ -278,7 +295,7 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
         (e) => e.project_id === p.id,
       );
       const projectReady = dataStatus.projects[p.id] === "ready";
-      if (projectReady || mode === "demo") {
+      if (projectReady || mode === "demo" || !rpcRows) {
         map.set(
           p.id,
           calendarYearBars(
@@ -294,9 +311,7 @@ export function useMonthlyRetainerYearBarsMap(year: number): {
         );
         continue;
       }
-      if (rpcRows) {
-        map.set(p.id, monthlyYearBarsFromRpcRows(p, year, rpcRows));
-      }
+      map.set(p.id, monthlyYearBarsFromRpcRows(p, year, rpcRows));
     }
     return map;
   }, [

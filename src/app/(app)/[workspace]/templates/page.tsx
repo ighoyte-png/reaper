@@ -20,6 +20,7 @@ export default function TemplatesPage() {
     isPublicShare,
     newId,
     upsertProjectTemplate,
+    ensureOrgTemplates,
   } = useData();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
@@ -29,7 +30,11 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     if (!canManage && !isPublicShare) router.replace(appHref("/dashboard"));
-  }, [canManage, isPublicShare, router]);
+  }, [canManage, isPublicShare, router, appHref]);
+
+  useEffect(() => {
+    if (canManage || isPublicShare) void ensureOrgTemplates();
+  }, [canManage, isPublicShare, ensureOrgTemplates]);
 
   if (!canManage && !isPublicShare) {
     return (

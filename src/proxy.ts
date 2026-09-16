@@ -62,6 +62,11 @@ function skipSessionRefresh(pathname: string): boolean {
   }
   // Public share APIs authenticate via token in the route, not cookies.
   if (pathname.startsWith("/api/share/")) return true;
+  // Cron / secret-header drains authenticate themselves; skip cookie refresh.
+  if (pathname.startsWith("/api/addons/clickup/process-")) return true;
+  if (pathname.startsWith("/api/addons/clickup/webhook")) return true;
+  if (pathname.startsWith("/api/addons/clickup/ingest")) return true;
+  if (pathname.startsWith("/api/cron/")) return true;
   return false;
 }
 

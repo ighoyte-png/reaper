@@ -60,9 +60,9 @@ export async function POST(request: Request) {
       payload,
     });
 
-    // Best-effort drain so edits appear without waiting for the client poller.
+    // Best-effort drain so edits appear without waiting for the 2-min cron.
     void processInbound(admin, settings.organization_id, 10).catch(() => {
-      /* poller will retry */
+      /* cron will retry */
     });
 
     return NextResponse.json({ ok: true });

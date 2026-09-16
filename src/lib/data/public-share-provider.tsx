@@ -277,6 +277,7 @@ export function PublicShareProvider({
       }),
       ensureProjectData: async () => {},
       ensureBoundAssignmentTasks: async () => {},
+      ensureOrgTemplates: async () => {},
       ensureScheduleRange: async () => {},
       setActiveRealtimeProjectIds: () => {},
       fetchProjectBudgetBurnsRpc: async () => null,

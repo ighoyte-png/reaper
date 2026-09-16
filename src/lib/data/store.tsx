@@ -107,6 +107,8 @@ import {
   loadOrgTasks,
   loadOrgMilestones,
   loadOrgBootstrap,
+  loadOrgTemplatesBundle,
+  loadOrgAssignmentBoundTasks,
   loadProjectData,
   fetchMemberships,
   mapAssignment,
@@ -924,8 +926,10 @@ interface DataContextValue {
     assignments: import("@/lib/types").Assignment[];
   }>;
   ensureProjectData: (projectId: string) => Promise<void>;
-  /** Hydrate task rows referenced by assignment_bound_tasks (schedule tooltips). */
+  /** Hydrate assignment_bound_tasks (lazy) + task rows for schedule tooltips. */
   ensureBoundAssignmentTasks: () => Promise<void>;
+  /** Lazy-load project templates (+ children) for Templates UI. */
+  ensureOrgTemplates: () => Promise<void>;
   ensureScheduleRange: (
     startKey: string,
     endKey: string,
@@ -1040,6 +1044,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const notificationInboxInflight = useRef<Promise<void> | null>(null);
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
   const boundAssignmentTasksInflight = useRef<Promise<void> | null>(null);
+  const boundTasksRowsLoadedRef = useRef(false);
+  const orgTemplatesInflight = useRef<Promise<void> | null>(null);
+  const orgTemplatesLoadedRef = useRef(false);
   const scheduleRangeInflight = useRef<Promise<{
     leaveDays: LeaveDay[];
     assignments: Assignment[];
@@ -1171,6 +1178,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           mentionTaskByIdRef.current = new Map();
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
+          boundTasksRowsLoadedRef.current = false;
+          orgTemplatesLoadedRef.current = false;
           setOrgTasksStatus("idle");
           setOrgMilestonesStatus("idle");
           setMentionCommentsStatus("idle");
@@ -1985,23 +1994,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [mode, ready, state.organization.id]);
 
-  // Heal gaps after sleep / background tab.
+  // Soft heal for notifications only when returning to the tab.
+  // Full project catch-up runs on channel SUBSCRIBED (connect/reconnect), not
+  // on every focus — that was a large idle Supabase cost for 1–2 users.
   useEffect(() => {
     if (mode !== "supabase" || !ready) return;
     const onVisibility = () => {
       if (document.visibilityState !== "visible") return;
-      for (const projectId of activeRealtimeProjectIdsRef.current) {
-        void catchUpProjectRealtimeData(projectId);
-      }
       void refetchNotificationsRef.current?.();
     };
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("focus", onVisibility);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("focus", onVisibility);
     };
-  }, [mode, ready, catchUpProjectRealtimeData]);
+  }, [mode, ready]);
 
   useEffect(() => {
     if (!ready || mode !== "demo") return;
@@ -2625,6 +2631,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const organizationId = state.organization.id;
     if (!organizationId) return;
 
+    const client = supabaseRef.current ?? createClient();
+
+    if (!boundTasksRowsLoadedRef.current) {
+      if (boundAssignmentTasksInflight.current) {
+        await boundAssignmentTasksInflight.current;
+      } else {
+        const loadRows = (async () => {
+          try {
+            const rows = await loadOrgAssignmentBoundTasks(
+              client,
+              organizationId,
+            );
+            boundTasksRowsLoadedRef.current = true;
+            setState((prev) => ({
+              ...prev,
+              assignment_bound_tasks: rows,
+            }));
+          } catch (err) {
+            console.error(err);
+          } finally {
+            boundAssignmentTasksInflight.current = null;
+          }
+        })();
+        boundAssignmentTasksInflight.current = loadRows;
+        await loadRows;
+      }
+    }
+
     const missingTaskIds = () => {
       const known = new Set(stateRef.current.tasks.map((t) => t.id));
       return [
@@ -2645,7 +2679,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (missing.length === 0) return;
     }
 
-    const client = supabaseRef.current ?? createClient();
     const run = (async () => {
       try {
         const tasks = await loadMentionTasks(client, organizationId, missing);
@@ -2662,6 +2695,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     })();
     boundAssignmentTasksInflight.current = run;
+    await run;
+  }, [mode, state.organization.id]);
+
+  const ensureOrgTemplates = useCallback(async () => {
+    if (mode !== "supabase") return;
+    const organizationId = state.organization.id;
+    if (!organizationId) return;
+    if (orgTemplatesLoadedRef.current) return;
+    if (orgTemplatesInflight.current) {
+      await orgTemplatesInflight.current;
+      return;
+    }
+    const client = supabaseRef.current ?? createClient();
+    const run = (async () => {
+      try {
+        const bundle = await loadOrgTemplatesBundle(client, organizationId);
+        orgTemplatesLoadedRef.current = true;
+        setState((prev) => ({
+          ...prev,
+          project_templates: bundle.project_templates,
+          template_milestones: bundle.template_milestones,
+          template_task_lists: bundle.template_task_lists,
+          template_tasks: bundle.template_tasks,
+        }));
+      } catch (err) {
+        console.error(err);
+      } finally {
+        orgTemplatesInflight.current = null;
+      }
+    })();
+    orgTemplatesInflight.current = run;
     await run;
   }, [mode, state.organization.id]);
 
@@ -3112,6 +3176,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         mentionTaskByIdRef.current = new Map();
         projectReadyRef.current = new Set();
         scheduleRangeLoadedRef.current = null;
+        boundTasksRowsLoadedRef.current = false;
+        orgTemplatesLoadedRef.current = false;
         setOrgTasksStatus("idle");
         setOrgMilestonesStatus("idle");
         setMentionCommentsStatus("idle");
@@ -3242,6 +3308,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureMentionComments,
       ensureProjectData,
       ensureBoundAssignmentTasks,
+      ensureOrgTemplates,
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       fetchProjectBudgetBurnsRpc,
@@ -3402,6 +3469,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           mentionTaskByIdRef.current = new Map();
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
+          boundTasksRowsLoadedRef.current = false;
+          orgTemplatesLoadedRef.current = false;
           setOrgTasksStatus("idle");
           setOrgMilestonesStatus("idle");
           setMentionCommentsStatus("idle");
@@ -6924,6 +6993,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ensureMentionComments,
       ensureProjectData,
       ensureBoundAssignmentTasks,
+      ensureOrgTemplates,
       ensureScheduleRange,
       setActiveRealtimeProjectIds,
       sendOrgBroadcast,

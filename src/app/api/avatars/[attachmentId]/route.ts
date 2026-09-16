@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { getStorageProvider, isR2Configured } from "@/lib/storage";
+import { DEFAULT_SIGNED_URL_TTL } from "@/lib/storage/config";
 
 type Ctx = { params: Promise<{ attachmentId: string }> };
 
 /**
- * Stable avatar bytes URL. Attachment id changes on every upload, so browsers
- * may cache forever (`immutable`) until the person gets a new attachment id.
- * Public for profile_picture only (UUID is unguessable; avatars are shown in
- * share portals without a session).
+ * Stable avatar URL by attachment id. Redirects to a short-lived R2 signed URL
+ * so Vercel does not stream image bytes (Fluid CPU). Attachment id changes on
+ * every upload, so clients can keep using `/api/avatars/{id}` as a stable href.
+ * Public for profile_picture only (UUID is unguessable; used on share portals).
  */
 export async function GET(_request: Request, ctx: Ctx) {
   if (!isR2Configured() || !isServiceRoleConfigured()) {
@@ -39,23 +40,20 @@ export async function GET(_request: Request, ctx: Ctx) {
 
   try {
     const storage = getStorageProvider();
-    const obj = await storage.getObject(String(row.storage_key));
-    const headers = new Headers();
-    headers.set(
-      "Content-Type",
-      obj.contentType || String(row.mime_type || "image/jpeg"),
+    const signed = await storage.createSignedDownloadUrl(
+      String(row.storage_key),
     );
-    headers.set(
-      "Cache-Control",
-      "public, max-age=31536000, immutable",
-    );
-    headers.set("ETag", `"${attachmentId}"`);
-    if (typeof obj.contentLength === "number") {
-      headers.set("Content-Length", String(obj.contentLength));
-    }
-    return new NextResponse(obj.body, { status: 200, headers });
+    // Cache the redirect under the signed URL TTL so repeat img loads skip
+    // the Function until the signature is near expiry.
+    const maxAge = Math.max(60, Math.floor(DEFAULT_SIGNED_URL_TTL * 0.8));
+    return NextResponse.redirect(signed, {
+      status: 302,
+      headers: {
+        "Cache-Control": `public, max-age=${maxAge}`,
+      },
+    });
   } catch (err) {
-    console.warn("Avatar stream failed", err);
+    console.warn("Avatar redirect failed", err);
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 }

@@ -69,7 +69,12 @@ export async function GET(request: Request, ctx: Ctx) {
   const signed = await storage.createSignedDownloadUrl(row.storage_key);
 
   if (!wantJson) {
-    return NextResponse.redirect(signed, { status: 302 });
+    // Cache redirect so notes with many custom emoji glyphs don't re-auth
+    // on every paint within the signed URL window.
+    const maxAge = 3000;
+    const res = NextResponse.redirect(signed, { status: 302 });
+    res.headers.set("Cache-Control", `private, max-age=${maxAge}`);
+    return res;
   }
 
   return NextResponse.json({

@@ -3,7 +3,7 @@ import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { loadOrgWorkspace } from "@/lib/supabase/api";
 import { sanitizePublicWorkspace } from "@/lib/share/sanitize";
-import { resolveAvatarUrl } from "@/lib/supabase/avatar";
+import { avatarContentPath } from "@/lib/storage/avatar-url";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -62,12 +62,14 @@ export async function GET(_request: Request, { params }: Params) {
 
     const workspace = await loadOrgWorkspace(admin, org.id, null);
     const sanitized = sanitizePublicWorkspace(workspace);
-    sanitized.people = await Promise.all(
-      sanitized.people.map(async (p) => ({
-        ...p,
-        avatar_url: await resolveAvatarUrl(admin, p.avatar_url),
-      })),
-    );
+    // Prefer stable /api/avatars/{id} paths — no per-person signed URL work here.
+    sanitized.people = sanitized.people.map((p) => {
+      const attachmentId = p.avatar_attachment_id?.trim();
+      if (attachmentId) {
+        return { ...p, avatar_url: avatarContentPath(attachmentId) };
+      }
+      return p;
+    });
 
     return NextResponse.json(
       { workspace: sanitized },

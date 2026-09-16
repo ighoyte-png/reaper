@@ -62,15 +62,6 @@ export function ClickUpProjectSyncToggle({
     void refresh().catch(() => setLoaded(true));
   }, [refresh]);
 
-  // Poll outbox while sync is on
-  useEffect(() => {
-    if (!sync?.enabled) return;
-    const id = window.setInterval(() => {
-      void fetch("/api/addons/clickup/process-outbox", { method: "POST" });
-    }, 4000);
-    return () => window.clearInterval(id);
-  }, [sync?.enabled]);
-
   if (!loaded || !addonEnabled || sandboxMode) return null;
 
   async function enableSync() {
@@ -96,6 +87,7 @@ export function ClickUpProjectSyncToggle({
       setSync(json.sync);
       setSummary(json.summary ?? null);
       push("ClickUp sync enabled — reconcile finished", "success");
+      void fetch("/api/addons/clickup/process-outbox", { method: "POST" });
     } catch (e) {
       push(e instanceof Error ? e.message : "Failed", "warning");
     } finally {

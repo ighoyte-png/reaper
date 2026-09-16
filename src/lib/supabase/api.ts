@@ -38,6 +38,12 @@ import type {
   TemplateTask,
   TemplateTaskList,
 } from "@/lib/types";
+import { requestClickUpOutboxDrain } from "@/addons/clickup/request-drain";
+
+/** After DB triggers may enqueue ClickUp outbox — best-effort client drain. */
+function afterClickUpEnqueue() {
+  requestClickUpOutboxDrain();
+}
 import type { SearchHit } from "@/lib/search";
 import { mentionUnreadSyncPlan } from "@/lib/mentions";
 import {
@@ -1023,7 +1029,7 @@ export async function fetchWorkspace(
   return { ...workspace, memberships };
 }
 
-/** Thin shell: org, people, clients, projects, templates — no tasks/assignments. */
+/** Thin shell: org, people, clients, projects — no tasks/assignments/templates. */
 export async function loadOrgBootstrap(
   supabase: SupabaseClient,
   orgId: string,
@@ -1048,11 +1054,6 @@ export async function loadOrgBootstrap(
     podsRes,
     podMembersRes,
     organizationEmojisRes,
-    projectTemplatesRes,
-    templateMilestonesRes,
-    templateTaskListsRes,
-    templateTasksRes,
-    assignmentBoundTasksRes,
   ] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", orgId).single(),
     supabase
@@ -1118,24 +1119,6 @@ export async function loadOrgBootstrap(
       .select("*")
       .eq("organization_id", orgId)
       .order("name", { ascending: true }),
-    supabase
-      .from("project_templates")
-      .select("*")
-      .eq("organization_id", orgId),
-    supabase
-      .from("template_milestones")
-      .select("*")
-      .eq("organization_id", orgId),
-    supabase
-      .from("template_task_lists")
-      .select("*")
-      .eq("organization_id", orgId),
-    supabase.from("template_tasks").select("*").eq("organization_id", orgId),
-    supabase
-      .from("assignment_bound_tasks")
-      .select("*")
-      .eq("organization_id", orgId)
-      .order("sort_order", { ascending: true }),
   ]);
 
   for (const res of [orgRes, membershipsRes, clientsRes, projectsRes, peopleRes]) {
@@ -1181,25 +1164,13 @@ export async function loadOrgBootstrap(
         mapProjectMember(row as Record<string, unknown>),
       );
 
-  let assignment_bound_tasks: AssignmentBoundTask[] = [];
-  if (assignmentBoundTasksRes.error) {
-    if (
-      missingAssignmentBoundTasksTable(
-        assignmentBoundTasksRes.error.message,
-        assignmentBoundTasksRes.error.code,
-      )
-    ) {
-      console.warn(
-        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
-      );
-    } else {
-      throw assignmentBoundTasksRes.error;
-    }
-  } else {
-    assignment_bound_tasks = (assignmentBoundTasksRes.data ?? []).map((row) =>
-      mapAssignmentBoundTask(row as Record<string, unknown>),
-    );
-  }
+  // Templates + assignment_bound_tasks load on demand (see loadOrgTemplatesBundle /
+  // loadOrgAssignmentBoundTasks) — not on every session boot.
+  const assignment_bound_tasks: AssignmentBoundTask[] = [];
+  const project_templates: ProjectTemplate[] = [];
+  const template_milestones: TemplateMilestone[] = [];
+  const template_task_lists: TemplateTaskList[] = [];
+  const template_tasks: TemplateTask[] = [];
 
   let project_contractor_expenses: ProjectContractorExpense[] = [];
   if (contractorExpensesRes.error) {
@@ -1516,26 +1487,6 @@ export async function loadOrgBootstrap(
       mapOrganizationEmoji(row as Record<string, unknown>),
     );
   }
-  const project_templates: ProjectTemplate[] = projectTemplatesRes.error
-    ? []
-    : (projectTemplatesRes.data ?? []).map((row) =>
-        mapProjectTemplate(row as Record<string, unknown>),
-      );
-  const template_milestones: TemplateMilestone[] = templateMilestonesRes.error
-    ? []
-    : (templateMilestonesRes.data ?? []).map((row) =>
-        mapTemplateMilestone(row as Record<string, unknown>),
-      );
-  const template_task_lists: TemplateTaskList[] = templateTaskListsRes.error
-    ? []
-    : (templateTaskListsRes.data ?? []).map((row) =>
-        mapTemplateTaskList(row as Record<string, unknown>),
-      );
-  const template_tasks: TemplateTask[] = templateTasksRes.error
-    ? []
-    : (templateTasksRes.data ?? []).map((row) =>
-        mapTemplateTask(row as Record<string, unknown>),
-      );
 
   const organization = orgRes.data as Organization;
   const organization_settings = normalizeOrgBudgetSettings(
@@ -1610,6 +1561,82 @@ export async function loadOrgBootstrap(
     sessionProfileId,
     memberships: [],
   };
+}
+
+/** Lazy-load project templates (+ children) when Templates UI needs them. */
+export async function loadOrgTemplatesBundle(
+  supabase: SupabaseClient,
+  orgId: string,
+): Promise<{
+  project_templates: ProjectTemplate[];
+  template_milestones: TemplateMilestone[];
+  template_task_lists: TemplateTaskList[];
+  template_tasks: TemplateTask[];
+}> {
+  const [
+    projectTemplatesRes,
+    templateMilestonesRes,
+    templateTaskListsRes,
+    templateTasksRes,
+  ] = await Promise.all([
+    supabase.from("project_templates").select("*").eq("organization_id", orgId),
+    supabase
+      .from("template_milestones")
+      .select("*")
+      .eq("organization_id", orgId),
+    supabase
+      .from("template_task_lists")
+      .select("*")
+      .eq("organization_id", orgId),
+    supabase.from("template_tasks").select("*").eq("organization_id", orgId),
+  ]);
+
+  return {
+    project_templates: projectTemplatesRes.error
+      ? []
+      : (projectTemplatesRes.data ?? []).map((row) =>
+          mapProjectTemplate(row as Record<string, unknown>),
+        ),
+    template_milestones: templateMilestonesRes.error
+      ? []
+      : (templateMilestonesRes.data ?? []).map((row) =>
+          mapTemplateMilestone(row as Record<string, unknown>),
+        ),
+    template_task_lists: templateTaskListsRes.error
+      ? []
+      : (templateTaskListsRes.data ?? []).map((row) =>
+          mapTemplateTaskList(row as Record<string, unknown>),
+        ),
+    template_tasks: templateTasksRes.error
+      ? []
+      : (templateTasksRes.data ?? []).map((row) =>
+          mapTemplateTask(row as Record<string, unknown>),
+        ),
+  };
+}
+
+/** Lazy-load assignment↔task binds when Schedule needs them. */
+export async function loadOrgAssignmentBoundTasks(
+  supabase: SupabaseClient,
+  orgId: string,
+): Promise<AssignmentBoundTask[]> {
+  const { data, error } = await supabase
+    .from("assignment_bound_tasks")
+    .select("*")
+    .eq("organization_id", orgId)
+    .order("sort_order", { ascending: true });
+  if (error) {
+    if (missingAssignmentBoundTasksTable(error.message, error.code)) {
+      console.warn(
+        "assignment_bound_tasks missing — apply supabase/migrations/104_assignment_bound_tasks.sql",
+      );
+      return [];
+    }
+    throw error;
+  }
+  return (data ?? []).map((row) =>
+    mapAssignmentBoundTask(row as Record<string, unknown>),
+  );
 }
 
 /** Org tasks for dashboard pulse / tasks report (optional person / open filters). */
@@ -2439,14 +2466,14 @@ export async function loadOrgWorkspace(
     rangeStart ??
     (() => {
       const d = new Date();
-      d.setUTCDate(d.getUTCDate() - 12 * 7);
+      d.setUTCDate(d.getUTCDate() - 4 * 7);
       return d.toISOString().slice(0, 10);
     })();
   const end =
     rangeEnd ??
     (() => {
       const d = new Date();
-      d.setUTCDate(d.getUTCDate() + 52 * 7);
+      d.setUTCDate(d.getUTCDate() + 12 * 7);
       return d.toISOString().slice(0, 10);
     })();
 
@@ -2733,7 +2760,10 @@ export async function upsertClientRow(
   };
 
   let { error } = await supabase.from("clients").upsert(withContact);
-  if (!error) return;
+  if (!error) {
+    afterClickUpEnqueue();
+    return;
+  }
 
   const missingContact =
     /Could not find the 'contact_/i.test(error.message) ||
@@ -2756,7 +2786,10 @@ export async function upsertClientRow(
       "clients contact columns missing — apply supabase/migrations/048_client_contact.sql",
     );
     ({ error } = await supabase.from("clients").upsert(withHide));
-    if (!error) return;
+    if (!error) {
+      afterClickUpEnqueue();
+      return;
+    }
   }
 
   if (missingHide) {
@@ -2764,7 +2797,10 @@ export async function upsertClientRow(
       "clients.hide_from_public_share missing — apply supabase/migrations/043_client_hide_from_public_share.sql",
     );
     ({ error } = await supabase.from("clients").upsert(withStatus));
-    if (!error) return;
+    if (!error) {
+      afterClickUpEnqueue();
+      return;
+    }
   }
 
   if (missingSlug || missingStatus) {
@@ -2779,7 +2815,10 @@ export async function upsertClientRow(
         : { ...base, status: client.status ?? "active" }
       : withSlug;
     ({ error } = await supabase.from("clients").upsert(payload));
-    if (!error) return;
+    if (!error) {
+      afterClickUpEnqueue();
+      return;
+    }
   }
   throw error;
 }
@@ -2787,6 +2826,7 @@ export async function upsertClientRow(
 export async function deleteClientRow(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("clients").delete().eq("id", id);
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function upsertProjectRow(
@@ -2881,6 +2921,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects.assignment_time_reporting missing — apply supabase/migrations/113_assignment_time_reporting.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -2894,6 +2935,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects.sandbox_mode missing — apply supabase/migrations/071_project_sandbox_mode.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -2907,6 +2949,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects.hide_from_public_share missing — apply supabase/migrations/042_project_hide_from_public_share.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -2920,6 +2963,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects.slug missing — apply supabase/migrations/037_slugs.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -2933,6 +2977,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects.manager_person_id missing — apply supabase/migrations/034_project_manager.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -2946,6 +2991,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects.share_enabled/share_token missing — apply supabase/migrations/015_pm_execution.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -2966,6 +3012,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects.budget_monthly_reset missing — apply supabase/migrations/010_budget_monthly_reset_fix.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -2980,11 +3027,11 @@ export async function upsertProjectRow(
     if (!payload.budget_monthly_reset) {
       const { budget_monthly_reset: _m, ...rest } = retryPayload;
       const retry = await supabase.from("projects").upsert(rest);
-      if (!retry.error) return;
+      if (!retry.error) { afterClickUpEnqueue(); return; }
       error = retry.error;
     } else {
       const retry = await supabase.from("projects").upsert(retryPayload);
-      if (!retry.error) return;
+      if (!retry.error) { afterClickUpEnqueue(); return; }
       error = retry.error;
     }
   }
@@ -3016,6 +3063,7 @@ export async function upsertProjectRow(
       console.warn(
         "projects budget columns partially migrated — apply supabase/migrations/010_budget_monthly_reset_fix.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     error = retry.error;
@@ -3028,11 +3076,13 @@ export async function upsertProjectRow(
   }
 
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function deleteProjectRow(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("projects").delete().eq("id", id);
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function upsertProjectFavoriteRow(
@@ -3635,7 +3685,7 @@ export async function upsertMilestoneRow(
     approved_by_client: Boolean(milestone.approved_by_client),
   };
   const { error } = await supabase.from("milestones").upsert(payload);
-  if (!error) return;
+  if (!error) { afterClickUpEnqueue(); return; }
 
   const missingApproved =
     /Could not find the 'client_approved' column/i.test(error.message) ||
@@ -3692,6 +3742,7 @@ export async function upsertMilestoneRow(
           "milestones approval columns missing — apply supabase/migrations/062_milestone_client_approval.sql",
         );
       }
+      afterClickUpEnqueue();
       return;
     }
     throw retry.error;
@@ -3705,6 +3756,7 @@ export async function deleteMilestoneRow(
 ) {
   const { error } = await supabase.from("milestones").delete().eq("id", id);
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function upsertLeaveRow(
@@ -3980,11 +4032,13 @@ export async function upsertTaskListRow(
     }
   }
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function deleteTaskListRow(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("task_lists").delete().eq("id", id);
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function moveTaskListRow(
@@ -3996,7 +4050,10 @@ export async function moveTaskListRow(
     p_list_id: listId,
     p_target_project_id: targetProjectId,
   });
-  if (!error) return;
+  if (!error) {
+    afterClickUpEnqueue();
+    return;
+  }
   if (
     /function .*move_task_list.* does not exist/i.test(error.message) ||
     error.code === "42883"
@@ -4057,6 +4114,7 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
       console.warn(
         "tasks.is_client_review missing — apply supabase/migrations/074_task_client_review.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     if (retry.error) throw retry.error;
@@ -4074,12 +4132,14 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
       console.warn(
         "tasks.assignee_notified_at missing — apply supabase/migrations/105_task_assigned_notify.sql",
       );
+      afterClickUpEnqueue();
       return;
     }
     if (retry.error) throw retry.error;
   } else if (updateError) {
     throw updateError;
   } else if (data && data.length > 0) {
+    afterClickUpEnqueue();
     return;
   }
 
@@ -4123,11 +4183,13 @@ export async function upsertTaskRow(supabase: SupabaseClient, task: Task) {
     }
   }
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function deleteTaskRow(supabase: SupabaseClient, id: string) {
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function upsertTaskCommentRow(
@@ -4209,6 +4271,7 @@ export async function upsertTaskCommentRow(
       .from("mention_unreads")
       .delete()
       .eq("comment_id", comment.id);
+    afterClickUpEnqueue();
     return;
   }
 
@@ -4226,6 +4289,7 @@ export async function upsertTaskCommentRow(
     console.warn(
       "mention_unreads missing — apply supabase/migrations/044_notification_unreads.sql",
     );
+    afterClickUpEnqueue();
     return;
   }
   if (existingRes.error) throw existingRes.error;
@@ -4259,6 +4323,7 @@ export async function upsertTaskCommentRow(
       );
     if (addUnreadErr) throw addUnreadErr;
   }
+  afterClickUpEnqueue();
 }
 
 export async function deleteTaskCommentRow(
@@ -4267,6 +4332,7 @@ export async function deleteTaskCommentRow(
 ) {
   const { error } = await supabase.from("task_comments").delete().eq("id", id);
   if (error) throw error;
+  afterClickUpEnqueue();
 }
 
 export async function toggleTaskCommentReactionRow(
