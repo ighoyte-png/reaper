@@ -1045,13 +1045,18 @@ export function ScheduleGrid() {
   }, [sidebarPanelTab, showProductionHoursTab]);
 
   const activeAssignmentId = editForm?.id ?? selected?.id ?? null;
-  const boundTaskIdsForActive = useMemo(() => {
-    if (!activeAssignmentId) return [] as string[];
+  const boundTaskIdsKey = useMemo(() => {
+    if (!activeAssignmentId) return "";
     return state.assignment_bound_tasks
       .filter((r) => r.assignment_id === activeAssignmentId)
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map((r) => r.task_id);
+      .sort((a, b) => a.sort_order - b.sort_order || a.task_id.localeCompare(b.task_id))
+      .map((r) => r.task_id)
+      .join(",");
   }, [state.assignment_bound_tasks, activeAssignmentId]);
+  const boundTaskIdsForActive = useMemo(
+    () => (boundTaskIdsKey ? boundTaskIdsKey.split(",") : []),
+    [boundTaskIdsKey],
+  );
 
   useEffect(() => {
     if (pendingCreate && activeAssignmentId === pendingCreate.id) {
@@ -1062,12 +1067,7 @@ export function ScheduleGrid() {
       // Weekly bind split selected a new assignment id; keep draft + confirm.
       return;
     }
-    const ids = !activeAssignmentId
-      ? []
-      : state.assignment_bound_tasks
-          .filter((r) => r.assignment_id === activeAssignmentId)
-          .sort((a, b) => a.sort_order - b.sort_order)
-          .map((r) => r.task_id);
+    const ids = boundTaskIdsForActive;
     setBindToAssignment(ids.length > 0);
     setBindEditingSelection(false);
     setBindDraftIds(new Set(ids));
@@ -1075,6 +1075,25 @@ export function ScheduleGrid() {
     // Reset bind chrome when the selected assignment changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- assignment switch only
   }, [activeAssignmentId, pendingCreate?.id]);
+
+  // Binds often hydrate after the assignment is already selected. Re-sync the
+  // Tasks-tab bind chrome without clobbering an in-progress selection edit.
+  useEffect(() => {
+    if (!activeAssignmentId) return;
+    if (pendingCreate && activeAssignmentId === pendingCreate.id) return;
+    if (suppressBindChromeResetRef.current) return;
+    if (bindEditingSelection || bindConfirm) return;
+    const ids = boundTaskIdsForActive;
+    setBindToAssignment(ids.length > 0);
+    setBindDraftIds(new Set(ids));
+  }, [
+    boundTaskIdsKey,
+    boundTaskIdsForActive,
+    activeAssignmentId,
+    pendingCreate?.id,
+    bindEditingSelection,
+    bindConfirm,
+  ]);
 
   function clearBindConfirm() {
     suppressBindChromeResetRef.current = false;
@@ -2628,10 +2647,12 @@ export function ScheduleGrid() {
     if (id) {
       setSelectedLeaveBlockId(null);
       setLeaveEditForm(null);
-      const hasBoundTasks = state.assignment_bound_tasks.some(
-        (r) => r.assignment_id === id,
-      );
+      const assignment = state.assignments.find((a) => a.id === id);
+      const hasBoundTasks =
+        state.assignment_bound_tasks.some((r) => r.assignment_id === id) ||
+        isBoundTasksNotes(assignment?.notes);
       if (hasBoundTasks && id !== selectedId) setSidebarPanelTab("tasks");
+      if (hasBoundTasks) void ensureBoundAssignmentTasks();
     }
     if (id) {
       if (isNarrow) openMobilePanel();
@@ -2714,9 +2735,9 @@ export function ScheduleGrid() {
       setSidebarPanelTab("edit");
     } else {
       // No explicit tab: Tasks when bound, otherwise Edit.
-      const hasBound = state.assignment_bound_tasks.some(
-        (r) => r.assignment_id === a.id,
-      );
+      const hasBound =
+        state.assignment_bound_tasks.some((r) => r.assignment_id === a.id) ||
+        isBoundTasksNotes(a.notes);
       setSidebarPanelTab(hasBound ? "tasks" : "edit");
     }
     scrollScheduleToDateKey(targetDate);

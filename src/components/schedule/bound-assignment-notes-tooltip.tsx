@@ -37,17 +37,7 @@ export function BoundAssignmentNotesTooltip({
     const binds = state.assignment_bound_tasks
       .filter((r) => r.assignment_id === assignmentId)
       .sort((a, b) => a.sort_order - b.sort_order);
-    const bindIds = binds.map((r) => r.task_id);
-    const allTasksLoaded = bindIds.every((id) =>
-      state.tasks.some((t) => t.id === id),
-    );
-    const orderedIds = allTasksLoaded
-      ? sortBoundTaskIdsByListOrder(
-          bindIds,
-          state.tasks,
-          state.task_lists,
-        )
-      : bindIds;
+    const bindIds = binds.map((b) => b.task_id);
     const parsedTitles = parseBoundTasksNotesTitles(
       notesHtml ?? assignment?.notes,
     );
@@ -60,10 +50,36 @@ export function BoundAssignmentNotesTooltip({
           assignmentId,
         )
       : false;
+    const headingText = oos
+      ? "Task Dates out of Sync"
+      : "Tasks Bound to Assignment";
+
+    // Binds may still be hydrating on first schedule paint — fall back to
+    // titles embedded in the assignment notes so the hover isn't blank.
+    if (bindIds.length === 0) {
+      return {
+        heading: headingText,
+        rows: parsedTitles.map((title, index) => ({
+          taskId: `notes-fallback:${index}`,
+          title,
+          linkable: false,
+        })),
+        project: projectRow ?? null,
+      };
+    }
+
+    const allTasksLoaded = bindIds.every((id) =>
+      state.tasks.some((t) => t.id === id),
+    );
+    const orderedIds = allTasksLoaded
+      ? sortBoundTaskIdsByListOrder(
+          bindIds,
+          state.tasks,
+          state.task_lists,
+        )
+      : bindIds;
     return {
-      heading: oos
-        ? "Task Dates out of Sync"
-        : "Tasks Bound to Assignment",
+      heading: headingText,
       rows: orderedIds.map((taskId, index) => {
         const task = state.tasks.find((t) => t.id === taskId);
         const title =
@@ -71,7 +87,7 @@ export function BoundAssignmentNotesTooltip({
           parsedTitles[index]?.trim() ||
           parsedTitles.find((_, i) => bindIds[i] === taskId)?.trim() ||
           "Task";
-        return { taskId, title };
+        return { taskId, title, linkable: true };
       }),
       project: projectRow ?? null,
     };
@@ -101,8 +117,8 @@ export function BoundAssignmentNotesTooltip({
         <strong>{heading}</strong>
       </p>
       <ul>
-        {rows.map(({ taskId, title }) => {
-          if (project) {
+        {rows.map(({ taskId, title, linkable }) => {
+          if (linkable && project) {
             return (
               <li key={taskId}>
                 <Link
