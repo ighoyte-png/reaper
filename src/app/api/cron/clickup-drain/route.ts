@@ -114,11 +114,20 @@ async function drainAll() {
   } = { checked: 0, recreated: 0, errors: [] };
   const origin = siteOrigin();
   if (origin) {
-    webhookHeal = await healStaleSpaceWebhooks({
-      admin,
-      origin,
-      maxChecks: 2,
-    });
+    try {
+      webhookHeal = await healStaleSpaceWebhooks({
+        admin,
+        origin,
+        maxChecks: 2,
+      });
+    } catch (e) {
+      // Don't fail the queue drain if migration 119 isn't applied yet, etc.
+      webhookHeal = {
+        checked: 0,
+        recreated: 0,
+        errors: [e instanceof Error ? e.message : String(e)],
+      };
+    }
   } else {
     webhookHeal = {
       checked: 0,
