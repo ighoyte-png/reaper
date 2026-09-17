@@ -967,7 +967,20 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
     return {
       manager,
       staff: staff.sort((a, b) => a.name.localeCompare(b.name)),
-      contractors: contractors.sort((a, b) => a.name.localeCompare(b.name)),
+      contractors: contractors
+        .map((row) => {
+          if (row.nativeCurrency || !currencyEnabled) return row;
+          const person = state.people.find(
+            (p) => p.id === (row.personId ?? row.id),
+          );
+          return {
+            ...row,
+            nativeCurrency: person
+              ? personCurrency(person, true)
+              : undefined,
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name)),
     };
   }, [
     project,
