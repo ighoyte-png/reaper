@@ -291,4 +291,61 @@ describe("assignment time report", () => {
     expect(body[2]!.hours).toBe(2);
     expect(section.pmHours).toBe(2);
   });
+
+  it("lets contractor expense hours trump schedule time for the same person-month", () => {
+    const project = makeProject();
+    const people = [
+      makePerson("pm", "Pat Manager"),
+      {
+        ...makePerson("c1", "Casey"),
+        is_contractor: true,
+        hide_from_utilization: true,
+        cost_rate: 100,
+      },
+    ];
+    const assignments = [
+      makeAssignment({
+        id: "a-c",
+        person_id: "c1",
+        start_date: "2026-03-02",
+        end_date: "2026-03-06",
+        hours_per_day: 8,
+      }),
+    ];
+    const sections = buildAssignmentTimeReport({
+      project,
+      assignments,
+      boundTasks: [],
+      tasks: [],
+      people,
+      contractorExpenses: [
+        {
+          id: "e1",
+          organization_id: "org",
+          project_id: "proj",
+          person_id: "c1",
+          month_key: "2026-03-01",
+          amount: 0,
+          hours: 12,
+          notes: "Fixed block",
+          repeat_monthly: false,
+          repeat_end_month: null,
+          created_at: "",
+          updated_at: "",
+          created_by_profile_id: null,
+        },
+      ],
+      todayKey: "2026-03-15",
+      months: [{ year: 2026, monthIndex: 2 }],
+    });
+
+    const section = sections[0]!;
+    const body = section.rows.filter(
+      (r) => r.kind === "assignment" || r.kind === "contractor",
+    );
+    expect(body).toHaveLength(1);
+    expect(body[0]!.kind).toBe("contractor");
+    expect(body[0]!.hours).toBe(12);
+    expect(section.totalHours).toBe(12);
+  });
 });

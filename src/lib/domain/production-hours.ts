@@ -9,6 +9,7 @@ import type {
 } from "@/lib/types";
 import {
   contractorExpenseTotalsInRange,
+  contractorUsesScheduleBurnInMonth,
   hoursCommitmentTotalInRange,
   isMonthlyRetainerBudget,
   normalizeBudgetMode,
@@ -29,6 +30,7 @@ import {
   targetCostPct,
 } from "@/lib/domain/org-settings";
 import { toDateKey } from "@/lib/domain/dates";
+import { format } from "date-fns";
 
 export type ProductionHoursHealth = "healthy" | "near" | "over" | "none";
 
@@ -82,11 +84,36 @@ export function productionHoursEstimate(
     rosterIds.add(a.person_id);
   }
 
+  const monthly = isMonthlyRetainerBudget(project);
+  let rangeStart = "1970-01-01";
+  let rangeEnd = "2099-12-31";
+  if (monthly) {
+    rangeStart = toDateKey(startOfMonth(asOf));
+    rangeEnd = toDateKey(endOfMonth(asOf));
+  }
+  const asOfMonth = format(asOf, "yyyy-MM");
+
+  function burnsViaCommit(person: Person, member: ProjectMember | undefined) {
+    return (
+      isCommitContractor(person, member) &&
+      !contractorUsesScheduleBurnInMonth(
+        person,
+        member,
+        project,
+        expenses,
+        people,
+        asOfMonth,
+        asOf,
+        settings,
+      )
+    );
+  }
+
   const teamRatePeople: Person[] = [];
   for (const personId of rosterIds) {
     const person = byId.get(personId);
     if (!person || person.deleted_at) continue;
-    if (isCommitContractor(person, membersByPerson.get(personId))) continue;
+    if (burnsViaCommit(person, membersByPerson.get(personId))) continue;
     teamRatePeople.push(person);
   }
 
@@ -119,14 +146,6 @@ export function productionHoursEstimate(
       0,
     ) / teamRatePeople.length;
 
-  const monthly = isMonthlyRetainerBudget(project);
-  let rangeStart = "1970-01-01";
-  let rangeEnd = "2099-12-31";
-  if (monthly) {
-    rangeStart = toDateKey(startOfMonth(asOf));
-    rangeEnd = toDateKey(endOfMonth(asOf));
-  }
-
   let contractorAmount = 0;
   let contractorHoursEquiv = 0;
   if (monthly) {
@@ -145,7 +164,7 @@ export function productionHoursEstimate(
       const person = byId.get(personId);
       if (!person) continue;
       const member = membersByPerson.get(personId);
-      if (!isCommitContractor(person, member)) continue;
+      if (!burnsViaCommit(person, member)) continue;
       if ((member?.contractor_mode ?? "") !== "hours") continue;
       const leftover = member?.contractor_hours ?? 0;
       if (leftover <= 0) continue;
@@ -164,7 +183,7 @@ export function productionHoursEstimate(
       const person = byId.get(personId);
       if (!person) continue;
       const member = membersByPerson.get(personId);
-      if (!isCommitContractor(person, member)) continue;
+      if (!burnsViaCommit(person, member)) continue;
       const committed = contractorCommitted(person, member, { settings });
       contractorAmount +=
         committed.mode === "hours"
@@ -187,7 +206,7 @@ export function productionHoursEstimate(
   for (const personId of rosterIds) {
     const person = byId.get(personId);
     if (!person) continue;
-    if (isCommitContractor(person, membersByPerson.get(personId))) continue;
+    if (burnsViaCommit(person, membersByPerson.get(personId))) continue;
     const split = personHoursSplitInRange(
       personId,
       project.id,

@@ -176,7 +176,29 @@ export function buildAssignmentTimeReport(
     const assignmentRows: AssignmentTimeRow[] = [];
     const contractorRows: AssignmentTimeRow[] = [];
     let pmHours = 0;
-    const scheduledPersonIds = new Set<string>();
+    const expenseTrumpPersonIds = new Set<string>();
+
+    for (const expense of projectExpenses) {
+      if (!contractorExpenseAppliesInMonth(project, expense, monthKey)) {
+        continue;
+      }
+      const person = peopleById.get(expense.person_id);
+      const hours = contractorExpenseEntryHours(expense, person);
+      if (hours <= 0) continue;
+      expenseTrumpPersonIds.add(expense.person_id);
+      const note = expense.notes?.trim();
+      contractorRows.push({
+        id: `exp:${expense.id}:${monthKey}`,
+        kind: "contractor",
+        startDate: startKey,
+        endDate: endKey,
+        personId: expense.person_id,
+        personName: person?.name?.trim() || "Contractor",
+        taskLabels: note ? [note] : [],
+        status: assignmentTimeStatus(endKey, todayKey),
+        hours,
+      });
+    }
 
     for (const assignment of projectAssignments) {
       const titles = boundTaskTitlesForAssignment(
@@ -205,7 +227,8 @@ export function buildAssignmentTimeReport(
         );
         if (slice.hours <= 0) continue;
 
-        scheduledPersonIds.add(assignment.person_id);
+        // Dollars/Hours expense for this person-month trumps schedule time.
+        if (expenseTrumpPersonIds.has(assignment.person_id)) continue;
 
         if (isPmUnbound) {
           pmHours += slice.hours;
@@ -225,28 +248,6 @@ export function buildAssignmentTimeReport(
           hours: slice.hours,
         });
       }
-    }
-
-    for (const expense of projectExpenses) {
-      if (!contractorExpenseAppliesInMonth(project, expense, monthKey)) {
-        continue;
-      }
-      if (scheduledPersonIds.has(expense.person_id)) continue;
-      const person = peopleById.get(expense.person_id);
-      const hours = contractorExpenseEntryHours(expense, person);
-      if (hours <= 0) continue;
-      const note = expense.notes?.trim();
-      contractorRows.push({
-        id: `exp:${expense.id}:${monthKey}`,
-        kind: "contractor",
-        startDate: startKey,
-        endDate: endKey,
-        personId: expense.person_id,
-        personName: person?.name?.trim() || "Contractor",
-        taskLabels: note ? [note] : [],
-        status: assignmentTimeStatus(endKey, todayKey),
-        hours,
-      });
     }
 
     assignmentRows.sort((a, b) => {

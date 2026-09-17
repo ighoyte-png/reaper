@@ -9,6 +9,7 @@ import type {
 import {
   assignmentHours,
   contractorExpenseTotalsInRange,
+  contractorUsesScheduleBurnInMonth,
   eachMonthKeyInRange,
   hoursCommitmentTotalInRange,
   isMonthlyRetainerBudget,
@@ -30,6 +31,7 @@ import {
   DEFAULT_ORG_BUDGET_SETTINGS,
   effectiveProjectBillRate,
 } from "@/lib/domain/org-settings";
+import { format } from "date-fns";
 
 export interface ProjectForecast {
   projectId: string;
@@ -97,12 +99,29 @@ export function projectPeriodEconomics(
   }
   for (const m of membersByPerson.keys()) personIds.add(m);
 
+  const asOfMonth = format(asOf, "yyyy-MM");
+  function burnsViaCommit(person: Person, member: ProjectMember | undefined) {
+    return (
+      isCommitContractor(person, member) &&
+      !contractorUsesScheduleBurnInMonth(
+        person,
+        member,
+        project,
+        expenses,
+        people,
+        monthly ? asOfMonth : format(new Date(rangeStart), "yyyy-MM"),
+        asOf,
+        settings,
+      )
+    );
+  }
+
   let scheduleHours = 0;
   let scheduleCost = 0;
   for (const personId of personIds) {
     const person = byId.get(personId);
     if (!person) continue;
-    if (isCommitContractor(person, membersByPerson.get(personId))) continue;
+    if (burnsViaCommit(person, membersByPerson.get(personId))) continue;
     const split = personHoursSplitInRange(
       personId,
       project.id,
@@ -138,7 +157,7 @@ export function projectPeriodEconomics(
       const person = byId.get(personId);
       if (!person) continue;
       const member = membersByPerson.get(personId);
-      if (!isCommitContractor(person, member)) continue;
+      if (!burnsViaCommit(person, member)) continue;
       if ((member?.contractor_mode ?? "") !== "hours") continue;
       const leftover = member?.contractor_hours ?? 0;
       if (leftover <= 0) continue;
@@ -162,7 +181,7 @@ export function projectPeriodEconomics(
       const person = byId.get(personId);
       if (!person) continue;
       const member = membersByPerson.get(personId);
-      if (!isCommitContractor(person, member)) continue;
+      if (!burnsViaCommit(person, member)) continue;
       const committed = contractorCommitted(person, member, { settings });
       contractorHours += committed.hours;
       contractorCost +=

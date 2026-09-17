@@ -28,6 +28,7 @@ import {
   contractorExpenseLinesInRange,
   contractorExpenseAggregatesInRange,
   contractorExpenseSplitInRange,
+  isScheduleVisibleProjectContractor,
   eachMonthKeyInRange,
   formatHours,
   formatMoney,
@@ -669,9 +670,33 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
       const isFixedHours =
         mode === "hours" || (mode == null && person.hide_from_schedule);
       const isScheduled = mode === "scheduled" || (!isFixedFee && !isFixedHours);
+      const expenseBurnInPeriod =
+        (isFixedFee || isFixedHours) &&
+        contractorExpenseLinesInRange(
+          project,
+          projectExpenses,
+          state.people,
+          periodRange.start,
+          periodRange.end,
+          person.id,
+        ).some((line) => line.amount > 0 || line.hours > 0);
+      const hoursCommitInPeriod =
+        isFixedHours &&
+        hoursCommitmentTotalInRange(
+          project,
+          contractorCommitted(person, member).hours,
+          periodRange.start,
+          periodRange.end,
+          asOf,
+        ) > 0;
+      const useScheduleFallback =
+        (isFixedFee || isFixedHours) &&
+        !expenseBurnInPeriod &&
+        !hoursCommitInPeriod &&
+        isScheduleVisibleProjectContractor(person);
 
       if (monthly) {
-        if (isFixedFee) {
+        if (isFixedFee && !useScheduleFallback) {
           if (periodMode === "month") {
             const expenseLines = contractorExpenseLinesInRange(
               project,
@@ -680,7 +705,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
               periodRange.start,
               periodRange.end,
               person.id,
-            );
+            ).filter((line) => line.amount > 0 || line.hours > 0);
             for (const line of expenseLines) {
               contractorRowAdded = true;
               contractors.push({
@@ -715,8 +740,9 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
               periodRange.start,
               periodRange.end,
               person.id,
-            );
+            ).filter((line) => line.amount > 0 || line.hours > 0);
             for (const line of aggregates) {
+              contractorRowAdded = true;
               contractors.push({
                 id: line.rowId,
                 personId: person.id,
@@ -744,7 +770,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
           }
         }
 
-        if (isFixedHours) {
+        if (isFixedHours && !useScheduleFallback) {
           const hourLines =
             periodMode === "month"
               ? contractorExpenseLinesInRange(
@@ -765,6 +791,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
                 ).filter((line) => line.hours > 0);
           if (hourLines.length > 0) {
             for (const line of hourLines) {
+              contractorRowAdded = true;
               contractors.push({
                 id: line.rowId,
                 personId: person.id,
@@ -781,7 +808,7 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
                 notes: line.notes || undefined,
               });
             }
-          } else {
+          } else if (hoursCommitInPeriod) {
             const committed = contractorCommitted(person, member);
             const totalHours = hoursCommitmentTotalInRange(
               project,
@@ -790,24 +817,25 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
               periodRange.end,
               asOf,
             );
+            contractorRowAdded = true;
             contractors.push({
-                id: `${person.id}:hours`,
-                personId: person.id,
-                name: person.name,
-                avatar_url: person.avatar_url,
-                avatar_attachment_id: person.avatar_attachment_id,
-                avatar_color: person.avatar_color,
-                usedHours: 0,
-                plannedHours: totalHours,
-                totalHours,
-                moneyAmount: null,
-                dashUsedPlanned: false,
-                is_contractor: true,
-              });
+              id: `${person.id}:hours`,
+              personId: person.id,
+              name: person.name,
+              avatar_url: person.avatar_url,
+              avatar_attachment_id: person.avatar_attachment_id,
+              avatar_color: person.avatar_color,
+              usedHours: 0,
+              plannedHours: totalHours,
+              totalHours,
+              moneyAmount: null,
+              dashUsedPlanned: false,
+              is_contractor: true,
+            });
           }
         }
 
-        if (isScheduled) {
+        if (isScheduled || useScheduleFallback) {
           const split = personHoursSplitInRange(
             person.id,
             project.id,

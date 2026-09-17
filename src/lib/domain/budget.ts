@@ -139,6 +139,111 @@ export function dollarModeContractorPersonIds(
   return out;
 }
 
+/**
+ * Util-hidden contractors who stay on the schedule (can plan time + pick
+ * Dollars / Hours / Schedule per project). Classic hide-from-schedule
+ * contractors never burn schedule hours.
+ */
+export function isScheduleVisibleProjectContractor(person: Person): boolean {
+  return isProjectBasisContractor(person) && !person.hide_from_schedule;
+}
+
+/**
+ * Whether schedule hours should burn for this contractor in `monthKey`.
+ *
+ * Dollars / Hours with a non-zero amount for the month trump schedule
+ * (never combine). Months with no amount fall back to schedule for
+ * schedule-visible project contractors. Classic hide-from-schedule
+ * contractors stay exclusive (commit only, never schedule).
+ */
+export function contractorUsesScheduleBurnInMonth(
+  person: Person,
+  member:
+    | Pick<
+        ProjectMember,
+        "contractor_mode" | "contractor_fixed_fee" | "contractor_hours"
+      >
+    | null
+    | undefined,
+  project: Project,
+  expenses: ProjectContractorExpense[],
+  people: Person[],
+  monthKey: string,
+  asOf: Date,
+  settings: OrganizationSettings = DEFAULT_ORG_BUDGET_SETTINGS,
+): boolean {
+  const mode = effectiveContractorMode(person, member);
+  if (mode === "scheduled") return true;
+  if (mode !== "fixed_fee" && mode !== "hours") return false;
+  // Classic panel contractors: mode excludes schedule for the whole project.
+  if (!isScheduleVisibleProjectContractor(person)) return false;
+
+  if (isMonthlyRetainerBudget(project)) {
+    const totals = contractorExpenseTotalsForMonth(
+      project.id,
+      expenses,
+      people,
+      monthKey,
+      project,
+      new Set([person.id]),
+      settings,
+    );
+    if (totals.usedHours > 0 || totals.usedAmount > 0) return false;
+    if (mode === "hours") {
+      const hours = member?.contractor_hours ?? 0;
+      if (
+        hours > 0 &&
+        hoursCommitmentAppliesInMonth(project, monthKey, asOf)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (mode === "fixed_fee") {
+    return !((member?.contractor_fixed_fee ?? 0) > 0);
+  }
+  return !((member?.contractor_hours ?? 0) > 0);
+}
+
+/** Schedule burn person set for a single calendar month (yyyy-MM). */
+function scheduleBurnPersonIdsForMonth(
+  classified: {
+    contractorScheduledIds: Set<string>;
+    contractorCommitIds: Set<string>;
+    membersByPerson: Map<string, ProjectMember>;
+    peopleById: Map<string, Person>;
+  },
+  project: Project,
+  expenses: ProjectContractorExpense[],
+  people: Person[],
+  monthKey: string,
+  asOf: Date,
+  settings: OrganizationSettings,
+): Set<string> {
+  const out = new Set(classified.contractorScheduledIds);
+  for (const personId of classified.contractorCommitIds) {
+    const person = classified.peopleById.get(personId);
+    if (!person) continue;
+    if (
+      contractorUsesScheduleBurnInMonth(
+        person,
+        classified.membersByPerson.get(personId),
+        project,
+        expenses,
+        people,
+        monthKey,
+        asOf,
+        settings,
+      )
+    ) {
+      out.add(personId);
+    }
+  }
+  return out;
+}
+
 function attributeMonthlyExpenses(
   project: Project,
   contractorExpenses: ProjectContractorExpense[],
@@ -1157,11 +1262,21 @@ export function budgetBurn(
   if (classified) {
     const {
       internalIds,
-      contractorScheduledIds,
       contractorCommitIds,
       membersByPerson,
       peopleById,
     } = classified;
+    const monthly = isMonthlyRetainerBudget(project);
+    const asOfMonth = format(asOf, "yyyy-MM");
+    const scheduleBurnIds = scheduleBurnPersonIdsForMonth(
+      classified,
+      project,
+      contractorExpenses,
+      people,
+      asOfMonth,
+      asOf,
+      settings,
+    );
 
     if (usedEnd >= rangeStart) {
       internalUsedHours = projectHoursInDateRangeForPeople(
@@ -1177,7 +1292,7 @@ export function budgetBurn(
         assignments,
         rangeStart,
         usedEnd,
-        contractorScheduledIds,
+        scheduleBurnIds,
         includeTentative,
       );
       internalUsedAmount = projectBillableAmountInDateRangeForPeople(
@@ -1197,13 +1312,11 @@ export function budgetBurn(
         people,
         rangeStart,
         usedEnd,
-        contractorScheduledIds,
+        scheduleBurnIds,
         includeTentative,
         settings,
         project,
       );
-      const monthly = isMonthlyRetainerBudget(project);
-      const asOfMonth = format(asOf, "yyyy-MM");
       const hoursInWindow =
         !monthly || hoursCommitmentAppliesInMonth(project, asOfMonth, asOf);
       const commitUsed = hoursInWindow
@@ -1259,7 +1372,7 @@ export function budgetBurn(
         assignments,
         futureStart,
         rangeEnd,
-        contractorScheduledIds,
+        scheduleBurnIds,
         includeTentative,
       );
       internalFutureAmount = projectBillableAmountInDateRangeForPeople(
@@ -1279,7 +1392,7 @@ export function budgetBurn(
         people,
         futureStart,
         rangeEnd,
-        contractorScheduledIds,
+        scheduleBurnIds,
         includeTentative,
         settings,
         project,
@@ -1645,7 +1758,6 @@ export function monthBurnSplit(
 
   const {
     internalIds,
-    contractorScheduledIds,
     contractorCommitIds,
     membersByPerson,
     peopleById,
@@ -1674,6 +1786,15 @@ export function monthBurnSplit(
     peopleById,
     monthly,
   );
+  const scheduleBurnIds = scheduleBurnPersonIdsForMonth(
+    classifiedPeople,
+    project,
+    contractorExpenses,
+    people,
+    monthKey,
+    asOf,
+    settings,
+  );
 
   if (usedEnd >= monthStart) {
     internalUsedHours = projectHoursInDateRangeForPeople(
@@ -1688,7 +1809,7 @@ export function monthBurnSplit(
       assignments,
       monthStart,
       usedEnd,
-      contractorScheduledIds,
+      scheduleBurnIds,
     );
     internalUsedAmount = projectBillableAmountInDateRangeForPeople(
       project.id,
@@ -1707,7 +1828,7 @@ export function monthBurnSplit(
       people,
       monthStart,
       usedEnd,
-      contractorScheduledIds,
+      scheduleBurnIds,
       false,
       settings,
       project,
@@ -1742,7 +1863,7 @@ export function monthBurnSplit(
       assignments,
       futureStart,
       monthEnd,
-      contractorScheduledIds,
+      scheduleBurnIds,
     );
     internalFutureAmount = projectBillableAmountInDateRangeForPeople(
       project.id,
@@ -1761,7 +1882,7 @@ export function monthBurnSplit(
       people,
       futureStart,
       monthEnd,
-      contractorScheduledIds,
+      scheduleBurnIds,
       false,
       settings,
       project,

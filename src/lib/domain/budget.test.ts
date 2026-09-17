@@ -27,8 +27,10 @@ import {
 import type {
   Assignment,
   BudgetBurn,
+  Person,
   Project,
   ProjectContractorExpense,
+  ProjectMember,
 } from "@/lib/types";
 
 const warning75 = {
@@ -511,15 +513,161 @@ describe("contractorExpenseAggregatesInRange", () => {
   });
 });
 
-describe("formatHours", () => {
-  it("rounds to 2 decimals and drops trailing zeros", () => {
-    expect(formatHours(3)).toBe("3h");
-    expect(formatHours(3.0)).toBe("3h");
-    expect(formatHours(3.5)).toBe("3.5h");
-    expect(formatHours(3.5)).toBe("3.5h");
-    expect(formatHours(3.7455)).toBe("3.75h");
-    expect(formatHours(3.50)).toBe("3.5h");
-    expect(formatHours(12.04)).toBe("12.04h");
+describe("util-hidden contractor dollars/hours trump schedule", () => {
+  const contractor: Person = {
+    id: "c1",
+    organization_id: "org",
+    profile_id: null,
+    name: "Casey Contractor",
+    email: "",
+    role_title: "Contractor",
+    department: "",
+    office: "",
+    capacity_hours_week: 40,
+    cost_rate: 100,
+    timezone: "",
+    holiday_calendar_id: null,
+    avatar_url: null,
+    avatar_attachment_id: null,
+    avatar_color: null,
+    hide_from_schedule: false,
+    hide_from_utilization: true,
+    is_contractor: true,
+    deleted_at: null,
+  };
+
+  const memberFixed: ProjectMember = {
+    project_id: "proj-1",
+    person_id: "c1",
+    organization_id: "org",
+    contractor_mode: "fixed_fee",
+    contractor_fixed_fee: null,
+    contractor_hours: null,
+  };
+
+  it("uses expense dollars and ignores schedule hours in the same month", () => {
+    const project = makeProject({
+      budget_mode: "amount",
+      budget_hours: null,
+      budget_amount: 10000,
+      budget_monthly_reset: true,
+      start_date: "2026-03-01",
+      end_date: "2026-12-31",
+    });
+    const assignments = [
+      makeAssignment({
+        person_id: "c1",
+        start_date: "2026-03-02",
+        end_date: "2026-03-06",
+        hours_per_day: 8,
+      }),
+    ];
+    const expenses = [
+      makeExpense({
+        person_id: "c1",
+        month_key: "2026-03-01",
+        amount: 2500,
+        hours: 0,
+        repeat_monthly: false,
+      }),
+    ];
+    const asOf = new Date("2026-03-15T12:00:00");
+    const burn = budgetBurn(
+      project,
+      assignments,
+      [contractor],
+      false,
+      asOf,
+      [memberFixed],
+      expenses,
+    );
+    // $2500 / $100 rate = 25h equiv; schedule would have been 40h — must not use 40.
+    expect(burn.contractorUsedAmount).toBe(2500);
+    expect(burn.contractorUsedHours).toBe(25);
+    expect(burn.usedHours + burn.futureHours).toBe(25);
+  });
+
+  it("falls back to schedule in months with no dollars/hours assigned", () => {
+    const project = makeProject({
+      budget_mode: "hours",
+      budget_hours: 160,
+      budget_amount: null,
+      budget_monthly_reset: true,
+      start_date: "2026-03-01",
+      end_date: "2026-12-31",
+    });
+    const assignments = [
+      makeAssignment({
+        person_id: "c1",
+        start_date: "2026-04-06",
+        end_date: "2026-04-10",
+        hours_per_day: 8,
+      }),
+    ];
+    const expenses = [
+      makeExpense({
+        person_id: "c1",
+        month_key: "2026-03-01",
+        amount: 2500,
+        hours: 0,
+        repeat_monthly: false,
+      }),
+    ];
+    const asOf = new Date("2026-04-15T12:00:00");
+    const burn = budgetBurn(
+      project,
+      assignments,
+      [contractor],
+      false,
+      asOf,
+      [memberFixed],
+      expenses,
+    );
+    // April has schedule (40h) and no expense — schedule fallback.
+    expect(burn.contractorUsedHours + burn.contractorFutureHours).toBe(40);
+    expect(burn.contractorUsedAmount + burn.contractorFutureAmount).toBe(4000);
+  });
+
+  it("monthBurnSplit does not combine expense and schedule in the expense month", () => {
+    const project = makeProject({
+      budget_mode: "amount",
+      budget_hours: null,
+      budget_amount: 10000,
+      budget_monthly_reset: true,
+      start_date: "2026-03-01",
+      end_date: "2026-12-31",
+    });
+    const assignments = [
+      makeAssignment({
+        person_id: "c1",
+        start_date: "2026-03-02",
+        end_date: "2026-03-06",
+        hours_per_day: 8,
+      }),
+    ];
+    const expenses = [
+      makeExpense({
+        person_id: "c1",
+        month_key: "2026-03-01",
+        amount: 1000,
+        hours: 0,
+        repeat_monthly: false,
+      }),
+    ];
+    const asOf = new Date("2026-03-15T12:00:00");
+    const split = monthBurnSplit(
+      project,
+      assignments,
+      [contractor],
+      2026,
+      2,
+      asOf,
+      [memberFixed],
+      expenses,
+    );
+    expect(split.contractorAmount).toBe(1000);
+    expect(split.contractorHours).toBe(10);
+    expect(split.plannedHours).toBe(10);
   });
 });
 

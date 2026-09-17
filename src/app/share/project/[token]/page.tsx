@@ -41,6 +41,7 @@ import {
   calendarYearBars,
   contractorExpenseTotalsInRange,
   hoursCommitmentTotalInRange,
+  isScheduleVisibleProjectContractor,
   personHoursSplitInRange,
   type MonthBurnBar,
 } from "@/lib/domain/budget";
@@ -440,9 +441,41 @@ export default function ProjectSharePage() {
         mode === "hours" || (mode == null && person.hide_from_schedule);
       const isScheduled = mode === "scheduled" || (!isFixedFee && !isFixedHours);
 
-      if (isFixedFee) continue;
-
-      if (isFixedHours && isProjectBasisContractor(person)) {
+      if (isFixedFee) {
+        const expenses = portalChartExpenses(
+          portal.project.id,
+          retainer.expenses,
+        );
+        const fromExpenses = contractorExpenseTotalsInRange(
+          portal.project.id,
+          expenses.filter((e) => e.person_id === person.id),
+          people,
+          periodRange.start,
+          periodRange.end,
+          project,
+        );
+        if (fromExpenses.amount > 0 || fromExpenses.hours > 0) {
+          // Dollars mode: show hours-equivalent when present; otherwise skip
+          // money rows on the hours portal table.
+          if (fromExpenses.hours > 0) {
+            contractorRows.push({
+              id: `${person.id}:fee`,
+              personId: person.id,
+              name: person.name,
+              avatar_url: person.avatar_url,
+              avatar_attachment_id: person.avatar_attachment_id,
+              avatar_color: person.avatar_color,
+              usedHours: 0,
+              plannedHours: 0,
+              totalHours: fromExpenses.hours,
+              dashUsedPlanned: true,
+            });
+          }
+          continue;
+        }
+        if (!isScheduleVisibleProjectContractor(person)) continue;
+        // No dollars for this period — fall back to schedule time below.
+      } else if (isFixedHours && isProjectBasisContractor(person)) {
         const expenses = portalChartExpenses(
           portal.project.id,
           retainer.expenses,
@@ -463,23 +496,28 @@ export default function ProjectSharePage() {
           asOf,
         );
         const totalHours = fromExpenses > 0 ? fromExpenses : leftover;
-        if (totalHours <= 0) continue;
-        contractorRows.push({
-          id: `${person.id}:hours`,
-          personId: person.id,
-          name: person.name,
-          avatar_url: person.avatar_url,
-          avatar_attachment_id: person.avatar_attachment_id,
-          avatar_color: person.avatar_color,
-          usedHours: 0,
-          plannedHours: 0,
-          totalHours,
-          dashUsedPlanned: true,
-        });
+        if (totalHours > 0) {
+          contractorRows.push({
+            id: `${person.id}:hours`,
+            personId: person.id,
+            name: person.name,
+            avatar_url: person.avatar_url,
+            avatar_attachment_id: person.avatar_attachment_id,
+            avatar_color: person.avatar_color,
+            usedHours: 0,
+            plannedHours: 0,
+            totalHours,
+            dashUsedPlanned: true,
+          });
+          continue;
+        }
+        if (!isScheduleVisibleProjectContractor(person)) continue;
+        // No hours for this period — fall back to schedule time below.
+      } else if (!isScheduled) {
         continue;
       }
 
-      if (isScheduled) {
+      {
         const split = personHoursSplitInRange(
           person.id,
           portal.project.id,
