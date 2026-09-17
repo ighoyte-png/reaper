@@ -1045,6 +1045,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const projectInflight = useRef<Map<string, Promise<void>>>(new Map());
   const boundAssignmentTasksInflight = useRef<Promise<void> | null>(null);
   const boundTasksRowsLoadedRef = useRef(false);
+  /** Retries when the first org bind fetch returns empty while notes claim binds. */
+  const boundTasksEmptyRetryRef = useRef(0);
   const orgTemplatesInflight = useRef<Promise<void> | null>(null);
   const orgTemplatesLoadedRef = useRef(false);
   const scheduleRangeInflight = useRef<Promise<{
@@ -1194,6 +1196,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
           boundTasksRowsLoadedRef.current = false;
+          boundTasksEmptyRetryRef.current = 0;
           orgTemplatesLoadedRef.current = false;
           setOrgTasksStatus("idle");
           setOrgMilestonesStatus("idle");
@@ -2677,21 +2680,50 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const doWork = async () => {
       try {
-        if (!boundTasksRowsLoadedRef.current) {
+        const expectsBoundRows = stateRef.current.assignments.some((a) =>
+          isBoundTasksNotes(a.notes),
+        );
+        const shouldReloadRows =
+          !boundTasksRowsLoadedRef.current ||
+          (expectsBoundRows &&
+            stateRef.current.assignment_bound_tasks.length === 0 &&
+            boundTasksEmptyRetryRef.current < 3);
+
+        if (shouldReloadRows) {
           const rows = await loadOrgAssignmentBoundTasks(
             client,
             organizationId,
           );
-          boundTasksRowsLoadedRef.current = true;
-          // Eagerly sync so chained callers see rows before React re-renders.
-          stateRef.current = {
-            ...stateRef.current,
-            assignment_bound_tasks: rows,
-          };
-          setState((prev) => ({
-            ...prev,
-            assignment_bound_tasks: rows,
-          }));
+          if (
+            rows.length > 0 ||
+            !expectsBoundRows ||
+            boundTasksEmptyRetryRef.current >= 2
+          ) {
+            boundTasksRowsLoadedRef.current = true;
+          } else {
+            // First fetch(es) returned empty while green bound notes exist —
+            // allow a later caller to retry (common race on schedule mount).
+            boundTasksEmptyRetryRef.current += 1;
+            boundTasksRowsLoadedRef.current = false;
+          }
+          // Merge with any project-scoped binds already in memory so a
+          // transient empty org fetch cannot wipe sidebar/project catch-up.
+          const merged =
+            rows.length === 0
+              ? stateRef.current.assignment_bound_tasks
+              : rows;
+          if (rows.length > 0) {
+            stateRef.current = {
+              ...stateRef.current,
+              assignment_bound_tasks: merged,
+            };
+            setState((prev) => ({
+              ...prev,
+              assignment_bound_tasks: rows,
+            }));
+          } else if (!boundTasksRowsLoadedRef.current) {
+            // Keep existing in-memory binds; do not replace with [].
+          }
         }
 
         const missing = missingTaskIdsFrom(
@@ -3209,6 +3241,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         projectReadyRef.current = new Set();
         scheduleRangeLoadedRef.current = null;
         boundTasksRowsLoadedRef.current = false;
+        boundTasksEmptyRetryRef.current = 0;
         orgTemplatesLoadedRef.current = false;
         setOrgTasksStatus("idle");
         setOrgMilestonesStatus("idle");
@@ -3502,6 +3535,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           projectReadyRef.current = new Set();
           scheduleRangeLoadedRef.current = null;
           boundTasksRowsLoadedRef.current = false;
+          boundTasksEmptyRetryRef.current = 0;
           orgTemplatesLoadedRef.current = false;
           setOrgTasksStatus("idle");
           setOrgMilestonesStatus("idle");

@@ -23,11 +23,19 @@ export function BoundAssignmentNotesTooltip({
     search?: string,
   ) => string;
 }) {
-  const { state, ensureBoundAssignmentTasks } = useData();
+  const { state, ensureBoundAssignmentTasks, ensureProjectData } = useData();
 
+  const projectId = useMemo(() => {
+    const assignment = state.assignments.find((a) => a.id === assignmentId);
+    return assignment?.project_id ?? null;
+  }, [state.assignments, assignmentId]);
+
+  // Hover must not wait for the sidebar: load org binds + this project's
+  // bundle so task ids are available for links.
   useEffect(() => {
     void ensureBoundAssignmentTasks();
-  }, [ensureBoundAssignmentTasks]);
+    if (projectId) void ensureProjectData(projectId);
+  }, [assignmentId, projectId, ensureBoundAssignmentTasks, ensureProjectData]);
 
   const { heading, rows, project } = useMemo(() => {
     const assignment = state.assignments.find((a) => a.id === assignmentId);
@@ -57,13 +65,19 @@ export function BoundAssignmentNotesTooltip({
     // Binds may still be hydrating on first schedule paint — fall back to
     // titles embedded in the assignment notes so the hover isn't blank.
     if (bindIds.length === 0) {
+      const projectTasks = projectRow
+        ? state.tasks.filter((t) => t.project_id === projectRow.id)
+        : [];
       return {
         heading: headingText,
-        rows: parsedTitles.map((title, index) => ({
-          taskId: `notes-fallback:${index}`,
-          title,
-          linkable: false,
-        })),
+        rows: parsedTitles.map((title, index) => {
+          const task = projectTasks.find((t) => t.title?.trim() === title);
+          return {
+            taskId: task?.id ?? `notes-fallback:${index}`,
+            title,
+            linkable: Boolean(task && projectRow),
+          };
+        }),
         project: projectRow ?? null,
       };
     }
@@ -123,7 +137,7 @@ export function BoundAssignmentNotesTooltip({
               <li key={taskId}>
                 <Link
                   href={projectHref(project, `task=${taskId}`)}
-                  className="hover:underline"
+                  className="text-[var(--accent)] hover:underline"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                 >
