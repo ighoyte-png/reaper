@@ -26,6 +26,9 @@ function normalizeSettingsRow(
     ...data,
     status_map: normalizeStatusMap(data.status_map),
     webhook_enabled: Boolean(data.webhook_enabled),
+    last_webhook_check_at:
+      (data as { last_webhook_check_at?: string | null }).last_webhook_check_at ??
+      null,
   };
 }
 
@@ -75,6 +78,7 @@ export async function upsertSettings(
     webhook_secret: string | null;
     last_webhook_at: string | null;
     last_webhook_error: string | null;
+    last_webhook_check_at: string | null;
     last_error: string | null;
     last_synced_at: string | null;
   }>,
@@ -132,6 +136,10 @@ export async function upsertSettings(
       patch.last_webhook_error !== undefined
         ? patch.last_webhook_error
         : (existing?.last_webhook_error ?? null),
+    last_webhook_check_at:
+      patch.last_webhook_check_at !== undefined
+        ? patch.last_webhook_check_at
+        : (existing?.last_webhook_check_at ?? null),
     last_error:
       patch.last_error !== undefined
         ? patch.last_error

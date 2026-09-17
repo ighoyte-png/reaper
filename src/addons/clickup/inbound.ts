@@ -355,6 +355,151 @@ export async function disableSpaceWebhook(args: {
   });
 }
 
+/**
+ * Cheap webhook health for the drain cron: at most one ClickUp GET per due org,
+ * at most a few orgs per run. Recreates only when the webhook is missing, failing,
+ * or pointed at the wrong endpoint — not when the Space is merely quiet.
+ */
+export async function healStaleSpaceWebhooks(args: {
+  admin: SupabaseClient;
+  origin: string;
+  /** Max orgs to probe with a ClickUp GET this run. */
+  maxChecks?: number;
+}): Promise<{
+  checked: number;
+  recreated: number;
+  errors: string[];
+}> {
+  const { admin, origin } = args;
+  const maxChecks = Math.max(1, Math.min(args.maxChecks ?? 2, 5));
+  const now = Date.now();
+  /** Only probe when we haven't checked recently (cron may be frequent). */
+  const CHECK_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+  /** Prefer probing orgs with no recent deliveries, but still verify quietly. */
+  const STALE_DELIVERY_MS = 12 * 60 * 60 * 1000;
+  const expectedEndpoint = webhookEndpointUri(origin);
+
+  const { data: rows, error } = await admin
+    .from("addon_clickup_settings")
+    .select(
+      "organization_id, webhook_enabled, webhook_id, space_id, clickup_team_id, last_webhook_at, last_webhook_check_at",
+    )
+    .eq("enabled", true)
+    .eq("webhook_enabled", true)
+    .not("webhook_id", "is", null)
+    .limit(100);
+  if (error) throw new Error(error.message);
+
+  const due = (rows ?? [])
+    .filter((row) => {
+      const id = String(row.webhook_id ?? "").trim();
+      if (!id) return false;
+      if (!String(row.space_id ?? "").trim()) return false;
+      if (!String(row.clickup_team_id ?? "").trim()) return false;
+      const checkedAt = row.last_webhook_check_at
+        ? Date.parse(String(row.last_webhook_check_at))
+        : 0;
+      if (Number.isFinite(checkedAt) && now - checkedAt < CHECK_COOLDOWN_MS) {
+        return false;
+      }
+      return true;
+    })
+    .map((row) => {
+      const deliveryAt = row.last_webhook_at
+        ? Date.parse(String(row.last_webhook_at))
+        : 0;
+      const deliveryStale =
+        !row.last_webhook_at ||
+        !Number.isFinite(deliveryAt) ||
+        now - deliveryAt >= STALE_DELIVERY_MS;
+      return { row, deliveryAt: deliveryAt || 0, deliveryStale };
+    })
+    .sort((a, b) => {
+      // Prefer delivery-stale orgs, then oldest delivery.
+      if (a.deliveryStale !== b.deliveryStale) {
+        return a.deliveryStale ? -1 : 1;
+      }
+      return a.deliveryAt - b.deliveryAt;
+    })
+    .slice(0, maxChecks)
+    .map((x) => x.row);
+
+  let checked = 0;
+  let recreated = 0;
+  const errors: string[] = [];
+
+  for (const row of due) {
+    const orgId = String(row.organization_id);
+    const webhookId = String(row.webhook_id);
+    checked += 1;
+    try {
+      const auth = await resolveOrgClickUpAuth(admin, orgId);
+      let needsRecreate = false;
+      let reason = "";
+      try {
+        const hook = await cu.getWebhook(auth, webhookId);
+        const endpoint = String(hook.endpoint ?? "").replace(/\/$/, "");
+        const expected = expectedEndpoint.replace(/\/$/, "");
+        const failCount = Number(hook.health?.fail_count ?? 0);
+        const healthStatus = String(hook.health?.status ?? "").toLowerCase();
+        const status = String(hook.status ?? "").toLowerCase();
+        if (endpoint && expected && endpoint !== expected) {
+          needsRecreate = true;
+          reason = "endpoint_mismatch";
+        } else if (status === "paused" || status === "failing") {
+          needsRecreate = true;
+          reason = `status_${status}`;
+        } else if (
+          healthStatus.includes("fail") ||
+          healthStatus === "suspended"
+        ) {
+          needsRecreate = true;
+          reason = `health_${healthStatus || "fail"}`;
+        } else if (failCount >= 3) {
+          needsRecreate = true;
+          reason = `fail_count_${failCount}`;
+        }
+      } catch (e) {
+        if (e instanceof cu.ClickUpApiError && e.status === 404) {
+          needsRecreate = true;
+          reason = "missing";
+        } else {
+          throw e;
+        }
+      }
+
+      if (needsRecreate) {
+        await ensureSpaceWebhook({ admin, orgId, origin });
+        await upsertSettings(admin, orgId, {
+          last_webhook_check_at: new Date().toISOString(),
+          last_webhook_error: null,
+        });
+        recreated += 1;
+        console.info(
+          `[clickup] recreated stale webhook for org ${orgId} (${reason})`,
+        );
+      } else {
+        await upsertSettings(admin, orgId, {
+          last_webhook_check_at: new Date().toISOString(),
+        });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`${orgId}: ${msg}`);
+      try {
+        await upsertSettings(admin, orgId, {
+          last_webhook_check_at: new Date().toISOString(),
+          last_webhook_error: msg.slice(0, 500),
+        });
+      } catch {
+        /* ignore secondary write errors */
+      }
+    }
+  }
+
+  return { checked, recreated, errors };
+}
+
 export function idempotencyKeysForPayload(
   payload: ClickUpWebhookPayload,
 ): string[] {

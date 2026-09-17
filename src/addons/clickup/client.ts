@@ -48,6 +48,8 @@ export type ClickUpWebhook = {
   list_id?: string | null;
   folder_id?: string | null;
   space_id?: string | null;
+  /** ClickUp may report active / failings. */
+  status?: string;
   health?: { status?: string; fail_count?: number };
   secret?: string;
 };
@@ -447,6 +449,21 @@ export async function deleteWebhook(
   await cuFetch<unknown>(auth, `/webhook/${encodeURIComponent(webhookId)}`, {
     method: "DELETE",
   });
+}
+
+/** GET one webhook; throws ClickUpApiError (404 when ClickUp dropped it). */
+export async function getWebhook(
+  auth: ClickUpAuth,
+  webhookId: string,
+): Promise<ClickUpWebhook> {
+  const data = await cuFetch<{ webhook?: ClickUpWebhook } | ClickUpWebhook>(
+    auth,
+    `/webhook/${encodeURIComponent(webhookId)}`,
+  );
+  if (data && typeof data === "object" && "webhook" in data && data.webhook) {
+    return data.webhook;
+  }
+  return data as ClickUpWebhook;
 }
 
 export async function updateWebhook(

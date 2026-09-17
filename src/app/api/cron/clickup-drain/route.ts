@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { processOutbox } from "@/addons/clickup/sync";
-import { processInbound } from "@/addons/clickup/inbound";
+import {
+  healStaleSpaceWebhooks,
+  processInbound,
+} from "@/addons/clickup/inbound";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
@@ -26,11 +29,24 @@ function authorize(request: Request): boolean {
   return false;
 }
 
+function siteOrigin(): string | null {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!raw) return null;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return raw.replace(/\/$/, "") || null;
+  }
+}
+
 /**
  * Secret-auth ClickUp queue drain (cron / external scheduler / manual).
  * Event-driven drains handle the hot path; call this on a short interval from
  * an external cron if you need coverage when no Reaper tab is open
  * (Vercel Hobby only allows daily native crons).
+ *
+ * Also probes at most a couple of two-way webhooks per run (cooldown 6h) and
+ * recreates them only when ClickUp reports missing/failing/wrong endpoint.
  */
 async function drainAll() {
   if (!isSupabaseConfigured() || !isServiceRoleConfigured()) {
@@ -90,10 +106,33 @@ async function drainAll() {
     });
   }
 
+  let webhookHeal: {
+    checked: number;
+    recreated: number;
+    errors: string[];
+    skipped?: string;
+  } = { checked: 0, recreated: 0, errors: [] };
+  const origin = siteOrigin();
+  if (origin) {
+    webhookHeal = await healStaleSpaceWebhooks({
+      admin,
+      origin,
+      maxChecks: 2,
+    });
+  } else {
+    webhookHeal = {
+      checked: 0,
+      recreated: 0,
+      errors: [],
+      skipped: "NEXT_PUBLIC_SITE_URL unset",
+    };
+  }
+
   return NextResponse.json({
     ok: true,
     orgs: results.length,
     results,
+    webhook_heal: webhookHeal,
   });
 }
 

@@ -37,6 +37,8 @@ export type AddonClickupSettingsRow = {
   webhook_secret: string | null;
   last_webhook_at: string | null;
   last_webhook_error: string | null;
+  /** Last cron health probe (GET webhook / recreate). */
+  last_webhook_check_at: string | null;
   last_error: string | null;
   last_synced_at: string | null;
   updated_at: string;
