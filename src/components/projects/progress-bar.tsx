@@ -170,7 +170,7 @@ export function MilestoneApprovalCheck({
         type="button"
         onClick={onClick}
         className={cn(
-          "group/check flex shrink-0 cursor-pointer items-stretch justify-center self-stretch px-1",
+          "group/check flex w-auto shrink-0 cursor-pointer items-center justify-center self-center rounded-md px-2 py-1",
           glowHover && pending && milestonePortalGlowClass,
           className,
         )}
