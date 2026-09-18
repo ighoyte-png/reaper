@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useParams } from "next/navigation";
-import confetti from "canvas-confetti";
 import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PeriodChip } from "@/components/budgets/period-chip";
@@ -280,6 +279,7 @@ export default function ProjectSharePage() {
   const [credentialsOk, setCredentialsOk] = useState(false);
   const [celebrateId, setCelebrateId] = useState<string | null>(null);
   const [approveClosing, setApproveClosing] = useState(false);
+  const [approveGlory, setApproveGlory] = useState(false);
 
   const portalTabTitle = portal
     ? portal.clientName
@@ -733,6 +733,7 @@ export default function ProjectSharePage() {
     setApproveError(null);
     setCredentialsOk(false);
     setApproveClosing(false);
+    setApproveGlory(false);
   }
 
   function closeApprove() {
@@ -743,43 +744,44 @@ export default function ProjectSharePage() {
     setCredentialsOk(false);
     setApproveBusy(false);
     setApproveClosing(false);
+    setApproveGlory(false);
   }
 
-  function fireApproveConfetti(origin: { x: number; y: number }) {
-    const canvas = document.createElement("canvas");
-    canvas.setAttribute("aria-hidden", "true");
-    Object.assign(canvas.style, {
-      position: "fixed",
-      inset: "0",
-      width: "100%",
-      height: "100%",
-      pointerEvents: "none",
-      // Above Modal (z-[100]) so the burst is visible while the dialog is open.
-      zIndex: "10000",
-    });
-    document.body.appendChild(canvas);
-    const fire = confetti.create(canvas, { resize: true, useWorker: true });
-    const colors = ["#a855f7", "#22c55e", "#f59e0b", "#ec4899", "#673AB7"];
-    fire({
-      particleCount: 80,
-      spread: 70,
-      startVelocity: 45,
-      origin,
-      colors,
-    });
-    window.setTimeout(() => {
-      fire({
-        particleCount: 40,
-        spread: 100,
-        startVelocity: 35,
+  async function fireApproveConfetti(origin: { x: number; y: number }) {
+    try {
+      const mod = await import("canvas-confetti");
+      const confettiFn =
+        typeof mod.default === "function"
+          ? mod.default
+          : typeof mod === "function"
+            ? (mod as unknown as typeof mod.default)
+            : null;
+      if (!confettiFn) return;
+      const colors = ["#a855f7", "#22c55e", "#f59e0b", "#ec4899", "#673AB7"];
+      // Modal is z-[100]; library default zIndex is also 100 — go well above.
+      const base = {
         origin,
         colors,
+        zIndex: 10000,
+        disableForReducedMotion: false as const,
+      };
+      void confettiFn({
+        ...base,
+        particleCount: 100,
+        spread: 75,
+        startVelocity: 48,
       });
-    }, 180);
-    window.setTimeout(() => {
-      fire.reset();
-      canvas.remove();
-    }, 2800);
+      window.setTimeout(() => {
+        void confettiFn({
+          ...base,
+          particleCount: 50,
+          spread: 110,
+          startVelocity: 32,
+        });
+      }, 200);
+    } catch {
+      // Check glory animation still runs if the library fails to load.
+    }
   }
 
   function confettiOriginFromEvent(e: MouseEvent<HTMLButtonElement>): {
@@ -787,17 +789,27 @@ export default function ProjectSharePage() {
     y: number;
   } {
     const rect = e.currentTarget.getBoundingClientRect();
-    return {
-      x: (rect.left + rect.width / 2) / window.innerWidth,
-      y: (rect.top + rect.height / 2) / window.innerHeight,
-    };
+    const x = (rect.left + rect.width / 2) / window.innerWidth;
+    const y = (rect.top + rect.height / 2) / window.innerHeight;
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      x <= 0 ||
+      y <= 0 ||
+      x >= 1 ||
+      y >= 1
+    ) {
+      return { x: 0.5, y: 0.55 };
+    }
+    return { x, y };
   }
 
   function celebrateThenClose(
     approvedId: string,
     origin: { x: number; y: number },
   ) {
-    fireApproveConfetti(origin);
+    setApproveGlory(true);
+    void fireApproveConfetti(origin);
     window.setTimeout(() => {
       setApproveClosing(true);
       window.setTimeout(() => {
@@ -1452,14 +1464,19 @@ export default function ProjectSharePage() {
                 <p className="text-sm font-medium">Approve Milestone</p>
                 <MilestoneApprovalCheck
                   interactive
-                  pending
-                  glowHover
+                  pending={!approveGlory}
+                  glowHover={!approveGlory}
+                  celebrate={approveGlory}
                   onClick={(e) => {
-                    if (!approveBusy && !approveClosing) void confirmApprove(e);
+                    if (!approveBusy && !approveClosing && !approveGlory) {
+                      void confirmApprove(e);
+                    }
                   }}
                 />
                 <p className="text-center text-sm text-[var(--text-muted)]">
-                  This is Your Moment of Glory!
+                  {approveGlory
+                    ? "Milestone approved!"
+                    : "This is Your Moment of Glory!"}
                 </p>
               </div>
             ) : approveName.trim() && approveEmail.trim() ? (
