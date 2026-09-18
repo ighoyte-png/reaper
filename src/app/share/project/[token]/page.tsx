@@ -749,14 +749,7 @@ export default function ProjectSharePage() {
 
   async function fireApproveConfetti(origin: { x: number; y: number }) {
     try {
-      const mod = await import("canvas-confetti");
-      const confettiFn =
-        typeof mod.default === "function"
-          ? mod.default
-          : typeof mod === "function"
-            ? (mod as unknown as typeof mod.default)
-            : null;
-      if (!confettiFn) return;
+      const { default: confettiFn } = await import("canvas-confetti");
       const colors = ["#a855f7", "#22c55e", "#f59e0b", "#ec4899", "#673AB7"];
       // Modal is z-[100]; library default zIndex is also 100 — go well above.
       const base = {
