@@ -1419,7 +1419,7 @@ export default function ProjectSharePage() {
                   celebrate={approveGlory}
                   className={
                     approveGlory
-                      ? "scale-110 shadow-[0_0_28px_rgba(168,85,247,0.85)] transition-transform duration-200"
+                      ? "scale-110 transition-transform duration-200 [filter:drop-shadow(0_0_10px_rgba(168,85,247,0.75))]"
                       : undefined
                   }
                   onClick={(e) => {
