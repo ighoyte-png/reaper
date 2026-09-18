@@ -66,12 +66,15 @@ export function Modal({
   children,
   onClose,
   className,
+  closing = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   /** Extra classes for the dialog panel (e.g. wider max-width). */
   className?: string;
+  /** Fade overlay + panel out before unmount (approve celebration). */
+  closing?: boolean;
 }) {
   const mounted = useMounted();
   if (!mounted) return null;
@@ -80,11 +83,17 @@ export function Modal({
   const hasCustomMaxWidth = Boolean(className && /\bmax-w-/.test(className));
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+    <div
+      className={cn(
+        "fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-0 transition-opacity duration-[400ms] ease-out sm:items-center sm:p-4",
+        closing && "pointer-events-none opacity-0",
+      )}
+    >
       <div
         className={cn(
-          "max-h-[90dvh] w-full overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl sm:rounded-[var(--radius-md)]",
+          "max-h-[90dvh] w-full overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl transition-opacity duration-[400ms] ease-out sm:rounded-[var(--radius-md)]",
           !hasCustomMaxWidth && "max-w-lg",
+          closing && "opacity-0",
           className,
         )}
       >

@@ -1,5 +1,6 @@
 "use client";
 
+import type { MouseEvent } from "react";
 import { Check } from "lucide-react";
 import { AssetKindIcon } from "@/components/projects/asset-kind-icon";
 import { assetTooltip, assetViewForApprovalTooltip } from "@/lib/domain/assets";
@@ -48,18 +49,40 @@ export const milestonePortalGlowClass =
   "focus-visible:outline-none focus-visible:bg-[color-mix(in_srgb,#673AB7_12%,transparent)] " +
   "focus-visible:shadow-[0_0_0_1px_color-mix(in_srgb,#673AB7_40%,transparent),0_0_14px_color-mix(in_srgb,#673AB7_28%,transparent)]";
 
+/** Inset glow + glyph recolor, confined to the essentials icon chip. */
+export const milestoneEssentialChipGlowPurpleClass =
+  "overflow-hidden transition-[background-color,box-shadow,color] duration-150 " +
+  "group-hover:bg-[color-mix(in_srgb,#673AB7_12%,transparent)] " +
+  "group-hover:text-[#673AB7] " +
+  "group-hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,#673AB7_40%,transparent),inset_0_0_10px_color-mix(in_srgb,#673AB7_28%,transparent)] " +
+  "group-focus-visible:bg-[color-mix(in_srgb,#673AB7_12%,transparent)] " +
+  "group-focus-visible:text-[#673AB7] " +
+  "group-focus-visible:shadow-[inset_0_0_0_1px_color-mix(in_srgb,#673AB7_40%,transparent),inset_0_0_10px_color-mix(in_srgb,#673AB7_28%,transparent)]";
+
+export const milestoneEssentialChipGlowGreenClass =
+  "overflow-hidden transition-[background-color,box-shadow,color] duration-150 " +
+  "group-hover:bg-[color-mix(in_srgb,var(--status-healthy)_12%,transparent)] " +
+  "group-hover:text-[var(--status-healthy)] " +
+  "group-hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--status-healthy)_40%,transparent),inset_0_0_10px_color-mix(in_srgb,var(--status-healthy)_28%,transparent)] " +
+  "group-focus-visible:bg-[color-mix(in_srgb,var(--status-healthy)_12%,transparent)] " +
+  "group-focus-visible:text-[var(--status-healthy)] " +
+  "group-focus-visible:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--status-healthy)_40%,transparent),inset_0_0_10px_color-mix(in_srgb,var(--status-healthy)_28%,transparent)]";
+
 export function MilestoneEssentialSlot({
   kind,
   label,
   url,
   glowHover = false,
+  glowTone = "purple",
   approvalTooltip = false,
 }: {
   kind: ProjectAssetKind | null;
   label?: string;
   url?: string;
-  /** When true, use the portal purple glow on hover (separate from milestone row). */
+  /** When true, apply inset chip glow on hover (separate from milestone row). */
   glowHover?: boolean;
+  /** Purple while pending; green after client approval. */
+  glowTone?: "purple" | "green";
   /** Portal copy: "View [label/type] for Approval". */
   approvalTooltip?: boolean;
 }) {
@@ -70,6 +93,11 @@ export function MilestoneEssentialSlot({
     const tip = approvalTooltip
       ? assetViewForApprovalTooltip(label, kind)
       : assetTooltip(label, kind);
+    const chipGlow = glowHover
+      ? glowTone === "green"
+        ? milestoneEssentialChipGlowGreenClass
+        : milestoneEssentialChipGlowPurpleClass
+      : undefined;
     return (
       <a
         href={href}
@@ -78,11 +106,16 @@ export function MilestoneEssentialSlot({
         title={tip}
         className={cn(
           frameClass,
-          glowHover && milestonePortalGlowClass,
+          glowHover && "group rounded-md focus-visible:outline-none",
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <AssetKindIcon kind={kind} label={label} title={null} />
+        <AssetKindIcon
+          kind={kind}
+          label={label}
+          title={null}
+          className={chipGlow}
+        />
       </a>
     );
   }
@@ -113,7 +146,7 @@ export function MilestoneApprovalCheck({
   interactive?: boolean;
   /** Portal purple glow on hover (approve modal). */
   glowHover?: boolean;
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   className?: string;
 }) {
   const icon = (
@@ -203,6 +236,7 @@ export function ProgressBar({
             label={essential.label}
             url={essential.url}
             glowHover={essentialGlowHover}
+            glowTone={approved ? "green" : "purple"}
             approvalTooltip={essentialApprovalTooltip}
           />
         </div>

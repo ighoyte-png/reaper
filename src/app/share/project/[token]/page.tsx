@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useParams } from "next/navigation";
+import confetti from "canvas-confetti";
 import { endOfMonth, format, parseISO, startOfMonth } from "date-fns";
 import { ChevronLeft, ChevronRight, ExternalLink, Mail } from "lucide-react";
 import { PeriodChip } from "@/components/budgets/period-chip";
@@ -278,6 +279,7 @@ export default function ProjectSharePage() {
   const [approveBusy, setApproveBusy] = useState(false);
   const [credentialsOk, setCredentialsOk] = useState(false);
   const [celebrateId, setCelebrateId] = useState<string | null>(null);
+  const [approveClosing, setApproveClosing] = useState(false);
 
   const portalTabTitle = portal
     ? portal.clientName
@@ -730,6 +732,7 @@ export default function ProjectSharePage() {
     setApproveEmail("");
     setApproveError(null);
     setCredentialsOk(false);
+    setApproveClosing(false);
   }
 
   function closeApprove() {
@@ -739,12 +742,39 @@ export default function ProjectSharePage() {
     setApproveError(null);
     setCredentialsOk(false);
     setApproveBusy(false);
+    setApproveClosing(false);
   }
 
-  async function confirmApprove() {
-    if (!approvingId || !credentialsOk) return;
+  function fireApproveConfetti(e: MouseEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    confetti({
+      particleCount: 60,
+      spread: 70,
+      origin: {
+        x: (rect.left + rect.width / 2) / window.innerWidth,
+        y: (rect.top + rect.height / 2) / window.innerHeight,
+      },
+      colors: ["#a855f7", "#22c55e", "#f59e0b", "#ec4899"],
+    });
+  }
+
+  function celebrateThenClose(approvedId: string, e: MouseEvent<HTMLButtonElement>) {
+    fireApproveConfetti(e);
+    window.setTimeout(() => {
+      setApproveClosing(true);
+      window.setTimeout(() => {
+        closeApprove();
+        setCelebrateId(approvedId);
+        window.setTimeout(() => setCelebrateId(null), 1200);
+      }, 400);
+    }, 1200);
+  }
+
+  async function confirmApprove(e: MouseEvent<HTMLButtonElement>) {
+    if (!approvingId || !credentialsOk || approveBusy || approveClosing) return;
     setApproveBusy(true);
     setApproveError(null);
+    let celebrated = false;
     try {
       if (!isSupabaseConfigured()) {
         const result = approveDemoPortalMilestone(
@@ -775,9 +805,8 @@ export default function ProjectSharePage() {
               }
             : prev,
         );
-        setCelebrateId(approvingId);
-        closeApprove();
-        window.setTimeout(() => setCelebrateId(null), 1200);
+        celebrated = true;
+        celebrateThenClose(approvingId, e);
         return;
       }
 
@@ -823,15 +852,14 @@ export default function ProjectSharePage() {
             }
           : prev,
       );
-      setCelebrateId(approvedId);
-      closeApprove();
-      window.setTimeout(() => setCelebrateId(null), 1200);
+      celebrated = true;
+      celebrateThenClose(approvedId, e);
     } catch (err) {
       setApproveError(
         err instanceof Error ? err.message : "Unable to approve milestone",
       );
     } finally {
-      setApproveBusy(false);
+      if (!celebrated) setApproveBusy(false);
     }
   }
 
@@ -1345,7 +1373,11 @@ export default function ProjectSharePage() {
       )}
 
       {approvingId ? (
-        <Modal title="Approve Milestone" onClose={closeApprove}>
+        <Modal
+          title="Approve Milestone"
+          onClose={closeApprove}
+          closing={approveClosing}
+        >
           <div className="grid gap-3">
             <Field label="Name">
               <input
@@ -1382,8 +1414,8 @@ export default function ProjectSharePage() {
                   interactive
                   pending
                   glowHover
-                  onClick={() => {
-                    if (!approveBusy) void confirmApprove();
+                  onClick={(e) => {
+                    if (!approveBusy && !approveClosing) void confirmApprove(e);
                   }}
                 />
                 <p className="text-center text-sm text-[var(--text-muted)]">
