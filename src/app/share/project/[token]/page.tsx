@@ -746,12 +746,40 @@ export default function ProjectSharePage() {
   }
 
   function fireApproveConfetti(origin: { x: number; y: number }) {
-    confetti({
-      particleCount: 60,
-      spread: 70,
-      origin,
-      colors: ["#a855f7", "#22c55e", "#f59e0b", "#ec4899"],
+    const canvas = document.createElement("canvas");
+    canvas.setAttribute("aria-hidden", "true");
+    Object.assign(canvas.style, {
+      position: "fixed",
+      inset: "0",
+      width: "100%",
+      height: "100%",
+      pointerEvents: "none",
+      // Above Modal (z-[100]) so the burst is visible while the dialog is open.
+      zIndex: "10000",
     });
+    document.body.appendChild(canvas);
+    const fire = confetti.create(canvas, { resize: true, useWorker: true });
+    const colors = ["#a855f7", "#22c55e", "#f59e0b", "#ec4899", "#673AB7"];
+    fire({
+      particleCount: 80,
+      spread: 70,
+      startVelocity: 45,
+      origin,
+      colors,
+    });
+    window.setTimeout(() => {
+      fire({
+        particleCount: 40,
+        spread: 100,
+        startVelocity: 35,
+        origin,
+        colors,
+      });
+    }, 180);
+    window.setTimeout(() => {
+      fire.reset();
+      canvas.remove();
+    }, 2800);
   }
 
   function confettiOriginFromEvent(e: MouseEvent<HTMLButtonElement>): {
