@@ -29,6 +29,7 @@ import {
   type ProjectPortalPayload,
 } from "@/lib/share/sanitize";
 import { approveDemoPortalMilestone } from "@/lib/share/demo-milestone-approve";
+import { fireCelebrationBurst } from "@/lib/celebration-burst";
 import { PortalGanttProvider } from "@/lib/share/portal-gantt-provider";
 import { sanitizeExternalUrl } from "@/lib/safe-url";
 import {
@@ -747,54 +748,15 @@ export default function ProjectSharePage() {
     setApproveGlory(false);
   }
 
-  async function fireApproveConfetti(origin: { x: number; y: number }) {
-    try {
-      const { default: confettiFn } = await import("canvas-confetti");
-      const colors = ["#a855f7", "#22c55e", "#f59e0b", "#ec4899", "#673AB7"];
-      // Modal is z-[100]; library default zIndex is also 100 — go well above.
-      const base = {
-        origin,
-        colors,
-        zIndex: 10000,
-        disableForReducedMotion: false as const,
-      };
-      void confettiFn({
-        ...base,
-        particleCount: 100,
-        spread: 75,
-        startVelocity: 48,
-      });
-      window.setTimeout(() => {
-        void confettiFn({
-          ...base,
-          particleCount: 50,
-          spread: 110,
-          startVelocity: 32,
-        });
-      }, 200);
-    } catch {
-      // Check glory animation still runs if the library fails to load.
-    }
-  }
-
-  function confettiOriginFromEvent(e: MouseEvent<HTMLButtonElement>): {
+  function burstOriginFromEvent(e: MouseEvent<HTMLButtonElement>): {
     x: number;
     y: number;
   } {
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = (rect.left + rect.width / 2) / window.innerWidth;
-    const y = (rect.top + rect.height / 2) / window.innerHeight;
-    if (
-      !Number.isFinite(x) ||
-      !Number.isFinite(y) ||
-      x <= 0 ||
-      y <= 0 ||
-      x >= 1 ||
-      y >= 1
-    ) {
-      return { x: 0.5, y: 0.55 };
-    }
-    return { x, y };
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
   }
 
   function celebrateThenClose(
@@ -802,7 +764,7 @@ export default function ProjectSharePage() {
     origin: { x: number; y: number },
   ) {
     setApproveGlory(true);
-    void fireApproveConfetti(origin);
+    fireCelebrationBurst(origin.x, origin.y);
     window.setTimeout(() => {
       setApproveClosing(true);
       window.setTimeout(() => {
@@ -816,7 +778,7 @@ export default function ProjectSharePage() {
   async function confirmApprove(e: MouseEvent<HTMLButtonElement>) {
     if (!approvingId || !credentialsOk || approveBusy || approveClosing) return;
     // Capture before any await — React nulls currentTarget after the event handler yields.
-    const confettiOrigin = confettiOriginFromEvent(e);
+    const burstOrigin = burstOriginFromEvent(e);
     setApproveBusy(true);
     setApproveError(null);
     let celebrated = false;
@@ -851,7 +813,7 @@ export default function ProjectSharePage() {
             : prev,
         );
         celebrated = true;
-        celebrateThenClose(approvingId, confettiOrigin);
+        celebrateThenClose(approvingId, burstOrigin);
         return;
       }
 
@@ -898,7 +860,7 @@ export default function ProjectSharePage() {
           : prev,
       );
       celebrated = true;
-      celebrateThenClose(approvedId, confettiOrigin);
+      celebrateThenClose(approvedId, burstOrigin);
     } catch (err) {
       setApproveError(
         err instanceof Error ? err.message : "Unable to approve milestone",
@@ -1460,6 +1422,11 @@ export default function ProjectSharePage() {
                   pending={!approveGlory}
                   glowHover={!approveGlory}
                   celebrate={approveGlory}
+                  className={
+                    approveGlory
+                      ? "scale-110 shadow-[0_0_28px_rgba(168,85,247,0.85)] transition-transform duration-200"
+                      : undefined
+                  }
                   onClick={(e) => {
                     if (!approveBusy && !approveClosing && !approveGlory) {
                       void confirmApprove(e);

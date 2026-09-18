@@ -1,6 +1,6 @@
 {
   "name": "reaper",
-  "version": "0.4.404",
+  "version": "0.4.405",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -28,7 +28,6 @@
     "@tiptap/react": "^3.27.4",
     "@tiptap/starter-kit": "^3.27.4",
     "@vercel/analytics": "^2.0.1",
-    "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.24.0",
@@ -39,7 +38,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

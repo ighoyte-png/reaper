@@ -91,9 +91,9 @@ export function Modal({
     >
       <div
         className={cn(
-          "max-h-[90dvh] w-full overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl transition-opacity duration-[400ms] ease-out sm:rounded-[var(--radius-md)]",
+          "max-h-[90dvh] w-full overflow-y-auto rounded-t-xl border border-[var(--border)] bg-[var(--bg)] p-4 shadow-xl transition-[opacity,transform] duration-[400ms] ease-out sm:rounded-[var(--radius-md)]",
           !hasCustomMaxWidth && "max-w-lg",
-          closing && "opacity-0",
+          closing && "translate-y-2 scale-[0.92] opacity-0",
           className,
         )}
       >
