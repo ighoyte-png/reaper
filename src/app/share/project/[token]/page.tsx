@@ -1423,9 +1423,24 @@ export default function ProjectSharePage() {
                       : undefined
                   }
                   onClick={(e) => {
-                    if (!approveBusy && !approveClosing && !approveGlory) {
-                      void confirmApprove(e);
+                    if (
+                      !approvingId ||
+                      !credentialsOk ||
+                      approveBusy ||
+                      approveClosing ||
+                      approveGlory
+                    ) {
+                      return;
                     }
+                    // Burst first — same tick as the click, before any API work.
+                    const { x, y } = burstOriginFromEvent(e);
+                    const approvedId = approvingId;
+                    const startedAt = Date.now();
+                    fireCelebrationBurst(x, y);
+                    setApproveGlory(true);
+                    setApproveBusy(true);
+                    setApproveError(null);
+                    void confirmApprove(approvedId, startedAt);
                   }}
                 />
                 <p className="text-center text-sm text-[var(--text-muted)]">
