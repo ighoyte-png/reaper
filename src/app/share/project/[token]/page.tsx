@@ -771,26 +771,10 @@ export default function ProjectSharePage() {
     }, remaining);
   }
 
-  async function confirmApprove(e: MouseEvent<HTMLButtonElement>) {
-    if (
-      !approvingId ||
-      !credentialsOk ||
-      approveBusy ||
-      approveClosing ||
-      approveGlory
-    ) {
-      return;
-    }
-    // Capture before any await — React nulls currentTarget after the event handler yields.
-    const burstOrigin = burstOriginFromEvent(e);
-    const approvedId = approvingId;
-    const startedAt = Date.now();
-
-    // Celebrate immediately on click (API runs in parallel).
+  async function confirmApprove(approvedId: string, startedAt: number) {
+    if (!credentialsOk || approveClosing) return;
     setApproveBusy(true);
     setApproveError(null);
-    setApproveGlory(true);
-    fireCelebrationBurst(burstOrigin.x, burstOrigin.y);
 
     try {
       if (!isSupabaseConfigured()) {
