@@ -759,12 +759,8 @@ export default function ProjectSharePage() {
     };
   }
 
-  function celebrateThenClose(
-    approvedId: string,
-    origin: { x: number; y: number },
-  ) {
-    setApproveGlory(true);
-    fireCelebrationBurst(origin.x, origin.y);
+  function finishApproveCelebration(approvedId: string, startedAt: number) {
+    const remaining = Math.max(0, 1200 - (Date.now() - startedAt));
     window.setTimeout(() => {
       setApproveClosing(true);
       window.setTimeout(() => {
@@ -772,26 +768,42 @@ export default function ProjectSharePage() {
         setCelebrateId(approvedId);
         window.setTimeout(() => setCelebrateId(null), 1200);
       }, 400);
-    }, 1200);
+    }, remaining);
   }
 
   async function confirmApprove(e: MouseEvent<HTMLButtonElement>) {
-    if (!approvingId || !credentialsOk || approveBusy || approveClosing) return;
+    if (
+      !approvingId ||
+      !credentialsOk ||
+      approveBusy ||
+      approveClosing ||
+      approveGlory
+    ) {
+      return;
+    }
     // Capture before any await — React nulls currentTarget after the event handler yields.
     const burstOrigin = burstOriginFromEvent(e);
+    const approvedId = approvingId;
+    const startedAt = Date.now();
+
+    // Celebrate immediately on click (API runs in parallel).
     setApproveBusy(true);
     setApproveError(null);
-    let celebrated = false;
+    setApproveGlory(true);
+    fireCelebrationBurst(burstOrigin.x, burstOrigin.y);
+
     try {
       if (!isSupabaseConfigured()) {
         const result = approveDemoPortalMilestone(
           token,
-          approvingId,
+          approvedId,
           approveName,
           approveEmail,
         );
         if (!result.ok) {
+          setApproveGlory(false);
           setApproveError(result.error);
+          setApproveBusy(false);
           return;
         }
         setPortal((prev) =>
@@ -812,13 +824,12 @@ export default function ProjectSharePage() {
               }
             : prev,
         );
-        celebrated = true;
-        celebrateThenClose(approvingId, burstOrigin);
+        finishApproveCelebration(approvedId, startedAt);
         return;
       }
 
       const res = await fetch(
-        `/api/share/project/${encodeURIComponent(token)}/milestones/${encodeURIComponent(approvingId)}/approve`,
+        `/api/share/project/${encodeURIComponent(token)}/milestones/${encodeURIComponent(approvedId)}/approve`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -837,10 +848,11 @@ export default function ProjectSharePage() {
         error?: string;
       };
       if (!res.ok || !body.milestone) {
+        setApproveGlory(false);
         setApproveError(body.error || "Unable to approve milestone");
+        setApproveBusy(false);
         return;
       }
-      const approvedId = approvingId;
       setPortal((prev) =>
         prev
           ? {
@@ -859,14 +871,13 @@ export default function ProjectSharePage() {
             }
           : prev,
       );
-      celebrated = true;
-      celebrateThenClose(approvedId, burstOrigin);
+      finishApproveCelebration(approvedId, startedAt);
     } catch (err) {
+      setApproveGlory(false);
       setApproveError(
         err instanceof Error ? err.message : "Unable to approve milestone",
       );
-    } finally {
-      if (!celebrated) setApproveBusy(false);
+      setApproveBusy(false);
     }
   }
 
