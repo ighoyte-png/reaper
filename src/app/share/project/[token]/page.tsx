@@ -745,21 +745,31 @@ export default function ProjectSharePage() {
     setApproveClosing(false);
   }
 
-  function fireApproveConfetti(e: MouseEvent<HTMLButtonElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
+  function fireApproveConfetti(origin: { x: number; y: number }) {
     confetti({
       particleCount: 60,
       spread: 70,
-      origin: {
-        x: (rect.left + rect.width / 2) / window.innerWidth,
-        y: (rect.top + rect.height / 2) / window.innerHeight,
-      },
+      origin,
       colors: ["#a855f7", "#22c55e", "#f59e0b", "#ec4899"],
     });
   }
 
-  function celebrateThenClose(approvedId: string, e: MouseEvent<HTMLButtonElement>) {
-    fireApproveConfetti(e);
+  function confettiOriginFromEvent(e: MouseEvent<HTMLButtonElement>): {
+    x: number;
+    y: number;
+  } {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return {
+      x: (rect.left + rect.width / 2) / window.innerWidth,
+      y: (rect.top + rect.height / 2) / window.innerHeight,
+    };
+  }
+
+  function celebrateThenClose(
+    approvedId: string,
+    origin: { x: number; y: number },
+  ) {
+    fireApproveConfetti(origin);
     window.setTimeout(() => {
       setApproveClosing(true);
       window.setTimeout(() => {
@@ -772,6 +782,8 @@ export default function ProjectSharePage() {
 
   async function confirmApprove(e: MouseEvent<HTMLButtonElement>) {
     if (!approvingId || !credentialsOk || approveBusy || approveClosing) return;
+    // Capture before any await — React nulls currentTarget after the event handler yields.
+    const confettiOrigin = confettiOriginFromEvent(e);
     setApproveBusy(true);
     setApproveError(null);
     let celebrated = false;
@@ -806,7 +818,7 @@ export default function ProjectSharePage() {
             : prev,
         );
         celebrated = true;
-        celebrateThenClose(approvingId, e);
+        celebrateThenClose(approvingId, confettiOrigin);
         return;
       }
 
@@ -853,7 +865,7 @@ export default function ProjectSharePage() {
           : prev,
       );
       celebrated = true;
-      celebrateThenClose(approvedId, e);
+      celebrateThenClose(approvedId, confettiOrigin);
     } catch (err) {
       setApproveError(
         err instanceof Error ? err.message : "Unable to approve milestone",
