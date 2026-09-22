@@ -10,14 +10,49 @@ import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export const runtime = "nodejs";
-/** after() drain may continue briefly past the response. */
+/** Inline drain + after() backlog; keep under ClickUp's ~7s fail window. */
 export const maxDuration = 60;
+
+function siteOrigin(request: Request): string | null {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (fromEnv) {
+    try {
+      return new URL(fromEnv).origin;
+    } catch {
+      return fromEnv.replace(/\/$/, "") || null;
+    }
+  }
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Kick a separate function invocation so drain can outlive this response. */
+function kickInboundDrain(request: Request, orgId: string) {
+  const secret = process.env.CLICKUP_OUTBOX_SECRET?.trim();
+  const origin = siteOrigin(request);
+  if (!secret || !origin) return;
+  const url = `${origin}/api/addons/clickup/process-inbound`;
+  after(() => {
+    void fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-clickup-outbox-secret": secret,
+      },
+      body: JSON.stringify({ organization_id: orgId }),
+    }).catch(() => {
+      /* daily cron / next webhook will retry */
+    });
+  });
+}
 
 /**
  * ClickUp Space webhook receiver.
- * Verifies HMAC, enqueues idempotent inbound events, ACKs quickly, then drains
- * via after(). ClickUp marks webhooks failing when the response takes >7s and
- * suspends at fail_count 100 — never do heavy work before responding.
+ * Verifies HMAC, enqueues, applies a tiny inline batch (so Hobby doesn't drop
+ * work), ACKs ClickUp quickly, then kicks a separate drain for any backlog.
  */
 export async function POST(request: Request) {
   try {
@@ -70,13 +105,12 @@ export async function POST(request: Request) {
       payload,
     });
 
-    // Drain after ACK so ClickUp never waits on processInbound (>7s → failing).
-    // Small batch keeps after()-CPU low; the next event or daily cron finishes backlog.
-    after(() => {
-      void processInbound(admin, orgId, 10).catch(() => {
-        /* cron / next webhook will retry */
-      });
-    });
+    // Apply the just-enqueued event in-process. after()-only drains were
+    // getting dropped on Hobby, leaving creates stuck in pending forever.
+    await processInbound(admin, orgId, 2);
+
+    // Separate invocation for any remaining backlog (does not block ClickUp).
+    kickInboundDrain(request, orgId);
 
     return NextResponse.json({ ok: true });
   } catch (e) {
