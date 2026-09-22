@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent, type ReactNode } from "react";
 import Link from "next/link";
 import {
   DndContext,
@@ -52,6 +52,10 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ProjectTaskCalendar } from "@/components/projects/project-task-calendar";
 import { ProjectGanttBoard } from "@/components/projects/project-gantt-board";
+import {
+  TaskBoardContextMenu,
+  type TaskBoardContextMenuState,
+} from "@/components/projects/task-board-context-menu";
 import { useToast } from "@/components/toast/toast-provider";
 import { ConfirmDialog, inputClass, DateInput } from "@/components/ui/form";
 import { Button } from "@/components/ui/button";
@@ -318,6 +322,8 @@ type BoardCtx = {
   setParentsSelected: (ids: string[], on: boolean) => void;
   /** Selected task ids currently being dragged as a group (dim siblings). */
   multiDragIds: Set<string> | null;
+  /** Right-click task row → floating bulk-style context menu. */
+  onTaskContextMenu: ((e: ReactMouseEvent, taskId: string) => void) | null;
   cycleStatus: (task: Task) => void;
   editingTaskId: string | null;
   setEditingTask: (task: Task | null) => void;
@@ -592,6 +598,8 @@ export function ProjectTaskBoard({
   const [draftingListId, setDraftingListId] = useState<string | null>(null);
   const [bindDateConflictNotice, setBindDateConflictNotice] = useState(false);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [taskContextMenu, setTaskContextMenu] =
+    useState<TaskBoardContextMenuState | null>(null);
   const [confirmDeleteList, setConfirmDeleteList] = useState<{
     id: string;
     name: string;
@@ -1087,23 +1095,28 @@ export function ProjectTaskBoard({
   }, [viewerCanManage, selected, state.tasks, listById]);
 
   function moveSelectedToList(destListId: string) {
-    if (!manageLists || selected.size === 0 || !destListId) return;
+    moveTaskIdsToList([...selected], destListId);
+  }
+
+  function moveTaskIdsToList(taskIds: string[], destListId: string) {
+    if (!manageLists || taskIds.length === 0 || !destListId) return;
     if (isListGanttLocked(destListId)) return;
     const destList = allLists.find((l) => l.id === destListId);
     if (!destList) return;
-    if (guardGanttStructuralEditForTasks([...selected])) return;
+    const idSet = new Set(taskIds);
+    if (guardGanttStructuralEditForTasks(taskIds)) return;
 
     const projectTasks = state.tasks.filter((t) => t.project_id === projectId);
-    const selectedTasks = [...selected]
+    const selectedTasks = taskIds
       .map((id) => projectTasks.find((t) => t.id === id))
       .filter((t): t is Task => Boolean(t));
 
     // Move selected parents (with their children) and orphan selected subtasks.
     const movers = selectedTasks
-      .filter((t) => !t.parent_id || !selected.has(t.parent_id))
+      .filter((t) => !t.parent_id || !idSet.has(t.parent_id))
       .filter(
         (t) =>
-          !t.is_client_review || !t.parent_id || selected.has(t.parent_id),
+          !t.is_client_review || !t.parent_id || idSet.has(t.parent_id),
       )
       .sort(
         (a, b) =>
@@ -1172,9 +1185,24 @@ export function ProjectTaskBoard({
     clearSelection();
   }
 
-  function applyBulkEdits() {
-    if (!bulkHasChanges || selected.size === 0) return;
-    for (const id of selected) {
+  type BulkEditDraft = {
+    status?: TaskStatus;
+    assigneeId?: string | null;
+    startDate?: string;
+    dueDate?: string;
+  };
+
+  function applyEditsToTaskIds(taskIds: Iterable<string>, draft: BulkEditDraft) {
+    const ids = [...taskIds];
+    if (ids.length === 0) return;
+    const hasChange =
+      draft.status !== undefined ||
+      draft.assigneeId !== undefined ||
+      draft.startDate !== undefined ||
+      draft.dueDate !== undefined;
+    if (!hasChange) return;
+
+    for (const id of ids) {
       const task = state.tasks.find((t) => t.id === id);
       if (!task) continue;
       const ganttLocked = isListGanttLocked(task.list_id);
@@ -1185,15 +1213,15 @@ export function ProjectTaskBoard({
 
       let next = { ...task };
       let changed = false;
-      if (bulkDraft.status !== undefined) {
+      if (draft.status !== undefined) {
         if (viewerCanManage || task.assignee_person_id === viewerPersonId) {
           if (task.is_client_review) {
             const crNext = nextClientReviewStatus(task.status);
-            if (bulkDraft.status !== crNext && bulkDraft.status !== task.status) {
+            if (draft.status !== crNext && draft.status !== task.status) {
               continue;
             }
             if (
-              bulkDraft.status === "complete" &&
+              draft.status === "complete" &&
               !canCompleteTask(
                 viewerPersonId,
                 task,
@@ -1203,13 +1231,13 @@ export function ProjectTaskBoard({
             ) {
               continue;
             }
-            if (bulkDraft.status !== task.status) {
-              next = { ...next, status: bulkDraft.status };
+            if (draft.status !== task.status) {
+              next = { ...next, status: draft.status };
               changed = true;
             }
           } else {
             if (
-              bulkDraft.status === "complete" &&
+              draft.status === "complete" &&
               !canCompleteTask(
                 viewerPersonId,
                 task,
@@ -1219,29 +1247,50 @@ export function ProjectTaskBoard({
             ) {
               continue;
             }
-            next = { ...next, status: bulkDraft.status };
+            next = { ...next, status: draft.status };
             changed = true;
           }
         }
       }
-      if (!ganttLocked && viewerCanManage && bulkDraft.assigneeId !== undefined) {
-        next = { ...next, assignee_person_id: bulkDraft.assigneeId };
+      if (!ganttLocked && viewerCanManage && draft.assigneeId !== undefined) {
+        next = { ...next, assignee_person_id: draft.assigneeId };
         changed = true;
       }
-      if (!ganttLocked && viewerCanManage && bulkDraft.startDate !== undefined) {
+      if (!ganttLocked && viewerCanManage && draft.startDate !== undefined) {
         const list = listById.get(task.list_id);
         if (list?.gantt_enabled) {
-          next = { ...next, start_date: bulkDraft.startDate || null };
+          next = { ...next, start_date: draft.startDate || null };
           changed = true;
         }
       }
-      if (!ganttLocked && viewerCanManage && bulkDraft.dueDate !== undefined) {
-        next = { ...next, due_date: bulkDraft.dueDate || null };
+      if (!ganttLocked && viewerCanManage && draft.dueDate !== undefined) {
+        next = { ...next, due_date: draft.dueDate || null };
         changed = true;
       }
       if (changed) upsertTask(next);
     }
+  }
+
+  function applyBulkEdits() {
+    if (!bulkHasChanges || selected.size === 0) return;
+    applyEditsToTaskIds(selected, bulkDraft);
     clearSelection();
+  }
+
+  function handleTaskContextMenu(e: ReactMouseEvent, taskId: string) {
+    if (readOnly || isPublicShare || bindSelectMode) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const multi =
+      selected.has(taskId) && selected.size > 1 ? [...selected] : [taskId];
+    if (!(selected.has(taskId) && selected.size > 1)) {
+      setSelected(new Set([taskId]));
+    }
+    setTaskContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      taskIds: multi,
+    });
   }
 
   function addList() {
@@ -2402,6 +2451,10 @@ export function ProjectTaskBoard({
     toggleSelect,
     setParentsSelected,
     multiDragIds,
+    onTaskContextMenu:
+      readOnly || isPublicShare || bindSelectMode
+        ? null
+        : handleTaskContextMenu,
     cycleStatus,
     editingTaskId,
     setEditingTask,
@@ -3223,6 +3276,37 @@ export function ProjectTaskBoard({
           confirmLabel="Delete"
           onCancel={() => setConfirmBulkDelete(false)}
           onConfirm={deleteSelectedTasks}
+        />
+      ) : null}
+      {taskContextMenu ? (
+        <TaskBoardContextMenu
+          menu={taskContextMenu}
+          onClose={() => setTaskContextMenu(null)}
+          canManage={viewerCanManage}
+          manageLists={manageLists}
+          people={sortPeopleByName(assigneePeople).map((p) => ({
+            id: p.id,
+            name: p.name,
+          }))}
+          lists={activeLists.map((l) => ({ id: l.id, name: l.name }))}
+          onStatus={(status) => {
+            applyEditsToTaskIds(taskContextMenu.taskIds, { status });
+          }}
+          onAssign={(assigneeId) => {
+            applyEditsToTaskIds(taskContextMenu.taskIds, { assigneeId });
+          }}
+          onDueDate={(dueDate) => {
+            applyEditsToTaskIds(taskContextMenu.taskIds, {
+              dueDate: dueDate ?? "",
+            });
+          }}
+          onMoveToList={(listId) => {
+            moveTaskIdsToList(taskContextMenu.taskIds, listId);
+          }}
+          onDelete={() => {
+            setSelected(new Set(taskContextMenu.taskIds));
+            setConfirmBulkDelete(true);
+          }}
         />
       ) : null}
       {ganttStructuralNotice ? (
@@ -4987,6 +5071,11 @@ function TaskRow({
           multiSelectDrag ? "Drag to move all selected tasks" : undefined
         }
         {...(multiSelectDrag && listReorderOn ? { ...attributes, ...listeners } : {})}
+        onContextMenu={
+          ctx.onTaskContextMenu
+            ? (e) => ctx.onTaskContextMenu?.(e, task.id)
+            : undefined
+        }
         onClick={
           ctx.readOnly || multiSelectDrag
             ? undefined
