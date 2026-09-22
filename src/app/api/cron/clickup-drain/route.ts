@@ -40,13 +40,9 @@ function siteOrigin(): string | null {
 }
 
 /**
- * Secret-auth ClickUp queue drain (cron / external scheduler / manual).
- * Event-driven drains handle the hot path; call this on a short interval from
- * an external cron if you need coverage when no Reaper tab is open
- * (Vercel Hobby only allows daily native crons).
- *
- * Also probes at most a couple of two-way webhooks per run (cooldown 6h) and
- * recreates them only when ClickUp reports missing/failing/wrong endpoint.
+ * Daily Hobby safety net (event-driven paths do the real work).
+ * Only drains orgs that already have pending rows — never wakes idle orgs.
+ * Also probes at most one webhook (heal cooldown 6h).
  */
 async function drainAll() {
   if (!isSupabaseConfigured() || !isServiceRoleConfigured()) {
@@ -56,30 +52,20 @@ async function drainAll() {
   const admin = createAdminClient();
   const orgIds = new Set<string>();
 
-  const [{ data: outboxOrgs }, { data: inboundOrgs }, { data: enabledOrgs }] =
-    await Promise.all([
-      admin.from("addon_clickup_outbox").select("organization_id").limit(200),
-      admin
-        .from("addon_clickup_inbound_events")
-        .select("organization_id")
-        .eq("status", "pending")
-        .limit(200),
-      admin
-        .from("addon_clickup_settings")
-        .select("organization_id")
-        .eq("enabled", true)
-        .limit(100),
-    ]);
+  // Pending work only — skip the blanket "all enabled orgs" scan to save CPU.
+  const [{ data: outboxOrgs }, { data: inboundOrgs }] = await Promise.all([
+    admin.from("addon_clickup_outbox").select("organization_id").limit(50),
+    admin
+      .from("addon_clickup_inbound_events")
+      .select("organization_id")
+      .eq("status", "pending")
+      .limit(50),
+  ]);
 
   for (const row of outboxOrgs ?? []) {
     if (row.organization_id) orgIds.add(String(row.organization_id));
   }
   for (const row of inboundOrgs ?? []) {
-    if (row.organization_id) orgIds.add(String(row.organization_id));
-  }
-  // Always tick enabled orgs so due/retry rows (available_at) get a chance
-  // even when the select above races with locks.
-  for (const row of enabledOrgs ?? []) {
     if (row.organization_id) orgIds.add(String(row.organization_id));
   }
 
@@ -89,9 +75,10 @@ async function drainAll() {
     inbound: { processed: number; ignored: number; errors: number };
   }[] = [];
 
+  // Small batches: hot path is webhook after() / browser outbox drain.
   for (const orgId of orgIds) {
-    const outbox = await processOutbox(admin, orgId, 40);
-    const inbound = await processInbound(admin, orgId, 40);
+    const outbox = await processOutbox(admin, orgId, 15);
+    const inbound = await processInbound(admin, orgId, 15);
     results.push({
       organization_id: orgId,
       outbox: {
@@ -119,7 +106,7 @@ async function drainAll() {
       webhookHeal = await healStaleSpaceWebhooks({
         admin,
         origin,
-        maxChecks: 2,
+        maxChecks: 1,
       });
     } catch (e) {
       // Don't fail the queue drain if migration 119 isn't applied yet, etc.

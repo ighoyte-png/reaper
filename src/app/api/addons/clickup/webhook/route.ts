@@ -71,8 +71,9 @@ export async function POST(request: Request) {
     });
 
     // Drain after ACK so ClickUp never waits on processInbound (>7s → failing).
+    // Small batch keeps after()-CPU low; the next event or daily cron finishes backlog.
     after(() => {
-      void processInbound(admin, orgId, 40).catch(() => {
+      void processInbound(admin, orgId, 10).catch(() => {
         /* cron / next webhook will retry */
       });
     });
