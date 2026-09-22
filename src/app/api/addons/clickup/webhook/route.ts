@@ -9,11 +9,15 @@ import { loadSettingsByWebhookId } from "@/addons/clickup/db";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
+export const runtime = "nodejs";
+/** after() drain may continue briefly past the response. */
+export const maxDuration = 60;
+
 /**
  * ClickUp Space webhook receiver.
- * Verifies HMAC, enqueues idempotent inbound events, then drains the queue.
- * Drain must complete in-process — there is no client poller anymore, and
- * fire-and-forget work is dropped when the serverless function returns.
+ * Verifies HMAC, enqueues idempotent inbound events, ACKs quickly, then drains
+ * via after(). ClickUp marks webhooks failing when the response takes >7s and
+ * suspends at fail_count 100 — never do heavy work before responding.
  */
 export async function POST(request: Request) {
   try {
@@ -39,6 +43,7 @@ export async function POST(request: Request) {
     const admin = createAdminClient();
     const settings = await loadSettingsByWebhookId(admin, webhookId);
     if (!settings?.webhook_enabled || !settings.webhook_secret) {
+      // 404 (not 401): ClickUp suspends immediately on 401.
       return NextResponse.json({ error: "Unknown webhook" }, { status: 404 });
     }
 
@@ -49,7 +54,8 @@ export async function POST(request: Request) {
         settings.webhook_secret,
       )
     ) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+      // 400 (not 401): invalid HMAC must not auto-suspend the webhook.
+      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
 
     if (!settings.enabled) {
@@ -64,13 +70,10 @@ export async function POST(request: Request) {
       payload,
     });
 
-    // Apply the just-enqueued event (and a small backlog) before responding.
-    await processInbound(admin, orgId, 40);
-
-    // Continue draining any remaining pending rows after the response.
+    // Drain after ACK so ClickUp never waits on processInbound (>7s → failing).
     after(() => {
       void processInbound(admin, orgId, 40).catch(() => {
-        /* next webhook / manual drain will retry */
+        /* cron / next webhook will retry */
       });
     });
 

@@ -109,9 +109,10 @@ async function drainAll() {
   let webhookHeal: {
     checked: number;
     recreated: number;
+    reactivated: number;
     errors: string[];
     skipped?: string;
-  } = { checked: 0, recreated: 0, errors: [] };
+  } = { checked: 0, recreated: 0, reactivated: 0, errors: [] };
   const origin = siteOrigin();
   if (origin) {
     try {
@@ -125,6 +126,7 @@ async function drainAll() {
       webhookHeal = {
         checked: 0,
         recreated: 0,
+        reactivated: 0,
         errors: [e instanceof Error ? e.message : String(e)],
       };
     }
@@ -132,6 +134,7 @@ async function drainAll() {
     webhookHeal = {
       checked: 0,
       recreated: 0,
+      reactivated: 0,
       errors: [],
       skipped: "NEXT_PUBLIC_SITE_URL unset",
     };

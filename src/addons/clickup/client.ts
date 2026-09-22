@@ -451,19 +451,54 @@ export async function deleteWebhook(
   });
 }
 
-/** GET one webhook; throws ClickUpApiError (404 when ClickUp dropped it). */
+/** List webhooks for a workspace (team). Prefer this over GET /webhook/{id}. */
+export async function listTeamWebhooks(
+  auth: ClickUpAuth,
+  teamId: string,
+): Promise<ClickUpWebhook[]> {
+  const data = await cuFetch<{ webhooks?: ClickUpWebhook[] }>(
+    auth,
+    `/team/${encodeURIComponent(teamId)}/webhook`,
+  );
+  return data.webhooks ?? [];
+}
+
+/**
+ * Resolve one webhook. ClickUp's GET /webhook/{id} returns 405 on many accounts,
+ * so look it up via the team webhook list when teamId is provided.
+ */
 export async function getWebhook(
   auth: ClickUpAuth,
   webhookId: string,
+  teamId?: string,
 ): Promise<ClickUpWebhook> {
-  const data = await cuFetch<{ webhook?: ClickUpWebhook } | ClickUpWebhook>(
-    auth,
-    `/webhook/${encodeURIComponent(webhookId)}`,
-  );
-  if (data && typeof data === "object" && "webhook" in data && data.webhook) {
-    return data.webhook;
+  if (teamId?.trim()) {
+    const hooks = await listTeamWebhooks(auth, teamId.trim());
+    const found = hooks.find((h) => String(h.id) === String(webhookId));
+    if (!found) {
+      throw new ClickUpApiError(404, "Webhook not found in team list");
+    }
+    return found;
   }
-  return data as ClickUpWebhook;
+
+  try {
+    const data = await cuFetch<{ webhook?: ClickUpWebhook } | ClickUpWebhook>(
+      auth,
+      `/webhook/${encodeURIComponent(webhookId)}`,
+    );
+    if (data && typeof data === "object" && "webhook" in data && data.webhook) {
+      return data.webhook;
+    }
+    return data as ClickUpWebhook;
+  } catch (e) {
+    if (e instanceof ClickUpApiError && e.status === 405) {
+      throw new ClickUpApiError(
+        405,
+        "GET /webhook/{id} not allowed; pass teamId to use team list",
+      );
+    }
+    throw e;
+  }
 }
 
 export async function updateWebhook(

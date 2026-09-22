@@ -356,18 +356,19 @@ export async function disableSpaceWebhook(args: {
 }
 
 /**
- * Cheap webhook health for the drain cron: at most one ClickUp GET per due org,
- * at most a few orgs per run. Recreates only when the webhook is missing, failing,
- * or pointed at the wrong endpoint — not when the Space is merely quiet.
+ * Cheap webhook health for the drain cron: at most one ClickUp LIST per due org,
+ * at most a few orgs per run. Reactivates suspended hooks; recreates when missing,
+ * failing, or pointed at the wrong endpoint — not when the Space is merely quiet.
  */
 export async function healStaleSpaceWebhooks(args: {
   admin: SupabaseClient;
   origin: string;
-  /** Max orgs to probe with a ClickUp GET this run. */
+  /** Max orgs to probe with a ClickUp LIST this run. */
   maxChecks?: number;
 }): Promise<{
   checked: number;
   recreated: number;
+  reactivated: number;
   errors: string[];
 }> {
   const { admin, origin } = args;
@@ -426,33 +427,61 @@ export async function healStaleSpaceWebhooks(args: {
 
   let checked = 0;
   let recreated = 0;
+  let reactivated = 0;
   const errors: string[] = [];
 
   for (const row of due) {
     const orgId = String(row.organization_id);
     const webhookId = String(row.webhook_id);
+    const teamId = String(row.clickup_team_id ?? "").trim();
+    const spaceId = String(row.space_id ?? "").trim();
     checked += 1;
     try {
       const auth = await resolveOrgClickUpAuth(admin, orgId);
       let needsRecreate = false;
       let reason = "";
       try {
-        const hook = await cu.getWebhook(auth, webhookId);
+        // GET /webhook/{id} returns 405 — always resolve via team list.
+        const hook = await cu.getWebhook(auth, webhookId, teamId);
         const endpoint = String(hook.endpoint ?? "").replace(/\/$/, "");
         const expected = expectedEndpoint.replace(/\/$/, "");
         const failCount = Number(hook.health?.fail_count ?? 0);
         const healthStatus = String(hook.health?.status ?? "").toLowerCase();
         const status = String(hook.status ?? "").toLowerCase();
+        const suspended =
+          healthStatus === "suspended" ||
+          status === "suspended" ||
+          failCount >= 100;
+
         if (endpoint && expected && endpoint !== expected) {
           needsRecreate = true;
           reason = "endpoint_mismatch";
+        } else if (suspended) {
+          // Official recovery: PUT status=active with endpoint+events (full replace).
+          try {
+            await cu.updateWebhook(auth, webhookId, {
+              endpoint: expectedEndpoint,
+              events: [...cu.CLICKUP_TASK_WEBHOOK_EVENTS],
+              status: "active",
+              space_id: /^\d+$/.test(spaceId) ? Number(spaceId) : spaceId,
+            });
+            await upsertSettings(admin, orgId, {
+              last_webhook_check_at: new Date().toISOString(),
+              last_webhook_error: null,
+            });
+            reactivated += 1;
+            console.info(
+              `[clickup] reactivated suspended webhook for org ${orgId} (fail_count=${failCount})`,
+            );
+            continue;
+          } catch {
+            needsRecreate = true;
+            reason = `reactivate_failed_fail_count_${failCount}`;
+          }
         } else if (status === "paused" || status === "failing") {
           needsRecreate = true;
           reason = `status_${status}`;
-        } else if (
-          healthStatus.includes("fail") ||
-          healthStatus === "suspended"
-        ) {
+        } else if (healthStatus.includes("fail")) {
           needsRecreate = true;
           reason = `health_${healthStatus || "fail"}`;
         } else if (failCount >= 3) {
@@ -497,7 +526,7 @@ export async function healStaleSpaceWebhooks(args: {
     }
   }
 
-  return { checked, recreated, errors };
+  return { checked, recreated, reactivated, errors };
 }
 
 export function idempotencyKeysForPayload(
@@ -1200,6 +1229,17 @@ export async function processInbound(
   const errors: string[] = [];
   let processed = 0;
   let ignored = 0;
+
+  // Serverless kills mid-apply leave rows locked forever; free anything older
+  // than a few minutes so cron / next webhook can retry.
+  const STALE_LOCK_MS = 5 * 60 * 1000;
+  await admin
+    .from("addon_clickup_inbound_events")
+    .update({ locked_at: null })
+    .eq("organization_id", orgId)
+    .eq("status", "pending")
+    .not("locked_at", "is", null)
+    .lt("locked_at", new Date(Date.now() - STALE_LOCK_MS).toISOString());
 
   const { data: rows } = await admin
     .from("addon_clickup_inbound_events")
