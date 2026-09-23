@@ -826,10 +826,11 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
               avatar_attachment_id: person.avatar_attachment_id,
               avatar_color: person.avatar_color,
               usedHours: 0,
-              plannedHours: totalHours,
+              plannedHours: 0,
               totalHours,
               moneyAmount: null,
-              dashUsedPlanned: false,
+              // Fixed hours (no schedule): Total only — same as fixed fee.
+              dashUsedPlanned: true,
               is_contractor: true,
             });
           }
@@ -888,23 +889,10 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
               : undefined,
           });
         } else {
-          const committed = contractorCommitted(person, member);
-          const todayKey = toDateKey(asOf);
-          let usedHours = 0;
-          let futureHours = 0;
-          for (const mk of eachMonthKeyInRange(BURN_RANGE_START, BURN_RANGE_END)) {
-            if (!hoursCommitmentAppliesInMonth(project, mk, asOf)) continue;
-            const monthStart = toDateKey(
-              startOfMonth(
-                new Date(Number(mk.slice(0, 4)), Number(mk.slice(5, 7)) - 1, 1),
-              ),
-            );
-            if (monthStart > todayKey) {
-              futureHours += committed.hours;
-            } else {
-              usedHours += committed.hours;
-            }
-          }
+          // Non-retainer fixed hours: count the commitment once (not per month).
+          // Used/Planned are dashes; Total shows the fixed hours — schedule
+          // burn is intentionally excluded for util-hidden / hours-mode contractors.
+          const hoursCommitted = contractorCommitted(person, member);
           contractors.push({
             id: person.id,
             personId: person.id,
@@ -912,11 +900,11 @@ const d = new Date(selectedMonth.year, selectedMonth.monthIndex, 1);
             avatar_url: person.avatar_url,
             avatar_attachment_id: person.avatar_attachment_id,
             avatar_color: person.avatar_color,
-            usedHours,
-            plannedHours: futureHours,
-            totalHours: usedHours + futureHours,
+            usedHours: 0,
+            plannedHours: 0,
+            totalHours: hoursCommitted.hours,
             moneyAmount: null,
-            dashUsedPlanned: false,
+            dashUsedPlanned: true,
             is_contractor: true,
           });
         }
