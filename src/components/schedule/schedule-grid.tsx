@@ -7642,15 +7642,21 @@ function formatLastEditedBy(
   const who = name?.trim() || "—";
   if (!editedAt) return `Last Edited By: ${who}`;
   try {
-    const then = parseISO(editedAt).getTime();
-    if (Number.isNaN(then)) return `Last Edited By: ${who}`;
-    const hours = Math.max(0, Math.floor((Date.now() - then) / 3_600_000));
-    const ago =
-      hours < 1
-        ? "less than 1 hour ago"
-        : hours === 1
-          ? "1 hour ago"
-          : `${hours} hours ago`;
+    const then = parseISO(editedAt);
+    const thenMs = then.getTime();
+    if (Number.isNaN(thenMs)) return `Last Edited By: ${who}`;
+    const hours = Math.max(0, Math.floor((Date.now() - thenMs) / 3_600_000));
+    let ago: string;
+    if (hours < 1) {
+      ago = "less than 1 hour ago";
+    } else if (hours < 24) {
+      ago = hours === 1 ? "1 hour ago" : `${hours} hours ago`;
+    } else if (hours < 24 * 7) {
+      const days = Math.floor(hours / 24);
+      ago = days === 1 ? "1 day ago" : `${days} days ago`;
+    } else {
+      ago = format(then, "MMM d, yyyy");
+    }
     return `Last Edited By: ${who} · ${ago}`;
   } catch {
     return `Last Edited By: ${who}`;
