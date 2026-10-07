@@ -87,12 +87,40 @@ export async function GET(request: Request) {
   try {
     const auth = await requireClickUpManagerApi(request);
     if ("error" in auth) return auth.error;
-    const settings = await publicFor(
-      auth.admin,
-      auth.caller.organization_id,
-      request,
-    );
-    return NextResponse.json({ settings });
+    const orgId = auth.caller.organization_id;
+    const settings = await publicFor(auth.admin, orgId, request);
+
+    const [{ count: pending }, { count: errored }, { data: oldest }] =
+      await Promise.all([
+        auth.admin
+          .from("addon_clickup_inbound_events")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", orgId)
+          .eq("status", "pending"),
+        auth.admin
+          .from("addon_clickup_inbound_events")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", orgId)
+          .eq("status", "error"),
+        auth.admin
+          .from("addon_clickup_inbound_events")
+          .select("created_at, last_error")
+          .eq("organization_id", orgId)
+          .eq("status", "pending")
+          .order("created_at", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+    return NextResponse.json({
+      settings,
+      inbound_queue: {
+        pending: pending ?? 0,
+        error: errored ?? 0,
+        oldest_pending_at: oldest?.created_at ?? null,
+        oldest_pending_error: oldest?.last_error ?? null,
+      },
+    });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed" },

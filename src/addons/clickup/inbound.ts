@@ -5,7 +5,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import * as cu from "@/addons/clickup/client";
-import { resolveOrgClickUpAuth } from "@/addons/clickup/auth";
+import {
+  isNotFoundClickUpError,
+  resolveOrgClickUpAuth,
+} from "@/addons/clickup/auth";
 import {
   deleteLink,
   getLinkByClickUpId,
@@ -1169,6 +1172,8 @@ export async function applyInboundEvent(args: {
       });
       return r === "created" ? "processed" : "ignored";
     } catch (e) {
+      // Deleted before we could import — don't retry (poison queue).
+      if (isNotFoundClickUpError(e)) return "ignored";
       // taskCreated can race ahead of ClickUp's task GET right after assign.
       if (eventName === "taskCreated") throw e;
       return "ignored";
@@ -1187,7 +1192,19 @@ export async function applyInboundEvent(args: {
     return "ignored";
   }
 
-  const cuTask = await cu.getTask(auth, taskId);
+  let cuTask: Awaited<ReturnType<typeof cu.getTask>>;
+  try {
+    cuTask = await cu.getTask(auth, taskId);
+  } catch (e) {
+    // Task gone in ClickUp — drop the Reaper link / task instead of retrying.
+    if (isNotFoundClickUpError(e)) {
+      return (await applyDeleted({ admin, orgId, clickUpTaskId: taskId })) ===
+        "applied"
+        ? "processed"
+        : "ignored";
+    }
+    throw e;
+  }
   const fieldHints: {
     title?: boolean;
     status?: boolean;
@@ -1278,6 +1295,12 @@ export async function processInbound(
         ignored += 1;
       }
     } catch (e) {
+      // Gone in ClickUp — never worth retrying; clears the queue without CPU burn.
+      if (isNotFoundClickUpError(e)) {
+        await markInbound(admin, row.id as string, "ignored");
+        ignored += 1;
+        continue;
+      }
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(msg);
       const attempts = (row.attempts ?? 0) + 1;
@@ -1296,6 +1319,10 @@ export async function processInbound(
         last_webhook_error: msg.slice(0, 500),
       });
     }
+  }
+
+  if (processed + ignored > 0 && errors.length === 0) {
+    await upsertSettings(admin, orgId, { last_webhook_error: null });
   }
 
   return { processed, ignored, errors };

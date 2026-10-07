@@ -41,6 +41,12 @@ export function ClickUpAddonSettingsPanel() {
     { id: string; email: string | null; username: string | null }[]
   >([]);
   const [userMaps, setUserMaps] = useState<Record<string, string>>({});
+  const [inboundQueue, setInboundQueue] = useState<{
+    pending: number;
+    error: number;
+    oldest_pending_at: string | null;
+    oldest_pending_error: string | null;
+  } | null>(null);
 
   async function applyPublicSettings(s: AddonClickupSettingsPublic) {
     setSettings(s);
@@ -55,6 +61,9 @@ export function ClickUpAddonSettingsPanel() {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error ?? "Failed to load settings");
     await applyPublicSettings(json.settings as AddonClickupSettingsPublic);
+    if (json.inbound_queue) {
+      setInboundQueue(json.inbound_queue);
+    }
   }, []);
 
   useEffect(() => {
@@ -614,6 +623,66 @@ export function ClickUpAddonSettingsPanel() {
               <p className="text-xs text-[var(--status-over)]">
                 Webhook error: {settings.last_webhook_error}
               </p>
+            ) : null}
+            {inboundQueue ? (
+              <div className="space-y-1.5 border-t border-[var(--border)] pt-2">
+                <p className="text-xs text-[var(--text-muted)]">
+                  Inbound queue:{" "}
+                  <span className="tabular-nums text-[var(--text)]">
+                    {inboundQueue.pending} pending
+                  </span>
+                  {inboundQueue.error > 0 ? (
+                    <>
+                      {" · "}
+                      <span className="tabular-nums text-[var(--status-over)]">
+                        {inboundQueue.error} failed
+                      </span>
+                    </>
+                  ) : null}
+                  {inboundQueue.oldest_pending_at
+                    ? ` · oldest ${new Date(inboundQueue.oldest_pending_at).toLocaleString()}`
+                    : ""}
+                </p>
+                {inboundQueue.oldest_pending_error ? (
+                  <p className="text-xs text-[var(--status-over)]">
+                    Oldest pending error: {inboundQueue.oldest_pending_error}
+                  </p>
+                ) : null}
+                {(inboundQueue.pending > 0 || inboundQueue.error > 0) && (
+                  <button
+                    type="button"
+                    className="text-xs text-[var(--accent)] underline"
+                    disabled={busy}
+                    onClick={() => {
+                      void (async () => {
+                        setBusy(true);
+                        try {
+                          const res = await fetch(
+                            "/api/addons/clickup/process-inbound",
+                            { method: "POST" },
+                          );
+                          const json = await res.json();
+                          if (!res.ok) throw new Error(json.error ?? "Failed");
+                          push(
+                            `Processed ${json.processed ?? 0}, ignored ${json.ignored ?? 0}`,
+                            "success",
+                          );
+                          await load();
+                        } catch (err) {
+                          push(
+                            err instanceof Error ? err.message : "Failed",
+                            "warning",
+                          );
+                        } finally {
+                          setBusy(false);
+                        }
+                      })();
+                    }}
+                  >
+                    Process inbound queue now
+                  </button>
+                )}
+              </div>
             ) : null}
           </div>
         ) : null}
