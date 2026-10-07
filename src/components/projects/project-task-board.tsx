@@ -3503,6 +3503,20 @@ function ListSection({
   const listLocked = ctx.isListGanttLocked(list.id);
   const listManage = ctx.manageLists && !listLocked;
   const listReorderOn = ctx.listDragEnabled(list.id);
+  // Local draft so realtime/store echoes can't eat keystrokes mid-type.
+  const [listNameDraft, setListNameDraft] = useState(list.name);
+  const listNameFocusedRef = useRef(false);
+  useEffect(() => {
+    if (!listNameFocusedRef.current) setListNameDraft(list.name);
+  }, [list.name]);
+  const [createFormInitial] = useState(
+    () => readTaskCreateDraft(ctx.profileId, list.id) ?? undefined,
+  );
+  function commitListName() {
+    const next = listNameDraft.trim() || list.name;
+    setListNameDraft(next);
+    if (next !== list.name) onNameChange(next);
+  }
   const [confirmEnableGantt, setConfirmEnableGantt] = useState(false);
   const { pressing: listGripPressing, pressProps: listGripPressProps } =
     usePhoneDragGripPress(ctx.isPhone && listReorderOn);
@@ -3612,8 +3626,28 @@ function ListSection({
         {ctx.manageLists && !listLocked ? (
           <input
             className="min-w-0 flex-1 border-0 bg-transparent text-lg font-medium outline-none"
-            value={list.name}
-            onChange={(e) => onNameChange(e.target.value)}
+            value={listNameDraft}
+            onFocus={() => {
+              listNameFocusedRef.current = true;
+            }}
+            onChange={(e) => setListNameDraft(e.target.value)}
+            onBlur={() => {
+              listNameFocusedRef.current = false;
+              commitListName();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setListNameDraft(list.name);
+                listNameFocusedRef.current = false;
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            aria-label="List name"
           />
         ) : (
           <span className="min-w-0 flex-1 text-lg font-medium">{list.name}</span>
@@ -3896,9 +3930,7 @@ function ListSection({
                 <InlineTaskForm
                   people={ctx.people}
                   mentionPeople={ctx.mentionPeople}
-                  initial={
-                    readTaskCreateDraft(ctx.profileId, list.id) ?? undefined
-                  }
+                  initial={createFormInitial}
                   status="upcoming"
                   submitLabel="Add task"
                   allowClientReview
@@ -4096,6 +4128,8 @@ function InlineTaskForm({
   } | null>(null);
 
   // Pull remote task updates into undirtied fields while the edit form is open.
+  // Only advance each field's baseline when that field is clean — otherwise a
+  // props echo can make a dirty field look clean and wipe later keystrokes.
   useEffect(() => {
     const next = {
       title: initial?.title ?? "",
@@ -4106,19 +4140,35 @@ function InlineTaskForm({
       is_client_review: Boolean(initial?.is_client_review),
     };
     const prev = initialBaselineRef.current;
-    if (prev) {
-      if (titleRef.current === prev.title) setTitle(next.title);
-      if (assigneeIdRef.current === prev.assignee_person_id) {
-        setAssigneeId(next.assignee_person_id);
-      }
-      if (startDateRef.current === prev.start_date) setStartDate(next.start_date);
-      if (dueDateRef.current === prev.due_date) setDueDate(next.due_date);
-      if (notesRef.current === prev.notes) setNotes(next.notes);
-      if (isClientReviewRef.current === prev.is_client_review) {
-        setIsClientReview(next.is_client_review);
-      }
+    if (!prev) {
+      initialBaselineRef.current = next;
+      return;
     }
-    initialBaselineRef.current = next;
+    const titleClean = titleRef.current === prev.title;
+    const assigneeClean =
+      assigneeIdRef.current === prev.assignee_person_id;
+    const startClean = startDateRef.current === prev.start_date;
+    const dueClean = dueDateRef.current === prev.due_date;
+    const notesClean = notesRef.current === prev.notes;
+    const crClean = isClientReviewRef.current === prev.is_client_review;
+    if (titleClean) setTitle(next.title);
+    if (assigneeClean) setAssigneeId(next.assignee_person_id);
+    if (startClean) setStartDate(next.start_date);
+    if (dueClean) setDueDate(next.due_date);
+    if (notesClean) setNotes(next.notes);
+    if (crClean) setIsClientReview(next.is_client_review);
+    initialBaselineRef.current = {
+      title: titleClean ? next.title : prev.title,
+      assignee_person_id: assigneeClean
+        ? next.assignee_person_id
+        : prev.assignee_person_id,
+      start_date: startClean ? next.start_date : prev.start_date,
+      due_date: dueClean ? next.due_date : prev.due_date,
+      notes: notesClean ? next.notes : prev.notes,
+      is_client_review: crClean
+        ? next.is_client_review
+        : prev.is_client_review,
+    };
   }, [
     initial?.title,
     initial?.assignee_person_id,
