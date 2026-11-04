@@ -114,6 +114,8 @@ const ALLOWED_TAGS = new Set([
   "BR",
   "STRONG",
   "B",
+  "EM",
+  "I",
   "U",
   "A",
   "IMG",

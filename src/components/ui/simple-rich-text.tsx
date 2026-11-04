@@ -13,6 +13,7 @@ import {
   Bold,
   Code,
   Code2,
+  Italic,
   Link as LinkIcon,
   List,
   ListOrdered,
@@ -544,7 +545,6 @@ export const SimpleRichTextEditor = forwardRef<
         blockquote: false,
         heading: { levels: [1, 2, 3] },
         horizontalRule: false,
-        italic: false,
         strike: false,
         trailingNode: false,
         link: {
@@ -837,6 +837,7 @@ export const SimpleRichTextEditor = forwardRef<
       if (!ed) return null;
       return {
         bold: ed.isActive("bold"),
+        italic: ed.isActive("italic"),
         underline: ed.isActive("underline"),
         link: ed.isActive("link"),
         bulletList: ed.isActive("bulletList"),
@@ -903,6 +904,19 @@ export const SimpleRichTextEditor = forwardRef<
               }
             >
               <Bold size={14} strokeWidth={2.5} />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Italic"
+              active={Boolean(toolbar?.italic)}
+              onClick={() =>
+                ed
+                  .chain()
+                  .focus(undefined, { scrollIntoView: false })
+                  .toggleItalic()
+                  .run()
+              }
+            >
+              <Italic size={14} strokeWidth={2.5} />
             </ToolbarButton>
             <ToolbarButton
               label="Underline"
