@@ -306,6 +306,7 @@ function renderNodes(nodes: WalkNode[]): string {
       if (tag === "OL") return `<ol>${inner}</ol>`;
       if (tag === "LI") return `<li>${inner}</li>`;
       if (tag === "B" || tag === "STRONG") return `<strong>${inner}</strong>`;
+      if (tag === "EM" || tag === "I") return `<em>${inner}</em>`;
       if (tag === "U") return `<u>${inner}</u>`;
       if (tag === "CODE") return `<code>${inner}</code>`;
       if (tag === "PRE") return `<pre>${inner}</pre>`;

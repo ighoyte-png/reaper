@@ -29,4 +29,13 @@ describe("notes HTML quote sync", () => {
     expect(html).toContain("link \"text\"");
     expect(html).toMatch(/href="https:\/\/example\.com\/\?q=&quot;x&quot;"/);
   });
+
+  it("preserves italic em/i marks", () => {
+    expect(sanitizeNotesHtml("<p>plain <em>slant</em> end</p>")).toBe(
+      "<p>plain <em>slant</em> end</p>",
+    );
+    expect(sanitizeNotesHtml("<p>plain <i>slant</i> end</p>")).toBe(
+      "<p>plain <em>slant</em> end</p>",
+    );
+  });
 });
