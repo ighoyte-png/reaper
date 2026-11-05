@@ -5,6 +5,7 @@ export { ClickUpProjectSyncToggle } from "@/addons/clickup/ui/clickup-project-sy
 export { ClickUpUserConnectPanel } from "@/addons/clickup/ui/clickup-user-connect-panel";
 export { ClickUpOutboxPoller } from "@/addons/clickup/ui/clickup-outbox-poller";
 export {
+  requestClickUpCommentPrune,
   requestClickUpDrain,
   requestClickUpOutboxDrain,
 } from "@/addons/clickup/request-drain";

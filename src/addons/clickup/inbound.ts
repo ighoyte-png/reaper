@@ -11,6 +11,7 @@ import {
 } from "@/addons/clickup/auth";
 import {
   deleteLink,
+  getLink,
   getLinkByClickUpId,
   loadSettings,
   setLink,
@@ -50,6 +51,9 @@ export type ClickUpWebhookHistoryItem = {
     /** Rich-text segments when text_content / comment_text are absent. */
     comment?: Array<{ text?: string } | string>;
     user?: { id?: number; email?: string; username?: string };
+    _version_vector?: {
+      vector?: Array<{ deleted?: boolean; version?: number; master_id?: number }>;
+    };
   };
 };
 
@@ -895,6 +899,95 @@ async function importClickUpTask(args: {
   return "created";
 }
 
+function commentMarkedDeleted(
+  item: ClickUpWebhookHistoryItem | undefined,
+): boolean {
+  const vector = item?.comment?._version_vector?.vector;
+  if (!Array.isArray(vector)) return false;
+  return vector.some(
+    (entry) =>
+      entry &&
+      typeof entry === "object" &&
+      (entry as { deleted?: unknown }).deleted === true,
+  );
+}
+
+/**
+ * ClickUp has no taskCommentDeleted webhook. Remove Reaper comments whose
+ * ClickUp ids are no longer on the task (opportunistic reconcile).
+ */
+export async function pruneCommentsDeletedInClickUp(args: {
+  admin: SupabaseClient;
+  orgId: string;
+  clickUpTaskId: string;
+  auth?: cu.ClickUpAuth;
+}): Promise<number> {
+  const { admin, orgId, clickUpTaskId } = args;
+  const taskLink = await getLinkByClickUpId(admin, orgId, "task", clickUpTaskId);
+  if (!taskLink) return 0;
+
+  const auth = args.auth ?? (await resolveOrgClickUpAuth(admin, orgId));
+  let liveIds: Set<string>;
+  try {
+    const live = await cu.listTaskComments(auth, clickUpTaskId);
+    liveIds = new Set(live.map((c) => c.id));
+  } catch (e) {
+    if (isNotFoundClickUpError(e)) return 0;
+    throw e;
+  }
+
+  const { data: comments } = await admin
+    .from("task_comments")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("task_id", taskLink.reaper_id);
+  if (!comments?.length) return 0;
+
+  const reaperIds = comments.map((c) => c.id as string);
+  const { data: links } = await admin
+    .from("addon_clickup_links")
+    .select("reaper_id, clickup_id")
+    .eq("organization_id", orgId)
+    .eq("entity_type", "comment")
+    .in("reaper_id", reaperIds);
+
+  let removed = 0;
+  for (const link of links ?? []) {
+    const cuId = String(link.clickup_id ?? "").trim();
+    if (!cuId || liveIds.has(cuId)) continue;
+    const reaperId = String(link.reaper_id);
+    await suppressOutbound(admin, orgId, "comment", reaperId, 45);
+    const { error } = await admin
+      .from("task_comments")
+      .delete()
+      .eq("id", reaperId)
+      .eq("organization_id", orgId);
+    if (error) throw new Error(error.message);
+    await deleteLink(admin, orgId, "comment", reaperId);
+    removed += 1;
+  }
+  return removed;
+}
+
+export async function pruneCommentsDeletedInClickUpForReaperTask(args: {
+  admin: SupabaseClient;
+  orgId: string;
+  reaperTaskId: string;
+}): Promise<number> {
+  const clickUpTaskId = await getLink(
+    args.admin,
+    args.orgId,
+    "task",
+    args.reaperTaskId,
+  );
+  if (!clickUpTaskId) return 0;
+  return pruneCommentsDeletedInClickUp({
+    admin: args.admin,
+    orgId: args.orgId,
+    clickUpTaskId,
+  });
+}
+
 async function applyCommentInbound(args: {
   admin: SupabaseClient;
   orgId: string;
@@ -918,6 +1011,27 @@ async function applyCommentInbound(args: {
 
   const cuCommentId = commentIdFromHistory(historyItem);
   if (cuCommentId == null) return "ignored";
+
+  // ClickUp may surface deletes as taskCommentUpdated with deleted=true.
+  if (commentMarkedDeleted(historyItem)) {
+    const existing = await getLinkByClickUpId(
+      admin,
+      orgId,
+      "comment",
+      String(cuCommentId),
+    );
+    if (!existing) return "ignored";
+    await suppressOutbound(admin, orgId, "comment", existing.reaper_id, 45);
+    const { error } = await admin
+      .from("task_comments")
+      .delete()
+      .eq("id", existing.reaper_id)
+      .eq("organization_id", orgId);
+    if (error) throw new Error(error.message);
+    await deleteLink(admin, orgId, "comment", existing.reaper_id);
+    return "applied";
+  }
+
   const body = commentTextFromHistory(historyItem);
   if (!body.trim()) return "ignored";
   const eventMs = historyEventMs(historyItem);
@@ -1158,6 +1272,18 @@ export async function applyInboundEvent(args: {
       });
       if (r === "applied") any = true;
     }
+    // ClickUp has no comment-deleted event; reconcile against live comments.
+    try {
+      const pruned = await pruneCommentsDeletedInClickUp({
+        admin,
+        orgId,
+        clickUpTaskId: taskId,
+        auth,
+      });
+      if (pruned > 0) any = true;
+    } catch {
+      /* non-fatal — next open/event will retry */
+    }
     return any ? "processed" : "ignored";
   }
 
@@ -1208,12 +1334,23 @@ export async function applyInboundEvent(args: {
 
   // Skip taskUpdated payloads that are only comment history — comments are
   // handled by taskCommentPosted / taskCommentUpdated (avoids duplicate rows).
+  // Still prune: ClickUp may not send a dedicated delete event.
   if (
     eventName === "taskUpdated" &&
     history.length > 0 &&
     history.every((h) => h.field === "comment" || h.comment != null)
   ) {
-    return "ignored";
+    try {
+      const pruned = await pruneCommentsDeletedInClickUp({
+        admin,
+        orgId,
+        clickUpTaskId: taskId,
+        auth,
+      });
+      return pruned > 0 ? "processed" : "ignored";
+    } catch {
+      return "ignored";
+    }
   }
 
   let cuTask: Awaited<ReturnType<typeof cu.getTask>>;

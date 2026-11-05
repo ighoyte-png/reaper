@@ -5,9 +5,11 @@
  */
 
 const DRAIN_DEBOUNCE_MS = 750;
+const COMMENT_PRUNE_COOLDOWN_MS = 30_000;
 
 let outboxTimer: ReturnType<typeof setTimeout> | null = null;
 let inboundTimer: ReturnType<typeof setTimeout> | null = null;
+const commentPruneRecent = new Map<string, number>();
 
 function postDrain(path: "/api/addons/clickup/process-outbox" | "/api/addons/clickup/process-inbound") {
   if (typeof window === "undefined") return;
@@ -40,4 +42,25 @@ export function requestClickUpInboundDrain() {
 export function requestClickUpDrain() {
   requestClickUpOutboxDrain();
   requestClickUpInboundDrain();
+}
+
+/**
+ * Reconcile Reaper comments against ClickUp for one task (CU has no
+ * comment-deleted webhook). Cooldown avoids hammering on remounts.
+ */
+export function requestClickUpCommentPrune(reaperTaskId: string) {
+  if (typeof window === "undefined") return;
+  const id = reaperTaskId?.trim();
+  if (!id) return;
+  const now = Date.now();
+  const last = commentPruneRecent.get(id) ?? 0;
+  if (now - last < COMMENT_PRUNE_COOLDOWN_MS) return;
+  commentPruneRecent.set(id, now);
+  void fetch("/api/addons/clickup/prune-comments", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ task_id: id }),
+  }).catch(() => {
+    /* next open / inbound event will retry */
+  });
 }

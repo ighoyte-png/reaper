@@ -5734,6 +5734,14 @@ function CommentThread({
     setReplying(true);
   }, [ctx.profileId, task.id]);
 
+  // ClickUp has no comment-deleted webhook — reconcile when the thread opens.
+  useEffect(() => {
+    if (ctx.mode !== "supabase") return;
+    void import("@/addons/clickup/request-drain").then((m) =>
+      m.requestClickUpCommentPrune(task.id),
+    );
+  }, [ctx.mode, task.id]);
+
   function updateDraft(html: string) {
     setDraft(html);
     writeCommentDraft(ctx.profileId, task.id, html);

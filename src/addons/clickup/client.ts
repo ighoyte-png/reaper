@@ -393,6 +393,20 @@ export async function getTask(
   );
 }
 
+export async function listTaskComments(
+  auth: ClickUpAuth,
+  taskId: string,
+): Promise<{ id: string }[]> {
+  const data = await cuFetch<{ comments?: { id?: string | number }[] }>(
+    auth,
+    `/task/${encodeURIComponent(taskId)}/comment`,
+  );
+  return (data.comments ?? [])
+    .map((c) => String(c.id ?? "").trim())
+    .filter(Boolean)
+    .map((id) => ({ id }));
+}
+
 export async function createTaskComment(
   auth: ClickUpAuth,
   taskId: string,
