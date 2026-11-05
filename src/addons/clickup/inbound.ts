@@ -452,15 +452,21 @@ export async function healStaleSpaceWebhooks(args: {
         const healthStatus = String(hook.health?.status ?? "").toLowerCase();
         const status = String(hook.status ?? "").toLowerCase();
         const suspended =
-          healthStatus === "suspended" ||
-          status === "suspended" ||
-          failCount >= 100;
+          healthStatus === "suspended" || status === "suspended";
+        const endpointMismatch = Boolean(
+          endpoint && expected && endpoint !== expected,
+        );
+        // Hard fail: recreate only. Reactivate against a dead host or a
+        // fail_count=100 hook just gets re-suspended by ClickUp.
+        const hardFail = failCount >= 100 || endpointMismatch;
 
-        if (endpoint && expected && endpoint !== expected) {
+        if (hardFail) {
           needsRecreate = true;
-          reason = "endpoint_mismatch";
+          reason = endpointMismatch
+            ? "endpoint_mismatch"
+            : `fail_count_${failCount}`;
         } else if (suspended) {
-          // Official recovery: PUT status=active with endpoint+events (full replace).
+          // Soft suspend: try PUT status=active, then verify via re-list.
           try {
             await cu.updateWebhook(auth, webhookId, {
               endpoint: expectedEndpoint,
@@ -468,15 +474,33 @@ export async function healStaleSpaceWebhooks(args: {
               status: "active",
               space_id: /^\d+$/.test(spaceId) ? Number(spaceId) : spaceId,
             });
-            await upsertSettings(admin, orgId, {
-              last_webhook_check_at: new Date().toISOString(),
-              last_webhook_error: null,
-            });
-            reactivated += 1;
-            console.info(
-              `[clickup] reactivated suspended webhook for org ${orgId} (fail_count=${failCount})`,
+            const after = await cu.getWebhook(auth, webhookId, teamId);
+            const afterEndpoint = String(after.endpoint ?? "").replace(
+              /\/$/,
+              "",
             );
-            continue;
+            const afterHealth = String(
+              after.health?.status ?? "",
+            ).toLowerCase();
+            const afterStatus = String(after.status ?? "").toLowerCase();
+            const stillBad =
+              afterHealth === "suspended" ||
+              afterStatus === "suspended" ||
+              (afterEndpoint && afterEndpoint !== expected);
+            if (stillBad) {
+              needsRecreate = true;
+              reason = `reactivate_still_${afterHealth || afterStatus || "bad"}`;
+            } else {
+              await upsertSettings(admin, orgId, {
+                last_webhook_check_at: new Date().toISOString(),
+                last_webhook_error: null,
+              });
+              reactivated += 1;
+              console.info(
+                `[clickup] reactivated suspended webhook for org ${orgId} (fail_count=${failCount})`,
+              );
+              continue;
+            }
           } catch {
             needsRecreate = true;
             reason = `reactivate_failed_fail_count_${failCount}`;

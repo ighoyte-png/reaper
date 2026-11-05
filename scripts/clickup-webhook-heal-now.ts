@@ -218,15 +218,34 @@ async function main() {
 
     const hook = listed.webhooks.find((w) => String(w.id) === String(row.webhook_id));
     const health = hook?.health?.status ?? "(missing)";
-    const failCount = hook?.health?.fail_count ?? 0;
-    console.log("before:", hook ? `health=${health} fail_count=${failCount}` : "not in team list");
+    const failCount = Number(hook?.health?.fail_count ?? 0);
+    const hookEndpoint = String(hook?.endpoint ?? "").replace(/\/$/, "");
+    const expectedEndpoint = ENDPOINT.replace(/\/$/, "");
+    const endpointMismatch =
+      Boolean(hookEndpoint) &&
+      Boolean(expectedEndpoint) &&
+      hookEndpoint !== expectedEndpoint;
+    console.log(
+      "before:",
+      hook
+        ? `health=${health} fail_count=${failCount} endpoint=${hookEndpoint || "(missing)"}`
+        : "not in team list",
+    );
+    if (endpointMismatch) {
+      console.log("endpoint mismatch — expected", expectedEndpoint);
+    }
 
+    const suspended =
+      String(health).toLowerCase() === "suspended" ||
+      String(hook?.status ?? "").toLowerCase() === "suspended";
+    const hardFail = failCount >= 100 || endpointMismatch;
     const needsHeal =
       !hook ||
-      String(health).toLowerCase() === "suspended" ||
+      suspended ||
       String(health).toLowerCase().includes("fail") ||
       failCount >= 3 ||
-      String(hook.status ?? "").toLowerCase() === "paused";
+      String(hook.status ?? "").toLowerCase() === "paused" ||
+      endpointMismatch;
 
     if (!needsHeal) {
       console.log("OK: webhook healthy — no action");
@@ -240,7 +259,9 @@ async function main() {
       continue;
     }
 
-    if (hook && String(health).toLowerCase() === "suspended") {
+    // fail_count>=100 / wrong host: recreate only — reactivate leaves a dead URL
+    // that ClickUp re-suspends immediately.
+    if (hook && suspended && !hardFail) {
       console.log("Attempting PUT status=active…");
       const reactivated = await putActive(auth, row.webhook_id, row.space_id);
       if (reactivated.ok) {
@@ -248,22 +269,36 @@ async function main() {
         const after = afterList.webhooks.find(
           (w) => String(w.id) === String(row.webhook_id),
         );
+        const afterHealth = String(after?.health?.status ?? "").toLowerCase();
+        const afterEndpoint = String(after?.endpoint ?? "").replace(/\/$/, "");
         console.log(
           "reactivated:",
           after
-            ? `health=${after.health?.status} fail_count=${after.health?.fail_count}`
+            ? `health=${after.health?.status} fail_count=${after.health?.fail_count} endpoint=${afterEndpoint}`
             : "ok",
         );
-        await admin
-          .from("addon_clickup_settings")
-          .update({
-            last_webhook_check_at: new Date().toISOString(),
-            last_webhook_error: null,
-          })
-          .eq("organization_id", row.organization_id);
-        continue;
+        if (
+          after &&
+          afterHealth !== "suspended" &&
+          afterEndpoint === expectedEndpoint
+        ) {
+          await admin
+            .from("addon_clickup_settings")
+            .update({
+              last_webhook_check_at: new Date().toISOString(),
+              last_webhook_error: null,
+            })
+            .eq("organization_id", row.organization_id);
+          continue;
+        }
+        console.log("reactivate did not leave a healthy matching endpoint — recreating");
+      } else {
+        console.log("reactivate failed:", reactivated.status, reactivated.body);
       }
-      console.log("reactivate failed:", reactivated.status, reactivated.body);
+    } else if (hardFail) {
+      console.log(
+        `Skipping reactivate (fail_count=${failCount}, endpoint_mismatch=${endpointMismatch}) — recreating`,
+      );
     }
 
     console.log("Recreating webhook…");

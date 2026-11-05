@@ -6,6 +6,7 @@ import {
 } from "@/addons/clickup/inbound";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { DEFAULT_PUBLIC_APP_ORIGIN } from "@/lib/security/request";
 
 export const runtime = "nodejs";
 /** Cron may drain several orgs; allow a bit of headroom. */
@@ -29,14 +30,23 @@ function authorize(request: Request): boolean {
   return false;
 }
 
-function siteOrigin(): string | null {
+/**
+ * Origin used when healing/recreating the org ClickUp space webhook.
+ * Never use a *.vercel.app host — that is how the webhook previously got
+ * stuck on a dead preview URL and suspended. Fall back to production.
+ */
+function siteOrigin(): string {
   const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (!raw) return null;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return raw.replace(/\/$/, "") || null;
+  if (raw) {
+    try {
+      const origin = new URL(raw).origin;
+      const host = new URL(origin).hostname.toLowerCase();
+      if (!host.endsWith(".vercel.app")) return origin;
+    } catch {
+      /* fall through */
+    }
   }
+  return DEFAULT_PUBLIC_APP_ORIGIN;
 }
 
 /**
@@ -98,32 +108,21 @@ async function drainAll() {
     recreated: number;
     reactivated: number;
     errors: string[];
-    skipped?: string;
   } = { checked: 0, recreated: 0, reactivated: 0, errors: [] };
   const origin = siteOrigin();
-  if (origin) {
-    try {
-      webhookHeal = await healStaleSpaceWebhooks({
-        admin,
-        origin,
-        maxChecks: 1,
-      });
-    } catch (e) {
-      // Don't fail the queue drain if migration 119 isn't applied yet, etc.
-      webhookHeal = {
-        checked: 0,
-        recreated: 0,
-        reactivated: 0,
-        errors: [e instanceof Error ? e.message : String(e)],
-      };
-    }
-  } else {
+  try {
+    webhookHeal = await healStaleSpaceWebhooks({
+      admin,
+      origin,
+      maxChecks: 1,
+    });
+  } catch (e) {
+    // Don't fail the queue drain if migration 119 isn't applied yet, etc.
     webhookHeal = {
       checked: 0,
       recreated: 0,
       reactivated: 0,
-      errors: [],
-      skipped: "NEXT_PUBLIC_SITE_URL unset",
+      errors: [e instanceof Error ? e.message : String(e)],
     };
   }
 
