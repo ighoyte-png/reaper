@@ -28,7 +28,11 @@ import {
   notesToDescription,
   normalizeDescription,
 } from "@/addons/clickup/mappers";
-import type { AddonClickupSettingsRow, ClickUpStatusMap } from "@/addons/clickup/types";
+import type {
+  AddonClickupSettingsRow,
+  ClickUpAuth,
+  ClickUpStatusMap,
+} from "@/addons/clickup/types";
 import { normalizeStatusMap } from "@/addons/clickup/types";
 
 const ECHO_WINDOW_MS = 60_000;
@@ -920,7 +924,7 @@ export async function pruneCommentsDeletedInClickUp(args: {
   admin: SupabaseClient;
   orgId: string;
   clickUpTaskId: string;
-  auth?: cu.ClickUpAuth;
+  auth?: ClickUpAuth;
 }): Promise<number> {
   const { admin, orgId, clickUpTaskId } = args;
   const taskLink = await getLinkByClickUpId(admin, orgId, "task", clickUpTaskId);
