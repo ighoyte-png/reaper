@@ -433,6 +433,17 @@ export async function updateTaskComment(
   );
 }
 
+export async function deleteTaskComment(
+  auth: ClickUpAuth,
+  commentId: string,
+): Promise<void> {
+  await cuFetch<unknown>(
+    auth,
+    `/comment/${encodeURIComponent(commentId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export async function createWebhook(
   auth: ClickUpAuth,
   teamId: string,

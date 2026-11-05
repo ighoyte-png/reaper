@@ -1283,12 +1283,13 @@ export async function pushEntityFromOutbox(args: {
   const settings = await loadSettings(admin, orgId);
   if (!settings?.enabled) return;
 
-  // Deletes + folder/list structure use org/service credentials (permissions).
-  // Task/comment content prefers the editor's OAuth for attribution, then
-  // falls back to org so sync does not stall when they are not connected.
+  // Folder/list structure + task/milestone deletes use org/service credentials.
+  // Task/comment content (and comment deletes — ClickUp COMM_047) prefer the
+  // author's OAuth, then fall back to org.
   const orgAuth = await resolveOrgClickUpAuth(admin, orgId);
   const attributionSensitive =
-    op !== "delete" && (entityType === "task" || entityType === "comment");
+    entityType === "comment" ||
+    (op !== "delete" && entityType === "task");
   const resolvedActorId = attributionSensitive
     ? await resolveOutboxActorProfileId({
         admin,
@@ -1358,12 +1359,23 @@ async function pushEntityWithAuth(args: {
 
     // Tasks (and milestone mirrors) → hard-delete in ClickUp. Folders/lists
     // stay link-only so hierarchy wipe from Reaper does not nuke the Space.
-    if (
-      clickupId &&
-      (entityType === "task" || entityType === "milestone")
-    ) {
+    // Comments need the author's token (COMM_047); org is fallback only.
+    if (clickupId && (entityType === "task" || entityType === "milestone")) {
       try {
         await cu.deleteTask(auth, clickupId);
+      } catch (e) {
+        if (!isNotFoundClickUpError(e)) throw e;
+      }
+    } else if (clickupId && entityType === "comment") {
+      try {
+        await withAttributionWriteFallback({
+          actorAuth,
+          orgAuth: auth,
+          actorProfileId,
+          admin,
+          orgId,
+          write: (writeAuth) => cu.deleteTaskComment(writeAuth, clickupId),
+        });
       } catch (e) {
         if (!isNotFoundClickUpError(e)) throw e;
       }
