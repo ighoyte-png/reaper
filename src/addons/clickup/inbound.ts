@@ -1412,9 +1412,9 @@ export async function processInbound(
   let processed = 0;
   let ignored = 0;
 
-  // Serverless kills mid-apply leave rows locked forever; free anything older
-  // than a few minutes so cron / next webhook can retry.
-  const STALE_LOCK_MS = 5 * 60 * 1000;
+  // Serverless kills mid-apply leave rows locked; free quickly so the next
+  // webhook / kick / cron can retry (Hobby cold kills are common).
+  const STALE_LOCK_MS = 60 * 1000;
   await admin
     .from("addon_clickup_inbound_events")
     .update({ locked_at: null })

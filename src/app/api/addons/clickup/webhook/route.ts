@@ -8,44 +8,53 @@ import {
 import { loadSettingsByWebhookId } from "@/addons/clickup/db";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { DEFAULT_PUBLIC_APP_ORIGIN } from "@/lib/security/request";
 
 export const runtime = "nodejs";
 /** Inline drain + after() backlog; keep under ClickUp's ~7s fail window. */
 export const maxDuration = 60;
 
-function siteOrigin(request: Request): string | null {
+/**
+ * Origin for the follow-up drain kick.
+ * Prefer the live request host (what ClickUp just hit). Ignore *.vercel.app
+ * SITE_URL so we never kick a dead preview deployment.
+ */
+function drainOrigin(request: Request): string {
+  try {
+    const fromReq = new URL(request.url).origin;
+    const host = new URL(fromReq).hostname.toLowerCase();
+    if (host && !host.endsWith(".vercel.app")) return fromReq;
+  } catch {
+    /* fall through */
+  }
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (fromEnv) {
     try {
-      return new URL(fromEnv).origin;
+      const origin = new URL(fromEnv).origin;
+      const host = new URL(origin).hostname.toLowerCase();
+      if (!host.endsWith(".vercel.app")) return origin;
     } catch {
-      return fromEnv.replace(/\/$/, "") || null;
+      /* fall through */
     }
   }
-  try {
-    return new URL(request.url).origin;
-  } catch {
-    return null;
-  }
+  return DEFAULT_PUBLIC_APP_ORIGIN;
 }
 
 /** Kick a separate function invocation so drain can outlive this response. */
 function kickInboundDrain(request: Request, orgId: string) {
   const secret = process.env.CLICKUP_OUTBOX_SECRET?.trim();
-  const origin = siteOrigin(request);
-  if (!secret || !origin) return;
-  const url = `${origin}/api/addons/clickup/process-inbound`;
+  if (!secret) return;
+  const url = `${drainOrigin(request)}/api/addons/clickup/process-inbound`;
+  const headers = {
+    "content-type": "application/json",
+    "x-clickup-outbox-secret": secret,
+  };
+  const body = JSON.stringify({ organization_id: orgId });
+  // Fire immediately (don't rely solely on after() — Hobby drops it often),
+  // and also schedule after() as a second chance once the response is sent.
+  void fetch(url, { method: "POST", headers, body }).catch(() => {});
   after(() => {
-    void fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-clickup-outbox-secret": secret,
-      },
-      body: JSON.stringify({ organization_id: orgId }),
-    }).catch(() => {
-      /* daily cron / next webhook will retry */
-    });
+    void fetch(url, { method: "POST", headers, body }).catch(() => {});
   });
 }
 
@@ -105,9 +114,9 @@ export async function POST(request: Request) {
       payload,
     });
 
-    // Apply the just-enqueued event in-process. after()-only drains were
-    // getting dropped on Hobby, leaving creates stuck in pending forever.
-    await processInbound(admin, orgId, 2);
+    // Apply a small batch in-process so Hobby doesn't leave creates pending
+    // when the follow-up kick is dropped. Keep it tiny for ClickUp's ~7s window.
+    await processInbound(admin, orgId, 8);
 
     // Separate invocation for any remaining backlog (does not block ClickUp).
     kickInboundDrain(request, orgId);

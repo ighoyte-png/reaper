@@ -201,18 +201,19 @@ export async function getFolders(
       parent_folder?: string | number | null;
     }[];
   }>(auth, `/space/${spaceId}/folder?archived=false`);
-  return (data.folders ?? [])
-    .map((f) => {
-      const id = String(f.id ?? "").trim();
-      if (!id) return null;
-      const parent = f.parent_folder != null ? String(f.parent_folder).trim() : "";
-      return {
-        id,
-        name: String(f.name ?? "").trim() || id,
-        parent_folder: parent || null,
-      } satisfies ClickUpFolder;
-    })
-    .filter((f): f is ClickUpFolder => f != null);
+  const out: ClickUpFolder[] = [];
+  for (const f of data.folders ?? []) {
+    const id = String(f.id ?? "").trim();
+    if (!id) continue;
+    const parent =
+      f.parent_folder != null ? String(f.parent_folder).trim() : "";
+    out.push({
+      id,
+      name: String(f.name ?? "").trim() || id,
+      parent_folder: parent || null,
+    });
+  }
+  return out;
 }
 
 /** Fetch one folder by id (works for nested folders; 404 if deleted). */
