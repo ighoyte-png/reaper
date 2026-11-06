@@ -26,7 +26,11 @@ export async function GET(request: Request) {
     );
     const folders = await getFolders(cuAuth, settings.space_id);
     return NextResponse.json({
-      folders: folders.map((f) => ({ id: f.id, name: f.name })),
+      folders: folders.map((f) => ({
+        id: f.id,
+        name: f.name,
+        parent_folder: f.parent_folder ?? null,
+      })),
     });
   } catch (e) {
     return NextResponse.json(

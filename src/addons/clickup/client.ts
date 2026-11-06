@@ -18,7 +18,12 @@ export type ClickUpSpace = {
   name: string;
   statuses?: { status: string; type?: string }[];
 };
-export type ClickUpFolder = { id: string; name: string };
+export type ClickUpFolder = {
+  id: string;
+  name: string;
+  /** Present when this folder is nested under another folder. */
+  parent_folder?: string | null;
+};
 export type ClickUpList = {
   id: string;
   name: string;
@@ -189,11 +194,25 @@ export async function getFolders(
   auth: ClickUpAuth,
   spaceId: string,
 ): Promise<ClickUpFolder[]> {
-  const data = await cuFetch<{ folders: ClickUpFolder[] }>(
-    auth,
-    `/space/${spaceId}/folder?archived=false`,
-  );
-  return data.folders ?? [];
+  const data = await cuFetch<{
+    folders?: {
+      id?: string | number;
+      name?: string;
+      parent_folder?: string | number | null;
+    }[];
+  }>(auth, `/space/${spaceId}/folder?archived=false`);
+  return (data.folders ?? [])
+    .map((f) => {
+      const id = String(f.id ?? "").trim();
+      if (!id) return null;
+      const parent = f.parent_folder != null ? String(f.parent_folder).trim() : "";
+      return {
+        id,
+        name: String(f.name ?? "").trim() || id,
+        parent_folder: parent || null,
+      } satisfies ClickUpFolder;
+    })
+    .filter((f): f is ClickUpFolder => f != null);
 }
 
 /** Fetch one folder by id (works for nested folders; 404 if deleted). */

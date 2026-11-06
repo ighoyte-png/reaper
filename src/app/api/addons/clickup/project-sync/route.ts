@@ -1,8 +1,73 @@
 import { NextResponse } from "next/server";
 import { requireClickUpManagerApi } from "@/addons/clickup/api-auth";
-import { loadSettings } from "@/addons/clickup/db";
+import { resolveOrgClickUpAuth } from "@/addons/clickup/auth";
+import { getFolder, getFolders, type ClickUpFolder } from "@/addons/clickup/client";
+import { getLink, loadSettings } from "@/addons/clickup/db";
 import { reconcileProject, processOutbox } from "@/addons/clickup/sync";
 import type { ReconcileSummary } from "@/addons/clickup/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export type ClickUpLinkedFolder = {
+  id: string;
+  name: string;
+  /** Parent › … › leaf when nested. */
+  path: string;
+};
+
+function folderPathLabel(
+  folders: ClickUpFolder[],
+  folderId: string,
+): { name: string; path: string } | null {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const leaf = byId.get(folderId);
+  if (!leaf) return null;
+  const parts: string[] = [];
+  const seen = new Set<string>();
+  let cur: ClickUpFolder | undefined = leaf;
+  while (cur && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    parts.unshift(cur.name);
+    const parentId = cur.parent_folder?.trim();
+    cur = parentId ? byId.get(parentId) : undefined;
+  }
+  return { name: leaf.name, path: parts.join(" › ") };
+}
+
+async function resolveLinkedFolder(
+  admin: SupabaseClient,
+  orgId: string,
+  projectId: string,
+): Promise<ClickUpLinkedFolder | null> {
+  const folderId = await getLink(admin, orgId, "project", projectId);
+  if (!folderId) return null;
+
+  const settings = await loadSettings(admin, orgId);
+  if (!settings?.space_id) {
+    return { id: folderId, name: folderId, path: folderId };
+  }
+
+  try {
+    const cuAuth = await resolveOrgClickUpAuth(admin, orgId);
+    try {
+      const folders = await getFolders(cuAuth, settings.space_id);
+      const labeled = folderPathLabel(folders, folderId);
+      if (labeled) {
+        return { id: folderId, name: labeled.name, path: labeled.path };
+      }
+    } catch {
+      /* fall through to single-folder fetch */
+    }
+    try {
+      const folder = await getFolder(cuAuth, folderId);
+      const name = folder.name?.trim() || folderId;
+      return { id: folderId, name, path: name };
+    } catch {
+      return { id: folderId, name: folderId, path: folderId };
+    }
+  } catch {
+    return { id: folderId, name: folderId, path: folderId };
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -19,6 +84,11 @@ export async function GET(request: Request) {
       .eq("organization_id", auth.caller.organization_id)
       .eq("project_id", projectId)
       .maybeSingle();
+    const clickup_folder = await resolveLinkedFolder(
+      auth.admin,
+      auth.caller.organization_id,
+      projectId,
+    );
     return NextResponse.json({
       sync: data ?? {
         organization_id: auth.caller.organization_id,
@@ -29,6 +99,7 @@ export async function GET(request: Request) {
         last_reconcile_summary: null,
         last_error: null,
       },
+      clickup_folder,
     });
   } catch (e) {
     return NextResponse.json(
@@ -139,8 +210,13 @@ export async function PUT(request: Request) {
         .eq("organization_id", auth.caller.organization_id)
         .eq("project_id", projectId)
         .maybeSingle();
+      const clickup_folder = await resolveLinkedFolder(
+        auth.admin,
+        auth.caller.organization_id,
+        projectId,
+      );
 
-      return NextResponse.json({ sync: data, summary });
+      return NextResponse.json({ sync: data, summary, clickup_folder });
     }
 
     // Disable
@@ -157,7 +233,7 @@ export async function PUT(request: Request) {
       .eq("organization_id", auth.caller.organization_id)
       .eq("project_id", projectId)
       .maybeSingle();
-    return NextResponse.json({ sync: data });
+    return NextResponse.json({ sync: data, clickup_folder: null });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed" },

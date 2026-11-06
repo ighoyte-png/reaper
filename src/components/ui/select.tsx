@@ -17,8 +17,13 @@ import { createPortal } from "react-dom";
 
 export type SelectOption = {
   value: string;
+  /** Shown on the closed trigger (and in the menu unless menuLabel is set). */
   label: string;
   disabled?: boolean;
+  /** Nesting depth for hierarchy menus (0 = root). */
+  depth?: number;
+  /** Optional shorter label for the open menu (e.g. leaf name while label is a path). */
+  menuLabel?: string;
 };
 
 function hasExplicitWidth(className?: string) {
@@ -73,7 +78,10 @@ export function Select({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!searchable || !q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
+    return options.filter((o) => {
+      const menu = (o.menuLabel ?? o.label).toLowerCase();
+      return o.label.toLowerCase().includes(q) || menu.includes(q);
+    });
   }, [options, query, searchable]);
 
   const syncHighlight = useCallback(
@@ -302,6 +310,13 @@ export function Select({
                           role="option"
                           aria-selected={isSelected}
                           disabled={option.disabled}
+                          style={
+                            typeof option.depth === "number" && option.depth > 0
+                              ? {
+                                  paddingLeft: `${0.5 + option.depth * 0.85}rem`,
+                                }
+                              : undefined
+                          }
                           className={cn(
                             "flex w-full cursor-pointer items-center rounded-[var(--radius-md)] px-2 py-1.5 text-left text-sm disabled:cursor-not-allowed disabled:opacity-40",
                             isSelected &&
@@ -310,11 +325,22 @@ export function Select({
                             !isSelected &&
                               !isActive &&
                               "hover:bg-[var(--row-hover)]",
+                            typeof option.depth === "number" &&
+                              option.depth > 0 &&
+                              "text-[var(--text-muted)]",
                           )}
                           onMouseEnter={() => setHighlight(index)}
                           onClick={() => choose(option)}
                         >
-                          <span className="truncate">{option.label}</span>
+                          <span className="truncate">
+                            {typeof option.depth === "number" &&
+                            option.depth > 0 ? (
+                              <span aria-hidden className="mr-1 opacity-50">
+                                └
+                              </span>
+                            ) : null}
+                            {option.menuLabel ?? option.label}
+                          </span>
                         </button>
                       </li>
                     );

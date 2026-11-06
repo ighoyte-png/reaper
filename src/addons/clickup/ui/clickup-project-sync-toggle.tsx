@@ -1,12 +1,51 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/form";
-import { Select } from "@/components/ui/select";
+import { Select, type SelectOption } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/toast/toast-provider";
 import type { AddonClickupProjectSyncRow, ReconcileSummary } from "@/addons/clickup/types";
+
+type FolderOption = {
+  id: string;
+  name: string;
+  parent_folder?: string | null;
+};
+
+/** Depth-first tree order with path labels for nested ClickUp folders. */
+function folderSelectOptions(folders: FolderOption[]): SelectOption[] {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const children = new Map<string | null, FolderOption[]>();
+  for (const f of folders) {
+    const parentId =
+      f.parent_folder && byId.has(f.parent_folder) ? f.parent_folder : null;
+    const list = children.get(parentId) ?? [];
+    list.push(f);
+    children.set(parentId, list);
+  }
+  for (const list of children.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const out: SelectOption[] = [];
+  const walk = (parentId: string | null, depth: number, path: string[]) => {
+    for (const f of children.get(parentId) ?? []) {
+      const nextPath = [...path, f.name];
+      out.push({
+        value: f.id,
+        // Closed trigger shows full path so duplicate leaf names stay clear.
+        label: nextPath.join(" › "),
+        menuLabel: f.name,
+        depth,
+      });
+      walk(f.id, depth + 1, nextPath);
+    }
+  };
+  walk(null, 0, []);
+  return out;
+}
 
 export function ClickUpProjectSyncToggle({
   projectId,
@@ -20,12 +59,25 @@ export function ClickUpProjectSyncToggle({
   const [twoWayOn, setTwoWayOn] = useState(false);
   const [webhookError, setWebhookError] = useState<string | null>(null);
   const [sync, setSync] = useState<AddonClickupProjectSyncRow | null>(null);
-  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
+  const [folders, setFolders] = useState<FolderOption[]>([]);
+  const [linkedFolder, setLinkedFolder] = useState<{
+    id: string;
+    name: string;
+    path: string;
+  } | null>(null);
   const [linkMode, setLinkMode] = useState<"create" | "link">("create");
   const [folderId, setFolderId] = useState("");
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState<ReconcileSummary | null>(null);
   const [loaded, setLoaded] = useState(false);
+
+  const folderOptions = useMemo(
+    () => [
+      { value: "", label: "Select folder…" },
+      ...folderSelectOptions(folders),
+    ],
+    [folders],
+  );
 
   const refresh = useCallback(async () => {
     const sRes = await fetch("/api/addons/clickup/settings");
@@ -50,6 +102,7 @@ export function ClickUpProjectSyncToggle({
     if (pRes.ok) {
       setSync(pJson.sync);
       setSummary(pJson.sync?.last_reconcile_summary ?? null);
+      setLinkedFolder(pJson.clickup_folder ?? null);
       if (pJson.sync?.link_mode === "link") setLinkMode("link");
     }
     const fRes = await fetch("/api/addons/clickup/folders");
@@ -86,6 +139,7 @@ export function ClickUpProjectSyncToggle({
       if (!res.ok) throw new Error(json.error ?? "Sync failed");
       setSync(json.sync);
       setSummary(json.summary ?? null);
+      setLinkedFolder(json.clickup_folder ?? null);
       push("ClickUp sync enabled — reconcile finished", "success");
       void fetch("/api/addons/clickup/process-outbox", { method: "POST" });
     } catch (e) {
@@ -106,6 +160,7 @@ export function ClickUpProjectSyncToggle({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed");
       setSync(json.sync);
+      setLinkedFolder(null);
       push("ClickUp sync turned off for this project", "success");
     } catch (e) {
       push(e instanceof Error ? e.message : "Failed", "warning");
@@ -131,6 +186,7 @@ export function ClickUpProjectSyncToggle({
       if (!res.ok) throw new Error(json.error ?? "Re-sync failed");
       setSync(json.sync);
       setSummary(json.summary ?? null);
+      setLinkedFolder(json.clickup_folder ?? null);
       push("Re-sync complete", "success");
     } catch (e) {
       push(e instanceof Error ? e.message : "Failed", "warning");
@@ -186,25 +242,29 @@ export function ClickUpProjectSyncToggle({
               <Select
                 value={folderId}
                 onChange={(v) => setFolderId(v)}
-                options={[
-                  { value: "", label: "Select folder…" },
-                  ...folders.map((f) => ({ value: f.id, label: f.name })),
-                ]}
+                searchable
+                options={folderOptions}
               />
             </Field>
           ) : null}
         </div>
       ) : (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => void resync()}
-          >
-            Re-sync now
-          </Button>
+        <div className="mt-3 space-y-2">
+          <p className="text-sm text-[var(--text)]">
+            <span className="text-[var(--text-muted)]">Synced folder: </span>
+            {linkedFolder?.path ?? "Not linked yet"}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void resync()}
+            >
+              Re-sync now
+            </Button>
+          </div>
         </div>
       )}
 
