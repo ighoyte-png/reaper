@@ -27,7 +27,7 @@ function folderPathLabel(
   while (cur && !seen.has(cur.id)) {
     seen.add(cur.id);
     parts.unshift(cur.name);
-    const parentId = cur.parent_folder?.trim();
+    const parentId: string = String(cur.parent_folder ?? "").trim();
     cur = parentId ? byId.get(parentId) : undefined;
   }
   return { name: leaf.name, path: parts.join(" › ") };
