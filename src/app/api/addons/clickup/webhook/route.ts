@@ -11,8 +11,11 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { DEFAULT_PUBLIC_APP_ORIGIN } from "@/lib/security/request";
 
 export const runtime = "nodejs";
-/** Inline drain + after() backlog; keep under ClickUp's ~7s fail window. */
+/** Kick drain may run after ACK; keep headroom for that invocation. */
 export const maxDuration = 60;
+
+/** Hard cap for best-effort inline apply — ClickUp fails deliveries around ~7s. */
+const INLINE_APPLY_BUDGET_MS = 1500;
 
 /**
  * Origin for the follow-up drain kick.
@@ -58,10 +61,14 @@ function kickInboundDrain(request: Request, orgId: string) {
   });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * ClickUp Space webhook receiver.
- * Verifies HMAC, enqueues, applies a tiny inline batch (so Hobby doesn't drop
- * work), ACKs ClickUp quickly, then kicks a separate drain for any backlog.
+ * Verify → enqueue → kick drain → best-effort tiny apply (≤1.5s) → ACK fast.
+ * Never block ClickUp on full inbound processing (that caused fail_count→100).
  */
 export async function POST(request: Request) {
   try {
@@ -114,12 +121,19 @@ export async function POST(request: Request) {
       payload,
     });
 
-    // Apply a small batch in-process so Hobby doesn't leave creates pending
-    // when the follow-up kick is dropped. Keep it tiny for ClickUp's ~7s window.
-    await processInbound(admin, orgId, 8);
-
-    // Separate invocation for any remaining backlog (does not block ClickUp).
+    // Start the real drain in a separate invocation before any inline work.
     kickInboundDrain(request, orgId);
+
+    // Hobby safety net: try one event briefly. Never let this blow ClickUp's
+    // ~7s window or turn into a 500 after the event is already stored.
+    try {
+      await Promise.race([
+        processInbound(admin, orgId, 1).catch(() => null),
+        sleep(INLINE_APPLY_BUDGET_MS),
+      ]);
+    } catch {
+      /* kick / cron will retry */
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e) {

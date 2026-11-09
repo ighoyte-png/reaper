@@ -394,7 +394,7 @@ export async function healStaleSpaceWebhooks(args: {
   const { data: rows, error } = await admin
     .from("addon_clickup_settings")
     .select(
-      "organization_id, webhook_enabled, webhook_id, space_id, clickup_team_id, last_webhook_at, last_webhook_check_at",
+      "organization_id, webhook_enabled, webhook_id, space_id, clickup_team_id, last_webhook_at, last_webhook_check_at, last_webhook_error",
     )
     .eq("enabled", true)
     .eq("webhook_enabled", true)
@@ -424,13 +424,25 @@ export async function healStaleSpaceWebhooks(args: {
         !row.last_webhook_at ||
         !Number.isFinite(deliveryAt) ||
         now - deliveryAt >= STALE_DELIVERY_MS;
-      return { row, deliveryAt: deliveryAt || 0, deliveryStale };
+      const hasError = Boolean(String(row.last_webhook_error ?? "").trim());
+      const checkedAt = row.last_webhook_check_at
+        ? Date.parse(String(row.last_webhook_check_at))
+        : 0;
+      return {
+        row,
+        deliveryAt: deliveryAt || 0,
+        deliveryStale,
+        hasError,
+        checkedAt: Number.isFinite(checkedAt) ? checkedAt : 0,
+      };
     })
     .sort((a, b) => {
-      // Prefer delivery-stale orgs, then oldest delivery.
+      // Prefer known errors, then delivery-stale, then oldest check.
+      if (a.hasError !== b.hasError) return a.hasError ? -1 : 1;
       if (a.deliveryStale !== b.deliveryStale) {
         return a.deliveryStale ? -1 : 1;
       }
+      if (a.checkedAt !== b.checkedAt) return a.checkedAt - b.checkedAt;
       return a.deliveryAt - b.deliveryAt;
     })
     .slice(0, maxChecks)

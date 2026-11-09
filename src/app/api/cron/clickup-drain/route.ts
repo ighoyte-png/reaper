@@ -114,7 +114,7 @@ async function drainAll() {
     webhookHeal = await healStaleSpaceWebhooks({
       admin,
       origin,
-      maxChecks: 1,
+      maxChecks: 3,
     });
   } catch (e) {
     // Don't fail the queue drain if migration 119 isn't applied yet, etc.
