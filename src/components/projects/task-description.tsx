@@ -236,7 +236,7 @@ export function TaskDescriptionView({
       <div className="relative w-full">
         <div
           ref={measureRef}
-          className="pointer-events-none absolute inset-x-0 top-0 -z-10 opacity-0"
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 invisible select-none"
           aria-hidden
         >
           <RichNotesHtml
@@ -357,7 +357,7 @@ export const TaskDescriptionEditor = forwardRef<
     <div className="relative w-full">
       <div
         ref={measureRef}
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 opacity-0"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 invisible select-none"
         aria-hidden
       >
         <RichNotesHtml
