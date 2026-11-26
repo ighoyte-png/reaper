@@ -33,6 +33,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  ArrowDownToLine,
   Eye,
   EyeOff,
   FolderInput,
@@ -121,7 +122,9 @@ import {
   UNKNOWN_AUTHOR_LABEL,
 } from "@/lib/domain/people";
 import {
+  applyProjectListView,
   canCompleteTask,
+  compareTaskOrder,
   dueDateToneClass,
   emptyTaskAuditFields,
   isClientReviewApproved,
@@ -140,8 +143,10 @@ import {
   tasksForList,
   withClientReviewTitle,
   withoutClientReviewTitle,
+  type ProjectListViewPrefs,
   type TaskVisualTone,
 } from "@/lib/domain/tasks";
+import { useProjectTaskListViewPrefs } from "@/lib/project-task-list-view-prefs";
 import { sortPeopleByName } from "@/lib/domain/sorting";
 import { format, parseISO, startOfDay } from "date-fns";
 import type {
@@ -314,9 +319,13 @@ type BoardCtx = {
   /** Phone: which list has reorder armed (null = none). */
   mobileReorderListId: string | null;
   toggleMobileListReorder: (listId: string) => void;
-  /** Whether list + task drag is enabled for this list. */
+  /** Whether list drag is enabled for this list. */
   listDragEnabled: (listId: string) => boolean;
+  /** Whether task drag is enabled (off while completed-to-bottom view is on). */
+  taskDragEnabled: (listId: string) => boolean;
   isPhone: boolean;
+  /** Rows fading in after un-hiding completed tasks. */
+  enteringTaskIds: Set<string>;
   selected: Set<string>;
   toggleSelect: (id: string, shiftKey?: boolean) => void;
   setParentsSelected: (ids: string[], on: boolean) => void;
@@ -395,6 +404,83 @@ function usePhoneDragGripPress(enabled: boolean) {
 function sortByOrder(tasks: Task[]): Task[] {
   return [...tasks].sort(
     (a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title),
+  );
+}
+
+/** Apply list view prefs; keep exiting (hide) rows visible until exit animation ends. */
+function displaySiblingTasks(
+  tasks: Task[],
+  prefs: ProjectListViewPrefs,
+  exitingTaskIds: Set<string>,
+): Task[] {
+  const base = sortByOrder(tasks);
+  const viewed = applyProjectListView(base, prefs);
+  if (exitingTaskIds.size === 0) return viewed;
+  const missing = base.filter(
+    (t) => exitingTaskIds.has(t.id) && !viewed.some((v) => v.id === t.id),
+  );
+  if (missing.length === 0) return viewed;
+  // Preserve last visual slot: bottom when pin-complete was on, else sort_order.
+  if (prefs.completedToBottom || prefs.hideCompleted) {
+    return [...viewed, ...missing.sort(compareTaskOrder)];
+  }
+  return [...viewed, ...missing].sort(compareTaskOrder);
+}
+
+function TaskListViewToggleButtons({
+  prefs,
+  onToggleHideCompleted,
+  onToggleCompletedToBottom,
+}: {
+  prefs: ProjectListViewPrefs;
+  onToggleHideCompleted: () => void;
+  onToggleCompletedToBottom: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+          prefs.hideCompleted
+            ? "border-[var(--accent)] bg-[var(--row-hover)] text-[var(--accent)]"
+            : "border-[var(--border)] text-[var(--text-muted)]",
+        )}
+        onClick={onToggleHideCompleted}
+        aria-label={
+          prefs.hideCompleted ? "Show completed tasks" : "Hide completed tasks"
+        }
+        aria-pressed={prefs.hideCompleted}
+        title={
+          prefs.hideCompleted ? "Show completed tasks" : "Hide completed tasks"
+        }
+      >
+        {prefs.hideCompleted ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+          prefs.completedToBottom
+            ? "border-[var(--accent)] bg-[var(--row-hover)] text-[var(--accent)]"
+            : "border-[var(--border)] text-[var(--text-muted)]",
+        )}
+        onClick={onToggleCompletedToBottom}
+        aria-label={
+          prefs.completedToBottom
+            ? "Restore completed task order"
+            : "Move completed tasks to bottom"
+        }
+        aria-pressed={prefs.completedToBottom}
+        title={
+          prefs.completedToBottom
+            ? "Restore completed task order"
+            : "Move completed tasks to bottom"
+        }
+      >
+        <ArrowDownToLine size={14} />
+      </button>
+    </>
   );
 }
 
@@ -630,8 +716,13 @@ export function ProjectTaskBoard({
   /** One-shot deep-link scroll key (`taskId` or `taskId:commentId`). */
   const deepLinkScrollDoneRef = useRef<string | null>(null);
   const [exitingTaskIds, setExitingTaskIds] = useState<Set<string>>(new Set());
+  const [enteringTaskIds, setEnteringTaskIds] = useState<Set<string>>(new Set());
   const pendingDeleteRootsRef = useRef<Set<string>>(new Set());
   const exitHandledRef = useRef<Set<string>>(new Set());
+  const taskBoardRootRef = useRef<HTMLDivElement | null>(null);
+  const flipTopsRef = useRef<Map<string, number> | null>(null);
+  const { prefs: listViewPrefs, setPrefs: setListViewPrefs } =
+    useProjectTaskListViewPrefs(profile?.id, projectId);
 
   const orgCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
   const viewerPersonId =
@@ -678,6 +769,106 @@ export function ProjectTaskBoard({
     },
     [manageLists, bindSelectMode, isPhone, mobileReorderListId],
   );
+
+  const taskDragEnabled = useCallback(
+    (listId: string) => {
+      if (listViewPrefs.completedToBottom) return false;
+      return listDragEnabled(listId);
+    },
+    [listDragEnabled, listViewPrefs.completedToBottom],
+  );
+
+  function captureTaskRowTops() {
+    const root = taskBoardRootRef.current;
+    if (!root) return null;
+    const map = new Map<string, number>();
+    root.querySelectorAll<HTMLElement>("[data-task-row-id]").forEach((el) => {
+      const id = el.dataset.taskRowId;
+      if (id) map.set(id, el.getBoundingClientRect().top);
+    });
+    return map;
+  }
+
+  function projectCompleteTaskIds() {
+    return state.tasks
+      .filter(
+        (t) =>
+          t.project_id === projectId &&
+          !t.is_divider &&
+          t.status === "complete" &&
+          (!assigneePersonId || t.assignee_person_id === assigneePersonId),
+      )
+      .map((t) => t.id);
+  }
+
+  function toggleHideCompleted() {
+    if (!listViewPrefs.hideCompleted) {
+      const completeIds = projectCompleteTaskIds();
+      if (completeIds.length > 0) {
+        setExitingTaskIds((prev) => {
+          const next = new Set(prev);
+          for (const id of completeIds) {
+            exitHandledRef.current.delete(id);
+            next.add(id);
+          }
+          return next;
+        });
+      }
+      setListViewPrefs((p) => ({ ...p, hideCompleted: true }));
+      return;
+    }
+    const showIds = projectCompleteTaskIds();
+    setListViewPrefs((p) => ({ ...p, hideCompleted: false }));
+    if (showIds.length === 0) return;
+    setEnteringTaskIds(new Set(showIds));
+    window.setTimeout(() => {
+      setEnteringTaskIds((prev) => {
+        if (prev.size === 0) return prev;
+        return new Set();
+      });
+    }, 220);
+  }
+
+  function toggleCompletedToBottom() {
+    flipTopsRef.current = captureTaskRowTops();
+    setListViewPrefs((p) => ({
+      ...p,
+      completedToBottom: !p.completedToBottom,
+    }));
+  }
+
+  useLayoutEffect(() => {
+    const before = flipTopsRef.current;
+    if (!before) return;
+    flipTopsRef.current = null;
+    const root = taskBoardRootRef.current;
+    if (!root) return;
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    root.querySelectorAll<HTMLElement>("[data-task-row-id]").forEach((el) => {
+      const id = el.dataset.taskRowId;
+      if (!id) return;
+      const prevTop = before.get(id);
+      if (prevTop == null) return;
+      const nextTop = el.getBoundingClientRect().top;
+      const delta = prevTop - nextTop;
+      if (Math.abs(delta) < 1) return;
+      if (reduceMotion) return;
+      el.style.transition = "none";
+      el.style.transform = `translateY(${delta}px)`;
+      void el.offsetHeight;
+      el.style.transition = "transform 200ms ease-out";
+      el.style.transform = "";
+      const clear = () => {
+        el.style.transition = "";
+        el.style.transform = "";
+        el.removeEventListener("transitionend", clear);
+      };
+      el.addEventListener("transitionend", clear);
+      window.setTimeout(clear, 260);
+    });
+  }, [listViewPrefs.completedToBottom, listViewPrefs.hideCompleted]);
 
   const toggleMobileListReorder = useCallback(
     (listId: string) => {
@@ -859,12 +1050,16 @@ export function ProjectTaskBoard({
       arr.push(t);
       map.set(t.parent_id, arr);
     }
-    for (const arr of map.values()) {
-      arr.sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title));
+    for (const [parentId, arr] of map) {
+      map.set(
+        parentId,
+        displaySiblingTasks(arr, listViewPrefs, exitingTaskIds),
+      );
     }
     return map;
-  }, [visibleTasks]);
+  }, [visibleTasks, listViewPrefs, exitingTaskIds]);
 
+  /** Canonical CR lock order — not affected by hide/pin-complete view prefs. */
   const orderedListTasksByListId = useMemo(() => {
     const map = new Map<string, Task[]>();
     const listIds = new Set(visibleTasks.map((t) => t.list_id));
@@ -882,8 +1077,10 @@ export function ProjectTaskBoard({
     const ids: string[] = [];
     const walkLists = (lists: typeof activeLists) => {
       for (const list of lists) {
-        const parents = sortByOrder(
+        const parents = displaySiblingTasks(
           visibleTasks.filter((t) => t.list_id === list.id && !t.parent_id),
+          listViewPrefs,
+          exitingTaskIds,
         );
         for (const parent of parents) {
           if (parent.is_divider) continue;
@@ -903,6 +1100,8 @@ export function ProjectTaskBoard({
     archiveExpanded,
     visibleTasks,
     childrenMap,
+    listViewPrefs,
+    exitingTaskIds,
   ]);
 
   function toggleSelect(id: string, shiftKey = false) {
@@ -2446,7 +2645,9 @@ export function ProjectTaskBoard({
     mobileReorderListId,
     toggleMobileListReorder,
     listDragEnabled,
+    taskDragEnabled,
     isPhone,
+    enteringTaskIds,
     selected: bindSelectMode ? new Set(bindIds) : selected,
     toggleSelect,
     setParentsSelected,
@@ -2496,7 +2697,7 @@ export function ProjectTaskBoard({
             "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
         )}
       >
-        <div className="space-y-3">
+        <div ref={taskBoardRootRef} className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
               Tasks
@@ -2509,15 +2710,26 @@ export function ProjectTaskBoard({
               cardsDisabled={isPhone}
               onCardsBlocked={() => toast("Available on desktop")}
             />
+            <div className="ml-auto flex items-center gap-1">
+              <TaskListViewToggleButtons
+                prefs={listViewPrefs}
+                onToggleHideCompleted={toggleHideCompleted}
+                onToggleCompletedToBottom={toggleCompletedToBottom}
+              />
+            </div>
           </div>
           {activeLists.length === 0 ? (
             <p className="text-sm text-[var(--text-muted)]">No task lists yet.</p>
           ) : (
             activeLists.map((list) => {
-              const listParents = parentTasks(
-                visibleTasks.filter(
-                  (t) => t.list_id === list.id && !t.is_divider,
+              const listParents = displaySiblingTasks(
+                parentTasks(
+                  visibleTasks.filter(
+                    (t) => t.list_id === list.id && !t.is_divider,
+                  ),
                 ),
+                listViewPrefs,
+                exitingTaskIds,
               );
               const listManage =
                 manageLists && !isListGanttLocked(list.id);
@@ -2644,7 +2856,7 @@ export function ProjectTaskBoard({
           "rounded-md border border-[var(--border)] bg-[var(--bg)] p-4",
       )}
     >
-    <div className="space-y-3">
+    <div ref={taskBoardRootRef} className="space-y-3">
       {!hideHeader ? (
       <div className="flex flex-wrap items-center gap-2">
         <h3 className={cn("text-sm font-semibold", compact && "text-xs")}>
@@ -2659,32 +2871,39 @@ export function ProjectTaskBoard({
           cardsDisabled={isPhone}
           onCardsBlocked={() => toast("Available on desktop")}
         />
-        {manageLists ? (
-          <div className="ml-auto flex items-center gap-1">
-            <button
-              type="button"
-              className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
-              onClick={addList}
-            >
-              <Plus size={12} /> List
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
-                listsEditMode
-                  ? "border-[var(--accent)] bg-[var(--row-hover)] text-[var(--accent)]"
-                  : "border-[var(--border)] text-[var(--text-muted)]",
-              )}
-              onClick={() => setListsEditMode((v) => !v)}
-              aria-label={listsEditMode ? "Done editing lists" : "Edit lists"}
-              aria-pressed={listsEditMode}
-              title={listsEditMode ? "Done editing lists" : "Edit lists"}
-            >
-              <Pencil size={14} />
-            </button>
-          </div>
-        ) : null}
+        <div className="ml-auto flex items-center gap-1">
+          <TaskListViewToggleButtons
+            prefs={listViewPrefs}
+            onToggleHideCompleted={toggleHideCompleted}
+            onToggleCompletedToBottom={toggleCompletedToBottom}
+          />
+          {manageLists ? (
+            <>
+              <button
+                type="button"
+                className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] px-2 text-xs hover:bg-[var(--row-hover)]"
+                onClick={addList}
+              >
+                <Plus size={12} /> List
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border hover:bg-[var(--row-hover)] hover:text-[var(--accent)]",
+                  listsEditMode
+                    ? "border-[var(--accent)] bg-[var(--row-hover)] text-[var(--accent)]"
+                    : "border-[var(--border)] text-[var(--text-muted)]",
+                )}
+                onClick={() => setListsEditMode((v) => !v)}
+                aria-label={listsEditMode ? "Done editing lists" : "Edit lists"}
+                aria-pressed={listsEditMode}
+                title={listsEditMode ? "Done editing lists" : "Edit lists"}
+              >
+                <Pencil size={14} />
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
       ) : null}
 
@@ -2931,7 +3150,11 @@ export function ProjectTaskBoard({
           >
             {activeLists.map((list) => {
               const listTasks = tasksForList(visibleTasks, list.id);
-              const parents = parentTasks(listTasks);
+              const parents = displaySiblingTasks(
+                parentTasks(listTasks),
+                listViewPrefs,
+                exitingTaskIds,
+              );
               const collapsed = collapsedLists.has(list.id);
               const milestone = list.milestone_id
                 ? state.milestones.find((m) => m.id === list.milestone_id)
@@ -3056,7 +3279,11 @@ export function ProjectTaskBoard({
               ) : (
                 archivedLists.map((list) => {
                   const listTasks = tasksForList(visibleTasks, list.id);
-                  const parents = parentTasks(listTasks);
+                  const parents = displaySiblingTasks(
+                    parentTasks(listTasks),
+                    listViewPrefs,
+                    exitingTaskIds,
+                  );
                   const collapsed = collapsedLists.has(list.id);
                   const milestone = list.milestone_id
                     ? state.milestones.find((m) => m.id === list.milestone_id)
@@ -3503,6 +3730,7 @@ function ListSection({
   const listLocked = ctx.isListGanttLocked(list.id);
   const listManage = ctx.manageLists && !listLocked;
   const listReorderOn = ctx.listDragEnabled(list.id);
+  const taskReorderOn = ctx.taskDragEnabled(list.id);
   // Local draft so realtime/store echoes can't eat keystrokes mid-type.
   const [listNameDraft, setListNameDraft] = useState(list.name);
   const listNameFocusedRef = useRef(false);
@@ -3865,7 +4093,7 @@ function ListSection({
             <SortableContext
               items={parents.map((t) => t.id)}
               strategy={verticalListSortingStrategy}
-              disabled={!listManage || !ctx.listDragEnabled(list.id)}
+              disabled={!listManage || !taskReorderOn}
             >
               {parents.map((t) =>
                 t.is_divider ? (
@@ -4587,11 +4815,12 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
   const label = taskDividerLabel(task.title);
   const lineColor = taskDividerColor(task.notes);
   const isExiting = ctx.exitingTaskIds.has(task.id);
+  const isEntering = ctx.enteringTaskIds.has(task.id);
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftColor, setDraftColor] = useState(task.notes);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listReorderOn = ctx.listDragEnabled(task.list_id);
+  const listReorderOn = ctx.taskDragEnabled(task.list_id);
   const { pressing: dividerGripPressing, pressProps: dividerGripPressProps } =
     usePhoneDragGripPress(ctx.isPhone && listReorderOn);
 
@@ -4653,6 +4882,7 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
   return (
     <div
       id={`task-row-${task.id}`}
+      data-task-row-id={task.id}
       style={{
         transform: isExiting
           ? undefined
@@ -4660,7 +4890,11 @@ function TaskDividerRow({ task, ctx }: { task: Task; ctx: BoardCtx }) {
         transition: isExiting ? undefined : transition,
         opacity: isDragging ? 0.35 : undefined,
       }}
-      className={cn("relative my-0.5 py-0.5", isExiting && "pointer-events-none")}
+      className={cn(
+        "relative my-0.5 py-0.5 transition-transform duration-200 ease-out motion-reduce:transition-none",
+        isExiting && "pointer-events-none",
+        isEntering && "task-row-entering",
+      )}
       onPointerDownCapture={() => ctx.clearFocusIfOtherTask(task.id)}
     >
       <div
@@ -4859,9 +5093,10 @@ function TaskRow({
   ctx: BoardCtx;
 }) {
   const isExiting = ctx.exitingTaskIds.has(task.id);
+  const isEntering = ctx.enteringTaskIds.has(task.id);
   const listLocked = ctx.isListGanttLocked(task.list_id);
   const listManage = ctx.manageLists && !listLocked;
-  const listReorderOn = ctx.listDragEnabled(task.list_id);
+  const listReorderOn = ctx.taskDragEnabled(task.list_id);
   const { pressing: taskGripPressing, pressProps: taskGripPressProps } =
     usePhoneDragGripPress(ctx.isPhone && listReorderOn);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -5056,6 +5291,7 @@ function TaskRow({
   return (
     <div
       id={`task-row-${task.id}`}
+      data-task-row-id={task.id}
       style={{
         transform: isExiting
           ? undefined
@@ -5066,10 +5302,11 @@ function TaskRow({
         ...(nestIndent ? { marginLeft: nestIndent } : {}),
       }}
       className={cn(
-        "relative my-0.5 py-0.5",
+        "relative my-0.5 py-0.5 transition-transform duration-200 ease-out motion-reduce:transition-none",
         // Named group only on subtasks so parent hover doesn't clear nest lines.
         depth > 0 && "group/subtask",
         isExiting && "pointer-events-none",
+        isEntering && "task-row-entering",
       )}
       onPointerDownCapture={() => ctx.clearFocusIfOtherTask(task.id)}
     >
@@ -5603,7 +5840,7 @@ function TaskRow({
         <SortableContext
           items={kids.map((k) => k.id)}
           strategy={verticalListSortingStrategy}
-          disabled={!ctx.manageLists || !ctx.listDragEnabled(task.list_id)}
+          disabled={!ctx.manageLists || !ctx.taskDragEnabled(task.list_id)}
         >
           {kids.map((k) => (
             <TaskRow key={k.id} task={k} depth={depth + 1} ctx={ctx} />

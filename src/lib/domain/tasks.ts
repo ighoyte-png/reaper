@@ -45,6 +45,34 @@ export function parentTasks(tasks: Task[]): Task[] {
   return tasks.filter((t) => !t.parent_id);
 }
 
+/** Per-user project list display prefs (never mutates stored sort_order). */
+export type ProjectListViewPrefs = {
+  hideCompleted: boolean;
+  completedToBottom: boolean;
+};
+
+/**
+ * Display-only filter/sort for a sibling group (list roots or children).
+ * Hide wins over completed-to-bottom. Dividers stay with non-completes.
+ */
+export function applyProjectListView<
+  T extends Pick<Task, "status" | "sort_order" | "title" | "is_divider">,
+>(tasks: T[], prefs: ProjectListViewPrefs): T[] {
+  const sorted = [...tasks].sort(compareTaskOrder);
+  if (prefs.hideCompleted) {
+    return sorted.filter((t) => t.is_divider || t.status !== "complete");
+  }
+  if (!prefs.completedToBottom) return sorted;
+
+  const open: T[] = [];
+  const done: T[] = [];
+  for (const t of sorted) {
+    if (!t.is_divider && t.status === "complete") done.push(t);
+    else open.push(t);
+  }
+  return [...open, ...done];
+}
+
 export function isTaskDivider(task: Pick<Task, "is_divider">): boolean {
   return Boolean(task.is_divider);
 }
