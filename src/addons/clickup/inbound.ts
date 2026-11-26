@@ -634,6 +634,11 @@ async function markInbound(
   status: "processed" | "ignored" | "error",
   lastError?: string | null,
 ): Promise<void> {
+  // Ignored = no-op for Reaper; drop immediately so webhook noise can't bloat DB.
+  if (status === "ignored") {
+    await admin.from("addon_clickup_inbound_events").delete().eq("id", id);
+    return;
+  }
   await admin
     .from("addon_clickup_inbound_events")
     .update({
@@ -643,6 +648,34 @@ async function markInbound(
       locked_at: null,
     })
     .eq("id", id);
+}
+
+/** Keep processed/error ~7d for dedupe/debug; ignored should already be gone. */
+const INBOUND_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+export async function pruneInboundEventRetention(
+  admin: SupabaseClient,
+): Promise<{ deleted_ignored: number; deleted_old: number }> {
+  const cutoff = new Date(Date.now() - INBOUND_RETENTION_MS).toISOString();
+
+  // Safety net for any leftover ignored rows from before immediate-delete.
+  const { count: ignoredCount, error: ignoredErr } = await admin
+    .from("addon_clickup_inbound_events")
+    .delete({ count: "exact" })
+    .eq("status", "ignored");
+  if (ignoredErr) throw new Error(ignoredErr.message);
+
+  const { count: oldCount, error: oldErr } = await admin
+    .from("addon_clickup_inbound_events")
+    .delete({ count: "exact" })
+    .in("status", ["processed", "error"])
+    .lt("created_at", cutoff);
+  if (oldErr) throw new Error(oldErr.message);
+
+  return {
+    deleted_ignored: ignoredCount ?? 0,
+    deleted_old: oldCount ?? 0,
+  };
 }
 
 async function applyTaskSnapshot(args: {

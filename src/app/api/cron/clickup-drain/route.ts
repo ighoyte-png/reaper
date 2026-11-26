@@ -3,6 +3,7 @@ import { processOutbox } from "@/addons/clickup/sync";
 import {
   healStaleSpaceWebhooks,
   processInbound,
+  pruneInboundEventRetention,
 } from "@/addons/clickup/inbound";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -126,11 +127,27 @@ async function drainAll() {
     };
   }
 
+  let inboundPrune: {
+    deleted_ignored: number;
+    deleted_old: number;
+    error?: string;
+  } = { deleted_ignored: 0, deleted_old: 0 };
+  try {
+    inboundPrune = await pruneInboundEventRetention(admin);
+  } catch (e) {
+    inboundPrune = {
+      deleted_ignored: 0,
+      deleted_old: 0,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+
   return NextResponse.json({
     ok: true,
     orgs: results.length,
     results,
     webhook_heal: webhookHeal,
+    inbound_prune: inboundPrune,
   });
 }
 
