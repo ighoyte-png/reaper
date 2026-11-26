@@ -28,6 +28,7 @@ import {
   notesToDescription,
   normalizeDescription,
 } from "@/addons/clickup/mappers";
+import { syncReaperListOrderFromClickUp } from "@/addons/clickup/order";
 import type {
   AddonClickupSettingsRow,
   ClickUpAuth,
@@ -255,6 +256,43 @@ async function listIsGanttProtected(
     .eq("organization_id", orgId)
     .maybeSingle();
   return Boolean(data?.gantt_enabled);
+}
+
+/**
+ * Pull ClickUp list display order into Reaper sort_order.
+ * Safe no-op on missing links / gantt / API errors (caller already applied fields).
+ */
+async function refreshListOrderFromClickUp(args: {
+  admin: SupabaseClient;
+  orgId: string;
+  auth: ClickUpAuth;
+  clickUpListId: string | null | undefined;
+  reaperListId?: string | null;
+}): Promise<number> {
+  const clickUpListId = String(args.clickUpListId ?? "").trim();
+  if (!clickUpListId) return 0;
+  let reaperListId = args.reaperListId ?? null;
+  if (!reaperListId) {
+    const listLink = await getLinkByClickUpId(
+      args.admin,
+      args.orgId,
+      "task_list",
+      clickUpListId,
+    );
+    reaperListId = listLink?.reaper_id ?? null;
+  }
+  if (!reaperListId) return 0;
+  try {
+    return await syncReaperListOrderFromClickUp({
+      admin: args.admin,
+      orgId: args.orgId,
+      auth: args.auth,
+      reaperListId,
+      clickUpListId,
+    });
+  } catch {
+    return 0;
+  }
 }
 
 function commentTextFromHistory(
@@ -1346,7 +1384,21 @@ export async function applyInboundEvent(args: {
       auth,
       eventMs,
     });
-    return r === "applied" ? "processed" : "ignored";
+    if (r === "applied") {
+      try {
+        const cuTask = await cu.getTask(auth, taskId);
+        await refreshListOrderFromClickUp({
+          admin,
+          orgId,
+          auth,
+          clickUpListId: cuTask.list?.id,
+        });
+      } catch {
+        /* order refresh is best-effort */
+      }
+      return "processed";
+    }
+    return "ignored";
   }
 
   const link = await getLinkByClickUpId(admin, orgId, "task", taskId);
@@ -1369,7 +1421,16 @@ export async function applyInboundEvent(args: {
         actorProfileId,
         listIdHint,
       });
-      return r === "created" ? "processed" : "ignored";
+      if (r === "created") {
+        await refreshListOrderFromClickUp({
+          admin,
+          orgId,
+          auth,
+          clickUpListId: cuTask.list?.id ?? listIdHint,
+        });
+        return "processed";
+      }
+      return "ignored";
     } catch (e) {
       // Deleted before we could import — don't retry (poison queue).
       if (isNotFoundClickUpError(e)) return "ignored";
@@ -1445,7 +1506,18 @@ export async function applyInboundEvent(args: {
     actorProfileId,
     fields: fieldHints,
   });
-  return result === "applied" ? "processed" : "ignored";
+  // Reorder-only ClickUp edits are content-stale. Refresh on taskUpdated
+  // (drag reorder); skip dedicated status/assignee/due events to limit list GETs.
+  let orderChanged = 0;
+  if (eventName === "taskUpdated") {
+    orderChanged = await refreshListOrderFromClickUp({
+      admin,
+      orgId,
+      auth,
+      clickUpListId: cuTask.list?.id,
+    });
+  }
+  return result === "applied" || orderChanged > 0 ? "processed" : "ignored";
 }
 
 export async function processInbound(

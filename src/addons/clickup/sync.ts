@@ -29,6 +29,7 @@ import {
   taskToClickUpBody,
   taskContentHash,
 } from "@/addons/clickup/mappers";
+import { applyClickUpListOrderToReaper } from "@/addons/clickup/order";
 import type {
   ClickUpAuth,
   ClickUpStatusMap,
@@ -1089,6 +1090,31 @@ export async function reconcileProject(args: {
       summary.errors.push(
         `Task ${task.title}: ${e instanceof Error ? e.message : String(e)}`,
       );
+    }
+  }
+
+  // ClickUp → Reaper list order (public API cannot set ClickUp position).
+  const reaperListsByCu = new Map<string, string[]>();
+  for (const [reaperListId, cuListId] of listIdMap) {
+    const bucket = reaperListsByCu.get(cuListId) ?? [];
+    bucket.push(reaperListId);
+    reaperListsByCu.set(cuListId, bucket);
+  }
+  for (const [cuListId, cuTasks] of cuTasksByList) {
+    const reaperListIds = reaperListsByCu.get(cuListId) ?? [];
+    for (const reaperListId of reaperListIds) {
+      try {
+        await applyClickUpListOrderToReaper({
+          admin,
+          orgId,
+          reaperListId,
+          cuTasksInDisplayOrder: cuTasks,
+        });
+      } catch (e) {
+        summary.errors.push(
+          `List order ${reaperListId}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
     }
   }
 

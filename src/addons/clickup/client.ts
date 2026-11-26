@@ -41,6 +41,11 @@ export type ClickUpTask = {
   parent?: string | null;
   list?: { id: string };
   assignees?: { id: number; email?: string; username?: string }[];
+  /**
+   * Legacy field — still returned by the API, but ClickUp no longer uses it
+   * to position tasks (PUT orderindex is ignored). Prefer GET list array order.
+   */
+  orderindex?: string | number | null;
 };
 
 export type ClickUpWebhook = {
