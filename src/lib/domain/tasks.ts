@@ -49,6 +49,8 @@ export function parentTasks(tasks: Task[]): Task[] {
 export type ProjectListViewPrefs = {
   hideCompleted: boolean;
   completedToBottom: boolean;
+  /** Task list ids the user has collapsed on this project. */
+  collapsedListIds: string[];
 };
 
 /**

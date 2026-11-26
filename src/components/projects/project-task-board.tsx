@@ -705,7 +705,6 @@ export function ProjectTaskBoard({
   const displayView: TaskBoardView =
     isPhone && view === "card" ? "list" : view;
 
-  const [collapsedLists, setCollapsedLists] = useState<Set<string>>(new Set());
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [listsEditMode, setListsEditMode] = useState(false);
   const [mobileReorderListId, setMobileReorderListId] = useState<string | null>(
@@ -723,6 +722,29 @@ export function ProjectTaskBoard({
   const flipTopsRef = useRef<Map<string, number> | null>(null);
   const { prefs: listViewPrefs, setPrefs: setListViewPrefs } =
     useProjectTaskListViewPrefs(profile?.id, projectId);
+  const collapsedLists = useMemo(
+    () => new Set(listViewPrefs.collapsedListIds),
+    [listViewPrefs.collapsedListIds],
+  );
+
+  function toggleListCollapsed(listId: string) {
+    setListViewPrefs((p) => {
+      const next = new Set(p.collapsedListIds);
+      if (next.has(listId)) next.delete(listId);
+      else next.add(listId);
+      return { ...p, collapsedListIds: [...next] };
+    });
+  }
+
+  function ensureListExpanded(listId: string) {
+    setListViewPrefs((p) => {
+      if (!p.collapsedListIds.includes(listId)) return p;
+      return {
+        ...p,
+        collapsedListIds: p.collapsedListIds.filter((id) => id !== listId),
+      };
+    });
+  }
 
   const orgCanManage = viewAs ? viewAs.effectiveCanManage : canManage;
   const viewerPersonId =
@@ -2145,12 +2167,7 @@ export function ProjectTaskBoard({
         (t) => t.id === focusTaskId && t.project_id === projectId,
       );
     if (focused) {
-      setCollapsedLists((prev) => {
-        if (!prev.has(focused.list_id)) return prev;
-        const next = new Set(prev);
-        next.delete(focused.list_id);
-        return next;
-      });
+      ensureListExpanded(focused.list_id);
     }
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -2234,12 +2251,7 @@ export function ProjectTaskBoard({
     if (!match) return;
     setEditingTaskId(null);
     setDraftingListId(match.listId);
-    setCollapsedLists((prev) => {
-      if (!prev.has(match.listId)) return prev;
-      const next = new Set(prev);
-      next.delete(match.listId);
-      return next;
-    });
+    ensureListExpanded(match.listId);
   }, [profile?.id, projectId, manageLists, allLists]);
 
   function moveTaskToColumn(
@@ -3166,14 +3178,7 @@ export function ProjectTaskBoard({
                   parents={parents}
                   ctx={ctx}
                   collapsed={collapsed}
-                  onToggleCollapse={() =>
-                    setCollapsedLists((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(list.id)) next.delete(list.id);
-                      else next.add(list.id);
-                      return next;
-                    })
-                  }
+                  onToggleCollapse={() => toggleListCollapsed(list.id)}
                   milestone={
                     milestone
                       ? {
@@ -3295,14 +3300,7 @@ export function ProjectTaskBoard({
                       parents={parents}
                       ctx={ctx}
                       collapsed={collapsed}
-                      onToggleCollapse={() =>
-                        setCollapsedLists((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(list.id)) next.delete(list.id);
-                          else next.add(list.id);
-                          return next;
-                        })
-                      }
+                      onToggleCollapse={() => toggleListCollapsed(list.id)}
                       milestone={
                     milestone
                       ? {

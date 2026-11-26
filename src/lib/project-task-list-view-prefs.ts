@@ -6,6 +6,7 @@ import type { ProjectListViewPrefs } from "@/lib/domain/tasks";
 export const DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS: ProjectListViewPrefs = {
   hideCompleted: false,
   completedToBottom: false,
+  collapsedListIds: [],
 };
 
 /** Dispatched after prefs are written so other mounts can re-read. */
@@ -20,16 +21,32 @@ function isBool(value: unknown): value is boolean {
   return value === true || value === false;
 }
 
+function parseCollapsedListIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const id = item.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
 export function readProjectTaskListViewPrefs(
   profileId: string | null | undefined,
   projectId: string | null | undefined,
 ): ProjectListViewPrefs {
   if (!profileId || !projectId || typeof window === "undefined") {
-    return { ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS };
+    return { ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS, collapsedListIds: [] };
   }
   try {
     const raw = localStorage.getItem(storageKey(profileId, projectId));
-    if (!raw) return { ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS };
+    if (!raw) {
+      return { ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS, collapsedListIds: [] };
+    }
     const parsed = JSON.parse(raw) as Partial<ProjectListViewPrefs>;
     return {
       hideCompleted: isBool(parsed.hideCompleted)
@@ -38,9 +55,10 @@ export function readProjectTaskListViewPrefs(
       completedToBottom: isBool(parsed.completedToBottom)
         ? parsed.completedToBottom
         : DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS.completedToBottom,
+      collapsedListIds: parseCollapsedListIds(parsed.collapsedListIds),
     };
   } catch {
-    return { ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS };
+    return { ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS, collapsedListIds: [] };
   }
 }
 
@@ -66,9 +84,10 @@ export function useProjectTaskListViewPrefs(
   profileId: string | null | undefined,
   projectId: string | null | undefined,
 ) {
-  const [prefs, setPrefsState] = useState<ProjectListViewPrefs>(
-    DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS,
-  );
+  const [prefs, setPrefsState] = useState<ProjectListViewPrefs>(() => ({
+    ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS,
+    collapsedListIds: [],
+  }));
 
   useEffect(() => {
     function sync() {

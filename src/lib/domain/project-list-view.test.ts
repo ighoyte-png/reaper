@@ -23,36 +23,42 @@ describe("applyProjectListView", () => {
     row({ id: "e", status: "upcoming", sort_order: 4 }),
   ];
 
+  const base = {
+    hideCompleted: false,
+    completedToBottom: false,
+    collapsedListIds: [] as string[],
+  };
+
   it("returns sort_order when both flags off", () => {
-    expect(
-      applyProjectListView(siblings, {
-        hideCompleted: false,
-        completedToBottom: false,
-      }).map((t) => t.id),
-    ).toEqual(["a", "b", "c", "d", "e"]);
+    expect(applyProjectListView(siblings, base).map((t) => t.id)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+    ]);
   });
 
   it("hides completed and keeps relative order of the rest", () => {
     expect(
-      applyProjectListView(siblings, {
-        hideCompleted: true,
-        completedToBottom: false,
-      }).map((t) => t.id),
+      applyProjectListView(siblings, { ...base, hideCompleted: true }).map(
+        (t) => t.id,
+      ),
     ).toEqual(["a", "c", "e"]);
   });
 
   it("pins completed to the bottom below Active and In Review", () => {
     expect(
-      applyProjectListView(siblings, {
-        hideCompleted: false,
-        completedToBottom: true,
-      }).map((t) => t.id),
+      applyProjectListView(siblings, { ...base, completedToBottom: true }).map(
+        (t) => t.id,
+      ),
     ).toEqual(["a", "c", "e", "b", "d"]);
   });
 
   it("lets hide trump completed-to-bottom", () => {
     expect(
       applyProjectListView(siblings, {
+        ...base,
         hideCompleted: true,
         completedToBottom: true,
       }).map((t) => t.id),
@@ -68,7 +74,7 @@ describe("applyProjectListView", () => {
     ];
     expect(
       applyProjectListView(withDivider, {
-        hideCompleted: false,
+        ...base,
         completedToBottom: true,
       }).map((t) => t.id),
     ).toEqual(["a", "div", "c", "b"]);
@@ -81,10 +87,9 @@ describe("applyProjectListView", () => {
       row({ id: "b", status: "upcoming", sort_order: 2 }),
     ];
     expect(
-      applyProjectListView(withDivider, {
-        hideCompleted: true,
-        completedToBottom: false,
-      }).map((t) => t.id),
+      applyProjectListView(withDivider, { ...base, hideCompleted: true }).map(
+        (t) => t.id,
+      ),
     ).toEqual(["div", "b"]);
   });
 });
