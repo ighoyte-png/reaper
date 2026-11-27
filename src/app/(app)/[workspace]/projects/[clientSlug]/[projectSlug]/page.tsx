@@ -58,6 +58,8 @@ import {
   resolvePmScheduleIntent,
 } from "@/lib/domain/project-manager-schedule";
 import { ProjectStatusTag } from "@/components/projects/project-status-tag";
+import { ClickUpSyncedBadge } from "@/addons/clickup/ui/clickup-synced-badge";
+import { useClickUpSyncedProjectIds } from "@/addons/clickup/use-synced-project-ids";
 import { projectDisplayColor } from "@/lib/domain/sorting";
 import {
   buildProjectMembersPayload,
@@ -176,6 +178,10 @@ export default function ProjectDetailPage() {
     projectMembers: state.project_members,
   });
   const isSandbox = Boolean(project?.sandbox_mode);
+  const { syncedIds: clickupSyncedIds } = useClickUpSyncedProjectIds();
+  const clickupSynced = Boolean(
+    project?.id && clickupSyncedIds.has(project.id),
+  );
 
   useEffect(() => {
     if (!project?.id) return;
@@ -366,6 +372,9 @@ export default function ProjectDetailPage() {
         onBack={goBack}
         actions={
           <>
+            {clickupSynced ? (
+              <ClickUpSyncedBadge className="self-center" />
+            ) : null}
             {canManage && !isSandbox ? (
               <Link
                 href={projectBudgetHref}

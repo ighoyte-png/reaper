@@ -7,6 +7,7 @@ import { Select, type SelectOption } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/toast/toast-provider";
 import type { AddonClickupProjectSyncRow, ReconcileSummary } from "@/addons/clickup/types";
+import { notifyClickUpProjectSyncChanged } from "@/addons/clickup/use-synced-project-ids";
 
 type FolderOption = {
   id: string;
@@ -140,6 +141,7 @@ export function ClickUpProjectSyncToggle({
       setSync(json.sync);
       setSummary(json.summary ?? null);
       setLinkedFolder(json.clickup_folder ?? null);
+      notifyClickUpProjectSyncChanged();
       push("ClickUp sync enabled — reconcile finished", "success");
       void fetch("/api/addons/clickup/process-outbox", { method: "POST" });
     } catch (e) {
@@ -161,6 +163,7 @@ export function ClickUpProjectSyncToggle({
       if (!res.ok) throw new Error(json.error ?? "Failed");
       setSync(json.sync);
       setLinkedFolder(null);
+      notifyClickUpProjectSyncChanged();
       push("ClickUp sync turned off for this project", "success");
     } catch (e) {
       push(e instanceof Error ? e.message : "Failed", "warning");
@@ -187,6 +190,7 @@ export function ClickUpProjectSyncToggle({
       setSync(json.sync);
       setSummary(json.summary ?? null);
       setLinkedFolder(json.clickup_folder ?? null);
+      notifyClickUpProjectSyncChanged();
       push("Re-sync complete", "success");
     } catch (e) {
       push(e instanceof Error ? e.message : "Failed", "warning");

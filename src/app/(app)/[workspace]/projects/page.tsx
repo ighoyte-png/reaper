@@ -50,6 +50,8 @@ import {
   resolvePmScheduleIntent,
 } from "@/lib/domain/project-manager-schedule";
 import { ProjectStatusTag } from "@/components/projects/project-status-tag";
+import { ClickUpSyncedBadge } from "@/addons/clickup/ui/clickup-synced-badge";
+import { useClickUpSyncedProjectIds } from "@/addons/clickup/use-synced-project-ids";
 import {
   sortClientsByName,
   sortProjectsByClientThenName,
@@ -134,6 +136,7 @@ function ProjectsPageContent() {
     deleteProjectContractorExpense,
   } = useData();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
+  const { syncedIds: clickupSyncedIds } = useClickUpSyncedProjectIds();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
     useViewAs();
   const canManage = effectiveCanManage;
@@ -711,6 +714,7 @@ function ProjectsPageContent() {
                             showManager={showManagers}
                             burn={burns.get(project.id)}
                             loading={!burnsReady && !project.sandbox_mode}
+                            clickupSynced={clickupSyncedIds.has(project.id)}
                           />
                         ) : (
                           <ProjectCard
@@ -720,6 +724,7 @@ function ProjectsPageContent() {
                             showManager={showManagers}
                             burn={burns.get(project.id)}
                             loading={!burnsReady && !project.sandbox_mode}
+                            clickupSynced={clickupSyncedIds.has(project.id)}
                           />
                         ),
                       )}
@@ -918,12 +923,14 @@ function ProjectListRow({
   showManager,
   burn: burnProp,
   loading = false,
+  clickupSynced = false,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
   burn?: ReturnType<typeof budgetBurn>;
   loading?: boolean;
+  clickupSynced?: boolean;
 }) {
   const { state } = useData();
   const isSandbox = Boolean(project.sandbox_mode);
@@ -952,6 +959,7 @@ function ProjectListRow({
           </span>
           {isSandbox ? <SandboxTag /> : null}
           <ProjectStatusTag status={project.status} />
+          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
           {!isSandbox && project.budget_monthly_reset ? (
             <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               Monthly
@@ -983,12 +991,14 @@ function ProjectCard({
   showManager,
   burn: burnProp,
   loading = false,
+  clickupSynced = false,
 }: {
   project: Project;
   href: string;
   showManager?: boolean;
   burn?: ReturnType<typeof budgetBurn>;
   loading?: boolean;
+  clickupSynced?: boolean;
 }) {
   const { state } = useData();
   const isSandbox = Boolean(project.sandbox_mode);
@@ -1018,6 +1028,7 @@ function ProjectCard({
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
           {isSandbox ? <SandboxTag /> : null}
           <ProjectStatusTag status={project.status} />
+          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
           {!isSandbox && project.budget_monthly_reset ? (
             <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               Monthly
