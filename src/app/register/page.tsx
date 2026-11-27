@@ -82,7 +82,10 @@ function RegisterForm() {
       router.replace("/pending-approval");
       return;
     }
-    if (!state.organization.slug) return;
+    if (!state.organization.slug) {
+      router.replace("/auth/continue?intent=register");
+      return;
+    }
     const prefs = readUserViewPrefs(profile?.id);
     router.replace(
       workspacePath(

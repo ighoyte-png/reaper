@@ -613,6 +613,13 @@ interface DataContextValue {
    * False for normal workspace members, including platform admins who Entered a workspace.
    */
   isPlatformOnly: boolean;
+  /**
+   * Auth session exists but no org membership yet (Google OAuth register / invite
+   * claim pending). User should finish on /auth/continue.
+   */
+  awaitingWorkspaceSetup: boolean;
+  /** Email from the auth session when profile is not loaded yet. */
+  sessionEmail: string | null;
   /** True when viewing /share/[token] (read-only public board). */
   isPublicShare: boolean;
   /** Prefix for in-app links when isPublicShare, e.g. /share/abc. */
@@ -999,6 +1006,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   /** Auth session is a platform admin with no workspace profile. */
   const [platformOnly, setPlatformOnly] = useState(false);
+  /** Auth session with no membership — finish workspace on /auth/continue. */
+  const [awaitingWorkspaceSetup, setAwaitingWorkspaceSetup] = useState(false);
+  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const orgChannelRef = useRef<RealtimeChannel | null>(null);
   const orgChannelReadyRef = useRef(false);
@@ -1152,9 +1162,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } = await client.auth.getUser();
     if (!user) {
       setPlatformOnly(false);
+      setAwaitingWorkspaceSetup(false);
+      setSessionEmail(null);
       setState(emptySupabaseState());
       return;
     }
+
+    setSessionEmail(user.email?.trim() || null);
 
     // Existing membership → normal workspace load (may also be a platform admin).
     const { data: existingMembership, error: membershipLookupError } =
@@ -1256,6 +1270,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     if (membershipAfterClaim || existingMembership) {
       setPlatformOnly(false);
+      setAwaitingWorkspaceSetup(false);
       const workspace = await fetchWorkspace(client, user.id);
       await applyWorkspace(workspace);
       return;
@@ -1275,6 +1290,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     if (isPlatformAdmin) {
       setPlatformOnly(true);
+      setAwaitingWorkspaceSetup(false);
       setState({ ...emptySupabaseState(), sessionProfileId: null });
       return;
     }
@@ -1284,12 +1300,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setPlatformOnly(false);
     const workspace = await fetchWorkspace(client, user.id);
     if (!workspace.sessionProfileId && workspace.memberships.length === 0) {
-      setAuthError(
-        "Signed in, but this account has no workspace membership. Open your invite link, or ask an admin to invite you again.",
-      );
+      // Expected after Google sign-up / before naming a workspace. Do not treat
+      // as a hard auth failure — /auth/continue finishes setup.
+      setAuthError(null);
+      setAwaitingWorkspaceSetup(true);
       setState({ ...emptySupabaseState(), sessionProfileId: null });
       return;
     }
+    setAwaitingWorkspaceSetup(false);
     await applyWorkspace(workspace);
   }, []);
 
@@ -1327,6 +1345,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (cancelled) return;
           if (event === "SIGNED_OUT" || !nextSession?.user) {
             setPlatformOnly(false);
+            setAwaitingWorkspaceSetup(false);
+            setSessionEmail(null);
             setState(emptySupabaseState());
             return;
           }
@@ -3105,8 +3125,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       profile,
       myPerson,
       canManage: manage,
-      isAuthenticated: Boolean(profile) || platformOnly,
+      isAuthenticated:
+        Boolean(profile) || platformOnly || awaitingWorkspaceSetup,
       isPlatformOnly: platformOnly,
+      awaitingWorkspaceSetup,
+      sessionEmail,
       isPublicShare: false,
       shareBasePath: null,
       authError,
@@ -3455,6 +3478,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const client = supabaseRef.current ?? createClient();
         await client.auth.signOut();
         setPlatformOnly(false);
+        setAwaitingWorkspaceSetup(false);
+        setSessionEmail(null);
         setState(emptySupabaseState());
       },
       resetDemo: async () => {
@@ -7151,6 +7176,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       manage,
       admin,
       platformOnly,
+      awaitingWorkspaceSetup,
+      sessionEmail,
       authError,
       patch,
       withOrg,

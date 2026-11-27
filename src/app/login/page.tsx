@@ -92,7 +92,10 @@ function LoginForm() {
       router.replace("/pending-approval");
       return;
     }
-    if (!state.organization.slug) return;
+    if (!state.organization.slug) {
+      router.replace("/auth/continue");
+      return;
+    }
     const next = safeAuthNextPath(searchParams.get("next"));
     if (next) {
       router.replace(next);

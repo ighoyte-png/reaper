@@ -23,9 +23,11 @@ function AuthContinueInner() {
   const {
     ready,
     isAuthenticated,
+    awaitingWorkspaceSetup,
     isPlatformOnly,
     mode,
     profile,
+    sessionEmail,
     canManage,
     state,
     refresh,
@@ -45,6 +47,7 @@ function AuthContinueInner() {
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bootDone, setBootDone] = useState(false);
 
   useDocumentTitle("Continue");
 
@@ -105,11 +108,10 @@ function AuthContinueInner() {
       try {
         await refresh();
       } catch {
-        /* ignore */
+        /* apply state we have */
       }
       if (cancelled) return;
 
-      // Re-check session after refresh / code exchange.
       const { createClient } = await import("@/lib/supabase/client");
       const {
         data: { user },
@@ -122,24 +124,32 @@ function AuthContinueInner() {
         return;
       }
 
-      if (isPlatformOnly) {
-        router.replace("/admin");
-        return;
+      const metaName =
+        (typeof user.user_metadata?.full_name === "string" &&
+          user.user_metadata.full_name.trim()) ||
+        (typeof user.user_metadata?.name === "string" &&
+          user.user_metadata.name.trim()) ||
+        "";
+      if (metaName) {
+        setFullName((prev) => prev || metaName);
       }
 
-      try {
-        await refresh();
-      } catch {
-        /* apply state we have */
-      }
+      if (!cancelled) setBootDone(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [ready, mode, isPlatformOnly, router, refresh]);
+  }, [ready, mode, router, refresh]);
 
   useEffect(() => {
-    if (!ready || !isAuthenticated || isPlatformOnly) return;
+    if (!ready || !bootDone) return;
+    if (isPlatformOnly) {
+      router.replace("/admin");
+      return;
+    }
+    // Session without workspace profile still counts as authenticated via
+    // awaitingWorkspaceSetup; wait until refresh has applied that flag.
+    if (!isAuthenticated && !awaitingWorkspaceSetup) return;
 
     const slug = state.organization.slug;
     const hasOrg = Boolean(state.organization.id && slug);
@@ -159,16 +169,22 @@ function AuthContinueInner() {
       return;
     }
 
-    // No workspace yet.
-    if (intent === "register" || allowSignup) {
+    // No workspace yet — show name form or blocked message.
+    if (intent === "register" || allowSignup || awaitingWorkspaceSetup) {
       setFullName((prev) => prev || profile?.full_name?.trim() || "");
-      setPhase("register");
+      if (intent === "register" || allowSignup) {
+        setPhase("register");
+      } else {
+        setPhase("blocked");
+      }
       return;
     }
     setPhase("blocked");
   }, [
     ready,
+    bootDone,
     isAuthenticated,
+    awaitingWorkspaceSetup,
     isPlatformOnly,
     state.organization.id,
     state.organization.slug,
@@ -193,7 +209,11 @@ function AuthContinueInner() {
     try {
       await completeOAuthRegistration(
         name,
-        fullName.trim() || profile?.full_name || profile?.email || "Owner",
+        fullName.trim() ||
+          profile?.full_name ||
+          sessionEmail ||
+          profile?.email ||
+          "Owner",
       );
       // Navigation handled by state effect once org exists.
     } catch (err) {
@@ -210,6 +230,8 @@ function AuthContinueInner() {
       </p>
     );
   }
+
+  const emailLabel = sessionEmail || profile?.email || null;
 
   if (phase === "blocked") {
     return (
@@ -242,7 +264,7 @@ function AuthContinueInner() {
       <h1 className="text-lg font-semibold">Name your workspace</h1>
       <p className="text-xs text-[var(--text-muted)]">
         Signed in with Google
-        {profile?.email ? ` as ${profile.email}` : ""}.
+        {emailLabel ? ` as ${emailLabel}` : ""}.
         {requireApproval
           ? " Your account may need platform approval before you can use it."
           : ""}
