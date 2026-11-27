@@ -959,12 +959,12 @@ function ProjectListRow({
           </span>
           {isSandbox ? <SandboxTag /> : null}
           <ProjectStatusTag status={project.status} />
-          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
           {!isSandbox && project.budget_monthly_reset ? (
             <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               Monthly
             </span>
           ) : null}
+          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--text-muted)]">
           {overallPct != null ? <span>{overallPct}% progress</span> : null}
@@ -1028,12 +1028,12 @@ function ProjectCard({
         <div className="flex shrink-0 flex-wrap justify-end gap-1">
           {isSandbox ? <SandboxTag /> : null}
           <ProjectStatusTag status={project.status} />
-          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
           {!isSandbox && project.budget_monthly_reset ? (
             <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
               Monthly
             </span>
           ) : null}
+          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
         </div>
       </div>
       <div className="mt-auto space-y-3">
