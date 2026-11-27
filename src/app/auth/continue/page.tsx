@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
@@ -41,13 +41,17 @@ function AuthContinueInner() {
   const [phase, setPhase] = useState<"loading" | "register" | "blocked">(
     "loading",
   );
-  const [allowSignup, setAllowSignup] = useState(false);
+  const [allowSignup, setAllowSignup] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
   const [orgName, setOrgName] = useState("");
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bootDone, setBootDone] = useState(false);
+  const [emailLabel, setEmailLabel] = useState<string | null>(null);
+
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const startedRef = useRef(false);
 
   useDocumentTitle("Continue");
 
@@ -65,7 +69,7 @@ function AuthContinueInner() {
         setAllowSignup(body.allow_workspace_signup !== false);
         setRequireApproval(Boolean(body.require_account_approval));
       } catch {
-        /* defaults */
+        /* defaults: allow signup */
       }
     })();
     return () => {
@@ -73,116 +77,132 @@ function AuthContinueInner() {
     };
   }, []);
 
+  // Resolve OAuth session once. Do not depend on `refresh` identity — store
+  // updates recreate it and would cancel this effect before phase advances.
   useEffect(() => {
     if (!ready) return;
     if (mode === "demo") {
       router.replace("/login");
       return;
     }
+    if (startedRef.current) return;
+    startedRef.current = true;
 
     let cancelled = false;
     void (async () => {
-      // PKCE fallback: callback couldn't exchange server-side; code is on this URL.
-      if (typeof window !== "undefined") {
-        const url = new URL(window.location.href);
-        const code = url.searchParams.get("code");
-        if (code) {
-          try {
+      try {
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          const code = url.searchParams.get("code");
+          if (code) {
             const { createClient } = await import("@/lib/supabase/client");
             const client = createClient();
-            await client.auth.exchangeCodeForSession(code);
-            url.searchParams.delete("code");
-            window.history.replaceState({}, "", url.pathname + url.search);
-          } catch {
-            if (!cancelled) {
+            const { error } = await client.auth.exchangeCodeForSession(code);
+            if (error) {
               router.replace(
                 "/login?error=" +
                   encodeURIComponent("Google sign-in expired. Try again."),
               );
+              return;
             }
-            return;
+            url.searchParams.delete("code");
+            window.history.replaceState({}, "", url.pathname + url.search);
           }
         }
-      }
 
-      try {
-        await refresh();
-      } catch {
-        /* apply state we have */
-      }
-      if (cancelled) return;
+        const { createClient } = await import("@/lib/supabase/client");
+        const client = createClient();
+        const {
+          data: { user },
+        } = await client.auth.getUser();
+        if (!user) {
+          router.replace(
+            "/login?error=" +
+              encodeURIComponent("Sign in was cancelled or expired"),
+          );
+          return;
+        }
 
-      const { createClient } = await import("@/lib/supabase/client");
-      const {
-        data: { user },
-      } = await createClient().auth.getUser();
-      if (!user) {
-        router.replace(
-          "/login?error=" +
-            encodeURIComponent("Sign in was cancelled or expired"),
-        );
-        return;
-      }
+        setEmailLabel(user.email?.trim() || null);
+        const metaName =
+          (typeof user.user_metadata?.full_name === "string" &&
+            user.user_metadata.full_name.trim()) ||
+          (typeof user.user_metadata?.name === "string" &&
+            user.user_metadata.name.trim()) ||
+          "";
+        if (metaName) setFullName((prev) => prev || metaName);
 
-      const metaName =
-        (typeof user.user_metadata?.full_name === "string" &&
-          user.user_metadata.full_name.trim()) ||
-        (typeof user.user_metadata?.name === "string" &&
-          user.user_metadata.name.trim()) ||
-        "";
-      if (metaName) {
-        setFullName((prev) => prev || metaName);
-      }
+        // Claim invites / load workspace in background — do not block the form.
+        void refreshRef.current().catch(() => undefined);
 
-      if (!cancelled) setBootDone(true);
+        const { data: membership } = await client
+          .from("organization_memberships")
+          .select("organization_id")
+          .eq("user_id", user.id)
+          .limit(1)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (membership?.organization_id) {
+          // Stay on loading until the store org-route effect navigates.
+          return;
+        }
+
+        // No workspace yet — show name form immediately (login path may
+        // flip to blocked once platform settings load).
+        setPhase("register");
+      } catch (err) {
+        if (!cancelled) {
+          router.replace(
+            "/login?error=" +
+              encodeURIComponent(
+                err instanceof Error ? err.message : "Sign-in failed",
+              ),
+          );
+        }
+      }
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [ready, mode, router, refresh]);
+  }, [ready, mode, router, intent]);
 
+  // If login intent and public signup is closed, swap register → blocked.
   useEffect(() => {
-    if (!ready || !bootDone) return;
+    if (phase !== "register") return;
+    if (intent === "register") return;
+    if (!allowSignup) setPhase("blocked");
+  }, [phase, intent, allowSignup]);
+
+  // Route into workspace once store has org (after claim / completeOAuthRegistration).
+  useEffect(() => {
+    if (!ready) return;
     if (isPlatformOnly) {
       router.replace("/admin");
       return;
     }
-    // Session without workspace profile still counts as authenticated via
-    // awaitingWorkspaceSetup; wait until refresh has applied that flag.
     if (!isAuthenticated && !awaitingWorkspaceSetup) return;
 
     const slug = state.organization.slug;
     const hasOrg = Boolean(state.organization.id && slug);
-    if (hasOrg) {
-      const approval = state.organization.approval_status ?? "approved";
-      if (approval === "pending" || approval === "rejected") {
-        router.replace("/pending-approval");
-        return;
-      }
-      const prefs = readUserViewPrefs(profile?.id);
-      router.replace(
-        workspacePath(
-          slug,
-          resolveDefaultStartPage(prefs.defaultStartPage, canManage),
-        ),
-      );
-      return;
-    }
+    if (!hasOrg) return;
 
-    // No workspace yet — show name form or blocked message.
-    if (intent === "register" || allowSignup || awaitingWorkspaceSetup) {
-      setFullName((prev) => prev || profile?.full_name?.trim() || "");
-      if (intent === "register" || allowSignup) {
-        setPhase("register");
-      } else {
-        setPhase("blocked");
-      }
+    const approval = state.organization.approval_status ?? "approved";
+    if (approval === "pending" || approval === "rejected") {
+      router.replace("/pending-approval");
       return;
     }
-    setPhase("blocked");
+    const prefs = readUserViewPrefs(profile?.id);
+    router.replace(
+      workspacePath(
+        slug,
+        resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+      ),
+    );
   }, [
     ready,
-    bootDone,
     isAuthenticated,
     awaitingWorkspaceSetup,
     isPlatformOnly,
@@ -190,10 +210,7 @@ function AuthContinueInner() {
     state.organization.slug,
     state.organization.approval_status,
     profile?.id,
-    profile?.full_name,
     canManage,
-    intent,
-    allowSignup,
     router,
   ]);
 
@@ -212,10 +229,10 @@ function AuthContinueInner() {
         fullName.trim() ||
           profile?.full_name ||
           sessionEmail ||
+          emailLabel ||
           profile?.email ||
           "Owner",
       );
-      // Navigation handled by state effect once org exists.
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create account");
     } finally {
@@ -231,7 +248,7 @@ function AuthContinueInner() {
     );
   }
 
-  const emailLabel = sessionEmail || profile?.email || null;
+  const shownEmail = emailLabel || sessionEmail || profile?.email || null;
 
   if (phase === "blocked") {
     return (
@@ -264,7 +281,7 @@ function AuthContinueInner() {
       <h1 className="text-lg font-semibold">Name your workspace</h1>
       <p className="text-xs text-[var(--text-muted)]">
         Signed in with Google
-        {emailLabel ? ` as ${emailLabel}` : ""}.
+        {shownEmail ? ` as ${shownEmail}` : ""}.
         {requireApproval
           ? " Your account may need platform approval before you can use it."
           : ""}

@@ -1304,7 +1304,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // as a hard auth failure — /auth/continue finishes setup.
       setAuthError(null);
       setAwaitingWorkspaceSetup(true);
-      setState({ ...emptySupabaseState(), sessionProfileId: null });
+      // Avoid thrashing empty state (recreates context + cancels continue boot).
+      setState((prev) =>
+        !prev.organization.id && !prev.sessionProfileId
+          ? prev
+          : { ...emptySupabaseState(), sessionProfileId: null },
+      );
       return;
     }
     setAwaitingWorkspaceSetup(false);
