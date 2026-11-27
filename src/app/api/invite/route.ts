@@ -1,9 +1,29 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireManagerApiAccess } from "@/lib/api/require-manager";
+import { isAdmin } from "@/lib/auth/roles";
+import {
+  assertSeatAvailable,
+  SeatLimitError,
+} from "@/lib/accounts/entitlements";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import type { Role } from "@/lib/types";
 
 type InviteDelivery = "email" | "link";
+
+function resolveInviteRole(
+  raw: string | undefined,
+  callerRole: Role,
+): Role | { error: string } {
+  const role: Role =
+    raw === "admin" || raw === "manager" || raw === "member"
+      ? raw
+      : "member";
+  if (role === "admin" && !isAdmin(callerRole)) {
+    return { error: "Only admins can invite someone as Admin" };
+  }
+  return role;
+}
 
 /**
  * Invite / resend for managers.
@@ -13,7 +33,7 @@ type InviteDelivery = "email" | "link";
  * delivery: "link" — mint generateLink only; return actionLink to copy.
  *   Do not mix: sending after generateLink invalidates the returned link.
  *
- * Body: { personId, email?, fullName?, resend?: boolean, delivery?: "email" | "link" }
+ * Body: { personId, email?, fullName?, role?, resend?: boolean, delivery?: "email" | "link" }
  */
 export async function POST(request: Request) {
   try {
@@ -27,6 +47,7 @@ export async function POST(request: Request) {
       personId?: string;
       email?: string;
       fullName?: string;
+      role?: string;
       resend?: boolean;
       delivery?: string;
     };
@@ -153,6 +174,11 @@ export async function POST(request: Request) {
       body.email?.trim().toLowerCase() ||
       (typeof person.email === "string" ? person.email.trim().toLowerCase() : "");
     const fullName = body.fullName?.trim();
+    const roleResolved = resolveInviteRole(body.role, caller.role);
+    if (typeof roleResolved === "object") {
+      return NextResponse.json({ error: roleResolved.error }, { status: 403 });
+    }
+    const role = roleResolved;
 
     if (!email) {
       return NextResponse.json(
@@ -171,6 +197,22 @@ export async function POST(request: Request) {
     }
 
     const displayName = fullName || person.name;
+
+    try {
+      await assertSeatAvailable(admin, caller.organization_id, 1);
+    } catch (e) {
+      if (e instanceof SeatLimitError) {
+        return NextResponse.json(
+          {
+            error: e.message,
+            code: e.code,
+            entitlements: e.entitlements,
+          },
+          { status: 403 },
+        );
+      }
+      throw e;
+    }
 
     let userId: string | undefined;
     let linkedExisting = false;
@@ -295,7 +337,7 @@ export async function POST(request: Request) {
         organization_id: caller.organization_id,
         email,
         full_name: displayName,
-        role: "member",
+        role,
       });
       if (profileError) {
         return NextResponse.json(
@@ -305,12 +347,13 @@ export async function POST(request: Request) {
       }
     } else {
       linkedExisting = true;
-      // Do not overwrite role/organization_id on profiles — memberships own those.
+      // Do not overwrite organization_id on profiles — memberships own access.
       await admin
         .from("profiles")
         .update({
           email: existingProfile.email || email,
           full_name: existingProfile.full_name || displayName,
+          role,
         })
         .eq("id", userId);
     }
@@ -321,7 +364,8 @@ export async function POST(request: Request) {
         {
           user_id: userId,
           organization_id: caller.organization_id,
-          role: "member",
+          role,
+          is_owner: false,
         },
         { onConflict: "user_id,organization_id" },
       );

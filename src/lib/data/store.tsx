@@ -1296,7 +1296,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     // Public registration only (requires user_metadata.org_name).
-    await ensureProfileForUser(client, user);
+    const bootstrapped = await ensureProfileForUser(client, user);
+    if (bootstrapped) {
+      try {
+        await fetch("/api/platform/signup-notify", { method: "POST" });
+      } catch {
+        /* non-fatal */
+      }
+    }
     setPlatformOnly(false);
     const workspace = await fetchWorkspace(client, user.id);
     if (!workspace.sessionProfileId && workspace.memberships.length === 0) {
@@ -3307,6 +3314,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           throw metaError;
         }
         await bootstrapOrganization(client, name, display);
+        try {
+          await fetch("/api/platform/signup-notify", { method: "POST" });
+        } catch {
+          /* non-fatal */
+        }
         await refreshSupabase(client);
       },
       signup: async (email, password, fullName, orgName) => {
@@ -3348,6 +3360,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return { needsConfirmation: true };
         }
         await bootstrapOrganization(client, orgName, fullName);
+        try {
+          await fetch("/api/platform/signup-notify", { method: "POST" });
+        } catch {
+          /* non-fatal */
+        }
         await refreshSupabase(client);
         return { needsConfirmation: false };
       },

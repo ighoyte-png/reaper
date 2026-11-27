@@ -7,6 +7,7 @@ import { AppNavbar } from "@/components/nav/app-navbar";
 import { FavoritesBookmarksBar } from "@/components/nav/favorite-project-tabs";
 import { MobileNavProvider } from "@/components/nav/mobile-nav";
 import { ViewAsBanner } from "@/components/nav/view-as-banner";
+import { SeatLimitBanner } from "@/components/nav/seat-limit-banner";
 import { Button } from "@/components/ui/button";
 import { useData } from "@/lib/data/store";
 import { useAppHref } from "@/lib/hooks/use-app-href";
@@ -199,6 +200,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
           <AppNavbar />
           <FavoritesBookmarksBar />
           <NotificationPermissionBanner />
+          <SeatLimitBanner />
           <ViewAsBanner />
           <ViewAsRouteGuard />
           <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">

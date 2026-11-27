@@ -6,6 +6,7 @@ import {
   hashInviteToken,
   inviteExpiresAt,
 } from "@/lib/accounts/tokens";
+import { assertSeatAvailable } from "@/lib/accounts/entitlements";
 
 export type InviteDelivery = "email" | "link";
 
@@ -60,6 +61,8 @@ export async function createOrganizationInvite(
     input.delivery === "link" ? "link" : "email";
 
   if (!email.includes("@")) throw new Error("Valid email is required");
+
+  await assertSeatAvailable(admin, input.organizationId, 1);
 
   const { data: profiles } = await admin
     .from("profiles")

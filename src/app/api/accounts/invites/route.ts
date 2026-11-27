@@ -4,6 +4,7 @@ import {
   createOrganizationInvite,
   type InviteDelivery,
 } from "@/lib/accounts/invites";
+import { SeatLimitError } from "@/lib/accounts/entitlements";
 import type { Role } from "@/lib/types";
 
 export async function GET(request: Request) {
@@ -67,6 +68,16 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
+    if (e instanceof SeatLimitError) {
+      return NextResponse.json(
+        {
+          error: e.message,
+          code: e.code,
+          entitlements: e.entitlements,
+        },
+        { status: 403 },
+      );
+    }
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Invite failed" },
       { status: 400 },

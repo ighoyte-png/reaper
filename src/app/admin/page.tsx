@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AboutDialog } from "@/components/brand/about-dialog";
 import { BrandLockup } from "@/components/brand/brand-lockup";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Modal, ConfirmDialog, inputClass } from "@/components/ui/form";
 import { Panel } from "@/components/ui/panel";
 import { useToast } from "@/components/toast/toast-provider";
@@ -14,6 +15,33 @@ import { useData } from "@/lib/data/store";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 import { loginPathWithNext } from "@/lib/paths";
 import { cn } from "@/lib/cn";
+
+type AdminTab = "accounts" | "registration" | "operators" | "uploads";
+
+function StatusPill({
+  tone,
+  children,
+}: {
+  tone: "ok" | "warn" | "bad" | "muted";
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium capitalize",
+        tone === "ok" &&
+          "bg-[color-mix(in_srgb,var(--status-healthy)_16%,transparent)] text-[var(--status-healthy)]",
+        tone === "warn" &&
+          "bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] text-[var(--accent)]",
+        tone === "bad" &&
+          "bg-[color-mix(in_srgb,var(--status-over)_16%,transparent)] text-[var(--status-over)]",
+        tone === "muted" && "bg-[var(--row-hover)] text-[var(--text-muted)]",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
 
 type AccountRow = {
   id: string;
@@ -107,6 +135,21 @@ export default function PlatformAdminPage() {
   const [seatLimit, setSeatLimit] = useState("");
   const [rejectTarget, setRejectTarget] = useState<AccountRow | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [tab, setTab] = useState<AdminTab>("accounts");
+  const pendingCount = accounts.filter(
+    (a) => a.approval_status === "pending",
+  ).length;
+
+  const tabs: { id: AdminTab; label: string; badge?: number }[] = [
+    {
+      id: "accounts",
+      label: "Accounts",
+      badge: pendingCount > 0 ? pendingCount : undefined,
+    },
+    { id: "registration", label: "Registration" },
+    { id: "operators", label: "Operators" },
+    { id: "uploads", label: "Uploads" },
+  ];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -579,7 +622,7 @@ export default function PlatformAdminPage() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--sidebar)] px-3">
+      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg)] px-3">
         <button
           type="button"
           className="inline-flex shrink-0 cursor-pointer items-center rounded-md py-1 hover:bg-[var(--row-hover)]"
@@ -589,7 +632,7 @@ export default function PlatformAdminPage() {
         >
           <BrandLockup showVersion compact />
         </button>
-        <span className="text-sm font-medium">Platform</span>
+        <span className="text-sm font-semibold tracking-tight">Platform</span>
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle />
           {homeHref ? (
@@ -617,539 +660,639 @@ export default function PlatformAdminPage() {
         </div>
       </header>
 
-      <main className="mx-auto min-h-0 w-full max-w-5xl flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
-        <Panel>
-          <h1 className="text-sm font-semibold">Public registration</h1>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Controls <code className="text-[10px]">/register</code>. You can
-            still provision accounts from this console when registration is off.
-          </p>
-          <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-[var(--accent)]"
-              checked={allowSignup}
-              onChange={(e) => void toggleSignup(e.target.checked)}
-            />
-            Allow public registration
-          </label>
-          <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-[var(--accent)]"
-              checked={requireApproval}
-              onChange={(e) => void toggleRequireApproval(e.target.checked)}
-            />
-            Require account approval
-          </label>
-          <p className="mt-3 text-xs font-medium text-[var(--text-muted)]">
-            Default allowed addons (applied on approve / platform provision)
-          </p>
-          <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-[var(--accent)]"
-              checked={defaultAddons.includes("clickup")}
-              onChange={(e) =>
-                void toggleDefaultAddon("clickup", e.target.checked)
-              }
-            />
-            ClickUp
-          </label>
-        </Panel>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-3 sm:flex-row sm:items-start sm:gap-0 sm:py-5">
+          <nav
+            className="flex shrink-0 gap-1 overflow-x-auto border-b border-[var(--border)] pb-2 sm:w-44 sm:flex-col sm:gap-0.5 sm:overflow-visible sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3"
+            aria-label="Platform sections"
+          >
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={cn(
+                  "cursor-pointer rounded-md px-2.5 py-1.5 text-left text-sm whitespace-nowrap transition-colors",
+                  tab === item.id
+                    ? "bg-[var(--row-hover)] font-medium text-[var(--text)]"
+                    : "text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]",
+                )}
+                aria-current={tab === item.id ? "page" : undefined}
+                onClick={() => {
+                  setTab(item.id);
+                  if (item.id !== "accounts") setDetailId(null);
+                }}
+              >
+                <span className="inline-flex items-center gap-2">
+                  {item.label}
+                  {item.badge != null ? (
+                    <span className="rounded-md bg-[var(--accent)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--accent-fg)]">
+                      {item.badge}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            ))}
+          </nav>
 
-        <Panel>
-          <h2 className="text-sm font-semibold">Upload size limits</h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field label="Max image size (MB)">
-              <input
-                type="number"
-                min={1}
-                max={100}
-                className={inputClass}
-                value={maxImageMb}
-                onChange={(e) => setMaxImageMb(Number(e.target.value) || 1)}
-              />
-            </Field>
-            <Field label="Max document size (MB)">
-              <input
-                type="number"
-                min={1}
-                max={200}
-                className={inputClass}
-                value={maxDocumentMb}
-                onChange={(e) =>
-                  setMaxDocumentMb(Number(e.target.value) || 1)
-                }
-              />
-            </Field>
-          </div>
-          <div className="mt-3">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => void saveStorageLimits()}
-            >
-              Save limits
-            </Button>
-          </div>
-        </Panel>
+          <main className="min-w-0 flex-1 space-y-4 sm:pl-5">
+            {tab === "registration" ? (
+              <Panel>
+                <h2 className="text-sm font-semibold">Public registration</h2>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  Controls <code className="text-[10px]">/register</code>. You
+                  can still provision accounts from Accounts when registration
+                  is off.
+                </p>
+                <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm">
+                  <Checkbox
+                    checked={allowSignup}
+                    onChange={(e) => void toggleSignup(e.target.checked)}
+                  />
+                  Allow public registration
+                </label>
+                <label className="mt-2.5 flex cursor-pointer items-center gap-2.5 text-sm">
+                  <Checkbox
+                    checked={requireApproval}
+                    onChange={(e) =>
+                      void toggleRequireApproval(e.target.checked)
+                    }
+                  />
+                  Require account approval
+                </label>
+                <div className="mt-5 border-t border-[var(--border)] pt-4">
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                    Default allowed addons
+                  </h3>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Applied on approve and platform provision.
+                  </p>
+                  <label className="mt-3 flex cursor-pointer items-center gap-2.5 text-sm">
+                    <Checkbox
+                      checked={defaultAddons.includes("clickup")}
+                      onChange={(e) =>
+                        void toggleDefaultAddon("clickup", e.target.checked)
+                      }
+                    />
+                    ClickUp
+                  </label>
+                </div>
+              </Panel>
+            ) : null}
 
-        <Panel>
-          <h2 className="text-sm font-semibold">Platform operators</h2>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Grant console access in-app (sets Auth app_metadata). Env
-            PLATFORM_ADMIN_EMAILS remains break-glass.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <input
-              className={cn(inputClass, "max-w-xs")}
-              placeholder="ops@example.com"
-              value={operatorEmail}
-              onChange={(e) => setOperatorEmail(e.target.value)}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!operatorEmail.includes("@")}
-              onClick={() => void grantOperator()}
-            >
-              Grant
-            </Button>
-          </div>
-          {operators.length > 0 ? (
-            <ul className="mt-3 space-y-1 text-sm">
-              {operators.map((op) => (
-                <li
-                  key={op.user_id}
-                  className="flex items-center justify-between gap-2"
-                >
-                  <span>{op.email}</span>
+            {tab === "uploads" ? (
+              <Panel>
+                <h2 className="text-sm font-semibold">Upload size limits</h2>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  Applies to avatar and document uploads across all accounts.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <Field label="Max image size (MB)">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      className={inputClass}
+                      value={maxImageMb}
+                      onChange={(e) =>
+                        setMaxImageMb(Number(e.target.value) || 1)
+                      }
+                    />
+                  </Field>
+                  <Field label="Max document size (MB)">
+                    <input
+                      type="number"
+                      min={1}
+                      max={200}
+                      className={inputClass}
+                      value={maxDocumentMb}
+                      onChange={(e) =>
+                        setMaxDocumentMb(Number(e.target.value) || 1)
+                      }
+                    />
+                  </Field>
+                </div>
+                <div className="mt-4">
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
-                    onClick={() => void revokeOperator(op.user_id)}
+                    onClick={() => void saveStorageLimits()}
                   >
-                    Revoke
+                    Save limits
                   </Button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-xs text-[var(--text-muted)]">
-              No in-app operators yet.
-            </p>
-          )}
-        </Panel>
+                </div>
+              </Panel>
+            ) : null}
 
-        {accounts.some((a) => a.approval_status === "pending") ? (
-          <Panel>
-            <h2 className="text-sm font-semibold">Pending accounts</h2>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Public registrations waiting for approval.
-            </p>
-            <ul className="mt-3 space-y-2">
-              {accounts
-                .filter((a) => a.approval_status === "pending")
-                .map((row) => (
-                  <li
-                    key={row.id}
-                    className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-2 text-sm first:border-t-0 first:pt-0"
+            {tab === "operators" ? (
+              <Panel>
+                <h2 className="text-sm font-semibold">Platform operators</h2>
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  Grant console access in-app (sets Auth app_metadata). Env{" "}
+                  <code className="text-[10px]">PLATFORM_ADMIN_EMAILS</code>{" "}
+                  remains break-glass.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <input
+                    className={cn(inputClass, "max-w-xs")}
+                    placeholder="ops@example.com"
+                    value={operatorEmail}
+                    onChange={(e) => setOperatorEmail(e.target.value)}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!operatorEmail.includes("@")}
+                    onClick={() => void grantOperator()}
                   >
-                    <div>
-                      <button
-                        type="button"
-                        className="font-medium hover:underline"
-                        onClick={() => setDetailId(row.id)}
+                    Grant
+                  </Button>
+                </div>
+                {operators.length > 0 ? (
+                  <ul className="mt-4 divide-y divide-[var(--border)] rounded-[var(--radius-md)] border border-[var(--border)]">
+                    {operators.map((op) => (
+                      <li
+                        key={op.user_id}
+                        className="flex items-center justify-between gap-2 px-3 py-2.5 text-sm"
                       >
-                        {row.name}
-                      </button>
-                      <div className="font-mono text-xs text-[var(--text-muted)]">
-                        /{row.slug}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        disabled={busyId === row.id}
-                        onClick={() => void approveAccountRow(row)}
-                      >
-                        Approve
-                      </Button>
-                      <Button
-                        variant="destructiveOutline"
-                        size="sm"
-                        disabled={busyId === row.id}
-                        onClick={() => {
-                          setRejectTarget(row);
-                          setRejectReason("");
-                        }}
-                      >
-                        Reject
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busyId === row.id}
-                        onClick={() => void enterAccount(row)}
-                      >
-                        Enter
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-            </ul>
-          </Panel>
-        ) : null}
+                        <span>{op.email}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void revokeOperator(op.user_id)}
+                        >
+                          Revoke
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-3 text-xs text-[var(--text-muted)]">
+                    No in-app operators yet.
+                  </p>
+                )}
+              </Panel>
+            ) : null}
 
-        <Panel>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Accounts</h2>
-            <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void load()}
-                disabled={loading}
-              >
-                Refresh
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => setCreateOpen(true)}
-              >
-                Create account
-              </Button>
-            </div>
-          </div>
-
-          {loading ? (
-            <p className="text-sm text-[var(--text-muted)]">Loading…</p>
-          ) : accounts.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No accounts yet.</p>
-          ) : (
-            <div className="overflow-x-auto rounded-md border border-[var(--border)]">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-[var(--bg-elevated)] text-xs text-[var(--text-muted)]">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Name</th>
-                    <th className="px-3 py-2 font-medium">Plan</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Approval</th>
-                    <th className="px-3 py-2 font-medium">Size</th>
-                    <th className="px-3 py-2 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {accounts.map((row) => {
-                    const disabled = Boolean(row.disabled_at);
-                    const busy = busyId === row.id;
-                    const approval = row.approval_status ?? "approved";
-                    return (
-                      <tr
-                        key={row.id}
-                        className="border-t border-[var(--border)]"
-                      >
-                        <td className="px-3 py-2.5">
-                          <button
-                            type="button"
-                            className="cursor-pointer text-left font-medium hover:underline"
-                            onClick={() => setDetailId(row.id)}
+            {tab === "accounts" ? (
+              <>
+                {pendingCount > 0 ? (
+                  <Panel>
+                    <h2 className="text-sm font-semibold">Pending approval</h2>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Public registrations waiting for review.
+                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {accounts
+                        .filter((a) => a.approval_status === "pending")
+                        .map((row) => (
+                          <li
+                            key={row.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--page-bg)] px-3 py-2.5 text-sm"
                           >
-                            {row.name}
-                          </button>
-                          <div className="font-mono text-xs text-[var(--text-muted)]">
-                            /{row.slug}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-[var(--text-muted)]">
-                          {row.plan_key} · {row.billing_status}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span
-                            className={cn(
-                              "text-xs font-medium",
-                              disabled
-                                ? "text-[var(--status-over)]"
-                                : "text-[var(--status-healthy)]",
-                            )}
-                          >
-                            {disabled ? "Disabled" : "Active"}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span
-                            className={cn(
-                              "text-xs font-medium capitalize",
-                              approval === "approved"
-                                ? "text-[var(--status-healthy)]"
-                                : approval === "pending"
-                                  ? "text-[var(--text-muted)]"
-                                  : "text-[var(--status-over)]",
-                            )}
-                          >
-                            {approval}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-[var(--text-muted)]">
-                          {row.member_count} members · {row.project_count}{" "}
-                          projects
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="flex flex-wrap gap-1">
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => void enterAccount(row)}
-                            >
-                              Enter
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => setDetailId(row.id)}
-                            >
-                              Detail
-                            </Button>
-                            {approval === "pending" ? (
+                            <div className="min-w-0">
+                              <button
+                                type="button"
+                                className="font-medium hover:underline"
+                                onClick={() => setDetailId(row.id)}
+                              >
+                                {row.name}
+                              </button>
+                              <div className="font-mono text-xs text-[var(--text-muted)]">
+                                /{row.slug}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
                               <Button
-                                variant="ghost"
+                                variant="primary"
                                 size="sm"
-                                disabled={busy}
+                                disabled={busyId === row.id}
                                 onClick={() => void approveAccountRow(row)}
                               >
                                 Approve
                               </Button>
-                            ) : null}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => {
-                                setRenameTarget(row);
-                                setRenameName(row.name);
-                              }}
-                            >
-                              Rename
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => void setDisabled(row, !disabled)}
-                            >
-                              {disabled ? "Enable" : "Disable"}
-                            </Button>
-                            <Button
-                              variant="destructiveOutline"
-                              size="sm"
-                              disabled={busy}
-                              onClick={() => {
-                                setDeleteTarget(row);
-                                setDeleteSlug("");
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+                              <Button
+                                variant="destructiveOutline"
+                                size="sm"
+                                disabled={busyId === row.id}
+                                onClick={() => {
+                                  setRejectTarget(row);
+                                  setRejectReason("");
+                                }}
+                              >
+                                Reject
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={busyId === row.id}
+                                onClick={() => void enterAccount(row)}
+                              >
+                                Enter
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                    </ul>
+                  </Panel>
+                ) : null}
 
-        {detail && detailId ? (
-          <Panel>
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold">
-                  {detail.account.name}
-                </h2>
-                <p className="font-mono text-xs text-[var(--text-muted)]">
-                  /{detail.account.slug}
-                </p>
-                <p className="mt-1 text-xs capitalize text-[var(--text-muted)]">
-                  Approval: {detail.account.approval_status ?? "approved"}
-                  {detail.account.rejection_reason
-                    ? ` — ${detail.account.rejection_reason}`
-                    : ""}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setDetailId(null)}
-              >
-                Close
-              </Button>
-            </div>
+                <Panel padded={false}>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] px-4 py-3">
+                    <div>
+                      <h2 className="text-sm font-semibold">Accounts</h2>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {loading
+                          ? "Loading…"
+                          : `${accounts.length} account${accounts.length === 1 ? "" : "s"}`}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void load()}
+                        disabled={loading}
+                      >
+                        Refresh
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setCreateOpen(true)}
+                      >
+                        Create account
+                      </Button>
+                    </div>
+                  </div>
 
-            {(detail.account.approval_status ?? "approved") === "pending" ? (
-              <div className="mb-3 flex flex-wrap gap-2">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={busyId === detail.account.id}
-                  onClick={() => void approveAccountRow(detail.account)}
-                >
-                  Approve
-                </Button>
-                <Button
-                  variant="destructiveOutline"
-                  size="sm"
-                  disabled={busyId === detail.account.id}
-                  onClick={() => {
-                    setRejectTarget(detail.account);
-                    setRejectReason("");
-                  }}
-                >
-                  Reject
-                </Button>
-              </div>
+                  {loading ? (
+                    <p className="px-4 py-6 text-sm text-[var(--text-muted)]">
+                      Loading…
+                    </p>
+                  ) : accounts.length === 0 ? (
+                    <p className="px-4 py-6 text-sm text-[var(--text-muted)]">
+                      No accounts yet.
+                    </p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="text-xs text-[var(--text-muted)]">
+                          <tr className="border-b border-[var(--border)]">
+                            <th className="px-4 py-2 font-medium">Name</th>
+                            <th className="px-4 py-2 font-medium">Plan</th>
+                            <th className="px-4 py-2 font-medium">Status</th>
+                            <th className="px-4 py-2 font-medium">Size</th>
+                            <th className="px-4 py-2 font-medium">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {accounts.map((row) => {
+                            const disabled = Boolean(row.disabled_at);
+                            const busy = busyId === row.id;
+                            const approval = row.approval_status ?? "approved";
+                            const selected = detailId === row.id;
+                            return (
+                              <tr
+                                key={row.id}
+                                className={cn(
+                                  "border-b border-[var(--border)] last:border-b-0",
+                                  selected && "bg-[var(--row-hover)]",
+                                )}
+                              >
+                                <td className="px-4 py-3">
+                                  <button
+                                    type="button"
+                                    className="cursor-pointer text-left font-medium hover:underline"
+                                    onClick={() => setDetailId(row.id)}
+                                  >
+                                    {row.name}
+                                  </button>
+                                  <div className="font-mono text-xs text-[var(--text-muted)]">
+                                    /{row.slug}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-xs text-[var(--text-muted)]">
+                                  {row.plan_key} · {row.billing_status}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    <StatusPill
+                                      tone={disabled ? "bad" : "ok"}
+                                    >
+                                      {disabled ? "Disabled" : "Active"}
+                                    </StatusPill>
+                                    {approval !== "approved" ? (
+                                      <StatusPill
+                                        tone={
+                                          approval === "pending"
+                                            ? "warn"
+                                            : "bad"
+                                        }
+                                      >
+                                        {approval}
+                                      </StatusPill>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3 text-xs text-[var(--text-muted)]">
+                                  {row.member_count} members ·{" "}
+                                  {row.project_count} projects
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex flex-wrap gap-1">
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => void enterAccount(row)}
+                                    >
+                                      Enter
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => setDetailId(row.id)}
+                                    >
+                                      Detail
+                                    </Button>
+                                    {approval === "pending" ? (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={busy}
+                                        onClick={() =>
+                                          void approveAccountRow(row)
+                                        }
+                                      >
+                                        Approve
+                                      </Button>
+                                    ) : null}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setRenameTarget(row);
+                                        setRenameName(row.name);
+                                      }}
+                                    >
+                                      Rename
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        void setDisabled(row, !disabled)
+                                      }
+                                    >
+                                      {disabled ? "Enable" : "Disable"}
+                                    </Button>
+                                    <Button
+                                      variant="destructiveOutline"
+                                      size="sm"
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setDeleteTarget(row);
+                                        setDeleteSlug("");
+                                      }}
+                                    >
+                                      Delete
+                                    </Button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </Panel>
+
+                {detail && detailId ? (
+                  <Panel>
+                    <div className="mb-4 flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-semibold">
+                          {detail.account.name}
+                        </h2>
+                        <p className="font-mono text-xs text-[var(--text-muted)]">
+                          /{detail.account.slug}
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          <StatusPill
+                            tone={
+                              (detail.account.approval_status ??
+                                "approved") === "approved"
+                                ? "ok"
+                                : (detail.account.approval_status ??
+                                      "approved") === "pending"
+                                  ? "warn"
+                                  : "bad"
+                            }
+                          >
+                            {detail.account.approval_status ?? "approved"}
+                          </StatusPill>
+                          {detail.account.rejection_reason ? (
+                            <span className="text-xs text-[var(--text-muted)]">
+                              {detail.account.rejection_reason}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDetailId(null)}
+                      >
+                        Close
+                      </Button>
+                    </div>
+
+                    {(detail.account.approval_status ?? "approved") ===
+                    "pending" ? (
+                      <div className="mb-4 flex flex-wrap gap-2">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={busyId === detail.account.id}
+                          onClick={() => void approveAccountRow(detail.account)}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          variant="destructiveOutline"
+                          size="sm"
+                          disabled={busyId === detail.account.id}
+                          onClick={() => {
+                            setRejectTarget(detail.account);
+                            setRejectReason("");
+                          }}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--page-bg)] p-3">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                          Allowed addons
+                        </h3>
+                        <div className="mt-2 space-y-2">
+                          {detailAddons.map((addon) => (
+                            <label
+                              key={addon.addon_key}
+                              className="flex cursor-pointer items-center gap-2.5 text-sm"
+                            >
+                              <Checkbox
+                                checked={addon.allowed}
+                                onChange={(e) =>
+                                  setDetailAddons((prev) =>
+                                    prev.map((a) =>
+                                      a.addon_key === addon.addon_key
+                                        ? {
+                                            ...a,
+                                            allowed: e.target.checked,
+                                          }
+                                        : a,
+                                    ),
+                                  )
+                                }
+                              />
+                              <span className="capitalize">
+                                {addon.addon_key}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => void saveDetailAddons()}
+                        >
+                          Save addons
+                        </Button>
+                      </div>
+
+                      <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--page-bg)] p-3">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                          Billing
+                        </h3>
+                        <div className="mt-2 grid gap-3">
+                          <Field label="Plan key">
+                            <input
+                              className={inputClass}
+                              value={planKey}
+                              onChange={(e) => setPlanKey(e.target.value)}
+                            />
+                          </Field>
+                          <Field label="Billing status">
+                            <select
+                              className={inputClass}
+                              value={billingStatus}
+                              onChange={(e) => setBillingStatus(e.target.value)}
+                            >
+                              <option value="none">none</option>
+                              <option value="trialing">trialing</option>
+                              <option value="active">active</option>
+                              <option value="past_due">past_due</option>
+                              <option value="canceled">canceled</option>
+                            </select>
+                          </Field>
+                          <Field label="Seat limit (blank = unlimited)">
+                            <input
+                              className={inputClass}
+                              inputMode="numeric"
+                              value={seatLimit}
+                              onChange={(e) => setSeatLimit(e.target.value)}
+                            />
+                          </Field>
+                        </div>
+                        <p className="mt-2 text-xs text-[var(--text-muted)]">
+                          Seats used: {detail.entitlements.seatUsed}
+                          {detail.entitlements.seatLimit != null
+                            ? ` / ${detail.entitlements.seatLimit}`
+                            : " (unlimited)"}
+                          . Counts active members + pending invites. At the
+                          limit, the workspace shows a top banner and blocks new
+                          invites.
+                        </p>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => void saveBilling()}
+                        >
+                          Save billing fields
+                        </Button>
+                      </div>
+                    </div>
+
+                    <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Members
+                    </h3>
+                    <ul className="mt-2 divide-y divide-[var(--border)] rounded-[var(--radius-md)] border border-[var(--border)]">
+                      {detail.members.map((m) => (
+                        <li key={m.user_id} className="px-3 py-2 text-sm">
+                          {m.full_name || m.email}{" "}
+                          <span className="text-xs text-[var(--text-muted)]">
+                            {m.email} · {m.role}
+                            {m.is_owner ? " · owner" : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Pending invites
+                    </h3>
+                    {detail.invites.filter(
+                      (i) => !i.accepted_at && !i.revoked_at,
+                    ).length === 0 ? (
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        None
+                      </p>
+                    ) : (
+                      <ul className="mt-2 space-y-1 text-sm">
+                        {detail.invites
+                          .filter((i) => !i.accepted_at && !i.revoked_at)
+                          .map((i) => (
+                            <li key={i.id}>
+                              {i.email} · {i.role}
+                            </li>
+                          ))}
+                      </ul>
+                    )}
+
+                    <h3 className="mt-5 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                      Recent audit
+                    </h3>
+                    {detail.audit.length === 0 ? (
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        None
+                      </p>
+                    ) : (
+                      <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--border)] p-2 text-xs text-[var(--text-muted)]">
+                        {detail.audit.map((a) => (
+                          <li key={a.id}>
+                            {new Date(a.created_at).toLocaleString()} —{" "}
+                            {a.action}
+                            {a.actor_email ? ` (${a.actor_email})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Panel>
+                ) : null}
+              </>
             ) : null}
-
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Allowed addons
-            </h3>
-            <div className="mt-1 space-y-1">
-              {detailAddons.map((addon) => (
-                <label
-                  key={addon.addon_key}
-                  className="flex cursor-pointer items-center gap-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[var(--accent)]"
-                    checked={addon.allowed}
-                    onChange={(e) =>
-                      setDetailAddons((prev) =>
-                        prev.map((a) =>
-                          a.addon_key === addon.addon_key
-                            ? { ...a, allowed: e.target.checked }
-                            : a,
-                        ),
-                      )
-                    }
-                  />
-                  <span className="capitalize">{addon.addon_key}</span>
-                </label>
-              ))}
-            </div>
-            <div className="mt-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void saveDetailAddons()}
-              >
-                Save addons
-              </Button>
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <Field label="Plan key">
-                <input
-                  className={inputClass}
-                  value={planKey}
-                  onChange={(e) => setPlanKey(e.target.value)}
-                />
-              </Field>
-              <Field label="Billing status">
-                <select
-                  className={inputClass}
-                  value={billingStatus}
-                  onChange={(e) => setBillingStatus(e.target.value)}
-                >
-                  <option value="none">none</option>
-                  <option value="trialing">trialing</option>
-                  <option value="active">active</option>
-                  <option value="past_due">past_due</option>
-                  <option value="canceled">canceled</option>
-                </select>
-              </Field>
-              <Field label="Seat limit (blank = unlimited)">
-                <input
-                  className={inputClass}
-                  inputMode="numeric"
-                  value={seatLimit}
-                  onChange={(e) => setSeatLimit(e.target.value)}
-                />
-              </Field>
-            </div>
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              Seats used: {detail.entitlements.seatUsed}
-              {detail.entitlements.seatLimit != null
-                ? ` / ${detail.entitlements.seatLimit}`
-                : ""}
-            </p>
-            <div className="mt-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void saveBilling()}
-              >
-                Save billing fields
-              </Button>
-            </div>
-
-            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Members
-            </h3>
-            <ul className="mt-1 space-y-1 text-sm">
-              {detail.members.map((m) => (
-                <li key={m.user_id}>
-                  {m.full_name || m.email}{" "}
-                  <span className="text-xs text-[var(--text-muted)]">
-                    {m.email} · {m.role}
-                    {m.is_owner ? " · owner" : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
-
-            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Pending invites
-            </h3>
-            {detail.invites.filter((i) => !i.accepted_at && !i.revoked_at)
-              .length === 0 ? (
-              <p className="mt-1 text-xs text-[var(--text-muted)]">None</p>
-            ) : (
-              <ul className="mt-1 space-y-1 text-sm">
-                {detail.invites
-                  .filter((i) => !i.accepted_at && !i.revoked_at)
-                  .map((i) => (
-                    <li key={i.id}>
-                      {i.email} · {i.role}
-                    </li>
-                  ))}
-              </ul>
-            )}
-
-            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
-              Recent audit
-            </h3>
-            {detail.audit.length === 0 ? (
-              <p className="mt-1 text-xs text-[var(--text-muted)]">None</p>
-            ) : (
-              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs text-[var(--text-muted)]">
-                {detail.audit.map((a) => (
-                  <li key={a.id}>
-                    {new Date(a.created_at).toLocaleString()} — {a.action}
-                    {a.actor_email ? ` (${a.actor_email})` : ""}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Panel>
-        ) : null}
-      </main>
+          </main>
+        </div>
+      </div>
 
       {createOpen ? (
         <Modal title="Create account" onClose={() => setCreateOpen(false)}>

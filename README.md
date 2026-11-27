@@ -48,7 +48,8 @@ Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
    - **Workspace invites:** **Settings → Members** (pending invites with resend/revoke) or **People → Invite**. Accept via `/invite/accept`.  
    - Lifecycle details: [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md).
 
-8. **Platform admin**: set `PLATFORM_ADMIN_EMAILS` (break-glass), create the Auth user without self-serve registration, set `app_metadata.platform_admin=true` (or `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true` temporarily). Sign in → `/admin`. Additional operators can be granted in-app under **Platform operators**. **Enter** upserts an admin membership without wiping other memberships. Audit events are written to `platform_audit_log`.
+8. **Platform admin**: set `PLATFORM_ADMIN_EMAILS` (break-glass), create the Auth user without self-serve registration, set `app_metadata.platform_admin=true` (or `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true` temporarily). Sign in → `/admin`. Additional operators can be granted in-app under **Platform operators**. **Enter** upserts an admin membership without wiping other memberships. Audit events are written to `platform_audit_log`.  
+   - **Signup emails:** set `RESEND_API_KEY` and `MAIL_FROM` (or `RESEND_FROM_EMAIL`, e.g. `Reaper <noreply@yourdomain.com>`) so public `/register` and Google workspace creates email those admins / operators.
 
 9. **Multi-workspace memberships**: one Auth user → many orgs (`organization_memberships`). URL `/{workspace}/…` selects the active org. Soft-deleting a person removes that org’s membership only. Self-serve extra workspaces (when registration allowed): **Settings → Create workspace**.
 

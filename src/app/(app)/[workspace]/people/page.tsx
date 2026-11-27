@@ -42,6 +42,7 @@ import {
 } from "@/lib/domain/pods";
 import { cn } from "@/lib/cn";
 import { isAdmin } from "@/lib/auth/roles";
+import { useSeatEntitlements } from "@/lib/hooks/use-seat-entitlements";
 import type { LeaveKind, Person, Role } from "@/lib/types";
 import {
   LEAVE_KINDS,
@@ -111,10 +112,17 @@ function PeoplePageContent() {
   } = useData();
   const { effectiveCanManage } = useViewAs();
   const canManage = effectiveCanManage;
+  const {
+    entitlements,
+    atLimit,
+    limited,
+    refresh: refreshSeats,
+  } = useSeatEntitlements();
   const { push } = useToast();
   const router = useRouter();
   const appHref = useAppHref();
   const admin = isAdmin(profile?.role);
+  const [seatModalOpen, setSeatModalOpen] = useState(false);
   const viewPrefs = useLiveUserViewPrefs(profile?.id);
   const isPhone = useIsPhone();
   const directoryLayout = isPhone ? "list" : viewPrefs.directoryLayout;
@@ -163,6 +171,7 @@ function PeoplePageContent() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteEmailError, setInviteEmailError] = useState<string | null>(null);
   const [inviteResend, setInviteResend] = useState(false);
+  const [inviteRole, setInviteRole] = useState<Role>("member");
   const [inviteDelivery, setInviteDelivery] = useState<"email" | "link">(
     "email",
   );
@@ -197,12 +206,17 @@ function PeoplePageContent() {
 
   function openInviteModal(
     person: Person,
-    options: { resend?: boolean; emailOverride?: string } = {},
+    options: {
+      resend?: boolean;
+      emailOverride?: string;
+      role?: Role;
+    } = {},
   ) {
     setInviteTarget(person);
     setInviteResend(Boolean(options.resend));
     setInviteDelivery("email");
     setInviteEmailError(null);
+    setInviteRole(options.role ?? "member");
     setInviteEmail(
       (options.emailOverride ?? person.email ?? "").trim().toLowerCase(),
     );
@@ -213,6 +227,10 @@ function PeoplePageContent() {
     const person = inviteTarget;
     const resend = inviteResend;
     const delivery = inviteDelivery;
+    if (!resend && atLimit) {
+      setSeatModalOpen(true);
+      return;
+    }
     setInviteEmailError(null);
     setInviteBusy(true);
     const email =
@@ -254,6 +272,7 @@ function PeoplePageContent() {
                 personId: person.id,
                 email,
                 fullName: person.name,
+                role: inviteRole,
                 delivery,
               },
         ),
@@ -265,8 +284,15 @@ function PeoplePageContent() {
         actionLink?: string;
         email?: string;
       };
-      if (!res.ok) throw new Error(data.error || "Invite failed");
+      if (!res.ok) {
+        if ((data as { code?: string }).code === "seat_limit") {
+          setSeatModalOpen(true);
+          await refreshSeats();
+        }
+        throw new Error(data.error || "Invite failed");
+      }
       await refresh();
+      await refreshSeats();
       setInviteTarget(null);
       const resultEmail = (data.email || email).trim().toLowerCase();
       const actionLink = data.actionLink?.trim() || "";
@@ -385,12 +411,21 @@ function PeoplePageContent() {
       setAvatarAttachmentIdAtOpen(null);
 
       if (isNewPerson && email && !row.profile_id) {
-        openInviteModal(
-          { ...row, organization_id: state.organization.id },
-          { emailOverride: email },
-        );
-        setIsNewPerson(false);
-        push("Person saved — choose how to invite them.");
+        if (atLimit) {
+          setIsNewPerson(false);
+          setSeatModalOpen(true);
+          push(
+            "Person saved, but you’re out of seats — invite them after a seat frees up.",
+            "warning",
+          );
+        } else {
+          openInviteModal(
+            { ...row, organization_id: state.organization.id },
+            { emailOverride: email, role: editAccessRole },
+          );
+          setIsNewPerson(false);
+          push("Person saved — choose how to invite them.");
+        }
       } else {
         setIsNewPerson(false);
         push("Person saved");
@@ -625,6 +660,10 @@ function PeoplePageContent() {
             title="Invite"
             aria-label="Invite"
             onClick={() => {
+              if (atLimit) {
+                setSeatModalOpen(true);
+                return;
+              }
               openInviteModal(person, {
                 emailOverride: person.email ?? undefined,
               });
@@ -908,7 +947,12 @@ function PeoplePageContent() {
             linkedProfile={editingLinkedProfile}
             canEditAccessAsAdmin={Boolean(admin)}
             canEditAccessAsManager={
-              Boolean(canManage && !admin && editingLinkedProfile?.role !== "admin")
+              Boolean(
+                canManage &&
+                  !admin &&
+                  (!editingLinkedProfile ||
+                    editingLinkedProfile.role !== "admin"),
+              )
             }
             isLastAdmin={editingIsLastAdmin}
             holidayCalendars={state.holiday_calendars}
@@ -1045,18 +1089,47 @@ function PeoplePageContent() {
                 <p className="text-sm text-[var(--text-muted)]">
                   {inviteResend
                     ? "Send another invite so they can set or reset their password."
-                    : "Creates a member login linked to this person so they can set a password."}
+                    : "Creates a login linked to this person so they can set a password."}
                 </p>
+                {!inviteResend && limited && entitlements ? (
+                  <p
+                    className={
+                      atLimit
+                        ? "text-xs font-medium text-[var(--status-over)]"
+                        : "text-xs text-[var(--text-muted)]"
+                    }
+                  >
+                    Seats {entitlements.seatUsed}/{entitlements.seatLimit}
+                    {atLimit ? " — full" : ""}
+                  </p>
+                ) : null}
                 {!inviteResend ? (
-                  <Field label="Work email">
-                    <input
-                      type="email"
-                      className={inputClass}
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      placeholder="name@company.com"
-                    />
-                  </Field>
+                  <>
+                    <Field label="Work email">
+                      <input
+                        type="email"
+                        className={inputClass}
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="name@company.com"
+                        disabled={atLimit}
+                      />
+                    </Field>
+                    <Field label="Access">
+                      <Select
+                        value={inviteRole}
+                        onChange={(v) => setInviteRole(v as Role)}
+                        options={[
+                          { value: "member", label: "Member" },
+                          { value: "manager", label: "Manager" },
+                          ...(admin
+                            ? [{ value: "admin", label: "Admin" }]
+                            : []),
+                        ]}
+                        disabled={atLimit}
+                      />
+                    </Field>
+                  </>
                 ) : inviteTarget.email || inviteEmail ? (
                   <p className="text-sm text-[var(--text)]">
                     {inviteTarget.email || inviteEmail}
@@ -1122,7 +1195,9 @@ function PeoplePageContent() {
                     variant="primary"
                     size="lg"
                     disabled={
-                      inviteBusy || (!inviteResend && !inviteEmail.trim())
+                      inviteBusy ||
+                      (!inviteResend && !inviteEmail.trim()) ||
+                      (!inviteResend && atLimit)
                     }
                     onClick={() => {
                       void submitInvite();
@@ -1193,6 +1268,42 @@ function PeoplePageContent() {
 
       {canManage && showPodsEditor ? (
         <PodsEditorModal onClose={() => setShowPodsEditor(false)} />
+      ) : null}
+
+      {seatModalOpen ? (
+        <Modal title="Seat limit reached" onClose={() => setSeatModalOpen(false)}>
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--text-muted)]">
+              This workspace
+              {entitlements?.seatLimit != null
+                ? ` is using ${entitlements.seatUsed} of ${entitlements.seatLimit} seats`
+                : " has no seats left"}
+              . Members and pending invites both count.
+            </p>
+            <p className="text-sm text-[var(--text-muted)]">
+              Free a seat by revoking a pending invite or removing a member, or
+              ask a platform administrator to raise the limit in Platform →
+              Accounts → Detail.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSeatModalOpen(false);
+                  router.push(appHref("/settings?tab=members"));
+                }}
+              >
+                Open members
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => setSeatModalOpen(false)}
+              >
+                Got it
+              </Button>
+            </div>
+          </div>
+        </Modal>
       ) : null}
     </PageContainer>
   );

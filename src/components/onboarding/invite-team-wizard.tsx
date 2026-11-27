@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { isAdmin } from "@/lib/auth/roles";
+import { useSeatEntitlements } from "@/lib/hooks/use-seat-entitlements";
 import {
   readOnboardingFlags,
   writeOnboardingFlags,
@@ -21,6 +22,8 @@ type Draft = { email: string; name: string; role: Role };
 export function InviteTeamWizard() {
   const { ready, canManage, profile, state, mode } = useData();
   const { push } = useToast();
+  const { entitlements, atLimit, limited, refresh: refreshSeats } =
+    useSeatEntitlements();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -61,6 +64,21 @@ export function InviteTeamWizard() {
   }
 
   function addDraft() {
+    if (atLimit) {
+      push("Seat limit reached — can’t add more invites", "warning");
+      return;
+    }
+    const remaining = entitlements?.seatsRemaining;
+    if (
+      remaining != null &&
+      drafts.length >= remaining
+    ) {
+      push(
+        `Only ${remaining} seat${remaining === 1 ? "" : "s"} left — remove someone from the list first`,
+        "warning",
+      );
+      return;
+    }
     const trimmed = email.trim().toLowerCase();
     if (!trimmed.includes("@")) {
       push("Enter a valid email", "warning");
@@ -84,6 +102,10 @@ export function InviteTeamWizard() {
       push("Add at least one email", "warning");
       return;
     }
+    if (atLimit) {
+      push("Seat limit reached — can’t send invites", "warning");
+      return;
+    }
     setBusy(true);
     let ok = 0;
     try {
@@ -102,14 +124,20 @@ export function InviteTeamWizard() {
         else {
           const body = (await res.json().catch(() => ({}))) as {
             error?: string;
+            code?: string;
           };
           push(body.error ?? `Could not invite ${draft.email}`, "warning");
+          if (body.code === "seat_limit") {
+            await refreshSeats();
+            break;
+          }
         }
       }
       if (ok > 0) {
         setSent((n) => n + ok);
-        setDrafts([]);
+        setDrafts((prev) => prev.slice(ok));
         push(ok === 1 ? "Invite sent" : `${ok} invites sent`);
+        await refreshSeats();
       }
     } finally {
       setBusy(false);
@@ -140,6 +168,22 @@ export function InviteTeamWizard() {
           </span>
           . They’ll get an email to join.
         </p>
+        {limited && entitlements ? (
+          <p
+            className={
+              atLimit
+                ? "text-xs font-medium text-[var(--status-over)]"
+                : "text-xs text-[var(--text-muted)]"
+            }
+          >
+            Seats {entitlements.seatUsed}/{entitlements.seatLimit}
+            {atLimit
+              ? " — full. Dismiss and free a seat before inviting."
+              : entitlements.seatsRemaining != null
+                ? ` · up to ${entitlements.seatsRemaining} more`
+                : ""}
+          </p>
+        ) : null}
 
         <div className="grid gap-2">
           <Field label="Email">
@@ -156,6 +200,7 @@ export function InviteTeamWizard() {
               }}
               placeholder="name@company.com"
               autoFocus
+              disabled={atLimit}
             />
           </Field>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -164,6 +209,7 @@ export function InviteTeamWizard() {
                 className={inputClass}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                disabled={atLimit}
               />
             </Field>
             <Field label="Role">
@@ -171,13 +217,14 @@ export function InviteTeamWizard() {
                 value={role}
                 onChange={(v) => setRole(v as Role)}
                 options={roleOptions}
+                disabled={atLimit}
               />
             </Field>
           </div>
           <Button
             variant="secondary"
             size="sm"
-            disabled={!email.includes("@")}
+            disabled={atLimit || !email.includes("@")}
             onClick={addDraft}
           >
             Add to list

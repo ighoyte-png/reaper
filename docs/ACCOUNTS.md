@@ -23,6 +23,7 @@ Production stance: prefer **provision / invite-only** tenants, or public `/regis
 
 - **On/off:** `app_settings.allow_workspace_signup` (login links to `/register` when on).
 - **Google:** `/login` and `/register` support Continue / Sign up with Google (see [`AUTH_GOOGLE.md`](AUTH_GOOGLE.md)). After OAuth, `/auth/continue` claims pending invites by email, then either enters the workspace or prompts for org name (register intent / signup open).
+- **Admin email:** after public bootstrap (email or Google), `POST /api/platform/signup-notify` emails `PLATFORM_ADMIN_EMAILS` + `platform_operators` (Resend: set `RESEND_API_KEY` and `MAIL_FROM` / `RESEND_FROM_EMAIL`). Idempotent via `platform_audit_log` action `account.signup.notify`.
 - **Approval:** `app_settings.require_account_approval`. When on, bootstrap sets `organizations.approval_status = 'pending'`. Owner can sign in and sees `/pending-approval` / app-shell pending screen until a platform operator **Approves** or **Rejects**.
 - **Approve** sets `approved`, clears `disabled_at`, and applies `default_allowed_addons` to `organization_addon_allowlist`.
 - **Reject** sets `rejected` + `disabled_at` (+ optional reason).
@@ -35,8 +36,9 @@ Production stance: prefer **provision / invite-only** tenants, or public `/regis
 
 ## Addon allowlists
 
-- Platform-owned table `organization_addon_allowlist` (`organization_id`, `addon_key`, `allowed`). Missing key = **not allowed**.
+- Platform-owned table `organization_addon_allowlist` (`organization_id`, `addon_key`, `allowed`). Missing key = **not allowed** (tenant “enabled” alone is not enough).
 - `app_settings.default_allowed_addons` (e.g. `clickup`) applied on approve and on platform provision.
+- Migration `124_backfill_clickup_addon_allowlist.sql` allowlists orgs that already had ClickUp enabled before allowlists shipped.
 - Tenant admins still toggle `addon_clickup_settings.enabled` after the platform allows the addon. Enable + sync/inbound fail closed when not allowlisted.
 
 ## Contracts
@@ -67,7 +69,9 @@ Existing `/api/platform/workspaces*` remain as compatibility aliases.
 ### Billing hooks
 
 - `billing_accounts` row per org
-- `getAccountEntitlements(orgId)` helper
+- `getAccountEntitlements(orgId)` helper — `seat_limit` null = unlimited; used seats = memberships + pending invites
+- `GET /api/accounts/entitlements` — workspace managers read seat usage
+- Invite APIs (`POST /api/accounts/invites`, People `POST /api/invite`) return `403` + `code: "seat_limit"` when full; app shell shows a top banner and invite UIs block with a modal
 - `POST /api/billing/stripe-webhook` — signature verify when configured; updates subscription fields
 
 ## Identity notes

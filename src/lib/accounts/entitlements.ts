@@ -12,6 +12,39 @@ export type AccountEntitlements = {
   stripeSubscriptionId: string | null;
 };
 
+export const SEAT_LIMIT_ERROR_CODE = "seat_limit" as const;
+
+export function seatsRemaining(
+  seatLimit: number | null,
+  seatUsed: number,
+): number | null {
+  return seatLimit == null ? null : Math.max(0, seatLimit - seatUsed);
+}
+
+export function isAtOrOverSeatLimit(ent: AccountEntitlements): boolean {
+  return ent.seatLimit != null && ent.seatUsed >= ent.seatLimit;
+}
+
+export function seatLimitMessage(ent: AccountEntitlements): string {
+  const limit = ent.seatLimit ?? 0;
+  const used = ent.seatUsed;
+  if (used > limit) {
+    return `Over seat limit (${used}/${limit}). Remove a member or revoke a pending invite, or ask a platform administrator to raise the limit.`;
+  }
+  return `Seat limit reached (${used}/${limit}). Revoke a pending invite or ask a platform administrator to raise the limit.`;
+}
+
+export class SeatLimitError extends Error {
+  readonly code = SEAT_LIMIT_ERROR_CODE;
+  readonly entitlements: AccountEntitlements;
+
+  constructor(entitlements: AccountEntitlements) {
+    super(seatLimitMessage(entitlements));
+    this.name = "SeatLimitError";
+    this.entitlements = entitlements;
+  }
+}
+
 export async function getAccountEntitlements(
   admin: SupabaseClient,
   organizationId: string,
@@ -47,11 +80,24 @@ export async function getAccountEntitlements(
     status: String(billing?.status ?? "none"),
     seatLimit,
     seatUsed,
-    seatsRemaining:
-      seatLimit == null ? null : Math.max(0, seatLimit - seatUsed),
+    seatsRemaining: seatsRemaining(seatLimit, seatUsed),
     trialEndsAt: (billing?.trial_ends_at as string | null) ?? null,
     stripeCustomerId: (billing?.stripe_customer_id as string | null) ?? null,
     stripeSubscriptionId:
       (billing?.stripe_subscription_id as string | null) ?? null,
   };
+}
+
+/** Throws SeatLimitError when the org cannot add `needed` more seats. */
+export async function assertSeatAvailable(
+  admin: SupabaseClient,
+  organizationId: string,
+  needed = 1,
+): Promise<AccountEntitlements> {
+  const ent = await getAccountEntitlements(admin, organizationId);
+  if (ent.seatLimit == null) return ent;
+  if (ent.seatUsed + needed > ent.seatLimit) {
+    throw new SeatLimitError(ent);
+  }
+  return ent;
 }

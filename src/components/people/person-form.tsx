@@ -260,11 +260,31 @@ export function PersonForm({
                     <p className="text-sm">{accessLabel(linkedProfile.role)}</p>
                   )}
                 </Field>
+              ) : canEditAccessAsAdmin || canEditAccessAsManager ? (
+                <Field label="Access">
+                  <Select
+                    value={accessRole}
+                    onChange={(v) => onAccessRoleChange(v as Role)}
+                    options={
+                      canEditAccessAsAdmin
+                        ? [
+                            { value: "member", label: "Member" },
+                            { value: "manager", label: "Manager" },
+                            { value: "admin", label: "Admin" },
+                          ]
+                        : [
+                            { value: "member", label: "Member" },
+                            { value: "manager", label: "Manager" },
+                          ]
+                    }
+                  />
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Applied when you send their invite.
+                  </p>
+                </Field>
               ) : (
                 <p className="text-sm text-[var(--text-muted)]">
-                  {isNew
-                    ? "Access is set after they accept the invite."
-                    : "No login linked yet — invite them to set Access."}
+                  No login linked yet — invite them to set Access.
                 </p>
               )}
             </>

@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Field, inputClass } from "@/components/ui/form";
+import { Field, Modal, inputClass } from "@/components/ui/form";
 import { Panel } from "@/components/ui/panel";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
 import { isAdmin } from "@/lib/auth/roles";
+import { useSeatEntitlements } from "@/lib/hooks/use-seat-entitlements";
 import type { Role } from "@/lib/types";
 
 type PendingInvite = {
@@ -22,12 +23,20 @@ type PendingInvite = {
 export function MembersSettings() {
   const { profile, canManage } = useData();
   const { push } = useToast();
+  const {
+    entitlements,
+    atLimit,
+    overLimit,
+    limited,
+    refresh: refreshSeats,
+  } = useSeatEntitlements();
   const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<Role>("member");
   const [busy, setBusy] = useState(false);
+  const [seatModalOpen, setSeatModalOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -42,7 +51,8 @@ export function MembersSettings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    await refreshSeats();
+  }, [refreshSeats]);
 
   useEffect(() => {
     if (!canManage) return;
@@ -52,6 +62,10 @@ export function MembersSettings() {
   if (!canManage) return null;
 
   async function invite() {
+    if (atLimit) {
+      setSeatModalOpen(true);
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/accounts/invites", {
@@ -66,9 +80,14 @@ export function MembersSettings() {
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
+        code?: string;
         actionLink?: string;
       };
       if (!res.ok) {
+        if (body.code === "seat_limit") {
+          setSeatModalOpen(true);
+          await refreshSeats();
+        }
         push(body.error ?? "Invite failed", "warning");
         return;
       }
@@ -125,6 +144,25 @@ export function MembersSettings() {
         Invite by email — they join after accepting. The login invite wizard
         covers the same flow; manage pending invites here anytime.
       </p>
+      {limited && entitlements ? (
+        <p
+          className={
+            atLimit
+              ? "mt-2 text-xs font-medium text-[var(--status-over)]"
+              : "mt-2 text-xs text-[var(--text-muted)]"
+          }
+        >
+          Seats: {entitlements.seatUsed}/{entitlements.seatLimit}
+          {overLimit
+            ? " — over limit"
+            : atLimit
+              ? " — full"
+              : entitlements.seatsRemaining != null
+                ? ` · ${entitlements.seatsRemaining} remaining`
+                : ""}
+          . Pending invites count toward the limit.
+        </p>
+      ) : null}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <Field label="Email">
@@ -134,6 +172,7 @@ export function MembersSettings() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@company.com"
+            disabled={atLimit}
           />
         </Field>
         <Field label="Name (optional)">
@@ -141,6 +180,7 @@ export function MembersSettings() {
             className={inputClass}
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
+            disabled={atLimit}
           />
         </Field>
         <Field label="Role">
@@ -148,6 +188,7 @@ export function MembersSettings() {
             value={role}
             onChange={(v) => setRole(v as Role)}
             options={roleOptions}
+            disabled={atLimit}
           />
         </Field>
       </div>
@@ -155,11 +196,20 @@ export function MembersSettings() {
         <Button
           variant="primary"
           size="sm"
-          disabled={busy || !email.includes("@")}
+          disabled={busy || !email.includes("@") || atLimit}
           onClick={() => void invite()}
         >
           Send invite
         </Button>
+        {atLimit ? (
+          <button
+            type="button"
+            className="ml-3 text-xs font-medium text-[var(--status-over)] underline-offset-2 hover:underline"
+            onClick={() => setSeatModalOpen(true)}
+          >
+            Why can’t I invite?
+          </button>
+        ) : null}
       </div>
 
       <h3 className="mt-6 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -204,6 +254,32 @@ export function MembersSettings() {
           ))}
         </ul>
       )}
+
+      {seatModalOpen ? (
+        <Modal title="Seat limit reached" onClose={() => setSeatModalOpen(false)}>
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--text-muted)]">
+              This workspace
+              {entitlements?.seatLimit != null
+                ? ` is using ${entitlements.seatUsed} of ${entitlements.seatLimit} seats`
+                : " has no seats left"}
+              . Members and pending invites both count.
+            </p>
+            <p className="text-sm text-[var(--text-muted)]">
+              Free a seat by revoking a pending invite or removing a member, or
+              ask a platform administrator to raise the limit.
+            </p>
+            <div className="flex justify-end">
+              <Button
+                variant="primary"
+                onClick={() => setSeatModalOpen(false)}
+              >
+                Got it
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </Panel>
   );
 }
