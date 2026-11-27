@@ -242,6 +242,7 @@ function buildPortalGanttContext(
     awaitingWorkspaceSetup: false,
     sessionEmail: null,
     isPlatformOnly: false,
+    isPlatformAdmin: false,
     isPublicShare: true,
     shareBasePath: null,
     authError: null,

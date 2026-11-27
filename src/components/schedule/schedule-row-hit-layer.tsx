@@ -21,6 +21,12 @@ type Props = {
   /** Soft fills (e.g. leave) as date ranges. */
   fillRanges?: { start: string; end: string }[];
   fillClassName?: string;
+  /**
+   * Columns in these ranges are grayed out and non-interactive
+   * (e.g. outside a project timeline for weekly recurrence).
+   */
+  disabledRanges?: { start: string; end: string }[];
+  disabledClassName?: string;
   interactive?: boolean;
   title?: string;
   cursorClassName?: string;
@@ -32,6 +38,14 @@ type Props = {
   ) => void;
   onColumnClick?: (col: ScheduleColumn) => void;
 };
+
+function columnInRanges(
+  key: string,
+  ranges: { start: string; end: string }[] | undefined,
+): boolean {
+  if (!ranges?.length) return false;
+  return ranges.some((r) => key >= r.start && key <= r.end);
+}
 
 /**
  * One DOM hit surface per schedule row instead of ~100 cell nodes.
@@ -46,6 +60,8 @@ export function ScheduleRowHitLayer({
   rangeClassName = "bg-[var(--accent)]/35",
   fillRanges,
   fillClassName = "bg-[var(--leave-block-fill)]",
+  disabledRanges,
+  disabledClassName = "bg-[var(--text-muted)]/12",
   interactive = false,
   title,
   cursorClassName,
@@ -73,6 +89,9 @@ export function ScheduleRowHitLayer({
   const hoverCol = hoverColId
     ? (columns.find((c) => c.id === hoverColId) ?? null)
     : null;
+  const hoverDisabled = hoverCol
+    ? columnInRanges(hoverCol.startKey, disabledRanges)
+    : false;
   const hoverGeo = hoverCol
     ? {
         left: columnOffsetPx(columns, columns.indexOf(hoverCol)),
@@ -90,6 +109,16 @@ export function ScheduleRowHitLayer({
     return out;
   }, [columns, fillRanges]);
 
+  const disabledFills = useMemo(() => {
+    if (!disabledRanges || disabledRanges.length === 0) return [];
+    const out: { left: number; width: number; key: string }[] = [];
+    for (const r of disabledRanges) {
+      const geo = spanColumnsPx(columns, r.start, r.end);
+      if (geo) out.push({ ...geo, key: `dis:${r.start}:${r.end}` });
+    }
+    return out;
+  }, [columns, disabledRanges]);
+
   function colFromClientX(
     el: HTMLDivElement,
     clientX: number,
@@ -102,7 +131,7 @@ export function ScheduleRowHitLayer({
     <div
       className={cn(
         "absolute inset-0 z-0",
-        interactive && cursorClassName,
+        interactive && (hoverDisabled ? "cursor-not-allowed" : cursorClassName),
       )}
       style={{ width, height, ...guideStyle }}
       title={title}
@@ -110,12 +139,14 @@ export function ScheduleRowHitLayer({
         const col = colFromClientX(e.currentTarget, e.clientX);
         if (!col) return;
         setHoverColId(col.id);
+        if (columnInRanges(col.startKey, disabledRanges)) return;
         onColumnPointerEnter?.(col);
       }}
       onPointerMove={(e) => {
         const col = colFromClientX(e.currentTarget, e.clientX);
         if (!col) return;
         if (col.id !== hoverColId) setHoverColId(col.id);
+        if (columnInRanges(col.startKey, disabledRanges)) return;
         onColumnPointerEnter?.(col);
       }}
       onPointerLeave={() => setHoverColId(null)}
@@ -123,11 +154,19 @@ export function ScheduleRowHitLayer({
         const col = colFromClientX(e.currentTarget, e.clientX);
         if (!col) return;
         setHoverColId(col.id);
+        if (columnInRanges(col.startKey, disabledRanges)) {
+          e.preventDefault();
+          return;
+        }
         onColumnPointerDown?.(col, e);
       }}
       onClick={(e) => {
         const col = colFromClientX(e.currentTarget, e.clientX);
         if (!col) return;
+        if (columnInRanges(col.startKey, disabledRanges)) {
+          e.preventDefault();
+          return;
+        }
         onColumnClick?.(col);
       }}
     >
@@ -141,6 +180,16 @@ export function ScheduleRowHitLayer({
           }}
         />
       ) : null}
+      {disabledFills.map((f) => (
+        <div
+          key={f.key}
+          className={cn(
+            "pointer-events-none absolute inset-y-0",
+            disabledClassName,
+          )}
+          style={{ left: f.left, width: f.width }}
+        />
+      ))}
       {fills.map((f) => (
         <div
           key={f.key}
@@ -154,7 +203,7 @@ export function ScheduleRowHitLayer({
           style={{ left: rangeGeo.left, width: rangeGeo.width }}
         />
       ) : null}
-      {hoverGeo && interactive && !rangeGeo ? (
+      {hoverGeo && interactive && !rangeGeo && !hoverDisabled ? (
         <div
           className={cn("pointer-events-none absolute inset-y-0", hoverClassName)}
           style={{ left: hoverGeo.left, width: hoverGeo.width }}

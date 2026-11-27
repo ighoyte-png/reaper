@@ -4,7 +4,7 @@ Templates live in [`supabase/email-templates/`](../supabase/email-templates/). P
 
 ## Confirm sign up (required for cross-device confirm)
 
-**Why this matters:** Supabase’s default confirm link uses the PKCE `?code=` redirect. That code only exchanges in the **same browser** that signed up. Our template uses `token_hash` (and a 6-digit OTP) so confirm works from phone mail apps, another laptop, etc.
+**Why this matters:** Supabase’s default confirm link uses the PKCE `?code=` redirect. That code only exchanges in the **same browser** that signed up. Our template uses `token_hash` (and an 8-digit OTP) so confirm works from phone mail apps, another laptop, etc.
 
 1. Open **Authentication → Email Templates → Confirm sign up**.
 2. **Subject:** `Confirm your email for Reaper`
@@ -22,7 +22,7 @@ Handled by [`src/app/auth/callback/route.ts`](../src/app/auth/callback/route.ts)
 
 ### OTP fallback
 
-The template also includes `{{ .Token }}` (6-digit code). Users can enter it on [`/check-email`](../src/app/check-email/page.tsx) from any device.
+The template also includes `{{ .Token }}` (8-digit code). Users can enter it on [`/check-email`](../src/app/check-email/page.tsx) from any device.
 
 ### If the default template is still live
 

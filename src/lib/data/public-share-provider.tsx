@@ -138,6 +138,7 @@ export function PublicShareProvider({
       awaitingWorkspaceSetup: false,
       sessionEmail: null,
       isPlatformOnly: false,
+      isPlatformAdmin: false,
       isPublicShare: true,
       shareBasePath,
       authError: null,

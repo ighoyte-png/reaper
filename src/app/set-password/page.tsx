@@ -24,6 +24,7 @@ export default function SetPasswordPage() {
     profile,
     canManage,
     isPlatformOnly,
+    isPlatformAdmin,
     state,
   } = useData();
   const router = useRouter();
@@ -169,7 +170,7 @@ export default function SetPasswordPage() {
   // Navigate after password save once org slug is available (same as login).
   useEffect(() => {
     if (!continueAfterSave) return;
-    if (isPlatformOnly) {
+    if (isPlatformOnly || isPlatformAdmin) {
       router.replace("/admin");
       return;
     }
@@ -190,6 +191,7 @@ export default function SetPasswordPage() {
   }, [
     continueAfterSave,
     isPlatformOnly,
+    isPlatformAdmin,
     state.organization.slug,
     state.organization.approval_status,
     profile?.id,

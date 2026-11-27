@@ -2,7 +2,15 @@
 
 import { Fragment, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, startTransition, memo, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import Link from "next/link";
-import { format, isWeekend, parseISO, addWeeks, subWeeks } from "date-fns";
+import {
+  addDays,
+  addWeeks,
+  format,
+  isWeekend,
+  parseISO,
+  subDays,
+  subWeeks,
+} from "date-fns";
 import { ChevronDown, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Plus, Save, Scissors, StickyNote, Trash2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
 import { BurnBar } from "@/components/ui/burn-bar";
 import { CurrencyChip } from "@/components/ui/currency-chip";
@@ -209,6 +217,26 @@ type UndoEntry =
       restoreAssignments: Assignment[];
       removeAssignmentIds: string[];
     };
+
+/** Visible schedule columns that fall outside a project's timeline. */
+function projectTimelineDisabledRanges(
+  project: { start_date?: string | null; end_date?: string | null },
+  viewStart: string,
+  viewEnd: string,
+): { start: string; end: string }[] {
+  const out: { start: string; end: string }[] = [];
+  const pStart = project.start_date?.trim() || null;
+  const pEnd = project.end_date?.trim() || null;
+  if (pStart && viewStart < pStart) {
+    const end = toDateKey(subDays(parseISO(pStart), 1));
+    if (viewStart <= end) out.push({ start: viewStart, end });
+  }
+  if (pEnd && viewEnd > pEnd) {
+    const start = toDateKey(addDays(parseISO(pEnd), 1));
+    if (start <= viewEnd) out.push({ start, end: viewEnd });
+  }
+  return out;
+}
 
 export function ScheduleGrid() {
   const {
@@ -5030,6 +5058,17 @@ export function ScheduleGrid() {
                                 : null
                             }
                             fillRanges={projectLeaveFills}
+                            disabledRanges={
+                              editForm &&
+                              (editForm.recurrence ?? "none") === "weekly" &&
+                              editForm.project_id === project.id
+                                ? projectTimelineDisabledRanges(
+                                    project,
+                                    startKey,
+                                    endKey,
+                                  )
+                                : undefined
+                            }
                             interactive={canManage}
                             cursorClassName="cursor-pointer"
                             onColumnPointerEnter={(col) => {
@@ -5096,10 +5135,16 @@ export function ScheduleGrid() {
                                   );
                                 if (snap.mode === "resize-end") {
                                   const minEnd = snap.occurrenceStart;
-                                  const desiredEnd =
+                                  const projectEnd = projectsById
+                                    .get(current.project_id)
+                                    ?.end_date?.trim();
+                                  let desiredEnd =
                                     col.endKey >= minEnd
                                       ? col.endKey
                                       : minEnd;
+                                  if (projectEnd && desiredEnd > projectEnd) {
+                                    desiredEnd = projectEnd;
+                                  }
                                   const endResult = clampResizeEnd(
                                     current.person_id,
                                     current.project_id,
@@ -5127,10 +5172,19 @@ export function ScheduleGrid() {
                                   }
                                 } else if (snap.mode === "resize-start") {
                                   const maxStart = snap.occurrenceEnd;
-                                  const desiredStart =
+                                  const projectStart = projectsById
+                                    .get(current.project_id)
+                                    ?.start_date?.trim();
+                                  let desiredStart =
                                     col.startKey <= maxStart
                                       ? col.startKey
                                       : maxStart;
+                                  if (
+                                    projectStart &&
+                                    desiredStart < projectStart
+                                  ) {
+                                    desiredStart = projectStart;
+                                  }
                                   const startResult = clampResizeStart(
                                     current.person_id,
                                     current.project_id,
@@ -5192,10 +5246,19 @@ export function ScheduleGrid() {
                               }
                               if (snap.mode === "resize-end") {
                                 const minEnd = snap.before.start_date;
-                                const desiredEnd =
+                                const projectEnd =
+                                  (current.recurrence ?? "none") === "weekly"
+                                    ? projectsById
+                                        .get(current.project_id)
+                                        ?.end_date?.trim()
+                                    : undefined;
+                                let desiredEnd =
                                   col.endKey >= minEnd
                                     ? col.endKey
                                     : minEnd;
+                                if (projectEnd && desiredEnd > projectEnd) {
+                                  desiredEnd = projectEnd;
+                                }
                                 const endResult = clampResizeEnd(
                                   current.person_id,
                                   current.project_id,
@@ -5217,10 +5280,22 @@ export function ScheduleGrid() {
                                 }
                               } else if (snap.mode === "resize-start") {
                                 const maxStart = snap.before.end_date;
-                                const desiredStart =
+                                const projectStart =
+                                  (current.recurrence ?? "none") === "weekly"
+                                    ? projectsById
+                                        .get(current.project_id)
+                                        ?.start_date?.trim()
+                                    : undefined;
+                                let desiredStart =
                                   col.startKey <= maxStart
                                     ? col.startKey
                                     : maxStart;
+                                if (
+                                  projectStart &&
+                                  desiredStart < projectStart
+                                ) {
+                                  desiredStart = projectStart;
+                                }
                                 const startResult = clampResizeStart(
                                   current.person_id,
                                   current.project_id,
@@ -6347,51 +6422,103 @@ export function ScheduleGrid() {
             </label>
             {(editForm.recurrence ?? "none") === "weekly" && (
               <Field label="Series end date">
-                <DateInput
-                  className={inputClass}
-                  value={editForm.recurrence_end_date ?? ""}
-                  onChange={(e) =>
-                    patchEditForm({
-                      recurrence_end_date: weeklySeriesEndDate(
-                        {
-                          ...editForm,
-                          recurrence: "weekly",
-                          recurrence_end_date: e.target.value || null,
-                        },
-                        projectsById.get(editForm.project_id)?.end_date,
-                      ),
-                    })
-                  }
-                />
+                {(() => {
+                  const project = projectsById.get(editForm.project_id);
+                  const projectStart = project?.start_date?.trim() || undefined;
+                  const projectEnd = project?.end_date?.trim() || undefined;
+                  const minDate =
+                    [editForm.start_date, projectStart]
+                      .filter(Boolean)
+                      .sort()
+                      .at(-1) ?? undefined;
+                  return (
+                    <>
+                      <DateInput
+                        className={inputClass}
+                        value={editForm.recurrence_end_date ?? ""}
+                        min={minDate}
+                        max={projectEnd}
+                        onChange={(e) =>
+                          patchEditForm({
+                            recurrence_end_date: weeklySeriesEndDate(
+                              {
+                                ...editForm,
+                                recurrence: "weekly",
+                                recurrence_end_date: e.target.value || null,
+                              },
+                              projectEnd,
+                            ),
+                          })
+                        }
+                      />
+                      {projectEnd ? (
+                        <p className="mt-1 text-[11px] leading-snug text-[var(--text-muted)]">
+                          Dates after the project end (
+                          {format(parseISO(projectEnd), "MMM d, yyyy")}) aren’t
+                          available. Extend the project timeline to schedule
+                          further.
+                        </p>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </Field>
             )}
             <div className="grid grid-cols-2 gap-2">
-              <Field label="Start">
-                <DateInput
-                  className={cn(
-                    inputClass,
-                    isAssignmentScheduleLocked(editForm.id) &&
-                      "opacity-60 cursor-not-allowed",
-                  )}
-                  value={editForm.start_date}
-                  disabled={isAssignmentScheduleLocked(editForm.id)}
-                  onChange={(e) =>
-                    patchEditForm({ start_date: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="End">
-                <DateInput
-                  className={cn(
-                    inputClass,
-                    isAssignmentScheduleLocked(editForm.id) &&
-                      "opacity-60 cursor-not-allowed",
-                  )}
-                  value={editForm.end_date}
-                  disabled={isAssignmentScheduleLocked(editForm.id)}
-                  onChange={(e) => patchEditForm({ end_date: e.target.value })}
-                />
-              </Field>
+              {(() => {
+                const weekly = (editForm.recurrence ?? "none") === "weekly";
+                const project = projectsById.get(editForm.project_id);
+                const projectStart = weekly
+                  ? project?.start_date?.trim() || undefined
+                  : undefined;
+                const projectEnd = weekly
+                  ? project?.end_date?.trim() || undefined
+                  : undefined;
+                const locked = isAssignmentScheduleLocked(editForm.id);
+                return (
+                  <>
+                    <Field label="Start">
+                      <DateInput
+                        className={cn(
+                          inputClass,
+                          locked && "cursor-not-allowed opacity-60",
+                        )}
+                        value={editForm.start_date}
+                        min={projectStart}
+                        max={
+                          [editForm.end_date, projectEnd]
+                            .filter(Boolean)
+                            .sort()[0]
+                        }
+                        disabled={locked}
+                        onChange={(e) =>
+                          patchEditForm({ start_date: e.target.value })
+                        }
+                      />
+                    </Field>
+                    <Field label="End">
+                      <DateInput
+                        className={cn(
+                          inputClass,
+                          locked && "cursor-not-allowed opacity-60",
+                        )}
+                        value={editForm.end_date}
+                        min={
+                          [editForm.start_date, projectStart]
+                            .filter(Boolean)
+                            .sort()
+                            .at(-1) ?? undefined
+                        }
+                        max={projectEnd}
+                        disabled={locked}
+                        onChange={(e) =>
+                          patchEditForm({ end_date: e.target.value })
+                        }
+                      />
+                    </Field>
+                  </>
+                );
+              })()}
             </div>
             <Field label="Hours / day">
               <input

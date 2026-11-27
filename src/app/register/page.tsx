@@ -22,6 +22,7 @@ function RegisterForm() {
     loginWithGoogle,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     ready,
     mode,
     authError,
@@ -72,7 +73,7 @@ function RegisterForm() {
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
-    if (isPlatformOnly) {
+    if (isPlatformOnly || isPlatformAdmin) {
       router.replace("/admin");
       return;
     }
@@ -96,6 +97,7 @@ function RegisterForm() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     profile?.id,
     canManage,
     router,

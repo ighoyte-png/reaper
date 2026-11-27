@@ -24,6 +24,7 @@ function LoginForm() {
     requestPasswordReset,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     ready,
     mode,
     authError,
@@ -85,7 +86,7 @@ function LoginForm() {
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
-    if (isPlatformOnly) {
+    if (isPlatformOnly || isPlatformAdmin) {
       router.replace("/admin");
       return;
     }
@@ -114,6 +115,7 @@ function LoginForm() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     profile?.id,
     canManage,
     router,

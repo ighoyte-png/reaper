@@ -19,6 +19,7 @@ export default function PendingApprovalPage() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     state,
     logout,
     profile,
@@ -37,7 +38,7 @@ export default function PendingApprovalPage() {
       router.replace(loginPathWithNext("/pending-approval"));
       return;
     }
-    if (isPlatformOnly) {
+    if (isPlatformOnly || isPlatformAdmin) {
       router.replace("/admin");
       return;
     }
@@ -84,6 +85,7 @@ export default function PendingApprovalPage() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     status,
     state.organization.disabled_at,
     state.organization.slug,

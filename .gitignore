@@ -40,6 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Local DB dumps (never commit)
+/backups/
+
 # Local one-off tooling (not part of the product repo)
 /local/
 

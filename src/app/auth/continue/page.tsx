@@ -25,6 +25,7 @@ function AuthContinueInner() {
     isAuthenticated,
     awaitingWorkspaceSetup,
     isPlatformOnly,
+    isPlatformAdmin,
     mode,
     profile,
     sessionEmail,
@@ -176,13 +177,30 @@ function AuthContinueInner() {
     if (!allowSignup) setPhase("blocked");
   }, [phase, intent, allowSignup]);
 
+  // Platform operators always land on /admin (drop leftover Enter memberships).
+  useEffect(() => {
+    if (!ready || (!isPlatformOnly && !isPlatformAdmin)) return;
+    let cancelled = false;
+    void (async () => {
+      if (isPlatformAdmin && !isPlatformOnly) {
+        try {
+          await fetch("/api/platform/leave", { method: "POST" });
+          if (!cancelled) await refresh();
+        } catch {
+          /* still go to admin */
+        }
+      }
+      if (!cancelled) router.replace("/admin");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, isPlatformOnly, isPlatformAdmin, refresh, router]);
+
   // Route into workspace once store has org (after claim / completeOAuthRegistration).
   useEffect(() => {
     if (!ready) return;
-    if (isPlatformOnly) {
-      router.replace("/admin");
-      return;
-    }
+    if (isPlatformOnly || isPlatformAdmin) return;
     if (!isAuthenticated && !awaitingWorkspaceSetup) return;
 
     const slug = state.organization.slug;
@@ -206,6 +224,7 @@ function AuthContinueInner() {
     isAuthenticated,
     awaitingWorkspaceSetup,
     isPlatformOnly,
+    isPlatformAdmin,
     state.organization.id,
     state.organization.slug,
     state.organization.approval_status,

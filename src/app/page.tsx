@@ -14,6 +14,7 @@ export default function Home() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     profile,
     canManage,
     state,
@@ -26,8 +27,11 @@ export default function Home() {
       router.replace("/login");
       return;
     }
-    if (isPlatformOnly || !state.organization.slug) {
-      if (isPlatformOnly) router.replace("/admin");
+    if (isPlatformAdmin || isPlatformOnly) {
+      router.replace("/admin");
+      return;
+    }
+    if (!state.organization.slug) {
       return;
     }
     const prefs = readUserViewPrefs(profile?.id);
@@ -40,6 +44,7 @@ export default function Home() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     profile?.id,
     canManage,
     router,

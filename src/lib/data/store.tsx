@@ -613,6 +613,8 @@ interface DataContextValue {
    * False for normal workspace members, including platform admins who Entered a workspace.
    */
   isPlatformOnly: boolean;
+  /** True when /api/platform/me says this user is a platform operator/admin. */
+  isPlatformAdmin: boolean;
   /**
    * Auth session exists but no org membership yet (Google OAuth register / invite
    * claim pending). User should finish on /auth/continue.
@@ -1006,6 +1008,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   /** Auth session is a platform admin with no workspace profile. */
   const [platformOnly, setPlatformOnly] = useState(false);
+  /** Platform operator/admin (may still Enter a workspace temporarily). */
+  const [platformAdmin, setPlatformAdmin] = useState(false);
   /** Auth session with no membership — finish workspace on /auth/continue. */
   const [awaitingWorkspaceSetup, setAwaitingWorkspaceSetup] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
@@ -1162,6 +1166,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } = await client.auth.getUser();
     if (!user) {
       setPlatformOnly(false);
+      setPlatformAdmin(false);
       setAwaitingWorkspaceSetup(false);
       setSessionEmail(null);
       setState(emptySupabaseState());
@@ -1169,6 +1174,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     setSessionEmail(user.email?.trim() || null);
+
+    let isPlatformAdminUser = false;
+    try {
+      const meRes = await fetch("/api/platform/me");
+      if (meRes.ok) {
+        const body = (await meRes.json()) as { isPlatformAdmin?: boolean };
+        isPlatformAdminUser = Boolean(body.isPlatformAdmin);
+      }
+    } catch {
+      /* treat as non-admin */
+    }
+    setPlatformAdmin(isPlatformAdminUser);
 
     // Existing membership → normal workspace load (may also be a platform admin).
     const { data: existingMembership, error: membershipLookupError } =
@@ -1277,18 +1294,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     // No membership: allowlisted platform admins stay workspace-free.
-    let isPlatformAdmin = false;
-    try {
-      const meRes = await fetch("/api/platform/me");
-      if (meRes.ok) {
-        const body = (await meRes.json()) as { isPlatformAdmin?: boolean };
-        isPlatformAdmin = Boolean(body.isPlatformAdmin);
-      }
-    } catch {
-      /* treat as non-admin */
-    }
-
-    if (isPlatformAdmin) {
+    if (isPlatformAdminUser) {
       setPlatformOnly(true);
       setAwaitingWorkspaceSetup(false);
       setState({ ...emptySupabaseState(), sessionProfileId: null });
@@ -1357,6 +1363,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (cancelled) return;
           if (event === "SIGNED_OUT" || !nextSession?.user) {
             setPlatformOnly(false);
+            setPlatformAdmin(false);
             setAwaitingWorkspaceSetup(false);
             setSessionEmail(null);
             setState(emptySupabaseState());
@@ -3140,6 +3147,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       isAuthenticated:
         Boolean(profile) || platformOnly || awaitingWorkspaceSetup,
       isPlatformOnly: platformOnly,
+      isPlatformAdmin: platformAdmin,
       awaitingWorkspaceSetup,
       sessionEmail,
       isPublicShare: false,
@@ -3234,6 +3242,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
           throw error;
         }
         await refreshSupabase(client);
+
+        // Platform operators always return to /admin — drop leftover Enter memberships.
+        let isAdmin = false;
+        try {
+          const meRes = await fetch("/api/platform/me");
+          if (meRes.ok) {
+            const body = (await meRes.json()) as { isPlatformAdmin?: boolean };
+            isAdmin = Boolean(body.isPlatformAdmin);
+          }
+        } catch {
+          /* ignore */
+        }
+        if (isAdmin) {
+          try {
+            await fetch("/api/platform/leave", { method: "POST" });
+          } catch {
+            /* non-fatal */
+          }
+          await refreshSupabase(client);
+          return;
+        }
+
         const {
           data: { user },
         } = await client.auth.getUser();
@@ -3509,6 +3539,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const client = supabaseRef.current ?? createClient();
         await client.auth.signOut();
         setPlatformOnly(false);
+        setPlatformAdmin(false);
         setAwaitingWorkspaceSetup(false);
         setSessionEmail(null);
         setState(emptySupabaseState());
@@ -7207,6 +7238,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       manage,
       admin,
       platformOnly,
+      platformAdmin,
       awaitingWorkspaceSetup,
       sessionEmail,
       authError,

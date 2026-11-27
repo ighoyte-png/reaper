@@ -24,6 +24,7 @@ function CheckEmailContent() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     refresh,
     state,
     profile,
@@ -43,7 +44,7 @@ function CheckEmailContent() {
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
-    if (isPlatformOnly) {
+    if (isPlatformOnly || isPlatformAdmin) {
       router.replace("/admin");
       return;
     }
@@ -67,6 +68,7 @@ function CheckEmailContent() {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    isPlatformAdmin,
     profile?.id,
     canManage,
     router,
@@ -79,8 +81,8 @@ function CheckEmailContent() {
     setError(null);
     const trimmedEmail = email.trim();
     const token = otp.replace(/\s/g, "");
-    if (!trimmedEmail || token.length < 6) {
-      setError("Enter the email and 6-digit code from the message.");
+    if (!trimmedEmail || token.length < 8) {
+      setError("Enter the email and 8-digit code from the message.");
       return;
     }
     setBusy(true);
@@ -156,7 +158,7 @@ function CheckEmailContent() {
             className={inputClass}
             value={otp}
             onChange={(e) => setOtp(e.target.value)}
-            placeholder="6-digit code"
+            placeholder="8-digit code"
             autoComplete="one-time-code"
           />
         </label>
