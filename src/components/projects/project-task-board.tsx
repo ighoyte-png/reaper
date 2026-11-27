@@ -720,8 +720,11 @@ export function ProjectTaskBoard({
   const exitHandledRef = useRef<Set<string>>(new Set());
   const taskBoardRootRef = useRef<HTMLDivElement | null>(null);
   const flipTopsRef = useRef<Map<string, number> | null>(null);
-  const { prefs: listViewPrefs, setPrefs: setListViewPrefs } =
-    useProjectTaskListViewPrefs(profile?.id, projectId);
+  const {
+    prefs: listViewPrefs,
+    setPrefs: setListViewPrefs,
+    suppressListCollapseAnimation,
+  } = useProjectTaskListViewPrefs(profile?.id, projectId);
   const collapsedLists = useMemo(
     () => new Set(listViewPrefs.collapsedListIds),
     [listViewPrefs.collapsedListIds],
@@ -3178,6 +3181,7 @@ export function ProjectTaskBoard({
                   parents={parents}
                   ctx={ctx}
                   collapsed={collapsed}
+                  collapseInstant={suppressListCollapseAnimation}
                   onToggleCollapse={() => toggleListCollapsed(list.id)}
                   milestone={
                     milestone
@@ -3300,6 +3304,7 @@ export function ProjectTaskBoard({
                       parents={parents}
                       ctx={ctx}
                       collapsed={collapsed}
+                      collapseInstant={suppressListCollapseAnimation}
                       onToggleCollapse={() => toggleListCollapsed(list.id)}
                       milestone={
                     milestone
@@ -3683,6 +3688,7 @@ function ListSection({
   parents,
   ctx,
   collapsed,
+  collapseInstant = false,
   onToggleCollapse,
   milestone,
   onNameChange,
@@ -3704,6 +3710,8 @@ function ListSection({
   parents: Task[];
   ctx: BoardCtx;
   collapsed: boolean;
+  /** Snap closed on prefs hydrate — no open-then-collapse animation. */
+  collapseInstant?: boolean;
   onToggleCollapse: () => void;
   milestone: {
     name: string;
@@ -3844,7 +3852,9 @@ function ListSection({
           <ChevronDown
             size={14}
             className={cn(
-              "transition-transform duration-200 ease-out motion-reduce:transition-none",
+              "motion-reduce:transition-none",
+              !collapseInstant &&
+                "transition-transform duration-200 ease-out",
               collapsed && "-rotate-90",
             )}
           />
@@ -4076,7 +4086,7 @@ function ListSection({
           />
         ) : null}
       </div>
-      <ExpandPanel open={!collapsed}>
+      <ExpandPanel open={!collapsed} instant={collapseInstant}>
           {parents.length === 0 ? (
             <ListTaskDropZone listId={list.id} disabled={!listManage}>
               {!listManage ? (

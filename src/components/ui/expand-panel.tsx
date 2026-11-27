@@ -15,12 +15,15 @@ export function ExpandPanel({
   children,
   className,
   onClosed,
+  instant = false,
 }: {
   open: boolean;
   children: ReactNode;
   className?: string;
   /** Fired once the close height transition finishes (or immediately if reduced motion). */
   onClosed?: () => void;
+  /** Snap open/closed with no height transition (e.g. restore collapsed lists on load). */
+  instant?: boolean;
 }) {
   const [showContent, setShowContent] = useState(open);
   const [expanded, setExpanded] = useState(open);
@@ -29,23 +32,40 @@ export function ExpandPanel({
   onClosedRef.current = onClosed;
   const closedNotifiedRef = useRef(!open);
 
+  // Instant: match open immediately (no open→close flash on prefs hydrate).
+  useLayoutEffect(() => {
+    if (!instant) return;
+    setShowContent(open);
+    setExpanded(open);
+    if (open) {
+      closedNotifiedRef.current = false;
+      return;
+    }
+    if (!closedNotifiedRef.current) {
+      closedNotifiedRef.current = true;
+      onClosedRef.current?.();
+    }
+  }, [open, instant]);
+
   // Open: mount content first (still at 0fr), then expand after layout.
   // Close: collapse first, then unmount after the height transition.
   useLayoutEffect(() => {
+    if (instant) return;
     if (open) {
       closedNotifiedRef.current = false;
       setShowContent(true);
       return;
     }
     setExpanded(false);
-  }, [open]);
+  }, [open, instant]);
 
   useLayoutEffect(() => {
+    if (instant) return;
     if (!open || !showContent || expanded) return;
     // Force a 0fr layout paint so the following 1fr change can transition.
     void panelRef.current?.offsetHeight;
     setExpanded(true);
-  }, [open, showContent, expanded]);
+  }, [open, showContent, expanded, instant]);
 
   function notifyClosed() {
     if (closedNotifiedRef.current) return;
@@ -54,6 +74,7 @@ export function ExpandPanel({
   }
 
   useEffect(() => {
+    if (instant) return;
     if (open || expanded || !showContent) return;
     const reduceMotion =
       typeof window !== "undefined" &&
@@ -68,18 +89,21 @@ export function ExpandPanel({
       notifyClosed();
     }, 220);
     return () => clearTimeout(t);
-  }, [open, expanded, showContent]);
+  }, [open, expanded, showContent, instant]);
 
   return (
     <div
       ref={panelRef}
       className={cn(
-        "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+        "grid motion-reduce:transition-none",
+        !instant &&
+          "transition-[grid-template-rows] duration-200 ease-out",
         expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         className,
       )}
       aria-hidden={!open}
       onTransitionEnd={(e) => {
+        if (instant) return;
         if (e.target !== panelRef.current) return;
         if (e.propertyName !== "grid-template-rows") return;
         if (!open) {

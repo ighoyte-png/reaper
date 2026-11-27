@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useState,
+  useEffect,
+} from "react";
 import type { ProjectListViewPrefs } from "@/lib/domain/tasks";
 
 export const DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS: ProjectListViewPrefs = {
@@ -79,27 +84,46 @@ export function writeProjectTaskListViewPrefs(
   }
 }
 
-/** Live prefs for the project task board — restores last view per user+project. */
+/**
+ * Live prefs for the project task board — restores last view per user+project.
+ * `suppressListCollapseAnimation` is true until stored prefs have been applied
+ * (and one frame after) so ExpandPanel does not animate open→closed on load.
+ */
 export function useProjectTaskListViewPrefs(
   profileId: string | null | undefined,
   projectId: string | null | undefined,
 ) {
-  const [prefs, setPrefsState] = useState<ProjectListViewPrefs>(() => ({
-    ...DEFAULT_PROJECT_TASK_LIST_VIEW_PREFS,
-    collapsedListIds: [],
-  }));
+  const [prefs, setPrefsState] = useState<ProjectListViewPrefs>(() =>
+    readProjectTaskListViewPrefs(profileId, projectId),
+  );
+  const [suppressListCollapseAnimation, setSuppressListCollapseAnimation] =
+    useState(true);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setPrefsState(readProjectTaskListViewPrefs(profileId, projectId));
+    setSuppressListCollapseAnimation(true);
+    const raf = window.requestAnimationFrame(() => {
+      setSuppressListCollapseAnimation(false);
+    });
+
     function sync() {
       setPrefsState(readProjectTaskListViewPrefs(profileId, projectId));
     }
-    sync();
     window.addEventListener(PROJECT_TASK_LIST_VIEW_PREFS_EVENT, sync);
     window.addEventListener("storage", sync);
     return () => {
+      window.cancelAnimationFrame(raf);
       window.removeEventListener(PROJECT_TASK_LIST_VIEW_PREFS_EVENT, sync);
       window.removeEventListener("storage", sync);
     };
+  }, [profileId, projectId]);
+
+  // If profile/project ids were null on first paint then arrive later, keep
+  // suppress true until the layout effect above re-runs (deps change).
+  useEffect(() => {
+    if (!profileId || !projectId) {
+      setSuppressListCollapseAnimation(true);
+    }
   }, [profileId, projectId]);
 
   const setPrefs = useCallback(
@@ -117,5 +141,5 @@ export function useProjectTaskListViewPrefs(
     [profileId, projectId],
   );
 
-  return { prefs, setPrefs };
+  return { prefs, setPrefs, suppressListCollapseAnimation };
 }
