@@ -178,10 +178,14 @@ export default function ProjectDetailPage() {
     projectMembers: state.project_members,
   });
   const isSandbox = Boolean(project?.sandbox_mode);
-  const { syncedIds: clickupSyncedIds } = useClickUpSyncedProjectIds();
+  const { syncedIds: clickupSyncedIds, syncedHrefs: clickupSyncedHrefs } =
+    useClickUpSyncedProjectIds();
   const clickupSynced = Boolean(
     project?.id && clickupSyncedIds.has(project.id),
   );
+  const clickupHref = project?.id
+    ? clickupSyncedHrefs.get(project.id)
+    : undefined;
 
   useEffect(() => {
     if (!project?.id) return;
@@ -373,7 +377,10 @@ export default function ProjectDetailPage() {
         actions={
           <>
             {clickupSynced ? (
-              <ClickUpSyncedBadge className="self-center" />
+              <ClickUpSyncedBadge
+                className="self-center"
+                href={clickupHref}
+              />
             ) : null}
             {canManage && !isSandbox ? (
               <Link

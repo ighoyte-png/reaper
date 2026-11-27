@@ -1,29 +1,58 @@
 "use client";
 
-import { useId } from "react";
+import { useId, type MouseEvent } from "react";
 import { cn } from "@/lib/cn";
 
 /** Compact indicator that a project is synced to ClickUp. */
 export function ClickUpSyncedBadge({
   className,
   compact = false,
+  href,
 }: {
   className?: string;
   /** Tighter padding for dense list rows. */
   compact?: boolean;
+  /** Opens the linked ClickUp folder in a new tab when set. */
+  href?: string | null;
 }) {
+  const label = href ? "Open in ClickUp" : "Synced to ClickUp";
+  const shellClass = cn(
+    "inline-flex shrink-0 items-center justify-center rounded bg-[var(--bg-elevated)]",
+    compact ? "size-5" : "size-6",
+    href &&
+      "transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--accent)]",
+    className,
+  );
+  const mark = (
+    <ClickUpMark className={cn("shrink-0", compact ? "size-3" : "size-3.5")} />
+  );
+
+  if (!href) {
+    return (
+      <span className={shellClass} title={label} aria-label={label}>
+        {mark}
+      </span>
+    );
+  }
+
+  // Button (not <a>) so cards/rows can wrap this in a Next.js Link without nested anchors.
+  function onClick(e: MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(href!, "_blank", "noopener,noreferrer");
+  }
+
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded bg-[var(--bg-elevated)]",
-        compact ? "size-5" : "size-6",
-        className,
-      )}
-      title="Synced to ClickUp"
-      aria-label="Synced to ClickUp"
+    <button
+      type="button"
+      className={cn(shellClass, "cursor-pointer")}
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      onMouseDown={(e) => e.stopPropagation()}
     >
-      <ClickUpMark className={cn("shrink-0", compact ? "size-3" : "size-3.5")} />
-    </span>
+      {mark}
+    </button>
   );
 }
 

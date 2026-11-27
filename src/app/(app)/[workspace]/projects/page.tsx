@@ -136,7 +136,8 @@ function ProjectsPageContent() {
     deleteProjectContractorExpense,
   } = useData();
   const { burns, ready: burnsReady } = useProjectBurnsMap();
-  const { syncedIds: clickupSyncedIds } = useClickUpSyncedProjectIds();
+  const { syncedIds: clickupSyncedIds, syncedHrefs: clickupSyncedHrefs } =
+    useClickUpSyncedProjectIds();
   const { effectiveCanManage, effectivePersonId, showingAsManager } =
     useViewAs();
   const canManage = effectiveCanManage;
@@ -715,6 +716,7 @@ function ProjectsPageContent() {
                             burn={burns.get(project.id)}
                             loading={!burnsReady && !project.sandbox_mode}
                             clickupSynced={clickupSyncedIds.has(project.id)}
+                            clickupHref={clickupSyncedHrefs.get(project.id)}
                           />
                         ) : (
                           <ProjectCard
@@ -725,6 +727,7 @@ function ProjectsPageContent() {
                             burn={burns.get(project.id)}
                             loading={!burnsReady && !project.sandbox_mode}
                             clickupSynced={clickupSyncedIds.has(project.id)}
+                            clickupHref={clickupSyncedHrefs.get(project.id)}
                           />
                         ),
                       )}
@@ -924,6 +927,7 @@ function ProjectListRow({
   burn: burnProp,
   loading = false,
   clickupSynced = false,
+  clickupHref,
 }: {
   project: Project;
   href: string;
@@ -931,6 +935,7 @@ function ProjectListRow({
   burn?: ReturnType<typeof budgetBurn>;
   loading?: boolean;
   clickupSynced?: boolean;
+  clickupHref?: string;
 }) {
   const { state } = useData();
   const isSandbox = Boolean(project.sandbox_mode);
@@ -964,7 +969,9 @@ function ProjectListRow({
               Monthly
             </span>
           ) : null}
-          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
+          {clickupSynced ? (
+            <ClickUpSyncedBadge compact href={clickupHref} />
+          ) : null}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-[var(--text-muted)]">
           {overallPct != null ? <span>{overallPct}% progress</span> : null}
@@ -992,6 +999,7 @@ function ProjectCard({
   burn: burnProp,
   loading = false,
   clickupSynced = false,
+  clickupHref,
 }: {
   project: Project;
   href: string;
@@ -999,6 +1007,7 @@ function ProjectCard({
   burn?: ReturnType<typeof budgetBurn>;
   loading?: boolean;
   clickupSynced?: boolean;
+  clickupHref?: string;
 }) {
   const { state } = useData();
   const isSandbox = Boolean(project.sandbox_mode);
@@ -1033,7 +1042,9 @@ function ProjectCard({
               Monthly
             </span>
           ) : null}
-          {clickupSynced ? <ClickUpSyncedBadge compact /> : null}
+          {clickupSynced ? (
+            <ClickUpSyncedBadge compact href={clickupHref} />
+          ) : null}
         </div>
       </div>
       <div className="mt-auto space-y-3">

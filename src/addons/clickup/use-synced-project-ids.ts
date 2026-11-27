@@ -12,14 +12,19 @@ export function notifyClickUpProjectSyncChanged(): void {
 }
 
 /**
- * Set of project ids with ClickUp sync enabled (empty when addon off / demo).
+ * Synced project ids + ClickUp folder URLs (empty when addon off / demo).
  */
 export function useClickUpSyncedProjectIds(): {
   syncedIds: Set<string>;
+  /** projectId → ClickUp folder overview URL when link + team are known. */
+  syncedHrefs: Map<string, string>;
   ready: boolean;
   refresh: () => void;
 } {
   const [syncedIds, setSyncedIds] = useState<Set<string>>(() => new Set());
+  const [syncedHrefs, setSyncedHrefs] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const [ready, setReady] = useState(false);
 
   const refresh = useCallback(() => {
@@ -28,14 +33,20 @@ export function useClickUpSyncedProjectIds(): {
         const res = await fetch("/api/addons/clickup/synced-projects");
         if (!res.ok) {
           setSyncedIds(new Set());
+          setSyncedHrefs(new Map());
           setReady(true);
           return;
         }
-        const json = (await res.json()) as { projectIds?: string[] };
+        const json = (await res.json()) as {
+          projectIds?: string[];
+          links?: Record<string, string>;
+        };
         setSyncedIds(new Set(json.projectIds ?? []));
+        setSyncedHrefs(new Map(Object.entries(json.links ?? {})));
         setReady(true);
       } catch {
         setSyncedIds(new Set());
+        setSyncedHrefs(new Map());
         setReady(true);
       }
     })();
@@ -54,5 +65,5 @@ export function useClickUpSyncedProjectIds(): {
     };
   }, [refresh]);
 
-  return { syncedIds, ready, refresh };
+  return { syncedIds, syncedHrefs, ready, refresh };
 }
