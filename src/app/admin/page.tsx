@@ -578,8 +578,8 @@ export default function PlatformAdminPage() {
     : null;
 
   return (
-    <div className="min-h-dvh bg-[var(--page-bg)] text-[var(--text)]">
-      <header className="flex h-11 items-center gap-3 border-b border-[var(--border)] bg-[var(--sidebar)] px-3">
+    <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
+      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--sidebar)] px-3">
         <button
           type="button"
           className="inline-flex shrink-0 cursor-pointer items-center rounded-md py-1 hover:bg-[var(--row-hover)]"
@@ -617,7 +617,7 @@ export default function PlatformAdminPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
+      <main className="mx-auto min-h-0 w-full max-w-5xl flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
         <Panel>
           <h1 className="text-sm font-semibold">Public registration</h1>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
