@@ -27,6 +27,7 @@ import { AdminBudgetSettingsForm } from "@/components/settings/admin-budget-sett
 import { ClientPortalSettings } from "@/components/settings/client-portal-settings";
 import { CustomEmojisSettings } from "@/components/settings/custom-emojis-settings";
 import { NotificationDevicesSettings } from "@/components/settings/notification-devices-settings";
+import { MembersSettings } from "@/components/settings/members-settings";
 import { normalizeOrgBudgetSettings } from "@/lib/domain/org-settings";
 import {
   CONTENT_WIDTH_OPTIONS,
@@ -53,6 +54,7 @@ const ClickUpUserConnectPanel = lazy(() =>
 
 type SettingsTab =
   | "account"
+  | "members"
   | "preferences"
   | "project-defaults"
   | "currency"
@@ -65,6 +67,7 @@ type SettingsTab =
 
 const SETTINGS_TABS: SettingsTab[] = [
   "account",
+  "members",
   "preferences",
   "project-defaults",
   "currency",
@@ -298,6 +301,9 @@ export default function SettingsPage() {
       { id: "account", label: "Account" },
       { id: "preferences", label: "Preferences" },
     ];
+    if (canManage) {
+      items.push({ id: "members", label: "Members" });
+    }
     if (admin) {
       items.push(
         { id: "project-defaults", label: "Project Defaults" },
@@ -319,7 +325,7 @@ export default function SettingsPage() {
     }
     items.push({ id: "integrations", label: "Integrations" });
     return items;
-  }, [admin, canEditEmojis, showAdvancedTab]);
+  }, [admin, canManage, canEditEmojis, showAdvancedTab]);
 
   useEffect(() => {
     if (!tabs.some((t) => t.id === tab)) setTab("account");
@@ -636,6 +642,7 @@ export default function SettingsPage() {
         </nav>
 
         <div className="min-w-0 flex-1 space-y-4 sm:pl-5">
+          {tab === "members" ? <MembersSettings /> : null}
           {tab === "account" ? (
             <>
               <Panel>

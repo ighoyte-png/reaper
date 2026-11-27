@@ -7,7 +7,9 @@ import { Select, type SelectOption } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/toast/toast-provider";
 import type { AddonClickupProjectSyncRow, ReconcileSummary } from "@/addons/clickup/types";
+import Link from "next/link";
 import { notifyClickUpProjectSyncChanged } from "@/addons/clickup/use-synced-project-ids";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 
 type FolderOption = {
   id: string;
@@ -56,6 +58,7 @@ export function ClickUpProjectSyncToggle({
   sandboxMode?: boolean;
 }) {
   const { push } = useToast();
+  const appHref = useAppHref();
   const [addonEnabled, setAddonEnabled] = useState(false);
   const [twoWayOn, setTwoWayOn] = useState(false);
   const [webhookError, setWebhookError] = useState<string | null>(null);
@@ -298,7 +301,23 @@ export function ClickUpProjectSyncToggle({
       ) : null}
       {twoWayOn && webhookError ? (
         <p className="mt-1 text-xs text-[var(--status-over)]">
-          Inbound webhook: {webhookError}
+          Inbound webhook: {webhookError}{" "}
+          <Link
+            href={appHref("/integrations/clickup")}
+            className="underline"
+          >
+            Open sync health
+          </Link>
+        </p>
+      ) : null}
+      {twoWayOn && !webhookError ? (
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          <Link
+            href={appHref("/integrations/clickup")}
+            className="underline hover:text-[var(--text)]"
+          >
+            ClickUp sync health
+          </Link>
         </p>
       ) : null}
     </div>

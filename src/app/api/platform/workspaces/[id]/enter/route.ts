@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requirePlatformAdmin } from "@/lib/platform-admin";
+import { writePlatformAudit } from "@/lib/accounts/audit";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -84,6 +85,15 @@ export async function POST(_request: Request, ctx: Ctx) {
   if (activeError) {
     return NextResponse.json({ error: activeError.message }, { status: 500 });
   }
+
+  await writePlatformAudit(admin, {
+    actorUserId: user.id,
+    actorEmail: email,
+    action: "account.enter",
+    organizationId: id,
+    targetType: "organization",
+    targetId: id,
+  });
 
   return NextResponse.json({
     workspace: {

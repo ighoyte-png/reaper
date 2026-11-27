@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Field, inputClass } from "@/components/ui/form";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import Link from "next/link";
 import { useToast } from "@/components/toast/toast-provider";
 import { useData } from "@/lib/data/store";
+import { useAppHref } from "@/lib/hooks/use-app-href";
 import type {
   AddonClickupSettingsPublic,
   ClickUpStatusMap,
@@ -19,6 +21,7 @@ type Space = { id: string; name: string; statuses: string[] };
 export function ClickUpAddonSettingsPanel() {
   const { push } = useToast();
   const { state } = useData();
+  const appHref = useAppHref();
   const people = state.people.filter((p) => !p.deleted_at);
 
   const [settings, setSettings] = useState<AddonClickupSettingsPublic | null>(
@@ -648,41 +651,59 @@ export function ClickUpAddonSettingsPanel() {
                     Oldest pending error: {inboundQueue.oldest_pending_error}
                   </p>
                 ) : null}
-                {(inboundQueue.pending > 0 || inboundQueue.error > 0) && (
-                  <button
-                    type="button"
+                <div className="flex flex-wrap gap-3">
+                  {(inboundQueue.pending > 0 || inboundQueue.error > 0) && (
+                    <button
+                      type="button"
+                      className="text-xs text-[var(--accent)] underline"
+                      disabled={busy}
+                      onClick={() => {
+                        void (async () => {
+                          setBusy(true);
+                          try {
+                            const res = await fetch(
+                              "/api/addons/clickup/process-inbound",
+                              { method: "POST" },
+                            );
+                            const json = await res.json();
+                            if (!res.ok)
+                              throw new Error(json.error ?? "Failed");
+                            push(
+                              `Processed ${json.processed ?? 0}, ignored ${json.ignored ?? 0}`,
+                              "success",
+                            );
+                            await load();
+                          } catch (err) {
+                            push(
+                              err instanceof Error ? err.message : "Failed",
+                              "warning",
+                            );
+                          } finally {
+                            setBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      Process inbound queue now
+                    </button>
+                  )}
+                  <Link
+                    href={appHref("/integrations/clickup")}
                     className="text-xs text-[var(--accent)] underline"
-                    disabled={busy}
-                    onClick={() => {
-                      void (async () => {
-                        setBusy(true);
-                        try {
-                          const res = await fetch(
-                            "/api/addons/clickup/process-inbound",
-                            { method: "POST" },
-                          );
-                          const json = await res.json();
-                          if (!res.ok) throw new Error(json.error ?? "Failed");
-                          push(
-                            `Processed ${json.processed ?? 0}, ignored ${json.ignored ?? 0}`,
-                            "success",
-                          );
-                          await load();
-                        } catch (err) {
-                          push(
-                            err instanceof Error ? err.message : "Failed",
-                            "warning",
-                          );
-                        } finally {
-                          setBusy(false);
-                        }
-                      })();
-                    }}
                   >
-                    Process inbound queue now
-                  </button>
-                )}
+                    Open sync health
+                  </Link>
+                </div>
               </div>
+            ) : settings?.webhook_enabled ? (
+              <p className="border-t border-[var(--border)] pt-2 text-xs">
+                <Link
+                  href={appHref("/integrations/clickup")}
+                  className="text-[var(--accent)] underline"
+                >
+                  Open sync health
+                </Link>
+              </p>
             ) : null}
           </div>
         ) : null}

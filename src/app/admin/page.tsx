@@ -15,7 +15,7 @@ import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 import { loginPathWithNext } from "@/lib/paths";
 import { cn } from "@/lib/cn";
 
-type WorkspaceRow = {
+type AccountRow = {
   id: string;
   name: string;
   slug: string;
@@ -23,6 +23,46 @@ type WorkspaceRow = {
   created_at: string | null;
   member_count: number;
   project_count: number;
+  plan_key: string;
+  billing_status: string;
+  seat_limit: number | null;
+};
+
+type OperatorRow = {
+  user_id: string;
+  email: string;
+  created_at: string;
+};
+
+type AccountDetail = {
+  account: AccountRow & { owner_user_id?: string | null };
+  entitlements: {
+    planKey: string;
+    status: string;
+    seatLimit: number | null;
+    seatUsed: number;
+  };
+  members: {
+    user_id: string;
+    email: string;
+    full_name: string;
+    role: string;
+    is_owner: boolean;
+  }[];
+  invites: {
+    id: string;
+    email: string;
+    role: string;
+    accepted_at: string | null;
+    revoked_at: string | null;
+    expires_at: string;
+  }[];
+  audit: {
+    id: string;
+    actor_email: string | null;
+    action: string;
+    created_at: string;
+  }[];
 };
 
 export default function PlatformAdminPage() {
@@ -36,14 +76,26 @@ export default function PlatformAdminPage() {
   const [allowSignup, setAllowSignup] = useState(true);
   const [maxImageMb, setMaxImageMb] = useState(10);
   const [maxDocumentMb, setMaxDocumentMb] = useState(25);
-  const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
+  const [operators, setOperators] = useState<OperatorRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [renameTarget, setRenameTarget] = useState<WorkspaceRow | null>(null);
+  const [renameTarget, setRenameTarget] = useState<AccountRow | null>(null);
   const [renameName, setRenameName] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<WorkspaceRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AccountRow | null>(null);
   const [deleteSlug, setDeleteSlug] = useState("");
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createOwnerEmail, setCreateOwnerEmail] = useState("");
+  const [createOwnerName, setCreateOwnerName] = useState("");
+  const [createBusy, setCreateBusy] = useState(false);
+  const [operatorEmail, setOperatorEmail] = useState("");
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<AccountDetail | null>(null);
+  const [planKey, setPlanKey] = useState("free");
+  const [billingStatus, setBillingStatus] = useState("none");
+  const [seatLimit, setSeatLimit] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,9 +105,7 @@ export default function PlatformAdminPage() {
         const body = (await meRes.json().catch(() => ({}))) as {
           error?: string;
         };
-        setDenyReason(
-          body.error ?? "You don't have platform admin access.",
-        );
+        setDenyReason(body.error ?? "You don't have platform admin access.");
         setAllowed(false);
         return;
       }
@@ -71,9 +121,10 @@ export default function PlatformAdminPage() {
       setDenyReason(null);
       setAllowed(true);
 
-      const [settingsRes, listRes] = await Promise.all([
+      const [settingsRes, listRes, opsRes] = await Promise.all([
         fetch("/api/platform/settings"),
-        fetch("/api/platform/workspaces"),
+        fetch("/api/platform/accounts"),
+        fetch("/api/platform/operators"),
       ]);
       if (settingsRes.ok) {
         const s = (await settingsRes.json()) as {
@@ -93,18 +144,43 @@ export default function PlatformAdminPage() {
         }
       }
       if (listRes.ok) {
-        const body = (await listRes.json()) as { workspaces?: WorkspaceRow[] };
-        setWorkspaces(body.workspaces ?? []);
+        const body = (await listRes.json()) as { accounts?: AccountRow[] };
+        setAccounts(body.accounts ?? []);
       } else {
         const body = (await listRes.json().catch(() => ({}))) as {
           error?: string;
         };
-        push(body.error ?? "Could not load workspaces", "warning");
+        push(body.error ?? "Could not load accounts", "warning");
+      }
+      if (opsRes.ok) {
+        const body = (await opsRes.json()) as { operators?: OperatorRow[] };
+        setOperators(body.operators ?? []);
       }
     } finally {
       setLoading(false);
     }
   }, [push]);
+
+  const loadDetail = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/platform/accounts/${id}`);
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        push(body.error ?? "Could not load account", "warning");
+        return;
+      }
+      const body = (await res.json()) as AccountDetail;
+      setDetail(body);
+      setPlanKey(body.entitlements.planKey);
+      setBillingStatus(body.entitlements.status);
+      setSeatLimit(
+        body.entitlements.seatLimit == null
+          ? ""
+          : String(body.entitlements.seatLimit),
+      );
+    },
+    [push],
+  );
 
   useEffect(() => {
     if (!ready) return;
@@ -114,6 +190,14 @@ export default function PlatformAdminPage() {
     }
     void load();
   }, [ready, isAuthenticated, router, load]);
+
+  useEffect(() => {
+    if (!detailId) {
+      setDetail(null);
+      return;
+    }
+    void loadDetail(detailId);
+  }, [detailId, loadDetail]);
 
   async function saveStorageLimits() {
     const res = await fetch("/api/platform/settings", {
@@ -152,31 +236,32 @@ export default function PlatformAdminPage() {
     );
   }
 
-  async function enterWorkspace(ws: WorkspaceRow) {
-    setBusyId(ws.id);
+  async function enterAccount(row: AccountRow) {
+    setBusyId(row.id);
     try {
-      const res = await fetch(`/api/platform/workspaces/${ws.id}/enter`, {
+      const res = await fetch(`/api/platform/accounts/${row.id}/enter`, {
         method: "POST",
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
+        account?: { slug?: string };
         workspace?: { slug?: string };
       };
       if (!res.ok) {
-        push(body.error ?? "Could not enter workspace", "warning");
+        push(body.error ?? "Could not enter account", "warning");
         return;
       }
-      const slug = body.workspace?.slug || ws.slug;
+      const slug = body.account?.slug || body.workspace?.slug || row.slug;
       window.location.href = `/${slug}/dashboard`;
     } finally {
       setBusyId(null);
     }
   }
 
-  async function setDisabled(ws: WorkspaceRow, disabled: boolean) {
-    setBusyId(ws.id);
+  async function setDisabled(row: AccountRow, disabled: boolean) {
+    setBusyId(row.id);
     try {
-      const res = await fetch(`/api/platform/workspaces/${ws.id}`, {
+      const res = await fetch(`/api/platform/accounts/${row.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ disabled }),
@@ -185,10 +270,10 @@ export default function PlatformAdminPage() {
         const body = (await res.json().catch(() => ({}))) as {
           error?: string;
         };
-        push(body.error ?? "Could not update workspace", "warning");
+        push(body.error ?? "Could not update account", "warning");
         return;
       }
-      push(disabled ? "Workspace disabled" : "Workspace enabled");
+      push(disabled ? "Account disabled" : "Account enabled");
       await load();
     } finally {
       setBusyId(null);
@@ -199,7 +284,7 @@ export default function PlatformAdminPage() {
     if (!renameTarget || !renameName.trim()) return;
     setBusyId(renameTarget.id);
     try {
-      const res = await fetch(`/api/platform/workspaces/${renameTarget.id}`, {
+      const res = await fetch(`/api/platform/accounts/${renameTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: renameName.trim() }),
@@ -211,7 +296,7 @@ export default function PlatformAdminPage() {
         push(body.error ?? "Could not rename", "warning");
         return;
       }
-      push("Workspace renamed");
+      push("Account renamed");
       setRenameTarget(null);
       await load();
     } finally {
@@ -223,7 +308,7 @@ export default function PlatformAdminPage() {
     if (!deleteTarget) return;
     setBusyId(deleteTarget.id);
     try {
-      const res = await fetch(`/api/platform/workspaces/${deleteTarget.id}`, {
+      const res = await fetch(`/api/platform/accounts/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmSlug: deleteSlug.trim() }),
@@ -235,16 +320,101 @@ export default function PlatformAdminPage() {
         push(body.error ?? "Could not delete", "warning");
         return;
       }
-      push("Workspace deleted");
+      push("Account deleted");
       setDeleteTarget(null);
       setDeleteSlug("");
+      if (detailId === deleteTarget.id) setDetailId(null);
       await load();
     } finally {
       setBusyId(null);
     }
   }
 
-  if (!ready || allowed === null || (isAuthenticated && loading && allowed === null)) {
+  async function createAccount() {
+    setCreateBusy(true);
+    try {
+      const res = await fetch("/api/platform/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createName.trim(),
+          ownerEmail: createOwnerEmail.trim(),
+          ownerName: createOwnerName.trim() || undefined,
+          delivery: "email",
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        organization?: { name?: string };
+      };
+      if (!res.ok) {
+        push(body.error ?? "Could not create account", "warning");
+        return;
+      }
+      push(`Account “${body.organization?.name ?? createName}” created`);
+      setCreateOpen(false);
+      setCreateName("");
+      setCreateOwnerEmail("");
+      setCreateOwnerName("");
+      await load();
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
+  async function grantOperator() {
+    const res = await fetch("/api/platform/operators", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: operatorEmail.trim() }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      push(body.error ?? "Could not grant operator", "warning");
+      return;
+    }
+    push("Platform operator granted");
+    setOperatorEmail("");
+    await load();
+  }
+
+  async function revokeOperator(userId: string) {
+    const res = await fetch("/api/platform/operators", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      push(body.error ?? "Could not revoke", "warning");
+      return;
+    }
+    push("Operator revoked");
+    await load();
+  }
+
+  async function saveBilling() {
+    if (!detailId) return;
+    const res = await fetch(`/api/platform/accounts/${detailId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        plan_key: planKey.trim() || "free",
+        billing_status: billingStatus,
+        seat_limit: seatLimit.trim() === "" ? null : Number(seatLimit),
+      }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      push(body.error ?? "Could not update billing fields", "warning");
+      return;
+    }
+    push("Billing fields updated");
+    await loadDetail(detailId);
+    await load();
+  }
+
+  if (!ready || allowed === null) {
     return (
       <div className="flex h-dvh items-center justify-center text-sm text-[var(--text-muted)]">
         Loading…
@@ -329,12 +499,12 @@ export default function PlatformAdminPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-4xl space-y-4 p-4 sm:p-6">
+      <main className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
         <Panel>
           <h1 className="text-sm font-semibold">Workspace creation</h1>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            When off, login and Settings hide Create workspace, and both
-            bootstrap and additional-org RPCs refuse new workspaces.
+            Production should usually leave this off and provision accounts from
+            this console. When off, login and Settings hide Create workspace.
           </p>
           <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
             <input
@@ -349,9 +519,6 @@ export default function PlatformAdminPage() {
 
         <Panel>
           <h2 className="text-sm font-semibold">Upload size limits</h2>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Max file sizes for R2 attachments (images and documents).
-          </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <Field label="Max image size (MB)">
               <input
@@ -377,53 +544,124 @@ export default function PlatformAdminPage() {
             </Field>
           </div>
           <div className="mt-3">
-            <Button variant="secondary" size="sm" onClick={() => void saveStorageLimits()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void saveStorageLimits()}
+            >
               Save limits
             </Button>
           </div>
         </Panel>
 
         <Panel>
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Workspaces</h2>
+          <h2 className="text-sm font-semibold">Platform operators</h2>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
+            Grant console access in-app (sets Auth app_metadata). Env
+            PLATFORM_ADMIN_EMAILS remains break-glass.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <input
+              className={cn(inputClass, "max-w-xs")}
+              placeholder="ops@example.com"
+              value={operatorEmail}
+              onChange={(e) => setOperatorEmail(e.target.value)}
+            />
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => void load()}
-              disabled={loading}
+              disabled={!operatorEmail.includes("@")}
+              onClick={() => void grantOperator()}
             >
-              Refresh
+              Grant
             </Button>
+          </div>
+          {operators.length > 0 ? (
+            <ul className="mt-3 space-y-1 text-sm">
+              {operators.map((op) => (
+                <li
+                  key={op.user_id}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span>{op.email}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void revokeOperator(op.user_id)}
+                  >
+                    Revoke
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              No in-app operators yet.
+            </p>
+          )}
+        </Panel>
+
+        <Panel>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Accounts</h2>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void load()}
+                disabled={loading}
+              >
+                Refresh
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setCreateOpen(true)}
+              >
+                Create account
+              </Button>
+            </div>
           </div>
 
           {loading ? (
             <p className="text-sm text-[var(--text-muted)]">Loading…</p>
-          ) : workspaces.length === 0 ? (
-            <p className="text-sm text-[var(--text-muted)]">No workspaces yet.</p>
+          ) : accounts.length === 0 ? (
+            <p className="text-sm text-[var(--text-muted)]">No accounts yet.</p>
           ) : (
             <div className="overflow-x-auto rounded-md border border-[var(--border)]">
               <table className="w-full text-left text-sm">
                 <thead className="bg-[var(--bg-elevated)] text-xs text-[var(--text-muted)]">
                   <tr>
                     <th className="px-3 py-2 font-medium">Name</th>
-                    <th className="px-3 py-2 font-medium">Slug</th>
+                    <th className="px-3 py-2 font-medium">Plan</th>
                     <th className="px-3 py-2 font-medium">Status</th>
                     <th className="px-3 py-2 font-medium">Size</th>
                     <th className="px-3 py-2 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {workspaces.map((ws) => {
-                    const disabled = Boolean(ws.disabled_at);
-                    const busy = busyId === ws.id;
+                  {accounts.map((row) => {
+                    const disabled = Boolean(row.disabled_at);
+                    const busy = busyId === row.id;
                     return (
                       <tr
-                        key={ws.id}
+                        key={row.id}
                         className="border-t border-[var(--border)]"
                       >
-                        <td className="px-3 py-2.5 font-medium">{ws.name}</td>
-                        <td className="px-3 py-2.5 font-mono text-xs text-[var(--text-muted)]">
-                          /{ws.slug}
+                        <td className="px-3 py-2.5">
+                          <button
+                            type="button"
+                            className="cursor-pointer text-left font-medium hover:underline"
+                            onClick={() => setDetailId(row.id)}
+                          >
+                            {row.name}
+                          </button>
+                          <div className="font-mono text-xs text-[var(--text-muted)]">
+                            /{row.slug}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-[var(--text-muted)]">
+                          {row.plan_key} · {row.billing_status}
                         </td>
                         <td className="px-3 py-2.5">
                           <span
@@ -438,7 +676,7 @@ export default function PlatformAdminPage() {
                           </span>
                         </td>
                         <td className="px-3 py-2.5 text-xs text-[var(--text-muted)]">
-                          {ws.member_count} members · {ws.project_count}{" "}
+                          {row.member_count} members · {row.project_count}{" "}
                           projects
                         </td>
                         <td className="px-3 py-2.5">
@@ -447,7 +685,7 @@ export default function PlatformAdminPage() {
                               variant="secondary"
                               size="sm"
                               disabled={busy}
-                              onClick={() => void enterWorkspace(ws)}
+                              onClick={() => void enterAccount(row)}
                             >
                               Enter
                             </Button>
@@ -455,9 +693,17 @@ export default function PlatformAdminPage() {
                               variant="ghost"
                               size="sm"
                               disabled={busy}
+                              onClick={() => setDetailId(row.id)}
+                            >
+                              Detail
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
                               onClick={() => {
-                                setRenameTarget(ws);
-                                setRenameName(ws.name);
+                                setRenameTarget(row);
+                                setRenameName(row.name);
                               }}
                             >
                               Rename
@@ -466,9 +712,7 @@ export default function PlatformAdminPage() {
                               variant="ghost"
                               size="sm"
                               disabled={busy}
-                              onClick={() =>
-                                void setDisabled(ws, !disabled)
-                              }
+                              onClick={() => void setDisabled(row, !disabled)}
                             >
                               {disabled ? "Enable" : "Disable"}
                             </Button>
@@ -477,7 +721,7 @@ export default function PlatformAdminPage() {
                               size="sm"
                               disabled={busy}
                               onClick={() => {
-                                setDeleteTarget(ws);
+                                setDeleteTarget(row);
                                 setDeleteSlug("");
                               }}
                             >
@@ -493,13 +737,180 @@ export default function PlatformAdminPage() {
             </div>
           )}
         </Panel>
+
+        {detail && detailId ? (
+          <Panel>
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold">
+                  {detail.account.name}
+                </h2>
+                <p className="font-mono text-xs text-[var(--text-muted)]">
+                  /{detail.account.slug}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDetailId(null)}
+              >
+                Close
+              </Button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Plan key">
+                <input
+                  className={inputClass}
+                  value={planKey}
+                  onChange={(e) => setPlanKey(e.target.value)}
+                />
+              </Field>
+              <Field label="Billing status">
+                <select
+                  className={inputClass}
+                  value={billingStatus}
+                  onChange={(e) => setBillingStatus(e.target.value)}
+                >
+                  <option value="none">none</option>
+                  <option value="trialing">trialing</option>
+                  <option value="active">active</option>
+                  <option value="past_due">past_due</option>
+                  <option value="canceled">canceled</option>
+                </select>
+              </Field>
+              <Field label="Seat limit (blank = unlimited)">
+                <input
+                  className={inputClass}
+                  inputMode="numeric"
+                  value={seatLimit}
+                  onChange={(e) => setSeatLimit(e.target.value)}
+                />
+              </Field>
+            </div>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Seats used: {detail.entitlements.seatUsed}
+              {detail.entitlements.seatLimit != null
+                ? ` / ${detail.entitlements.seatLimit}`
+                : ""}
+            </p>
+            <div className="mt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void saveBilling()}
+              >
+                Save billing fields
+              </Button>
+            </div>
+
+            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              Members
+            </h3>
+            <ul className="mt-1 space-y-1 text-sm">
+              {detail.members.map((m) => (
+                <li key={m.user_id}>
+                  {m.full_name || m.email}{" "}
+                  <span className="text-xs text-[var(--text-muted)]">
+                    {m.email} · {m.role}
+                    {m.is_owner ? " · owner" : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              Pending invites
+            </h3>
+            {detail.invites.filter((i) => !i.accepted_at && !i.revoked_at)
+              .length === 0 ? (
+              <p className="mt-1 text-xs text-[var(--text-muted)]">None</p>
+            ) : (
+              <ul className="mt-1 space-y-1 text-sm">
+                {detail.invites
+                  .filter((i) => !i.accepted_at && !i.revoked_at)
+                  .map((i) => (
+                    <li key={i.id}>
+                      {i.email} · {i.role}
+                    </li>
+                  ))}
+              </ul>
+            )}
+
+            <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              Recent audit
+            </h3>
+            {detail.audit.length === 0 ? (
+              <p className="mt-1 text-xs text-[var(--text-muted)]">None</p>
+            ) : (
+              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs text-[var(--text-muted)]">
+                {detail.audit.map((a) => (
+                  <li key={a.id}>
+                    {new Date(a.created_at).toLocaleString()} — {a.action}
+                    {a.actor_email ? ` (${a.actor_email})` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+        ) : null}
       </main>
 
+      {createOpen ? (
+        <Modal title="Create account" onClose={() => setCreateOpen(false)}>
+          <div className="space-y-3">
+            <Field label="Account name">
+              <input
+                className={inputClass}
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                autoFocus
+              />
+            </Field>
+            <Field label="Owner email">
+              <input
+                className={inputClass}
+                type="email"
+                value={createOwnerEmail}
+                onChange={(e) => setCreateOwnerEmail(e.target.value)}
+              />
+            </Field>
+            <Field label="Owner name (optional)">
+              <input
+                className={inputClass}
+                value={createOwnerName}
+                onChange={(e) => setCreateOwnerName(e.target.value)}
+              />
+            </Field>
+            <p className="text-xs text-[var(--text-muted)]">
+              Creates the organization, owner membership, People row, and sends
+              an Auth invite email.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setCreateOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={
+                  createBusy ||
+                  !createName.trim() ||
+                  !createOwnerEmail.includes("@")
+                }
+                onClick={() => void createAccount()}
+              >
+                Create
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
       {renameTarget ? (
-        <Modal
-          title="Rename workspace"
-          onClose={() => setRenameTarget(null)}
-        >
+        <Modal title="Rename account" onClose={() => setRenameTarget(null)}>
           <div className="space-y-3">
             <Field label="Name">
               <input
@@ -510,9 +921,6 @@ export default function PlatformAdminPage() {
                 autoFocus
               />
             </Field>
-            <p className="text-xs text-[var(--text-muted)]">
-              Does not change the URL slug.
-            </p>
             <div className="flex justify-end gap-2">
               <Button
                 variant="secondary"
@@ -538,9 +946,9 @@ export default function PlatformAdminPage() {
 
       {deleteTarget ? (
         <ConfirmDialog
-          title="Delete workspace?"
+          title="Delete account?"
           message={`Permanently delete “${deleteTarget.name}” and all of its data. Type the slug “${deleteTarget.slug}” to confirm.`}
-          confirmLabel="Delete workspace"
+          confirmLabel="Delete account"
           onCancel={() => {
             setDeleteTarget(null);
             setDeleteSlug("");
@@ -551,7 +959,7 @@ export default function PlatformAdminPage() {
             busyId === deleteTarget.id
           }
         >
-          <Field label="Workspace slug" className="mt-3">
+          <Field label="Account slug" className="mt-3">
             <input
               className={inputClass}
               value={deleteSlug}

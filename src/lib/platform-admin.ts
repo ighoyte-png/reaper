@@ -3,6 +3,7 @@ import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, isServiceRoleConfigured } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { isPlatformOperatorUser } from "@/lib/accounts/operators";
 
 /** Comma-separated allowlist, e.g. PLATFORM_ADMIN_EMAILS=you@example.com,ops@example.com */
 export function platformAdminEmails(): string[] {
@@ -35,7 +36,8 @@ export type PlatformAdminEvaluation =
   | { ok: false; reason: string };
 
 /**
- * Same rules for nav link (/api/platform/me GET) and console gate (POST / requirePlatformAdmin).
+ * Sync rules for nav (env allowlist + metadata). DB operators are checked in
+ * requirePlatformAdmin / GET me with service role.
  */
 export function evaluatePlatformAdmin(
   user: User | null | undefined,
@@ -43,30 +45,39 @@ export function evaluatePlatformAdmin(
   if (!user) {
     return { ok: false, reason: "Not signed in" };
   }
-  if (platformAdminEmails().length === 0) {
-    return {
-      ok: false,
-      reason:
-        "Set PLATFORM_ADMIN_EMAILS in .env (comma-separated platform admin emails).",
-    };
-  }
   const email = user.email ?? "";
-  if (!isPlatformAdminEmail(email)) {
-    return {
-      ok: false,
-      reason: "Your email is not in PLATFORM_ADMIN_EMAILS.",
-    };
-  }
   const allowEmailOnly =
     process.env.PLATFORM_ADMIN_ALLOW_EMAIL_ONLY === "true";
-  if (!hasPlatformAdminMetadata(user) && !allowEmailOnly) {
+
+  if (isPlatformAdminEmail(email)) {
+    if (hasPlatformAdminMetadata(user) || allowEmailOnly) {
+      return { ok: true, email };
+    }
     return {
       ok: false,
       reason:
         "Platform admin requires Auth app_metadata.platform_admin=true (Authentication → Users → user → App Metadata), or set PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true temporarily.",
     };
   }
-  return { ok: true, email };
+
+  // Operators table users still need metadata after grant; soft-fail here —
+  // async path confirms platform_operators.
+  if (hasPlatformAdminMetadata(user)) {
+    return { ok: true, email };
+  }
+
+  if (platformAdminEmails().length === 0) {
+    return {
+      ok: false,
+      reason:
+        "Set PLATFORM_ADMIN_EMAILS in .env (comma-separated platform admin emails), or grant an operator in /admin.",
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "Your email is not in PLATFORM_ADMIN_EMAILS.",
+  };
 }
 
 export async function requirePlatformAdmin() {
@@ -101,24 +112,30 @@ export async function requirePlatformAdmin() {
     };
   }
 
+  const admin = createAdminClient();
   const evaluated = evaluatePlatformAdmin(user);
-  if (!evaluated.ok) {
-    const status =
-      evaluated.reason === "Not signed in"
-        ? 401
-        : evaluated.reason.includes("PLATFORM_ADMIN_EMAILS") ||
-            evaluated.reason.includes("PLATFORM_ADMIN_ALLOW_EMAIL_ONLY") ||
-            evaluated.reason.includes("app_metadata")
-          ? 403
-          : 403;
+  if (evaluated.ok) {
     return {
-      error: NextResponse.json({ error: evaluated.reason }, { status }),
+      user,
+      email: evaluated.email,
+      admin,
     };
   }
 
+  // In-app operators (platform_operators) even if not on env allowlist.
+  try {
+    if (await isPlatformOperatorUser(admin, user.id)) {
+      return {
+        user,
+        email: (user.email ?? "").toLowerCase(),
+        admin,
+      };
+    }
+  } catch (e) {
+    console.error("[requirePlatformAdmin] operators check", e);
+  }
+
   return {
-    user,
-    email: evaluated.email,
-    admin: createAdminClient(),
+    error: NextResponse.json({ error: evaluated.reason }, { status: 403 }),
   };
 }

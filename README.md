@@ -40,15 +40,20 @@ Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
 
 6. Open the app → **Create workspace** (email/password) → **Settings → Load demo data**.
 
-7. **Member invites** (optional): add `SUPABASE_SERVICE_ROLE_KEY` to `.env` (service_role secret — server only). Set `NEXT_PUBLIC_SITE_URL` to your app origin (e.g. `https://app.reaperpm.com`). In Supabase **Authentication → URL configuration**, set Site URL and Redirect URLs for that origin. Configure **Authentication → SMTP** if you want invite emails to deliver. Then **People → Invite** / **Add & Invite** lets you **send email** (Auth SMTP) or **copy a one-time invite link**. Inviting an email that already has an Auth account **adds a membership** in your workspace (same login, separate People row per org) instead of rejecting “already in another organization.”
+7. **Accounts & invites**: apply migrations through [`122_enterprise_accounts.sql`](supabase/migrations/122_enterprise_accounts.sql). Add `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SITE_URL`. Configure Auth Site URL / Redirect URLs and SMTP.  
+   - **Platform provision (preferred in production):** `/admin` → **Create account** (owner email invite + org + owner Person). Turn **Allow new workspace creation** off for production.  
+   - **Workspace invites:** **Settings → Members** (pending invites with resend/revoke) or **People → Invite**. Accept via `/invite/accept`.  
+   - Lifecycle details: [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md).
 
-8. **Platform admin** (optional): set `PLATFORM_ADMIN_EMAILS` to your email(s), run [`039_platform_admin.sql`](supabase/migrations/039_platform_admin.sql). Create the user in Supabase **Authentication → Users** (email + password) — do **not** use Create workspace. In **Authentication → Users → user → App Metadata**, set `{ "platform_admin": true }` (or temporarily `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true`). Sign in on `/login`; you land on `/admin` with no personal workspace. **Enter** upserts an admin membership for that workspace and sets it active without removing other memberships.
+8. **Platform admin**: set `PLATFORM_ADMIN_EMAILS` (break-glass), create the Auth user without “Create workspace”, set `app_metadata.platform_admin=true` (or `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true` temporarily). Sign in → `/admin`. Additional operators can be granted in-app under **Platform operators**. **Enter** upserts an admin membership without wiping other memberships. Audit events are written to `platform_audit_log`.
 
-9. **Multi-workspace memberships**: apply [`083_organization_memberships.sql`](supabase/migrations/083_organization_memberships.sql) and [`084_create_additional_organization.sql`](supabase/migrations/084_create_additional_organization.sql). One Auth user can belong to multiple orgs with per-org roles. The URL `/{workspace}/…` selects the active org (last active wins across browser tabs in v1). With 2+ memberships, switch workspaces from the profile flyout. Soft-deleting a person removes that org’s membership only; Auth is deleted only when they have no memberships left. To add another workspace on an existing login: sign in → **Settings → Create workspace** (login “Create workspace” is for new emails only).
+9. **Multi-workspace memberships**: one Auth user → many orgs (`organization_memberships`). URL `/{workspace}/…` selects the active org. Soft-deleting a person removes that org’s membership only. Self-serve extra workspaces (when signup allowed): **Settings → Create workspace**.
 
-10. **Security hardening**: after pulling latest, apply [`057_security_hardening.sql`](supabase/migrations/057_security_hardening.sql) (and `083` when using multi-workspace). Run `npm run security:check` for share/HTML/URL self-checks. Run `npm run security:rls` against staging (needs service role) for the two-agency RLS matrix + membership switch cases — see [`supabase/tests/database/security_hardening_checklist.sql`](supabase/tests/database/security_hardening_checklist.sql).
+10. **Billing hooks (no Checkout yet):** each org has a `billing_accounts` row (`plan_key`, `status`, `seat_limit`, Stripe ids). Platform account detail can edit plan fields manually. Optional `STRIPE_WEBHOOK_SECRET` + `POST /api/billing/stripe-webhook` updates subscription status when Stripe is wired later.
 
-11. **Org search** (optional): apply [`058_org_search.sql`](supabase/migrations/058_org_search.sql) for Cmd/Ctrl+K deep search across projects, clients, tasks, and comments.
+11. **Security hardening**: apply [`057_security_hardening.sql`](supabase/migrations/057_security_hardening.sql) (and membership migrations). Run `npm run security:check` and `npm run security:rls` against staging — see [`supabase/tests/database/security_hardening_checklist.sql`](supabase/tests/database/security_hardening_checklist.sql).
+
+12. **Org search** (optional): apply [`058_org_search.sql`](supabase/migrations/058_org_search.sql) for Cmd/Ctrl+K deep search.
 
 With env vars set, the UI switches from local demo login to real Supabase auth and persists schedule/projects/people in Postgres.
 

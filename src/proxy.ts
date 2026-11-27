@@ -67,6 +67,7 @@ function skipSessionRefresh(pathname: string): boolean {
   if (pathname.startsWith("/api/addons/clickup/webhook")) return true;
   if (pathname.startsWith("/api/addons/clickup/ingest")) return true;
   if (pathname.startsWith("/api/cron/")) return true;
+  if (pathname.startsWith("/api/billing/stripe-webhook")) return true;
   return false;
 }
 

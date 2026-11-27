@@ -5,6 +5,7 @@ export { ClickUpProjectSyncToggle } from "@/addons/clickup/ui/clickup-project-sy
 export { ClickUpSyncedBadge } from "@/addons/clickup/ui/clickup-synced-badge";
 export { ClickUpUserConnectPanel } from "@/addons/clickup/ui/clickup-user-connect-panel";
 export { ClickUpOutboxPoller } from "@/addons/clickup/ui/clickup-outbox-poller";
+export { ClickUpSyncHealthPage } from "@/addons/clickup/ui/clickup-sync-health-page";
 export {
   useClickUpSyncedProjectIds,
   notifyClickUpProjectSyncChanged,
