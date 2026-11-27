@@ -13,6 +13,7 @@ import {
   CHART_LINE_STROKE_WIDTH,
   CHART_TARGET_STROKE,
   CHART_TODAY_COLOR,
+  progressTodaySplitX,
   progressWeekLineSegmentBounds,
   progressWeekSegmentEndpoints,
   slotWeekBandBounds,
@@ -299,9 +300,11 @@ function ProgressLineChart({
 
   const handoffIdx = progressLineHandoffIndex(points);
 
+  /** Cumulative point i at the end of equal week slot i (padL → xAt(0) → …). */
   function xAt(i: number) {
-    if (points.length <= 1) return padL + plotW / 2;
-    return padL + (i / (points.length - 1)) * plotW;
+    const n = points.length;
+    if (n <= 1) return padL + plotW / 2;
+    return padL + ((i + 1) / n) * plotW;
   }
   function yAt(v: number) {
     return padT + plotH - (v / maxY) * plotH;
@@ -454,7 +457,7 @@ function ProgressLineChart({
   const budgetY = hasBudget ? yAt(budgetCap!) : null;
   const profitY = hasProfit ? yAt(profitLine!) : null;
   const contractorY = hasContractorBaseline ? yAt(contractorBaseline) : null;
-  const firstX = xAt(0);
+  const plotLeft = padL;
   const lastX = xAt(points.length - 1);
   const thisWeekIdx =
     handoffIdx >= 0 && points[handoffIdx]?.isCurrentWeek ? handoffIdx : null;
@@ -475,13 +478,6 @@ function ProgressLineChart({
     }
     const idx = thisWeekIdx;
     const p = points[idx]!;
-    const startMs = parseISO(p.weekStartKey).getTime();
-    const endMs = parseISO(p.weekEndKey).getTime();
-    const todayMs = parseISO(todayAnchorDateKey).getTime();
-    const frac =
-      endMs > startMs
-        ? Math.min(1, Math.max(0, (todayMs - startMs) / (endMs - startMs)))
-        : 0.5;
     const seg = progressWeekLineSegmentBounds(
       idx,
       points.length,
@@ -489,9 +485,16 @@ function ProgressLineChart({
       plotW,
       xAt,
     );
+    const split = progressTodaySplitX({
+      weekStartKey: p.weekStartKey,
+      weekEndKey: p.weekEndKey,
+      todayKey: todayAnchorDateKey,
+      bandX: seg.x,
+      bandWidth: seg.width,
+    });
+    if (!split) return null;
+    const { frac, todayX, weekEndX: x1 } = split;
     const x0 = seg.x;
-    const x1 = xAt(idx);
-    const todayX = seg.x + seg.width * frac;
     const vStart = idx > 0 ? valueAt(idx - 1) : contractorBaseline;
     const vToday =
       todayAnchorValue != null
@@ -781,7 +784,7 @@ function ProgressLineChart({
         {contractorY != null ? (
           <g>
             <line
-              x1={firstX}
+              x1={plotLeft}
               x2={lastX}
               y1={contractorY}
               y2={contractorY}
@@ -790,7 +793,7 @@ function ProgressLineChart({
               strokeLinecap="round"
             />
             <circle
-              cx={firstX}
+              cx={plotLeft}
               cy={contractorY}
               r={2}
               fill={contractorColor}

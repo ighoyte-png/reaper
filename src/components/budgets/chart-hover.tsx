@@ -34,8 +34,9 @@ export function progressWeekBandBounds(
 }
 
 /**
- * Week bounds aligned to the progress line segment between week points
- * (xAt(i-1) → xAt(i)). Matches calendar "today" placement on the line.
+ * Week bounds aligned to the progress line segment for week `index`.
+ * With end-of-slot xAt (point i at end of equal slot i): week 0 is
+ * padL → xAt(0); week i>0 is xAt(i-1) → xAt(i). Matches slotWeekBandBounds.
  */
 export function progressWeekLineSegmentBounds(
   index: number,
@@ -53,13 +54,40 @@ export function progressWeekLineSegmentBounds(
     return { x, width: end - x, centerX: (x + end) / 2 };
   }
   const end = xAt(0);
-  let width = end - padL;
-  if (width <= 0 && pointCount > 1) {
-    width = (xAt(1) - padL) / 2;
-  } else if (width <= 0) {
-    width = plotW;
-  }
+  const width = Math.max(end - padL, 0);
   return { x: padL, width, centerX: padL + width / 2 };
+}
+
+/** Noon-local parse so date keys don’t shift a day in US timezones. */
+export function parseChartDateKey(key: string): Date {
+  return new Date(`${key}T12:00:00`);
+}
+
+/**
+ * Place “today” on a week band from day fraction along Mon–Sun.
+ * Returns null when the band has no width.
+ */
+export function progressTodaySplitX(args: {
+  weekStartKey: string;
+  weekEndKey: string;
+  todayKey: string;
+  bandX: number;
+  bandWidth: number;
+}): { frac: number; todayX: number; weekEndX: number } | null {
+  const { weekStartKey, weekEndKey, todayKey, bandX, bandWidth } = args;
+  if (bandWidth <= 0) return null;
+  const startMs = parseChartDateKey(weekStartKey).getTime();
+  const endMs = parseChartDateKey(weekEndKey).getTime();
+  const todayMs = parseChartDateKey(todayKey).getTime();
+  const frac =
+    endMs > startMs
+      ? Math.min(1, Math.max(0, (todayMs - startMs) / (endMs - startMs)))
+      : 0.5;
+  return {
+    frac,
+    todayX: bandX + bandWidth * frac,
+    weekEndX: bandX + bandWidth,
+  };
 }
 
 /** Vertex indices at each end of the progress line segment for week `index`. */
