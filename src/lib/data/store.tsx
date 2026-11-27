@@ -1221,7 +1221,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    if (existingMembership) {
+    // Claim workspace invites before bootstrap / workspace load. Auth invite
+    // emails often land on set-password (losing the accept token); without this,
+    // invitees get a new pending org instead of joining the invited workspace.
+    try {
+      await fetch("/api/accounts/invites/claim", { method: "POST" });
+    } catch {
+      /* non-fatal */
+    }
+
+    const { data: membershipAfterClaim } = await client
+      .from("organization_memberships")
+      .select("organization_id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle();
+
+    if (membershipAfterClaim || existingMembership) {
       setPlatformOnly(false);
       const workspace = await fetchWorkspace(client, user.id);
       await applyWorkspace(workspace);
@@ -1246,10 +1262,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // First login for a normal user — create their workspace.
+    // Public registration only (requires user_metadata.org_name).
     await ensureProfileForUser(client, user);
     setPlatformOnly(false);
     const workspace = await fetchWorkspace(client, user.id);
+    if (!workspace.sessionProfileId && workspace.memberships.length === 0) {
+      setAuthError(
+        "Signed in, but this account has no workspace membership. Open your invite link, or ask an admin to invite you again.",
+      );
+      setState({ ...emptySupabaseState(), sessionProfileId: null });
+      return;
+    }
     await applyWorkspace(workspace);
   }, []);
 

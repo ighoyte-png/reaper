@@ -137,6 +137,11 @@ export default function SetPasswordPage() {
       router.replace("/admin");
       return;
     }
+    const approval = state.organization.approval_status ?? "approved";
+    if (approval === "pending" || approval === "rejected") {
+      router.replace("/pending-approval");
+      return;
+    }
     const slug = state.organization.slug;
     if (!slug) return;
     const prefs = readUserViewPrefs(profile?.id);
@@ -150,6 +155,7 @@ export default function SetPasswordPage() {
     continueAfterSave,
     isPlatformOnly,
     state.organization.slug,
+    state.organization.approval_status,
     profile?.id,
     canManage,
     router,
@@ -169,6 +175,13 @@ export default function SetPasswordPage() {
     setBusy(true);
     try {
       await updatePassword(password);
+      // Claim workspace invites before refresh so we don't leave invitees on a
+      // bootstrapped pending org.
+      try {
+        await fetch("/api/accounts/invites/claim", { method: "POST" });
+      } catch {
+        /* refresh will also claim */
+      }
       await refresh();
       setDone(true);
       setContinueAfterSave(true);

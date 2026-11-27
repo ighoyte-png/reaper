@@ -221,23 +221,28 @@ export async function resendOrganizationInvite(
   });
 }
 
-export async function acceptOrganizationInvite(
+type InviteRow = {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: string;
+  full_name: string | null;
+  person_id: string | null;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+};
+
+async function applyInviteMembership(
   admin: SupabaseClient,
-  rawToken: string,
+  invite: InviteRow,
   userId: string,
   userEmail: string,
 ): Promise<{ organizationId: string; role: Role }> {
-  const hash = hashInviteToken(rawToken);
-  const { data: invite, error } = await admin
-    .from("organization_invites")
-    .select("*")
-    .eq("token_hash", hash)
-    .maybeSingle();
-  if (error || !invite) throw new Error("Invalid or expired invite");
   if (invite.revoked_at) throw new Error("Invite was revoked");
   if (invite.accepted_at) {
     return {
-      organizationId: invite.organization_id as string,
+      organizationId: invite.organization_id,
       role: invite.role as Role,
     };
   }
@@ -250,12 +255,10 @@ export async function acceptOrganizationInvite(
     throw new Error("Sign in with the invited email address");
   }
 
-  const orgId = invite.organization_id as string;
+  const orgId = invite.organization_id;
   const role = invite.role as Role;
   const fullName =
-    (invite.full_name as string | null)?.trim() ||
-    inviteEmail.split("@")[0] ||
-    "Member";
+    invite.full_name?.trim() || inviteEmail.split("@")[0] || "Member";
 
   const { data: existingProfile } = await admin
     .from("profiles")
@@ -294,34 +297,20 @@ export async function acceptOrganizationInvite(
     );
   if (memError) throw new Error(memError.message);
 
-  const { data: active } = await admin
-    .from("user_active_organization")
-    .select("user_id")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (!active) {
-    await admin.from("user_active_organization").upsert({
-      user_id: userId,
-      organization_id: orgId,
-      updated_at: new Date().toISOString(),
-    });
-  } else {
-    await admin
-      .from("user_active_organization")
-      .update({
-        organization_id: orgId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", userId);
-  }
+  // Always switch active org to the invited workspace (recovers invitees who
+  // were accidentally bootstrapped into their own pending org).
+  await admin.from("user_active_organization").upsert({
+    user_id: userId,
+    organization_id: orgId,
+    updated_at: new Date().toISOString(),
+  });
 
-  // Mirror active org onto profile.
   await admin
     .from("profiles")
     .update({ organization_id: orgId, role })
     .eq("id", userId);
 
-  const personId = invite.person_id as string | null;
+  const personId = invite.person_id;
   if (personId) {
     await admin
       .from("people")
@@ -352,4 +341,64 @@ export async function acceptOrganizationInvite(
     .eq("id", invite.id);
 
   return { organizationId: orgId, role };
+}
+
+export async function acceptOrganizationInvite(
+  admin: SupabaseClient,
+  rawToken: string,
+  userId: string,
+  userEmail: string,
+): Promise<{ organizationId: string; role: Role }> {
+  const hash = hashInviteToken(rawToken);
+  const { data: invite, error } = await admin
+    .from("organization_invites")
+    .select("*")
+    .eq("token_hash", hash)
+    .maybeSingle();
+  if (error || !invite) throw new Error("Invalid or expired invite");
+  return applyInviteMembership(
+    admin,
+    invite as InviteRow,
+    userId,
+    userEmail,
+  );
+}
+
+/**
+ * Accept all pending invites for this email (newest first). Used when the Auth
+ * invite flow never hits /invite/accept with the token.
+ */
+export async function claimPendingInvitesForUser(
+  admin: SupabaseClient,
+  userId: string,
+  userEmail: string,
+): Promise<{ organizationId: string; role: Role }[]> {
+  const email = userEmail.trim().toLowerCase();
+  if (!email.includes("@")) return [];
+
+  const { data: rows, error } = await admin
+    .from("organization_invites")
+    .select("*")
+    .eq("email", email)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+
+  const claimed: { organizationId: string; role: Role }[] = [];
+  for (const row of rows ?? []) {
+    try {
+      const result = await applyInviteMembership(
+        admin,
+        row as InviteRow,
+        userId,
+        email,
+      );
+      claimed.push(result);
+    } catch {
+      /* skip invalid rows; continue other invites */
+    }
+  }
+  return claimed;
 }

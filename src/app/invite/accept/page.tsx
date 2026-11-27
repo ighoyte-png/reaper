@@ -12,12 +12,49 @@ function AcceptInviteInner() {
   const params = useSearchParams();
   const token = params.get("token")?.trim() ?? "";
   const router = useRouter();
-  const { ready, isAuthenticated } = useData();
+  const { ready, isAuthenticated, refresh } = useData();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+
+  // Auth invite redirectTo may land here with tokens in the hash.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { createClient } = await import("@/lib/supabase/client");
+        const { isSupabaseConfigured } = await import("@/lib/supabase/config");
+        if (!isSupabaseConfigured()) {
+          if (!cancelled) setSessionReady(true);
+          return;
+        }
+        const client = createClient();
+        const hashParams = new URLSearchParams(
+          window.location.hash.replace(/^#/, ""),
+        );
+        const access_token = hashParams.get("access_token");
+        const refresh_token = hashParams.get("refresh_token");
+        if (access_token && refresh_token) {
+          await client.auth.setSession({ access_token, refresh_token });
+          const url = new URL(window.location.href);
+          url.hash = "";
+          window.history.replaceState({}, "", url.pathname + url.search);
+          await refresh();
+        }
+      } catch {
+        /* fall through to auth gate */
+      } finally {
+        if (!cancelled) setSessionReady(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refresh]);
 
   useEffect(() => {
-    if (!ready || !token) return;
+    if (!ready || !sessionReady || !token) return;
     if (!isAuthenticated) {
       router.replace(
         loginPathWithNext(`/invite/accept?token=${encodeURIComponent(token)}`),
@@ -52,7 +89,7 @@ function AcceptInviteInner() {
     return () => {
       cancelled = true;
     };
-  }, [ready, isAuthenticated, token, router]);
+  }, [ready, sessionReady, isAuthenticated, token, router]);
 
   if (!token) {
     return (

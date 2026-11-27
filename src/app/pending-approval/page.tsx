@@ -41,16 +41,45 @@ export default function PendingApprovalPage() {
       router.replace("/admin");
       return;
     }
-    if (status === "approved" && !state.organization.disabled_at) {
-      if (!state.organization.slug) return;
-      const prefs = readUserViewPrefs(profile?.id);
-      router.replace(
-        workspacePath(
-          state.organization.slug,
-          resolveDefaultStartPage(prefs.defaultStartPage, canManage),
-        ),
-      );
-    }
+
+    let cancelled = false;
+    void (async () => {
+      // Recover invitees who were auto-bootstrapped into a pending org: claim
+      // any real workspace invites and switch into that account.
+      try {
+        const res = await fetch("/api/accounts/invites/claim", {
+          method: "POST",
+        });
+        if (res.ok) {
+          const body = (await res.json()) as {
+            claimed?: number;
+            workspace?: { slug?: string } | null;
+          };
+          if (!cancelled && (body.claimed ?? 0) > 0 && body.workspace?.slug) {
+            window.location.href = `/${body.workspace.slug}/dashboard`;
+            return;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+
+      if (cancelled) return;
+      if (status === "approved" && !state.organization.disabled_at) {
+        if (!state.organization.slug) return;
+        const prefs = readUserViewPrefs(profile?.id);
+        router.replace(
+          workspacePath(
+            state.organization.slug,
+            resolveDefaultStartPage(prefs.defaultStartPage, canManage),
+          ),
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     ready,
     isAuthenticated,
@@ -93,7 +122,7 @@ export default function PendingApprovalPage() {
             ? state.organization.rejection_reason
               ? `Your account for “${state.organization.name || "this workspace"}” was not approved: ${state.organization.rejection_reason}`
               : `Your account for “${state.organization.name || "this workspace"}” was not approved. Contact the platform administrator.`
-            : `Your account for “${state.organization.name || "this workspace"}” is waiting for a platform administrator to approve it. You can sign out and come back later.`}
+            : `Your account for “${state.organization.name || "this workspace"}” is waiting for a platform administrator to approve it. If you were invited to someone else’s workspace, ask them to resend the invite, then sign in again.`}
         </p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
           <Button

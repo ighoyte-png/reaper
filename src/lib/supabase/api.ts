@@ -753,7 +753,10 @@ export async function switchOrganizationRpc(
   };
 }
 
-/** Create org/profile if the auth user has none (common after email confirm). */
+/**
+ * Create org/profile only for public registration (user_metadata.org_name).
+ * Invited members must not land here — claim pending invites instead.
+ */
 export async function ensureProfileForUser(
   supabase: SupabaseClient,
   user: { id: string; email?: string | null; user_metadata?: Record<string, unknown> },
@@ -768,12 +771,15 @@ export async function ensureProfileForUser(
   if (membership) return false;
 
   const meta = user.user_metadata ?? {};
+  const orgName =
+    typeof meta.org_name === "string" ? meta.org_name.trim() : "";
+  // No org_name ⇒ invited / recovery user — do not invent a pending workspace.
+  if (!orgName) return false;
+
   const fullName =
-    (typeof meta.full_name === "string" && meta.full_name) ||
+    (typeof meta.full_name === "string" && meta.full_name.trim()) ||
     user.email?.split("@")[0] ||
     "Owner";
-  const orgName =
-    (typeof meta.org_name === "string" && meta.org_name) || "My workspace";
 
   await bootstrapOrganization(supabase, orgName, fullName);
   return true;
