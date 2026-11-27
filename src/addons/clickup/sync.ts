@@ -33,6 +33,7 @@ import {
   taskToClickUpBody,
   taskContentHash,
 } from "@/addons/clickup/mappers";
+import { orderOutboxRowsForDrain } from "@/addons/clickup/outbox-order";
 import type {
   ClickUpAuth,
   ClickUpStatusMap,
@@ -1141,8 +1142,9 @@ export async function reconcileProject(args: {
     }
   }
 
-  // Do not rewrite Reaper sort_order from GET /list/task — ClickUp default
-  // order is `created`, not manual list order (Resync was flipping lists).
+  // REAPER ORDER = SOURCE OF TRUTH (list + Gantt). Never call
+  // applyClickUpListOrderToReaper / rewrite sort_order from GET /list/task —
+  // ClickUp default order is `created`, not manual UI order.
 
   const { data: milestones } = await admin
     .from("milestones")
@@ -1749,6 +1751,16 @@ export async function processOutbox(
 ): Promise<{ processed: number; errors: string[] }> {
   const errors: string[] = [];
   let processed = 0;
+
+  // Serverless kills mid-push leave rows locked; free so the next drain can retry.
+  const STALE_LOCK_MS = 60 * 1000;
+  await admin
+    .from("addon_clickup_outbox")
+    .update({ locked_at: null })
+    .eq("organization_id", orgId)
+    .not("locked_at", "is", null)
+    .lt("locked_at", new Date(Date.now() - STALE_LOCK_MS).toISOString());
+
   const { data: rows } = await admin
     .from("addon_clickup_outbox")
     .select("*")
@@ -1758,12 +1770,61 @@ export async function processOutbox(
     .order("created_at", { ascending: true })
     .limit(limit);
 
-  for (const row of rows ?? []) {
+  const rawRows = rows ?? [];
+  if (rawRows.length === 0) return { processed, errors };
+
+  // Reaper sort_order is source of truth: create unlinked tasks in that order
+  // so ClickUp append/create-completion order best-effort matches the list/Gantt.
+  const taskIds = rawRows
+    .filter((r) => r.entity_type === "task" && r.op !== "delete")
+    .map((r) => String(r.reaper_id));
+  const taskSortOrder = new Map<string, number>();
+  const linkedTaskIds = new Set<string>();
+  if (taskIds.length > 0) {
+    const { data: taskRows } = await admin
+      .from("tasks")
+      .select("id, sort_order")
+      .eq("organization_id", orgId)
+      .in("id", taskIds);
+    for (const t of taskRows ?? []) {
+      taskSortOrder.set(String(t.id), Number(t.sort_order) || 0);
+    }
+    const { data: links } = await admin
+      .from("addon_clickup_links")
+      .select("reaper_id")
+      .eq("organization_id", orgId)
+      .eq("entity_type", "task")
+      .in("reaper_id", taskIds);
+    for (const l of links ?? []) {
+      linkedTaskIds.add(String(l.reaper_id));
+    }
+  }
+
+  const ordered = orderOutboxRowsForDrain(
+    rawRows.map((r) => ({
+      id: String(r.id),
+      entity_type: String(r.entity_type),
+      reaper_id: String(r.reaper_id),
+      op: String(r.op),
+      created_at: (r.created_at as string | null) ?? null,
+    })),
+    { taskSortOrder, linkedTaskIds },
+  );
+  const byId = new Map(rawRows.map((r) => [String(r.id), r]));
+
+  for (const orderedRow of ordered) {
+    const row = byId.get(orderedRow.id);
+    if (!row) continue;
     const now = new Date().toISOString();
-    await admin
+    // CAS lock — overlapping drains (browser + cron + tabs) must not race creates.
+    const { data: locked } = await admin
       .from("addon_clickup_outbox")
       .update({ locked_at: now })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .is("locked_at", null)
+      .select("id")
+      .maybeSingle();
+    if (!locked) continue;
 
     try {
       await pushEntityFromOutbox({

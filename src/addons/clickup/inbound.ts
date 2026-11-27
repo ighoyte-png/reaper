@@ -1470,8 +1470,8 @@ export async function applyInboundEvent(args: {
     actorProfileId,
     fields: fieldHints,
   });
-  // Do not rewrite sort_order from GET /list/task (default created order ≠
-  // manual UI order). Reaper list order stays local; CU cannot set position.
+  // REAPER ORDER = SOURCE OF TRUTH (list + Gantt). Never refresh sort_order
+  // from GET /list/task (created ≠ manual UI). CU cannot set position.
   return result === "applied" ? "processed" : "ignored";
 }
 
