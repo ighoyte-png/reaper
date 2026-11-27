@@ -8,10 +8,11 @@ Production stance: prefer **provision / invite-only** tenants, or public `/regis
 
 | Action | Actor | Path |
 |--------|-------|------|
-| Create account | End user | `/register` → Auth signup → `bootstrap_organization` (when `allow_workspace_signup`) |
+| Create account | End user | `/register` → Auth signup → `/check-email` (if confirm required) → first login `bootstrap_organization` (when `allow_workspace_signup`) |
 | Create account | Platform | `POST /api/platform/accounts` |
 | Approve / reject | Platform | `POST …/accounts/[id]/approve` or `…/reject` |
 | Enter account | Platform | `POST /api/platform/accounts/[id]/enter` (+ audit) |
+| Leave workspaces | Platform | `POST /api/platform/leave` — detach operator from all memberships (platform-only) |
 | Disable / rename / delete | Platform | `PATCH/DELETE …/accounts/[id]` (+ audit) |
 | Invite member | Manager | `POST /api/accounts/invites` (+ People invite still works) |
 | Accept invite | Invitee | `/invite/accept?token=…` → membership |
@@ -77,5 +78,6 @@ Existing `/api/platform/workspaces*` remain as compatibility aliases.
 ## Identity notes
 
 - Platform access: `PLATFORM_ADMIN_EMAILS` (break-glass) **or** `platform_operators` row; `app_metadata.platform_admin` set when granting in-app.
+- Preferred shape: platform operator Auth user with **zero** `organization_memberships` (platform-only). **Enter** is for temporary inspection; use **Leave workspaces** afterward so seats aren’t consumed and `/admin` stays the home.
 - Membership SoT: `organization_memberships` (+ `is_owner`).
 - Directory: `people` (login optional via `profile_id`).

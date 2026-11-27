@@ -3354,9 +3354,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
           throw new Error(message);
         }
         if (!data.session) {
-          const message =
-            "Check your email to confirm, then sign in. Your workspace will be created on first login.";
-          setAuthError(message);
+          // Email confirmation required — caller redirects to /check-email.
+          // Do not set authError; that would look like a failure on /register.
           return { needsConfirmation: true };
         }
         await bootstrapOrganization(client, orgName, fullName);

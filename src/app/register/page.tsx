@@ -37,7 +37,6 @@ function RegisterForm() {
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [allowSignup, setAllowSignup] = useState(true);
   const [requireApproval, setRequireApproval] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -107,21 +106,25 @@ function RegisterForm() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLocalError(null);
-    setNeedsConfirmation(false);
     if (!allowSignup) {
       setLocalError("Registration is currently closed.");
       return;
     }
     setBusy(true);
     try {
+      const trimmedEmail = email.trim();
       const result = await signup(
-        email.trim(),
+        trimmedEmail,
         password,
-        fullName.trim() || email.split("@")[0],
+        fullName.trim() || trimmedEmail.split("@")[0],
         orgName.trim() || "My workspace",
       );
       if (result.needsConfirmation) {
-        setNeedsConfirmation(true);
+        const params = new URLSearchParams();
+        if (trimmedEmail) params.set("email", trimmedEmail);
+        if (requireApproval) params.set("approval", "1");
+        router.replace(`/check-email?${params.toString()}`);
+        return;
       }
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Registration failed");
@@ -254,13 +257,6 @@ function RegisterForm() {
             {(localError || authError) && (
               <p className="text-sm text-[var(--status-over)]">
                 {localError || authError}
-              </p>
-            )}
-            {needsConfirmation && (
-              <p className="text-sm text-[var(--status-healthy)]">
-                Check your email to confirm, then sign in. Your workspace will
-                be created on first login
-                {requireApproval ? " and may require approval" : ""}.
               </p>
             )}
 

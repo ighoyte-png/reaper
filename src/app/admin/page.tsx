@@ -100,10 +100,12 @@ type AccountDetail = {
 };
 
 export default function PlatformAdminPage() {
-  const { ready, isAuthenticated, logout, state } = useData();
+  const { ready, isAuthenticated, isPlatformOnly, logout, refresh, state } =
+    useData();
   const router = useRouter();
   const { push } = useToast();
   useDocumentTitle("Platform");
+  const [leaveBusy, setLeaveBusy] = useState(false);
 
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [denyReason, setDenyReason] = useState<string | null>(null);
@@ -620,6 +622,23 @@ export default function PlatformAdminPage() {
     ? `/${state.organization.slug}/dashboard`
     : null;
 
+  async function leaveWorkspaces() {
+    setLeaveBusy(true);
+    try {
+      const res = await fetch("/api/platform/leave", { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        push(body.error ?? "Could not leave workspaces", "warning");
+        return;
+      }
+      push("Detached from all workspaces — platform-only");
+      await refresh();
+      router.replace("/admin");
+    } finally {
+      setLeaveBusy(false);
+    }
+  }
+
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[var(--page-bg)] text-[var(--text)]">
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--bg)] px-3">
@@ -636,15 +655,26 @@ export default function PlatformAdminPage() {
         <div className="ml-auto flex items-center gap-1">
           <ThemeToggle />
           {homeHref ? (
-            <Link
-              href={homeHref}
-              className="rounded-md px-2.5 py-1.5 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
-            >
-              Workspace
-            </Link>
+            <>
+              <Link
+                href={homeHref}
+                className="rounded-md px-2.5 py-1.5 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
+              >
+                Workspace
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={leaveBusy}
+                title="Remove your memberships and stay on Platform only"
+                onClick={() => void leaveWorkspaces()}
+              >
+                {leaveBusy ? "Leaving…" : "Leave workspaces"}
+              </Button>
+            </>
           ) : (
             <span className="px-2.5 py-1.5 text-xs text-[var(--text-muted)]">
-              Platform-only
+              {isPlatformOnly ? "Platform-only" : "No workspace"}
             </span>
           )}
           <Button
