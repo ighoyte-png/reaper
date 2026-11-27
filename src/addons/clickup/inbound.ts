@@ -1506,10 +1506,11 @@ export async function applyInboundEvent(args: {
     actorProfileId,
     fields: fieldHints,
   });
-  // Reorder-only ClickUp edits are content-stale. Refresh on taskUpdated
-  // (drag reorder); skip dedicated status/assignee/due events to limit list GETs.
+  // CU→Reaper order: apply on real ClickUp updates / reorder-only (stale).
+  // Never on outbound echo — Reaper cannot push position, so refreshing from
+  // ClickUp’s unchanged list would snap local reorders back.
   let orderChanged = 0;
-  if (eventName === "taskUpdated") {
+  if (eventName === "taskUpdated" && result !== "echo") {
     orderChanged = await refreshListOrderFromClickUp({
       admin,
       orgId,
