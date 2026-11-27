@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <title>Confirm your email</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background-color: #f3f4f6;
+      font-family:
+        'Google Sans',
+        ui-sans-serif,
+        system-ui,
+        -apple-system,
+        Segoe UI,
+        Roboto,
+        Helvetica,
+        Arial,
+        sans-serif;
+      color: #1f2933;
+      -webkit-font-smoothing: antialiased;
+    "
+  >
+    <!-- Preheader (hidden) -->
+    <div
+      style="
+        display: none;
+        max-height: 0;
+        overflow: hidden;
+        opacity: 0;
+        mso-hide: all;
+      "
+    >
+      Confirm your email to finish setting up Reaper.
+    </div>
+
+    <table
+      role="presentation"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      style="background-color: #f3f4f6; width: 100%"
+    >
+      <tr>
+        <td align="center" style="padding: 40px 16px">
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            style="
+              max-width: 480px;
+              width: 100%;
+              background-color: #ffffff;
+              border: 1px solid #e5e7eb;
+              border-radius: 12px;
+              overflow: hidden;
+            "
+          >
+            <!-- Brand bar -->
+            <tr>
+              <td
+                style="
+                  padding: 28px 32px 8px 32px;
+                  background: linear-gradient(
+                    180deg,
+                    #f8fafc 0%,
+                    #ffffff 100%
+                  );
+                "
+              >
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="vertical-align: middle; padding-right: 12px">
+                      <img
+                        src="{{ .SiteURL }}/reaper_logo.svg"
+                        width="40"
+                        height="36"
+                        alt=""
+                        style="
+                          display: block;
+                          border: 0;
+                          outline: none;
+                          text-decoration: none;
+                        "
+                      />
+                    </td>
+                    <td style="vertical-align: middle">
+                      <div
+                        style="
+                          font-size: 20px;
+                          font-weight: 650;
+                          letter-spacing: -0.02em;
+                          color: #0f1115;
+                          line-height: 1;
+                        "
+                      >
+                        Reaper
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Body -->
+            <tr>
+              <td style="padding: 20px 32px 8px 32px">
+                <h1
+                  style="
+                    margin: 0 0 12px 0;
+                    font-size: 22px;
+                    font-weight: 650;
+                    letter-spacing: -0.03em;
+                    line-height: 1.25;
+                    color: #0f1115;
+                  "
+                >
+                  Confirm your email
+                </h1>
+                <p
+                  style="
+                    margin: 0 0 8px 0;
+                    font-size: 15px;
+                    line-height: 1.55;
+                    color: #4b5563;
+                  "
+                >
+                  {{ if index .Data "full_name" }}Hi {{ index .Data "full_name" }},{{ else }}Hi,{{ end }}
+                </p>
+                <p
+                  style="
+                    margin: 0;
+                    font-size: 15px;
+                    line-height: 1.55;
+                    color: #4b5563;
+                  "
+                >
+                  One click confirms
+                  <strong style="color: #1f2933; font-weight: 600"
+                    >{{ .Email }}</strong
+                  >
+                  and finishes setting up your Reaper account.
+                </p>
+              </td>
+            </tr>
+
+            <!-- CTA -->
+            <tr>
+              <td style="padding: 28px 32px 8px 32px" align="left">
+                <a
+                  href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/login"
+                  style="
+                    display: inline-block;
+                    background-color: #2563eb;
+                    color: #ffffff !important;
+                    font-size: 14px;
+                    font-weight: 600;
+                    letter-spacing: 0.01em;
+                    text-decoration: none;
+                    padding: 12px 22px;
+                    border-radius: 8px;
+                    border: 1px solid #1d4ed8;
+                  "
+                  >Confirm email address</a
+                >
+              </td>
+            </tr>
+
+            <!-- Fallback link -->
+            <tr>
+              <td style="padding: 20px 32px 32px 32px">
+                <p
+                  style="
+                    margin: 0 0 8px 0;
+                    font-size: 12px;
+                    line-height: 1.5;
+                    color: #9ca3af;
+                  "
+                >
+                  Button not working? Paste this link into your browser:
+                </p>
+                <p
+                  style="
+                    margin: 0;
+                    font-size: 12px;
+                    line-height: 1.5;
+                    word-break: break-all;
+                  "
+                >
+                  <a
+                    href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/login"
+                    style="color: #2563eb; text-decoration: underline"
+                    >{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/login</a
+                  >
+                </p>
+              </td>
+            </tr>
+          </table>
+
+          <!-- Footer -->
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            style="max-width: 480px; width: 100%"
+          >
+            <tr>
+              <td
+                style="
+                  padding: 20px 8px 0 8px;
+                  text-align: center;
+                  font-size: 12px;
+                  line-height: 1.5;
+                  color: #9ca3af;
+                "
+              >
+                Project management that doesn’t get in your way.
+                <br />
+                If you didn’t create a Reaper account, you can ignore this
+                email.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

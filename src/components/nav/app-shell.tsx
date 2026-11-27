@@ -23,6 +23,18 @@ const ClickUpOutboxPoller = lazy(() =>
   })),
 );
 
+const InviteTeamWizard = lazy(() =>
+  import("@/components/onboarding/invite-team-wizard").then((m) => ({
+    default: m.InviteTeamWizard,
+  })),
+);
+
+const WelcomeMemberWizard = lazy(() =>
+  import("@/components/onboarding/welcome-member-wizard").then((m) => ({
+    default: m.WelcomeMemberWizard,
+  })),
+);
+
 function isSchedulePath(pathname: string, workspaceSlug: string): boolean {
   const path = stripWorkspacePrefix(pathname, workspaceSlug);
   return path === "/schedule" || path.startsWith("/schedule/");
@@ -194,6 +206,12 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
             <NotificationCenter />
             <Suspense fallback={null}>
               <ClickUpOutboxPoller />
+            </Suspense>
+            <Suspense fallback={null}>
+              <InviteTeamWizard />
+            </Suspense>
+            <Suspense fallback={null}>
+              <WelcomeMemberWizard />
             </Suspense>
           </div>
         </div>

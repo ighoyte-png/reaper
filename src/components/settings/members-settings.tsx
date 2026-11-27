@@ -122,8 +122,8 @@ export function MembersSettings() {
     <Panel>
       <h2 className="text-sm font-semibold">Members & invites</h2>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
-        Invite people by email. They join after accepting; directory People rows
-        can still be invited from the People page.
+        Invite by email — they join after accepting. The login invite wizard
+        covers the same flow; manage pending invites here anytime.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
