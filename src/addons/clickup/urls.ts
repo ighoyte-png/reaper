@@ -1,9 +1,13 @@
 /**
  * ClickUp internal URLs.
  * @see https://help.clickup.com/hc/en-us/articles/41521317138455
+ *
+ * Folder Overview (`/v/o/f/{folderId}`) is the documented folder deep link.
+ * ClickUp does not publish a stable URL to open a folder with a specific
+ * Views-bar tab (e.g. List) preselected — that requires a view id.
  */
 
-/** Folder Overview — can render blank after white-label session refresh. */
+/** Folder Overview URL. */
 export function clickUpFolderUrl(
   teamId: string | null | undefined,
   folderId: string | null | undefined,
@@ -14,7 +18,7 @@ export function clickUpFolderUrl(
   return `https://app.clickup.com/${encodeURIComponent(team)}/v/o/f/${encodeURIComponent(folder)}`;
 }
 
-/** List view — reliable landing page with task content. */
+/** List view URL (a ClickUp List, not a folder tab). */
 export function clickUpListUrl(
   teamId: string | null | undefined,
   listId: string | null | undefined,
