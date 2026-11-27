@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { useData } from "@/lib/data/store";
@@ -18,7 +19,6 @@ function LoginForm() {
   const {
     loginDemo,
     login,
-    signup,
     requestPasswordReset,
     isAuthenticated,
     isPlatformOnly,
@@ -31,17 +31,14 @@ function LoginForm() {
   } = useData();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [orgName, setOrgName] = useState("");
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
   const [allowWorkspaceSignup, setAllowWorkspaceSignup] = useState(true);
 
-  useDocumentTitle(tab === "signup" ? "Sign up" : "Log in");
+  useDocumentTitle("Log in");
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +52,6 @@ function LoginForm() {
         if (cancelled) return;
         const allow = body.allow_workspace_signup !== false;
         setAllowWorkspaceSignup(allow);
-        if (!allow) setTab("login");
       } catch {
         /* default allow */
       }
@@ -84,10 +80,16 @@ function LoginForm() {
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
-    if (isPlatformOnly || !state.organization.slug) {
-      if (isPlatformOnly) router.replace("/admin");
+    if (isPlatformOnly) {
+      router.replace("/admin");
       return;
     }
+    const approval = state.organization.approval_status ?? "approved";
+    if (approval === "pending" || approval === "rejected") {
+      router.replace("/pending-approval");
+      return;
+    }
+    if (!state.organization.slug) return;
     const next = safeAuthNextPath(searchParams.get("next"));
     if (next) {
       router.replace(next);
@@ -108,6 +110,7 @@ function LoginForm() {
     canManage,
     router,
     state.organization.slug,
+    state.organization.approval_status,
     searchParams,
   ]);
 
@@ -116,22 +119,7 @@ function LoginForm() {
     setLocalError(null);
     setBusy(true);
     try {
-      if (tab === "login") {
-        await login(email.trim(), password);
-      } else {
-        if (!allowWorkspaceSignup) {
-          throw new Error("Workspace creation is disabled");
-        }
-        const result = await signup(
-          email.trim(),
-          password,
-          fullName.trim() || email.split("@")[0],
-          orgName.trim() || "My workspace",
-        );
-        if (result.needsConfirmation) {
-          setTab("login");
-        }
-      }
+      await login(email.trim(), password);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Auth failed");
     } finally {
@@ -185,58 +173,9 @@ function LoginForm() {
         </>
       ) : (
         <>
-          <div className="mt-8 flex rounded-md border border-[var(--border)] p-0.5 text-sm">
-            <button
-              type="button"
-              className={`h-8 flex-1 rounded ${tab === "login" ? "bg-[var(--bg-elevated)] font-medium" : "text-[var(--text-muted)]"}`}
-              onClick={() => setTab("login")}
-            >
-              Sign in
-            </button>
-            {allowWorkspaceSignup ? (
-              <button
-                type="button"
-                className={`h-8 flex-1 rounded ${tab === "signup" ? "bg-[var(--bg-elevated)] font-medium" : "text-[var(--text-muted)]"}`}
-                onClick={() => setTab("signup")}
-              >
-                Create workspace
-              </button>
-            ) : null}
-          </div>
-          {!allowWorkspaceSignup ? (
-            <p className="mt-2 text-xs text-[var(--text-muted)]">
-              New workspace creation is currently closed. Sign in to an existing
-              account.
-            </p>
-          ) : null}
+          <h1 className="mt-8 text-lg font-semibold">Sign in</h1>
 
           <form onSubmit={onSubmit} className="mt-4 space-y-3">
-            {tab === "signup" && (
-              <>
-                <p className="text-xs text-[var(--text-muted)]">
-                  For a brand-new email only. Already have an account? Sign in,
-                  then use Settings → Create workspace.
-                </p>
-                <label className="block text-xs text-[var(--text-muted)]">
-                  Full name
-                  <input
-                    className={inputClass}
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    autoComplete="name"
-                  />
-                </label>
-                <label className="block text-xs text-[var(--text-muted)]">
-                  Organization name
-                  <input
-                    className={inputClass}
-                    value={orgName}
-                    onChange={(e) => setOrgName(e.target.value)}
-                    placeholder="Northwind Studio"
-                  />
-                </label>
-              </>
-            )}
             <label className="block text-xs text-[var(--text-muted)]">
               Email
               <input
@@ -257,9 +196,7 @@ function LoginForm() {
                 className={inputClass}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoComplete={
-                  tab === "login" ? "current-password" : "new-password"
-                }
+                autoComplete="current-password"
               />
             </label>
 
@@ -282,23 +219,31 @@ function LoginForm() {
               disabled={busy}
               className="h-10 w-full rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:opacity-60"
             >
-              {busy
-                ? "Working…"
-                : tab === "login"
-                  ? "Sign in"
-                  : "Create workspace"}
+              {busy ? "Working…" : "Sign in"}
             </button>
           </form>
 
-          {tab === "login" && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void onForgotPassword()}
-              className="mt-3 w-full text-center text-xs text-[var(--text-muted)] underline-offset-2 hover:underline disabled:opacity-60"
-            >
-              Forgot password?
-            </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onForgotPassword()}
+            className="mt-3 w-full text-center text-xs text-[var(--text-muted)] underline-offset-2 hover:underline disabled:opacity-60"
+          >
+            Forgot password?
+          </button>
+
+          {allowWorkspaceSignup ? (
+            <p className="mt-4 text-center text-xs text-[var(--text-muted)]">
+              New here?{" "}
+              <Link href="/register" className="text-[var(--accent)] underline">
+                Create an account
+              </Link>
+            </p>
+          ) : (
+            <p className="mt-4 text-center text-xs text-[var(--text-muted)]">
+              New account registration is currently closed. Sign in to an
+              existing account or use an invite.
+            </p>
           )}
         </>
       )}

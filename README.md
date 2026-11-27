@@ -40,14 +40,16 @@ Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
 
 6. Open the app → **Create workspace** (email/password) → **Settings → Load demo data**.
 
-7. **Accounts & invites**: apply migrations through [`122_enterprise_accounts.sql`](supabase/migrations/122_enterprise_accounts.sql). Add `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SITE_URL`. Configure Auth Site URL / Redirect URLs and SMTP.  
-   - **Platform provision (preferred in production):** `/admin` → **Create account** (owner email invite + org + owner Person). Turn **Allow new workspace creation** off for production.  
+7. **Accounts & invites**: apply migrations through [`123_public_registration_approval.sql`](supabase/migrations/123_public_registration_approval.sql). Add `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SITE_URL`. Configure Auth Site URL / Redirect URLs and SMTP.  
+   - **Public registration:** `/register` (gated by **Allow public registration** on `/admin`). Optional **Require account approval** → pending screen until Approve/Reject.  
+   - **Platform provision:** `/admin` → **Create account** (owner email invite + org + owner Person). Turn public registration off for invite-only production.  
+   - **Addon allowlists:** platform defaults + per-account toggles in account Detail (ClickUp today). Tenant still configures/enables the addon after allow.  
    - **Workspace invites:** **Settings → Members** (pending invites with resend/revoke) or **People → Invite**. Accept via `/invite/accept`.  
    - Lifecycle details: [`docs/ACCOUNTS.md`](docs/ACCOUNTS.md).
 
-8. **Platform admin**: set `PLATFORM_ADMIN_EMAILS` (break-glass), create the Auth user without “Create workspace”, set `app_metadata.platform_admin=true` (or `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true` temporarily). Sign in → `/admin`. Additional operators can be granted in-app under **Platform operators**. **Enter** upserts an admin membership without wiping other memberships. Audit events are written to `platform_audit_log`.
+8. **Platform admin**: set `PLATFORM_ADMIN_EMAILS` (break-glass), create the Auth user without self-serve registration, set `app_metadata.platform_admin=true` (or `PLATFORM_ADMIN_ALLOW_EMAIL_ONLY=true` temporarily). Sign in → `/admin`. Additional operators can be granted in-app under **Platform operators**. **Enter** upserts an admin membership without wiping other memberships. Audit events are written to `platform_audit_log`.
 
-9. **Multi-workspace memberships**: one Auth user → many orgs (`organization_memberships`). URL `/{workspace}/…` selects the active org. Soft-deleting a person removes that org’s membership only. Self-serve extra workspaces (when signup allowed): **Settings → Create workspace**.
+9. **Multi-workspace memberships**: one Auth user → many orgs (`organization_memberships`). URL `/{workspace}/…` selects the active org. Soft-deleting a person removes that org’s membership only. Self-serve extra workspaces (when registration allowed): **Settings → Create workspace**.
 
 10. **Billing hooks (no Checkout yet):** each org has a `billing_accounts` row (`plan_key`, `status`, `seat_limit`, Stripe ids). Platform account detail can edit plan fields manually. Optional `STRIPE_WEBHOOK_SECRET` + `POST /api/billing/stripe-webhook` updates subscription status when Stripe is wired later.
 

@@ -36,7 +36,7 @@ export async function GET(_request: Request, { params }: Params) {
     const admin = createAdminClient();
     const { data: org, error: orgError } = await admin
       .from("organizations")
-      .select("id, share_enabled, share_token, disabled_at")
+      .select("id, share_enabled, share_token, disabled_at, approval_status")
       .eq("share_token", shareToken)
       .maybeSingle();
 
@@ -56,7 +56,12 @@ export async function GET(_request: Request, { params }: Params) {
       );
     }
 
-    if (!org || !org.share_enabled || org.disabled_at) {
+    if (
+      !org ||
+      !org.share_enabled ||
+      org.disabled_at ||
+      (org.approval_status && org.approval_status !== "approved")
+    ) {
       return notFound();
     }
 

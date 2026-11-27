@@ -26,6 +26,9 @@ type AccountRow = {
   plan_key: string;
   billing_status: string;
   seat_limit: number | null;
+  approval_status?: string | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
 };
 
 type OperatorRow = {
@@ -33,6 +36,8 @@ type OperatorRow = {
   email: string;
   created_at: string;
 };
+
+type AddonRow = { addon_key: string; allowed: boolean };
 
 type AccountDetail = {
   account: AccountRow & { owner_user_id?: string | null };
@@ -42,6 +47,7 @@ type AccountDetail = {
     seatLimit: number | null;
     seatUsed: number;
   };
+  addons?: AddonRow[];
   members: {
     user_id: string;
     email: string;
@@ -74,6 +80,8 @@ export default function PlatformAdminPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [denyReason, setDenyReason] = useState<string | null>(null);
   const [allowSignup, setAllowSignup] = useState(true);
+  const [requireApproval, setRequireApproval] = useState(false);
+  const [defaultAddons, setDefaultAddons] = useState<string[]>([]);
   const [maxImageMb, setMaxImageMb] = useState(10);
   const [maxDocumentMb, setMaxDocumentMb] = useState(25);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
@@ -93,9 +101,12 @@ export default function PlatformAdminPage() {
   const [operatorEmail, setOperatorEmail] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AccountDetail | null>(null);
+  const [detailAddons, setDetailAddons] = useState<AddonRow[]>([]);
   const [planKey, setPlanKey] = useState("free");
   const [billingStatus, setBillingStatus] = useState("none");
   const [seatLimit, setSeatLimit] = useState("");
+  const [rejectTarget, setRejectTarget] = useState<AccountRow | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,10 +140,18 @@ export default function PlatformAdminPage() {
       if (settingsRes.ok) {
         const s = (await settingsRes.json()) as {
           allow_workspace_signup?: boolean;
+          require_account_approval?: boolean;
+          default_allowed_addons?: string[];
           max_image_bytes?: number;
           max_document_bytes?: number;
         };
         setAllowSignup(Boolean(s.allow_workspace_signup));
+        setRequireApproval(Boolean(s.require_account_approval));
+        setDefaultAddons(
+          Array.isArray(s.default_allowed_addons)
+            ? s.default_allowed_addons
+            : [],
+        );
         if (typeof s.max_image_bytes === "number" && s.max_image_bytes > 0) {
           setMaxImageMb(Math.round(s.max_image_bytes / (1024 * 1024)));
         }
@@ -171,6 +190,7 @@ export default function PlatformAdminPage() {
       }
       const body = (await res.json()) as AccountDetail;
       setDetail(body);
+      setDetailAddons(body.addons ?? [{ addon_key: "clickup", allowed: false }]);
       setPlanKey(body.entitlements.planKey);
       setBillingStatus(body.entitlements.status);
       setSeatLimit(
@@ -231,9 +251,107 @@ export default function PlatformAdminPage() {
     }
     push(
       next
-        ? "New workspace creation enabled"
-        : "New workspace creation disabled",
+        ? "Public registration enabled"
+        : "Public registration disabled",
     );
+  }
+
+  async function toggleRequireApproval(next: boolean) {
+    setRequireApproval(next);
+    const res = await fetch("/api/platform/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ require_account_approval: next }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      push(body.error ?? "Could not update setting", "warning");
+      setRequireApproval(!next);
+      return;
+    }
+    push(next ? "Account approval required" : "Accounts auto-approved");
+  }
+
+  async function toggleDefaultAddon(key: string, next: boolean) {
+    const updated = next
+      ? [...new Set([...defaultAddons, key])]
+      : defaultAddons.filter((k) => k !== key);
+    setDefaultAddons(updated);
+    const res = await fetch("/api/platform/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ default_allowed_addons: updated }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      push(body.error ?? "Could not update default addons", "warning");
+      setDefaultAddons(defaultAddons);
+      return;
+    }
+    push("Default addons updated");
+  }
+
+  async function approveAccountRow(row: AccountRow) {
+    setBusyId(row.id);
+    try {
+      const res = await fetch(`/api/platform/accounts/${row.id}/approve`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        push(body.error ?? "Approve failed", "warning");
+        return;
+      }
+      push(`Approved ${row.name}`);
+      await load();
+      if (detailId === row.id) await loadDetail(row.id);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function confirmReject() {
+    if (!rejectTarget) return;
+    setBusyId(rejectTarget.id);
+    try {
+      const res = await fetch(
+        `/api/platform/accounts/${rejectTarget.id}/reject`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: rejectReason.trim() || undefined }),
+        },
+      );
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        push(body.error ?? "Reject failed", "warning");
+        return;
+      }
+      push(`Rejected ${rejectTarget.name}`);
+      setRejectTarget(null);
+      setRejectReason("");
+      await load();
+      if (detailId === rejectTarget.id) await loadDetail(rejectTarget.id);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveDetailAddons() {
+    if (!detailId) return;
+    const res = await fetch(`/api/platform/accounts/${detailId}/addons`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addons: detailAddons }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      push(body.error ?? "Could not update addons", "warning");
+      return;
+    }
+    const body = (await res.json()) as { addons?: AddonRow[] };
+    setDetailAddons(body.addons ?? detailAddons);
+    push("Addon allowlist saved");
   }
 
   async function enterAccount(row: AccountRow) {
@@ -501,10 +619,10 @@ export default function PlatformAdminPage() {
 
       <main className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6">
         <Panel>
-          <h1 className="text-sm font-semibold">Workspace creation</h1>
+          <h1 className="text-sm font-semibold">Public registration</h1>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Production should usually leave this off and provision accounts from
-            this console. When off, login and Settings hide Create workspace.
+            Controls <code className="text-[10px]">/register</code>. You can
+            still provision accounts from this console when registration is off.
           </p>
           <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm">
             <input
@@ -513,7 +631,30 @@ export default function PlatformAdminPage() {
               checked={allowSignup}
               onChange={(e) => void toggleSignup(e.target.checked)}
             />
-            Allow new workspace creation
+            Allow public registration
+          </label>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--accent)]"
+              checked={requireApproval}
+              onChange={(e) => void toggleRequireApproval(e.target.checked)}
+            />
+            Require account approval
+          </label>
+          <p className="mt-3 text-xs font-medium text-[var(--text-muted)]">
+            Default allowed addons (applied on approve / platform provision)
+          </p>
+          <label className="mt-1 flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--accent)]"
+              checked={defaultAddons.includes("clickup")}
+              onChange={(e) =>
+                void toggleDefaultAddon("clickup", e.target.checked)
+              }
+            />
+            ClickUp
           </label>
         </Panel>
 
@@ -601,6 +742,67 @@ export default function PlatformAdminPage() {
           )}
         </Panel>
 
+        {accounts.some((a) => a.approval_status === "pending") ? (
+          <Panel>
+            <h2 className="text-sm font-semibold">Pending accounts</h2>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Public registrations waiting for approval.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {accounts
+                .filter((a) => a.approval_status === "pending")
+                .map((row) => (
+                  <li
+                    key={row.id}
+                    className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--border)] pt-2 text-sm first:border-t-0 first:pt-0"
+                  >
+                    <div>
+                      <button
+                        type="button"
+                        className="font-medium hover:underline"
+                        onClick={() => setDetailId(row.id)}
+                      >
+                        {row.name}
+                      </button>
+                      <div className="font-mono text-xs text-[var(--text-muted)]">
+                        /{row.slug}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={busyId === row.id}
+                        onClick={() => void approveAccountRow(row)}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        variant="destructiveOutline"
+                        size="sm"
+                        disabled={busyId === row.id}
+                        onClick={() => {
+                          setRejectTarget(row);
+                          setRejectReason("");
+                        }}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busyId === row.id}
+                        onClick={() => void enterAccount(row)}
+                      >
+                        Enter
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          </Panel>
+        ) : null}
+
         <Panel>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold">Accounts</h2>
@@ -635,6 +837,7 @@ export default function PlatformAdminPage() {
                     <th className="px-3 py-2 font-medium">Name</th>
                     <th className="px-3 py-2 font-medium">Plan</th>
                     <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Approval</th>
                     <th className="px-3 py-2 font-medium">Size</th>
                     <th className="px-3 py-2 font-medium">Actions</th>
                   </tr>
@@ -643,6 +846,7 @@ export default function PlatformAdminPage() {
                   {accounts.map((row) => {
                     const disabled = Boolean(row.disabled_at);
                     const busy = busyId === row.id;
+                    const approval = row.approval_status ?? "approved";
                     return (
                       <tr
                         key={row.id}
@@ -675,6 +879,20 @@ export default function PlatformAdminPage() {
                             {disabled ? "Disabled" : "Active"}
                           </span>
                         </td>
+                        <td className="px-3 py-2.5">
+                          <span
+                            className={cn(
+                              "text-xs font-medium capitalize",
+                              approval === "approved"
+                                ? "text-[var(--status-healthy)]"
+                                : approval === "pending"
+                                  ? "text-[var(--text-muted)]"
+                                  : "text-[var(--status-over)]",
+                            )}
+                          >
+                            {approval}
+                          </span>
+                        </td>
                         <td className="px-3 py-2.5 text-xs text-[var(--text-muted)]">
                           {row.member_count} members · {row.project_count}{" "}
                           projects
@@ -697,6 +915,16 @@ export default function PlatformAdminPage() {
                             >
                               Detail
                             </Button>
+                            {approval === "pending" ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={busy}
+                                onClick={() => void approveAccountRow(row)}
+                              >
+                                Approve
+                              </Button>
+                            ) : null}
                             <Button
                               variant="ghost"
                               size="sm"
@@ -748,6 +976,12 @@ export default function PlatformAdminPage() {
                 <p className="font-mono text-xs text-[var(--text-muted)]">
                   /{detail.account.slug}
                 </p>
+                <p className="mt-1 text-xs capitalize text-[var(--text-muted)]">
+                  Approval: {detail.account.approval_status ?? "approved"}
+                  {detail.account.rejection_reason
+                    ? ` — ${detail.account.rejection_reason}`
+                    : ""}
+                </p>
               </div>
               <Button
                 variant="ghost"
@@ -758,7 +992,68 @@ export default function PlatformAdminPage() {
               </Button>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            {(detail.account.approval_status ?? "approved") === "pending" ? (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={busyId === detail.account.id}
+                  onClick={() => void approveAccountRow(detail.account)}
+                >
+                  Approve
+                </Button>
+                <Button
+                  variant="destructiveOutline"
+                  size="sm"
+                  disabled={busyId === detail.account.id}
+                  onClick={() => {
+                    setRejectTarget(detail.account);
+                    setRejectReason("");
+                  }}
+                >
+                  Reject
+                </Button>
+              </div>
+            ) : null}
+
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+              Allowed addons
+            </h3>
+            <div className="mt-1 space-y-1">
+              {detailAddons.map((addon) => (
+                <label
+                  key={addon.addon_key}
+                  className="flex cursor-pointer items-center gap-2 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[var(--accent)]"
+                    checked={addon.allowed}
+                    onChange={(e) =>
+                      setDetailAddons((prev) =>
+                        prev.map((a) =>
+                          a.addon_key === addon.addon_key
+                            ? { ...a, allowed: e.target.checked }
+                            : a,
+                        ),
+                      )
+                    }
+                  />
+                  <span className="capitalize">{addon.addon_key}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void saveDetailAddons()}
+              >
+                Save addons
+              </Button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <Field label="Plan key">
                 <input
                   className={inputClass}
@@ -903,6 +1198,49 @@ export default function PlatformAdminPage() {
                 onClick={() => void createAccount()}
               >
                 Create
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
+      {rejectTarget ? (
+        <Modal
+          title="Reject account?"
+          onClose={() => {
+            setRejectTarget(null);
+            setRejectReason("");
+          }}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--text-muted)]">
+              Reject “{rejectTarget.name}”. The owner will see a rejected
+              screen.
+            </p>
+            <Field label="Reason (optional)">
+              <input
+                className={inputClass}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                autoFocus
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setRejectTarget(null);
+                  setRejectReason("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructiveOutline"
+                disabled={busyId === rejectTarget.id}
+                onClick={() => void confirmReject()}
+              >
+                Reject
               </Button>
             </div>
           </div>

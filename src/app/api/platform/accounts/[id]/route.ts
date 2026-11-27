@@ -13,7 +13,9 @@ export async function GET(_request: Request, ctx: Ctx) {
 
   const { data: org, error } = await admin
     .from("organizations")
-    .select("id, name, slug, disabled_at, created_at, owner_user_id")
+    .select(
+      "id, name, slug, disabled_at, created_at, owner_user_id, approval_status, approved_at, rejection_reason",
+    )
     .eq("id", id)
     .maybeSingle();
   if (error || !org) {
@@ -24,6 +26,7 @@ export async function GET(_request: Request, ctx: Ctx) {
     { data: memberships },
     { data: invites },
     { data: audit },
+    { data: addonRows },
     entitlements,
   ] = await Promise.all([
     admin
@@ -47,6 +50,10 @@ export async function GET(_request: Request, ctx: Ctx) {
       .eq("organization_id", id)
       .order("created_at", { ascending: false })
       .limit(40),
+    admin
+      .from("organization_addon_allowlist")
+      .select("addon_key, allowed")
+      .eq("organization_id", id),
     getAccountEntitlements(admin, id),
   ]);
 
@@ -68,6 +75,10 @@ export async function GET(_request: Request, ctx: Ctx) {
     }
   }
 
+  const addonByKey = new Map(
+    (addonRows ?? []).map((r) => [String(r.addon_key), Boolean(r.allowed)]),
+  );
+
   return NextResponse.json({
     account: {
       id: org.id,
@@ -76,8 +87,15 @@ export async function GET(_request: Request, ctx: Ctx) {
       disabled_at: org.disabled_at,
       created_at: org.created_at,
       owner_user_id: org.owner_user_id,
+      approval_status: org.approval_status ?? "approved",
+      approved_at: org.approved_at ?? null,
+      rejection_reason: org.rejection_reason ?? null,
     },
     entitlements,
+    addons: ["clickup"].map((key) => ({
+      addon_key: key,
+      allowed: addonByKey.get(key) === true,
+    })),
     members: (memberships ?? []).map((m) => {
       const profile = profileById.get(String(m.user_id));
       return {
@@ -184,7 +202,9 @@ export async function PATCH(request: Request, ctx: Ctx) {
 
   const { data } = await admin
     .from("organizations")
-    .select("id, name, slug, disabled_at, created_at, owner_user_id")
+    .select(
+      "id, name, slug, disabled_at, created_at, owner_user_id, approval_status, approved_at, rejection_reason",
+    )
     .eq("id", id)
     .maybeSingle();
 

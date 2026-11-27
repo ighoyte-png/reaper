@@ -4,15 +4,30 @@ import { provisionAccount } from "@/lib/accounts/provision";
 import { assertAllowedSiteOrigin } from "@/lib/security/request";
 import { clientSiteOrigin } from "@/lib/share/token";
 
-export async function GET() {
+export async function GET(request: Request) {
   const auth = await requirePlatformAdmin();
   if ("error" in auth && auth.error) return auth.error;
   const { admin } = auth;
 
-  const { data: orgs, error } = await admin
+  const url = new URL(request.url);
+  const approvalFilter = url.searchParams.get("approval")?.trim() ?? null;
+
+  let query = admin
     .from("organizations")
-    .select("id, name, slug, disabled_at, created_at, owner_user_id")
+    .select(
+      "id, name, slug, disabled_at, created_at, owner_user_id, approval_status, approved_at, rejection_reason",
+    )
     .order("created_at", { ascending: false });
+
+  if (
+    approvalFilter === "pending" ||
+    approvalFilter === "approved" ||
+    approvalFilter === "rejected"
+  ) {
+    query = query.eq("approval_status", approvalFilter);
+  }
+
+  const { data: orgs, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -68,6 +83,10 @@ export async function GET() {
         disabled_at: (o.disabled_at as string | null) ?? null,
         created_at: (o.created_at as string | null) ?? null,
         owner_user_id: (o.owner_user_id as string | null) ?? null,
+        approval_status:
+          (o.approval_status as string | null) ?? "approved",
+        approved_at: (o.approved_at as string | null) ?? null,
+        rejection_reason: (o.rejection_reason as string | null) ?? null,
         member_count: memberCounts.get(id) ?? 0,
         project_count: projectCounts.get(id) ?? 0,
         plan_key: billing?.plan_key ?? "free",

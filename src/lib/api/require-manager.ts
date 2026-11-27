@@ -88,6 +88,31 @@ async function requireMembershipApiAccess(
     };
   }
 
+  const admin = createAdminClient();
+  const { data: orgRow } = await admin
+    .from("organizations")
+    .select("disabled_at, approval_status")
+    .eq("id", orgId)
+    .maybeSingle();
+  if (
+    orgRow?.disabled_at ||
+    (orgRow?.approval_status && orgRow.approval_status !== "approved")
+  ) {
+    return {
+      error: NextResponse.json(
+        {
+          error:
+            orgRow?.approval_status === "pending"
+              ? "Account pending approval"
+              : orgRow?.approval_status === "rejected"
+                ? "Account rejected"
+                : "Workspace disabled",
+        },
+        { status: 403 },
+      ),
+    };
+  }
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("full_name")
@@ -108,7 +133,7 @@ async function requireMembershipApiAccess(
       role,
       full_name: profile?.full_name ?? null,
     },
-    admin: createAdminClient(),
+    admin,
     origin: originCheck.origin,
   };
 }

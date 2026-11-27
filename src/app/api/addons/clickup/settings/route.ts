@@ -20,6 +20,7 @@ import {
 } from "@/addons/clickup/types";
 import { oauthRedirectUri } from "@/addons/clickup/oauth-state";
 import { originFromRequest } from "@/lib/security/request";
+import { assertAddonAllowed, isAddonAllowed } from "@/lib/accounts/addons";
 
 function emptyPublic(
   orgId: string,
@@ -112,8 +113,15 @@ export async function GET(request: Request) {
           .maybeSingle(),
       ]);
 
+    const platformAllowed = await isAddonAllowed(
+      auth.admin,
+      orgId,
+      "clickup",
+    );
+
     return NextResponse.json({
       settings,
+      platform_allowed: platformAllowed,
       inbound_queue: {
         pending: pending ?? 0,
         error: errored ?? 0,
@@ -159,6 +167,18 @@ export async function PUT(request: Request) {
     );
 
     if (body.enabled) {
+      try {
+        await assertAddonAllowed(
+          auth.admin,
+          auth.caller.organization_id,
+          "clickup",
+        );
+      } catch (e) {
+        return NextResponse.json(
+          { error: e instanceof Error ? e.message : "Addon not allowed" },
+          { status: 403 },
+        );
+      }
       const effectiveMap = status_map ?? normalizeStatusMap(existing?.status_map);
       const hasOAuthApp = Boolean(
         (body.oauth_client_id?.trim() || existing?.oauth_client_id?.trim()) &&

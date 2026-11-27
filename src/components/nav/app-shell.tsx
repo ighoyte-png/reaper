@@ -109,6 +109,46 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const approval = state.organization.approval_status ?? "approved";
+  // Platform operators may Enter a pending/rejected org to inspect it.
+  if (
+    !isPlatformAdmin &&
+    (approval === "pending" || approval === "rejected")
+  ) {
+    const rejected = approval === "rejected";
+    return (
+      <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-[var(--page-bg)] p-6 text-center text-[var(--text)]">
+        <h1 className="text-sm font-semibold">
+          {rejected ? "Account not approved" : "Pending approval"}
+        </h1>
+        <p className="max-w-sm text-sm text-[var(--text-muted)]">
+          {rejected
+            ? state.organization.rejection_reason
+              ? `${state.organization.name || "This workspace"} was not approved: ${state.organization.rejection_reason}`
+              : `${state.organization.name || "This workspace"} was not approved by a platform administrator.`
+            : `${state.organization.name || "This workspace"} is waiting for platform approval.`}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Link
+            href="/pending-approval"
+            className="rounded-md px-3 py-1.5 text-sm text-[var(--accent)] underline"
+          >
+            Details
+          </Link>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              await logout();
+              router.push("/login");
+            }}
+          >
+            Sign out
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (state.organization.disabled_at) {
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-[var(--page-bg)] p-6 text-center text-[var(--text)]">

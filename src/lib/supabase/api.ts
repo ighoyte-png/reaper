@@ -736,6 +736,17 @@ export async function switchOrganizationRpc(
     name: String(org.name ?? ""),
     slug: String(org.slug ?? ""),
     disabled_at: (org as { disabled_at?: string | null }).disabled_at ?? null,
+    approval_status:
+      ((org as { approval_status?: string | null }).approval_status as
+        | "pending"
+        | "approved"
+        | "rejected"
+        | null
+        | undefined) ?? "approved",
+    approved_at:
+      (org as { approved_at?: string | null }).approved_at ?? null,
+    rejection_reason:
+      (org as { rejection_reason?: string | null }).rejection_reason ?? null,
     share_enabled: Boolean(
       (org as { share_enabled?: boolean }).share_enabled,
     ),
@@ -1510,6 +1521,19 @@ export async function loadOrgBootstrap(
         String(organization.id).slice(0, 8),
       disabled_at:
         (organization as { disabled_at?: string | null }).disabled_at ?? null,
+      approval_status:
+        ((organization as { approval_status?: string | null })
+          .approval_status as
+          | "pending"
+          | "approved"
+          | "rejected"
+          | null
+          | undefined) ?? "approved",
+      approved_at:
+        (organization as { approved_at?: string | null }).approved_at ?? null,
+      rejection_reason:
+        (organization as { rejection_reason?: string | null })
+          .rejection_reason ?? null,
       share_enabled: Boolean(
         (organization as { share_enabled?: boolean }).share_enabled,
       ),
@@ -2459,6 +2483,19 @@ export async function loadShareOrgShell(
         String(organization.id).slice(0, 8),
       disabled_at:
         (organization as { disabled_at?: string | null }).disabled_at ?? null,
+      approval_status:
+        ((organization as { approval_status?: string | null })
+          .approval_status as
+          | "pending"
+          | "approved"
+          | "rejected"
+          | null
+          | undefined) ?? "approved",
+      approved_at:
+        (organization as { approved_at?: string | null }).approved_at ?? null,
+      rejection_reason:
+        (organization as { rejection_reason?: string | null })
+          .rejection_reason ?? null,
       share_enabled: Boolean(
         (organization as { share_enabled?: boolean }).share_enabled,
       ),

@@ -81,10 +81,15 @@ export async function POST(request: Request, { params }: Params) {
 
     const { data: org } = await admin
       .from("organizations")
-      .select("disabled_at")
+      .select("disabled_at, approval_status")
       .eq("id", project.organization_id)
       .maybeSingle();
-    if (org?.disabled_at) return notFound();
+    if (
+      org?.disabled_at ||
+      (org?.approval_status && org.approval_status !== "approved")
+    ) {
+      return notFound();
+    }
 
     const { data: milestoneRow, error: msError } = await admin
       .from("milestones")

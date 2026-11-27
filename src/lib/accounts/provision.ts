@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { uniqueSlug } from "@/lib/slug";
 import { sendRecoveryEmail } from "@/lib/accounts/auth-mail";
 import { writePlatformAudit } from "@/lib/accounts/audit";
+import { applyDefaultAddonAllowlist } from "@/lib/accounts/addons";
 
 export type ProvisionAccountInput = {
   name: string;
@@ -71,9 +72,16 @@ export async function provisionAccount(
 
   const slug = await allocateSlug(admin, name, input.slug);
 
+  const now = new Date().toISOString();
   const { data: org, error: orgError } = await admin
     .from("organizations")
-    .insert({ name, slug })
+    .insert({
+      name,
+      slug,
+      approval_status: "approved",
+      approved_at: now,
+      approved_by: input.actorUserId,
+    })
     .select("id, name, slug")
     .single();
   if (orgError || !org) {
@@ -84,6 +92,8 @@ export async function provisionAccount(
   await admin
     .from("organization_settings")
     .upsert({ organization_id: orgId }, { onConflict: "organization_id" });
+
+  await applyDefaultAddonAllowlist(admin, orgId);
 
   let userId: string | undefined;
   let linkedExisting = false;

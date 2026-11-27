@@ -356,6 +356,9 @@ function loadDemoState(): DemoState {
           seed.organization.slug ||
           uniqueSlug(parsed.organization?.name || seed.organization.name, []),
         disabled_at: parsed.organization?.disabled_at ?? null,
+        approval_status: parsed.organization?.approval_status ?? "approved",
+        approved_at: parsed.organization?.approved_at ?? null,
+        rejection_reason: parsed.organization?.rejection_reason ?? null,
         share_enabled: Boolean(parsed.organization?.share_enabled),
         share_token: parsed.organization?.share_token ?? null,
       },

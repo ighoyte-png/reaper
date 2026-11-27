@@ -50,6 +50,7 @@ export function ClickUpAddonSettingsPanel() {
     oldest_pending_at: string | null;
     oldest_pending_error: string | null;
   } | null>(null);
+  const [platformAllowed, setPlatformAllowed] = useState(true);
 
   async function applyPublicSettings(s: AddonClickupSettingsPublic) {
     setSettings(s);
@@ -64,6 +65,7 @@ export function ClickUpAddonSettingsPanel() {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error ?? "Failed to load settings");
     await applyPublicSettings(json.settings as AddonClickupSettingsPublic);
+    setPlatformAllowed(json.platform_allowed !== false);
     if (json.inbound_queue) {
       setInboundQueue(json.inbound_queue);
     }
@@ -294,6 +296,18 @@ export function ClickUpAddonSettingsPanel() {
       .filter(Boolean)
       .map((s) => ({ value: s, label: s })),
   ];
+
+  if (!platformAllowed) {
+    return (
+      <div className="mt-8 border-t border-[var(--border)] pt-6">
+        <h3 className="text-sm font-semibold">Addons · ClickUp</h3>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          ClickUp is not available on this account. Ask a platform administrator
+          to allow the ClickUp addon.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-8 border-t border-[var(--border)] pt-6">

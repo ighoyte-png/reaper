@@ -30,6 +30,8 @@ export type ProjectAssetKind =
   | "bugherd"
   | "custom";
 
+export type OrganizationApprovalStatus = "pending" | "approved" | "rejected";
+
 export interface Organization {
   id: string;
   name: string;
@@ -37,6 +39,10 @@ export interface Organization {
   slug: string;
   /** Soft-disable: members cannot use the workspace when set. */
   disabled_at?: string | null;
+  /** Public registration approval; pending/rejected block normal product use. */
+  approval_status?: OrganizationApprovalStatus | null;
+  approved_at?: string | null;
+  rejection_reason?: string | null;
   /** When true, /share/[token] serves a read-only view. Token is not always loaded client-side. */
   share_enabled?: boolean;
   /** Present in demo local state; supabase managers load token via /api/share. */

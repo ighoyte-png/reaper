@@ -35,6 +35,7 @@ import type {
   ClickUpStatusMap,
 } from "@/addons/clickup/types";
 import { normalizeStatusMap } from "@/addons/clickup/types";
+import { isAddonAllowed } from "@/lib/accounts/addons";
 
 const ECHO_WINDOW_MS = 60_000;
 
@@ -1312,6 +1313,7 @@ export async function applyInboundEvent(args: {
   const { admin, orgId, eventName, payload } = args;
   const settings = await loadSettings(admin, orgId);
   if (!settings?.enabled || !settings.webhook_enabled) return "ignored";
+  if (!(await isAddonAllowed(admin, orgId, "clickup"))) return "ignored";
   const statusMap = normalizeStatusMap(settings.status_map);
   const auth = await resolveOrgClickUpAuth(admin, orgId);
   const taskId = payload.task_id;

@@ -24,6 +24,7 @@ import {
   touchLinkPushMeta,
 } from "@/addons/clickup/db";
 import type { ClickUpLinkEntityType } from "@/addons/clickup/types";
+import { isAddonAllowed } from "@/lib/accounts/addons";
 import {
   notesToDescription,
   normalizeDescription,
@@ -876,6 +877,9 @@ export async function reconcileProject(args: {
   const { admin, orgId, projectId, linkMode, linkClickUpFolderId } = args;
   const settings = await loadSettings(admin, orgId);
   if (!settings?.enabled) throw new Error("ClickUp addon is disabled");
+  if (!(await isAddonAllowed(admin, orgId, "clickup"))) {
+    throw new Error("ClickUp addon is not allowed for this account");
+  }
   const auth = await resolveOrgClickUpAuth(admin, orgId);
   const spaceId = requireSpace(settings.space_id);
   const statusMap = requireStatusMap(normalizeStatusMap(settings.status_map));
@@ -1336,6 +1340,7 @@ export async function pushEntityFromOutbox(args: {
   const { admin, orgId, entityType, reaperId, op, actorProfileId } = args;
   const settings = await loadSettings(admin, orgId);
   if (!settings?.enabled) return;
+  if (!(await isAddonAllowed(admin, orgId, "clickup"))) return;
 
   // Folder/list structure + task/milestone deletes use org/service credentials.
   // Task/comment content (and comment deletes — ClickUp COMM_047) prefer the
