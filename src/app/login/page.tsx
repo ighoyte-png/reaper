@@ -38,6 +38,7 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [confirmedNotice, setConfirmedNotice] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [allowWorkspaceSignup, setAllowWorkspaceSignup] = useState(true);
 
@@ -79,6 +80,7 @@ function LoginForm() {
   useEffect(() => {
     const err = searchParams.get("error");
     if (err) setLocalError(err);
+    if (searchParams.get("confirmed") === "1") setConfirmedNotice(true);
   }, [searchParams]);
 
   useEffect(() => {
@@ -196,6 +198,11 @@ function LoginForm() {
       ) : (
         <>
           <h1 className="mt-8 text-lg font-semibold">Sign in</h1>
+          {confirmedNotice && (
+            <p className="mt-2 text-sm text-[var(--status-healthy)]">
+              Email confirmed. Sign in with your password to continue.
+            </p>
+          )}
 
           <div className="mt-4 space-y-3">
             <GoogleSignInButton

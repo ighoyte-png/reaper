@@ -3328,11 +3328,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         const client = supabaseRef.current ?? createClient();
         supabaseRef.current = client;
+        const origin =
+          typeof window !== "undefined"
+            ? window.location.origin
+            : process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+              "https://app.reaperpm.com";
         const { data, error } = await client.auth.signUp({
           email,
           password,
           options: {
             data: { full_name: fullName, org_name: orgName },
+            // Prefer /auth/callback so default ConfirmationURL (PKCE) still
+            // lands somewhere we can recover; custom templates use token_hash.
+            // next=/auth/continue (not /login — that is stripped as a loop guard,
+            // and must not fall through to /set-password after signup).
+            emailRedirectTo: `${origin}/auth/callback?next=/auth/continue`,
           },
         });
         if (error) {

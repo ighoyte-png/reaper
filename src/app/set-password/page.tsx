@@ -53,6 +53,26 @@ export default function SetPasswordPage() {
       const token_hash = params.get("token_hash");
       const type = params.get("type") as EmailOtpType | null;
 
+      // Signup confirm must never force a second password (can't reuse the first).
+      const signupConfirm =
+        type === "email" || type === "signup" || type === "magiclink";
+      if (signupConfirm && token_hash) {
+        const { error: otpError } = await client.auth.verifyOtp({
+          type,
+          token_hash,
+        });
+        if (otpError && !cancelled) {
+          setError(otpError.message);
+          setChecking(false);
+          return;
+        }
+        if (!cancelled) {
+          await refresh();
+          router.replace("/auth/continue?intent=register");
+        }
+        return;
+      }
+
       // generateLink / invite action_link uses implicit tokens in the hash.
       // @supabase/ssr defaults to PKCE, so detectSessionInUrl won't pick these up.
       const hashParams = new URLSearchParams(
@@ -60,6 +80,22 @@ export default function SetPasswordPage() {
       );
       const access_token = hashParams.get("access_token");
       const refresh_token = hashParams.get("refresh_token");
+      const hashType = hashParams.get("type");
+
+      if (
+        hashType === "signup" ||
+        hashType === "email" ||
+        hashType === "magiclink"
+      ) {
+        if (access_token && refresh_token) {
+          await client.auth.setSession({ access_token, refresh_token });
+        }
+        if (!cancelled) {
+          await refresh();
+          router.replace("/auth/continue?intent=register");
+        }
+        return;
+      }
 
       if (access_token && refresh_token) {
         const { error: sessionError } = await client.auth.setSession({
@@ -128,7 +164,7 @@ export default function SetPasswordPage() {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, [mode]);
+  }, [mode, refresh, router]);
 
   // Navigate after password save once org slug is available (same as login).
   useEffect(() => {

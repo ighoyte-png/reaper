@@ -4,6 +4,28 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { safeAuthNextPath } from "@/lib/paths";
 
+function defaultNextForAuth(opts: {
+  code: string | null;
+  type: EmailOtpType | null;
+  rawNext: string | null;
+}): string {
+  // Invite / recovery always set a password. Signup already chose one.
+  if (opts.type === "recovery" || opts.type === "invite") {
+    return "/set-password";
+  }
+  if (opts.type === "email" || opts.type === "signup" || opts.type === "magiclink") {
+    return "/auth/continue";
+  }
+  // `next=/login` is intentionally rejected by safeAuthNextPath (loop guard).
+  // Treat that explicit intent as "go continue / sign in", not set-password.
+  if (opts.rawNext === "/login" || opts.rawNext?.startsWith("/login?")) {
+    return opts.code ? "/auth/continue" : "/login?confirmed=1";
+  }
+  if (opts.code) return "/auth/continue";
+  // Bare token_hash without type: prefer continue over forcing a new password.
+  return "/auth/continue";
+}
+
 /**
  * Completes email auth (recovery / invite / magic link) and OAuth (Google).
  *
@@ -26,10 +48,10 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Email templates default to set-password; OAuth defaults to continue.
   const rawNext = searchParams.get("next");
-  const defaultNext = code ? "/auth/continue" : "/set-password";
-  const safeNext = safeAuthNextPath(rawNext) ?? defaultNext;
+  const safeNext =
+    safeAuthNextPath(rawNext) ??
+    defaultNextForAuth({ code, type, rawNext });
 
   if (!isSupabaseConfigured()) {
     return NextResponse.redirect(`${origin}/login`);
@@ -71,11 +93,19 @@ export async function GET(request: NextRequest) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
-      // Same-browser PKCE: let the client exchange (it can read its own cookies).
+      // PKCE verifier lives in the browser that started the flow. For email
+      // confirm, Supabase has already verified the address before redirecting
+      // with ?code= — send them to sign in instead of a dead-end error.
       if (/code verifier/i.test(error.message)) {
-        const fallback = new URL(`${origin}/auth/continue`);
-        fallback.searchParams.set("code", code);
-        return NextResponse.redirect(fallback);
+        const nextLooksLikeOAuth =
+          safeNext.startsWith("/auth/continue") ||
+          searchParams.get("next")?.includes("auth/continue");
+        if (nextLooksLikeOAuth) {
+          const fallback = new URL(`${origin}/auth/continue`);
+          fallback.searchParams.set("code", code);
+          return NextResponse.redirect(fallback);
+        }
+        return NextResponse.redirect(`${origin}/login?confirmed=1`);
       }
       return NextResponse.redirect(
         `${origin}/login?error=${encodeURIComponent(error.message)}`,

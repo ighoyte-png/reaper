@@ -1,13 +1,15 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { BrandLockup } from "@/components/brand/brand-lockup";
+import { inputClass } from "@/components/ui/form";
 import { APP_VERSION } from "@/lib/version";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 import { useData } from "@/lib/data/store";
+import { createClient } from "@/lib/supabase/client";
 import {
   readUserViewPrefs,
   resolveDefaultStartPage,
@@ -16,19 +18,28 @@ import { workspacePath } from "@/lib/paths";
 
 function CheckEmailContent() {
   const searchParams = useSearchParams();
-  const email = searchParams.get("email")?.trim() || null;
+  const emailFromQuery = searchParams.get("email")?.trim() || "";
   const approval = searchParams.get("approval") === "1";
   const {
     ready,
     isAuthenticated,
     isPlatformOnly,
+    refresh,
     state,
     profile,
     canManage,
   } = useData();
   const router = useRouter();
+  const [email, setEmail] = useState(emailFromQuery);
+  const [otp, setOtp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useDocumentTitle("Confirm your email");
+
+  useEffect(() => {
+    if (emailFromQuery) setEmail(emailFromQuery);
+  }, [emailFromQuery]);
 
   useEffect(() => {
     if (!ready || !isAuthenticated) return;
@@ -42,7 +53,7 @@ function CheckEmailContent() {
       return;
     }
     if (!state.organization.slug) {
-      router.replace("/auth/continue");
+      router.replace("/auth/continue?intent=register");
       return;
     }
     const prefs = readUserViewPrefs(profile?.id);
@@ -63,37 +74,111 @@ function CheckEmailContent() {
     state.organization.approval_status,
   ]);
 
+  async function onVerifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const trimmedEmail = email.trim();
+    const token = otp.replace(/\s/g, "");
+    if (!trimmedEmail || token.length < 6) {
+      setError("Enter the email and 6-digit code from the message.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const client = createClient();
+      const { error: otpError } = await client.auth.verifyOtp({
+        email: trimmedEmail,
+        token,
+        type: "email",
+      });
+      if (otpError) {
+        setError(otpError.message);
+        return;
+      }
+      await refresh();
+      router.replace("/auth/continue?intent=register");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Confirmation failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="w-full max-w-md text-center">
+    <div className="w-full max-w-md">
       <BrandLockup
         stacked
         className="w-full"
         logoClassName="h-32"
         wordmarkClassName="text-3xl"
       />
-      <h1 className="mt-8 text-lg font-semibold">Check your email</h1>
-      <p className="mt-2 text-sm text-[var(--text-muted)]">
-        {email ? (
+      <h1 className="mt-8 text-center text-lg font-semibold">
+        Check your email
+      </h1>
+      <p className="mt-2 text-center text-sm text-[var(--text-muted)]">
+        {emailFromQuery ? (
           <>
             We sent a confirmation link to{" "}
-            <span className="text-[var(--text)]">{email}</span>. Open it, then
-            sign in.
+            <span className="text-[var(--text)]">{emailFromQuery}</span>. Open
+            it on any device, or enter the code below.
           </>
         ) : (
-          <>We sent a confirmation link. Open it, then sign in.</>
+          <>
+            We sent a confirmation link. Open it on any device, or enter the
+            code from the email below.
+          </>
         )}
       </p>
-      <p className="mt-3 text-sm text-[var(--text-muted)]">
+      <p className="mt-3 text-center text-sm text-[var(--text-muted)]">
         Your workspace will be created on first login
         {approval ? " and may require approval" : ""}.
       </p>
+
+      <form onSubmit={onVerifyOtp} className="mt-6 space-y-3">
+        <label className="block text-xs text-[var(--text-muted)]">
+          Email
+          <input
+            type="email"
+            required
+            className={inputClass}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+          />
+        </label>
+        <label className="block text-xs text-[var(--text-muted)]">
+          Confirmation code
+          <input
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={8}
+            required
+            className={inputClass}
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            placeholder="6-digit code"
+            autoComplete="one-time-code"
+          />
+        </label>
+        {error && (
+          <p className="text-sm text-[var(--status-over)]">{error}</p>
+        )}
+        <button
+          type="submit"
+          disabled={busy}
+          className="h-10 w-full rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:opacity-60"
+        >
+          {busy ? "Confirming…" : "Confirm email"}
+        </button>
+      </form>
+
       <Link
         href="/login"
-        className="mt-8 inline-flex h-10 w-full items-center justify-center rounded-md bg-[var(--accent)] px-4 text-sm font-medium text-[var(--accent-fg)] hover:opacity-90"
+        className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-md border border-[var(--border)] px-4 text-sm text-[var(--text-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--text)]"
       >
         Sign in
       </Link>
-      <p className="mt-4 text-xs text-[var(--text-muted)]">
+      <p className="mt-4 text-center text-xs text-[var(--text-muted)]">
         Wrong email?{" "}
         <Link href="/register" className="text-[var(--accent)] underline">
           Register again

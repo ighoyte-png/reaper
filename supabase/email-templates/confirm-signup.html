@@ -152,11 +152,11 @@
               </td>
             </tr>
 
-            <!-- CTA -->
+            <!-- CTA: token_hash works in any browser (no PKCE cookie). -->
             <tr>
               <td style="padding: 28px 32px 8px 32px" align="left">
                 <a
-                  href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/login"
+                  href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/auth/continue"
                   style="
                     display: inline-block;
                     background-color: #2563eb;
@@ -174,6 +174,35 @@
               </td>
             </tr>
 
+            <!-- OTP: same code works from /check-email on any device -->
+            <tr>
+              <td style="padding: 8px 32px 0 32px">
+                <p
+                  style="
+                    margin: 0 0 8px 0;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    color: #4b5563;
+                  "
+                >
+                  Or enter this code on the confirmation page:
+                </p>
+                <p
+                  style="
+                    margin: 0;
+                    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco,
+                      Consolas, 'Liberation Mono', 'Courier New', monospace;
+                    font-size: 28px;
+                    font-weight: 700;
+                    letter-spacing: 0.18em;
+                    color: #0f1115;
+                  "
+                >
+                  {{ .Token }}
+                </p>
+              </td>
+            </tr>
+
             <!-- Fallback link -->
             <tr>
               <td style="padding: 20px 32px 32px 32px">
@@ -185,7 +214,7 @@
                     color: #9ca3af;
                   "
                 >
-                  Button not working? Paste this link into your browser:
+                  Button not working? Paste this link into any browser:
                 </p>
                 <p
                   style="
@@ -196,9 +225,9 @@
                   "
                 >
                   <a
-                    href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/login"
+                    href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/auth/continue"
                     style="color: #2563eb; text-decoration: underline"
-                    >{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/login</a
+                    >{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=email&amp;next=/auth/continue</a
                   >
                 </p>
               </td>
