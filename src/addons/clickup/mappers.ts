@@ -92,6 +92,33 @@ export function taskContentHash(fields: {
   return `h${(h >>> 0).toString(16)}:${payload.length}`;
 }
 
+/**
+ * When ClickUp inbound is newer than Reaper's last status change, outbound
+ * PUTs must not overwrite CU status (field-level LWW).
+ */
+export function shouldOmitStatusOnPush(args: {
+  lastInboundAt: string | null | undefined;
+  statusChangedAt: string | null | undefined;
+}): boolean {
+  if (!args.lastInboundAt) return false;
+  const inboundMs = Date.parse(args.lastInboundAt);
+  if (!Number.isFinite(inboundMs)) return false;
+  const statusMs = args.statusChangedAt
+    ? Date.parse(args.statusChangedAt)
+    : 0;
+  if (!Number.isFinite(statusMs)) return true;
+  return inboundMs > statusMs;
+}
+
+/** Status LWW clock: never fall back to edited_at (blocks CU status wrongly). */
+export function reaperStatusClockMs(
+  statusChangedAt: string | null | undefined,
+): number {
+  if (!statusChangedAt) return 0;
+  const ms = Date.parse(statusChangedAt);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 export function appendReaperLink(
   description: string,
   reaperUrl: string | null,

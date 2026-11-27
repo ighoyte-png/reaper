@@ -1,11 +1,10 @@
 /**
- * ClickUp ↔ Reaper task list order.
+ * ClickUp ↔ Reaper task list order helpers.
  *
- * ClickUp's public API returns tasks in list display order (and a legacy
- * `orderindex` field) but does NOT honor orderindex / position on create or
- * update — confirmed by ClickUp FAQ and live PUT probe. So:
- * - ClickUp → Reaper: apply list GET order onto tasks.sort_order (this module).
- * - Reaper → ClickUp: cannot set position via API; content sync is unchanged.
+ * ClickUp GET /list/{id}/task defaults to `created` order — not manual UI
+ * order. PUT orderindex is ignored (FAQ). These helpers exist for tests /
+ * future APIs; reconcile and inbound must NOT rewrite Reaper sort_order from
+ * GET results (that flipped lists on Resync).
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";

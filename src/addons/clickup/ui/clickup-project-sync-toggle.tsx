@@ -217,10 +217,12 @@ export function ClickUpProjectSyncToggle({
       </div>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
         Default off. Turning on links or creates this project in ClickUp and
-        runs a full reconcile (Reaper wins). With workspace two-way sync on,
-        ClickUp edits and new tasks in linked lists also flow into this project.
+        runs a full reconcile (content from Reaper; task statuses merge from
+        ClickUp when present). With workspace two-way sync on, ClickUp edits
+        and new tasks in linked lists also flow into this project.
         Gantt-enabled lists stay Reaper-authoritative: ClickUp cannot change
         dates, move/delete those tasks, or create into those lists.
+        List order stays in Reaper — ClickUp’s API cannot set task position.
       </p>
 
       {!on ? (

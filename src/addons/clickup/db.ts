@@ -276,6 +276,35 @@ export async function getLink(
   return data?.clickup_id ?? null;
 }
 
+export type ClickUpLinkMeta = {
+  clickup_id: string;
+  content_hash: string | null;
+  last_pushed_at: string | null;
+  last_inbound_at: string | null;
+};
+
+export async function getLinkMeta(
+  admin: SupabaseClient,
+  orgId: string,
+  entityType: ClickUpLinkEntityType,
+  reaperId: string,
+): Promise<ClickUpLinkMeta | null> {
+  const { data } = await admin
+    .from("addon_clickup_links")
+    .select("clickup_id, content_hash, last_pushed_at, last_inbound_at")
+    .eq("organization_id", orgId)
+    .eq("entity_type", entityType)
+    .eq("reaper_id", reaperId)
+    .maybeSingle();
+  if (!data?.clickup_id) return null;
+  return {
+    clickup_id: String(data.clickup_id),
+    content_hash: (data.content_hash as string | null) ?? null,
+    last_pushed_at: (data.last_pushed_at as string | null) ?? null,
+    last_inbound_at: (data.last_inbound_at as string | null) ?? null,
+  };
+}
+
 export async function getLinkByClickUpId(
   admin: SupabaseClient,
   orgId: string,

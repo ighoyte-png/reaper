@@ -23,12 +23,12 @@ import {
 } from "@/addons/clickup/db";
 import {
   mapClickUpStatusToReaper,
+  reaperStatusClockMs,
   stripReaperLinkFooter,
   taskContentHash,
   notesToDescription,
   normalizeDescription,
 } from "@/addons/clickup/mappers";
-import { syncReaperListOrderFromClickUp } from "@/addons/clickup/order";
 import type {
   AddonClickupSettingsRow,
   ClickUpAuth,
@@ -256,43 +256,6 @@ async function listIsGanttProtected(
     .eq("organization_id", orgId)
     .maybeSingle();
   return Boolean(data?.gantt_enabled);
-}
-
-/**
- * Pull ClickUp list display order into Reaper sort_order.
- * Safe no-op on missing links / gantt / API errors (caller already applied fields).
- */
-async function refreshListOrderFromClickUp(args: {
-  admin: SupabaseClient;
-  orgId: string;
-  auth: ClickUpAuth;
-  clickUpListId: string | null | undefined;
-  reaperListId?: string | null;
-}): Promise<number> {
-  const clickUpListId = String(args.clickUpListId ?? "").trim();
-  if (!clickUpListId) return 0;
-  let reaperListId = args.reaperListId ?? null;
-  if (!reaperListId) {
-    const listLink = await getLinkByClickUpId(
-      args.admin,
-      args.orgId,
-      "task_list",
-      clickUpListId,
-    );
-    reaperListId = listLink?.reaper_id ?? null;
-  }
-  if (!reaperListId) return 0;
-  try {
-    return await syncReaperListOrderFromClickUp({
-      admin: args.admin,
-      orgId: args.orgId,
-      auth: args.auth,
-      reaperListId,
-      clickUpListId,
-    });
-  } catch {
-    return 0;
-  }
 }
 
 function commentTextFromHistory(
@@ -774,7 +737,9 @@ async function applyTaskSnapshot(args: {
           cuTask.assignees?.[0]?.email,
         );
 
-  const nextHash = taskContentHash({
+  // Echo: CU snapshot vs last push. Storage after apply uses post-patch fields
+  // only so a skipped status cannot poison later taskStatusUpdated events.
+  const incomingHash = taskContentHash({
     title: cuTask.name,
     status: mappedStatus ?? (task.status as string),
     start_date: start,
@@ -784,7 +749,7 @@ async function applyTaskSnapshot(args: {
       assigneePersonId ?? (task.assignee_person_id as string | null),
   });
 
-  if (isEcho(link?.last_pushed_at, link?.content_hash, nextHash, eventMs)) {
+  if (isEcho(link?.last_pushed_at, link?.content_hash, incomingHash, eventMs)) {
     return "echo";
   }
 
@@ -797,9 +762,9 @@ async function applyTaskSnapshot(args: {
   const reaperEditedMs = task.edited_at
     ? Date.parse(task.edited_at as string)
     : 0;
-  const reaperStatusMs = task.status_changed_at
-    ? Date.parse(task.status_changed_at as string)
-    : reaperEditedMs;
+  const reaperStatusMs = reaperStatusClockMs(
+    task.status_changed_at as string | null,
+  );
 
   if ((applyAll || fields?.title) && eventMs >= reaperEditedMs) {
     patch.title = cuTask.name || task.title;
@@ -848,8 +813,30 @@ async function applyTaskSnapshot(args: {
     .eq("organization_id", orgId);
   if (error) throw new Error(error.message);
 
+  // Hash from post-patch Reaper fields only (status included only if applied).
+  const appliedHash = taskContentHash({
+    title: (patch.title as string | undefined) ?? (task.title as string),
+    status: (patch.status as string | undefined) ?? (task.status as string),
+    start_date:
+      patch.start_date !== undefined
+        ? (patch.start_date as string | null)
+        : ((task.start_date as string | null) ?? null),
+    due_date:
+      patch.due_date !== undefined
+        ? (patch.due_date as string | null)
+        : ((task.due_date as string | null) ?? null),
+    notes:
+      patch.notes !== undefined
+        ? (patch.notes as string | null)
+        : ((task.notes as string | null) ?? null),
+    assignee_person_id:
+      patch.assignee_person_id !== undefined
+        ? (patch.assignee_person_id as string | null)
+        : ((task.assignee_person_id as string | null) ?? null),
+  });
+
   await setLink(admin, orgId, "task", reaperTaskId, cuTask.id, {
-    content_hash: nextHash,
+    content_hash: appliedHash,
     last_inbound_at: new Date().toISOString(),
   });
   return "applied";
@@ -1384,21 +1371,7 @@ export async function applyInboundEvent(args: {
       auth,
       eventMs,
     });
-    if (r === "applied") {
-      try {
-        const cuTask = await cu.getTask(auth, taskId);
-        await refreshListOrderFromClickUp({
-          admin,
-          orgId,
-          auth,
-          clickUpListId: cuTask.list?.id,
-        });
-      } catch {
-        /* order refresh is best-effort */
-      }
-      return "processed";
-    }
-    return "ignored";
+    return r === "applied" ? "processed" : "ignored";
   }
 
   const link = await getLinkByClickUpId(admin, orgId, "task", taskId);
@@ -1421,16 +1394,7 @@ export async function applyInboundEvent(args: {
         actorProfileId,
         listIdHint,
       });
-      if (r === "created") {
-        await refreshListOrderFromClickUp({
-          admin,
-          orgId,
-          auth,
-          clickUpListId: cuTask.list?.id ?? listIdHint,
-        });
-        return "processed";
-      }
-      return "ignored";
+      return r === "created" ? "processed" : "ignored";
     } catch (e) {
       // Deleted before we could import — don't retry (poison queue).
       if (isNotFoundClickUpError(e)) return "ignored";
@@ -1506,19 +1470,9 @@ export async function applyInboundEvent(args: {
     actorProfileId,
     fields: fieldHints,
   });
-  // CU→Reaper order: apply on real ClickUp updates / reorder-only (stale).
-  // Never on outbound echo — Reaper cannot push position, so refreshing from
-  // ClickUp’s unchanged list would snap local reorders back.
-  let orderChanged = 0;
-  if (eventName === "taskUpdated" && result !== "echo") {
-    orderChanged = await refreshListOrderFromClickUp({
-      admin,
-      orgId,
-      auth,
-      clickUpListId: cuTask.list?.id,
-    });
-  }
-  return result === "applied" || orderChanged > 0 ? "processed" : "ignored";
+  // Do not rewrite sort_order from GET /list/task (default created order ≠
+  // manual UI order). Reaper list order stays local; CU cannot set position.
+  return result === "applied" ? "processed" : "ignored";
 }
 
 export async function processInbound(

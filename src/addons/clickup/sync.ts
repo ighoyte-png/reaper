@@ -15,28 +15,31 @@ import {
 } from "@/addons/clickup/auth";
 import {
   getLink,
+  getLinkMeta,
   loadSettings,
   setLink,
   deleteLink,
   linksForProjectTasks,
+  suppressOutbound,
   touchLinkPushMeta,
 } from "@/addons/clickup/db";
 import type { ClickUpLinkEntityType } from "@/addons/clickup/types";
 import {
   notesToDescription,
   normalizeDescription,
+  mapClickUpStatusToReaper,
+  shouldOmitStatusOnPush,
   taskFieldsMatchClickUp,
   taskToClickUpBody,
   taskContentHash,
 } from "@/addons/clickup/mappers";
-import { applyClickUpListOrderToReaper } from "@/addons/clickup/order";
 import type {
   ClickUpAuth,
   ClickUpStatusMap,
   ReconcileSummary,
 } from "@/addons/clickup/types";
 import { normalizeStatusMap } from "@/addons/clickup/types";
-import type { Client, Milestone, Project, Task, TaskList } from "@/lib/types";
+import type { Client, Milestone, Project, Task, TaskList, TaskStatus } from "@/lib/types";
 
 function requireSpace(spaceId: string | null | undefined): string {
   if (!spaceId?.trim()) throw new Error("ClickUp Space is not configured");
@@ -562,6 +565,7 @@ async function pushTask(
   task: Task,
   parentClickUpId: string | null,
   assigneeIds: number[],
+  opts?: { omitStatus?: boolean },
 ): Promise<"created" | "updated" | "in_sync"> {
   const body = taskToClickUpBody(task, statusMap, {
     parentClickUpId,
@@ -576,11 +580,21 @@ async function pushTask(
     notes: task.notes,
     assignee_person_id: task.assignee_person_id,
   });
-  const existing = await getLink(admin, orgId, "task", task.id);
+  const linkMeta = await getLinkMeta(admin, orgId, "task", task.id);
+  const existing = linkMeta?.clickup_id ?? null;
+  const omitStatus =
+    opts?.omitStatus === true ||
+    shouldOmitStatusOnPush({
+      lastInboundAt: linkMeta?.last_inbound_at,
+      statusChangedAt: task.status_changed_at,
+    });
   if (existing) {
     try {
       const { assignees: _flatAssignees, ...updateFields } = body;
       void _flatAssignees;
+      if (omitStatus) {
+        delete (updateFields as { status?: string }).status;
+      }
       await cu.updateTask(auth, existing, updateFields);
       await pushAssigneeDiff(auth, existing, assigneeIds);
       await touchLinkPushMeta(admin, orgId, "task", task.id, hash);
@@ -1047,6 +1061,7 @@ export async function reconcileProject(args: {
         emailToCu,
       );
 
+      let workingTask = task;
       if (existing) {
         let foundInInventory = false;
         let inSync = false;
@@ -1054,7 +1069,40 @@ export async function reconcileProject(args: {
           const found = cuTasks.find((t) => t.id === existing);
           if (found) {
             foundInInventory = true;
-            if (taskFieldsMatchClickUp(task, found, statusMap)) {
+            // Pull mapped CU status into Reaper before push so Resync does not
+            // overwrite a PM's ClickUp status change with a stale Reaper value.
+            const cuStatus = mapClickUpStatusToReaper(
+              found.status?.status,
+              statusMap,
+            );
+            if (cuStatus && cuStatus !== workingTask.status) {
+              await suppressOutbound(admin, orgId, "task", workingTask.id, 45);
+              const statusAt = new Date().toISOString();
+              const { error: statusErr } = await admin
+                .from("tasks")
+                .update({
+                  status: cuStatus,
+                  status_changed_at: statusAt,
+                })
+                .eq("id", workingTask.id)
+                .eq("organization_id", orgId);
+              if (statusErr) throw new Error(statusErr.message);
+              workingTask = {
+                ...workingTask,
+                status: cuStatus as TaskStatus,
+                status_changed_at: statusAt,
+              };
+              await admin
+                .from("addon_clickup_links")
+                .update({
+                  last_inbound_at: statusAt,
+                  updated_at: statusAt,
+                })
+                .eq("organization_id", orgId)
+                .eq("entity_type", "task")
+                .eq("reaper_id", workingTask.id);
+            }
+            if (taskFieldsMatchClickUp(workingTask, found, statusMap)) {
               inSync = true;
             }
             break;
@@ -1076,7 +1124,7 @@ export async function reconcileProject(args: {
         statusMap,
         projectFolderId,
         listIdMap,
-        task,
+        workingTask,
         parentCu,
         assignees,
         listRows,
@@ -1093,30 +1141,8 @@ export async function reconcileProject(args: {
     }
   }
 
-  // ClickUp → Reaper list order (public API cannot set ClickUp position).
-  const reaperListsByCu = new Map<string, string[]>();
-  for (const [reaperListId, cuListId] of listIdMap) {
-    const bucket = reaperListsByCu.get(cuListId) ?? [];
-    bucket.push(reaperListId);
-    reaperListsByCu.set(cuListId, bucket);
-  }
-  for (const [cuListId, cuTasks] of cuTasksByList) {
-    const reaperListIds = reaperListsByCu.get(cuListId) ?? [];
-    for (const reaperListId of reaperListIds) {
-      try {
-        await applyClickUpListOrderToReaper({
-          admin,
-          orgId,
-          reaperListId,
-          cuTasksInDisplayOrder: cuTasks,
-        });
-      } catch (e) {
-        summary.errors.push(
-          `List order ${reaperListId}: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
-    }
-  }
+  // Do not rewrite Reaper sort_order from GET /list/task — ClickUp default
+  // order is `created`, not manual list order (Resync was flipping lists).
 
   const { data: milestones } = await admin
     .from("milestones")

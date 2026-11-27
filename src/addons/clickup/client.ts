@@ -42,8 +42,9 @@ export type ClickUpTask = {
   list?: { id: string };
   assignees?: { id: number; email?: string; username?: string }[];
   /**
-   * Legacy field — still returned by the API, but ClickUp no longer uses it
-   * to position tasks (PUT orderindex is ignored). Prefer GET list array order.
+   * Legacy field — still returned, but ClickUp no longer uses it for task
+   * position (PUT orderindex ignored). GET list default order is `created`,
+   * not manual UI order — do not treat array order as display order.
    */
   orderindex?: string | number | null;
 };
