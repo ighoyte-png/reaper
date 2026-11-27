@@ -36,7 +36,8 @@ Or use `.env` (also loaded by Next.js). Restart `npm run dev` after changes.
    - [`supabase/migrations/002_bootstrap.sql`](supabase/migrations/002_bootstrap.sql)
    - [`supabase/migrations/003_recurrence.sql`](supabase/migrations/003_recurrence.sql) (weekly recurring assignments)
 
-5. **Authentication → Providers → Email**: for local testing, turn **off** “Confirm email” so signup works immediately. For production, turn it **on** and paste the Confirm sign up HTML from [`supabase/email-templates/confirm-signup.html`](supabase/email-templates/confirm-signup.html) (see [`docs/AUTH_EMAIL_TEMPLATES.md`](docs/AUTH_EMAIL_TEMPLATES.md)). Subject: `Confirm your email for Reaper`.
+5. **Authentication → Providers → Email**: for local testing, turn **off** “Confirm email” so signup works immediately. For production, turn it **on** and paste the Confirm sign up HTML from [`supabase/email-templates/confirm-signup.html`](supabase/email-templates/confirm-signup.html) (see [`docs/AUTH_EMAIL_TEMPLATES.md`](docs/AUTH_EMAIL_TEMPLATES.md)). Subject: `Confirm your email for Reaper`.  
+   - **Google:** enable Provider → Google and follow [`docs/AUTH_GOOGLE.md`](docs/AUTH_GOOGLE.md). Login/register show **Continue with Google**; invited members must use the same Google email as the invite.
 
 6. Open the app → **Create workspace** (email/password) → **Settings → Load demo data**.
 

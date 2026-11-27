@@ -186,7 +186,11 @@ import {
   buildDemoNotificationRows,
   emitNotificationClient,
 } from "@/lib/notifications-client";
-import { projectRelativePath, workspacePath } from "@/lib/paths";
+import {
+  projectRelativePath,
+  safeAuthNextPath,
+  workspacePath,
+} from "@/lib/paths";
 import {
   dedupeProfileIds,
   type EmitNotificationInput,
@@ -616,6 +620,19 @@ interface DataContextValue {
   authError: string | null;
   loginDemo: () => void;
   login: (email: string, password: string) => Promise<void>;
+  /** Start Google OAuth (PKCE). Redirects the browser to Google. */
+  loginWithGoogle: (options?: {
+    intent?: "login" | "register";
+    next?: string | null;
+  }) => Promise<void>;
+  /**
+   * After Google OAuth with no workspace: set metadata + bootstrap org
+   * (public registration only).
+   */
+  completeOAuthRegistration: (
+    orgName: string,
+    fullName: string,
+  ) => Promise<void>;
   signup: (
     email: string,
     password: string,
@@ -3197,6 +3214,72 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setAuthError(message);
           throw new Error(message);
         }
+      },
+      loginWithGoogle: async (options) => {
+        setAuthError(null);
+        if (mode !== "supabase") {
+          throw new Error("Supabase is not configured");
+        }
+        const client = supabaseRef.current ?? createClient();
+        supabaseRef.current = client;
+        const origin =
+          typeof window !== "undefined"
+            ? window.location.origin
+            : process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") || "";
+        const intent = options?.intent === "register" ? "register" : "login";
+        const continuePath =
+          intent === "register"
+            ? "/auth/continue?intent=register"
+            : "/auth/continue";
+        const next =
+          safeAuthNextPath(options?.next) ?? continuePath;
+        // Always land on continue for Google so invites are claimed; honor
+        // invite-accept next by encoding it into continue when needed.
+        const dest =
+          next.startsWith("/invite/accept")
+            ? next
+            : continuePath;
+        const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(dest)}`;
+        const { data, error } = await client.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo,
+            queryParams: {
+              access_type: "offline",
+              prompt: "select_account",
+            },
+          },
+        });
+        if (error) {
+          setAuthError(error.message);
+          throw error;
+        }
+        if (data.url) {
+          window.location.assign(data.url);
+        }
+      },
+      completeOAuthRegistration: async (orgName, fullName) => {
+        setAuthError(null);
+        if (mode !== "supabase") {
+          throw new Error("Supabase is not configured");
+        }
+        const client = supabaseRef.current ?? createClient();
+        supabaseRef.current = client;
+        const name = orgName.trim();
+        if (!name) throw new Error("Organization name is required");
+        const display =
+          fullName.trim() ||
+          name.split("@")[0] ||
+          "Owner";
+        const { error: metaError } = await client.auth.updateUser({
+          data: { full_name: display, org_name: name },
+        });
+        if (metaError) {
+          setAuthError(metaError.message);
+          throw metaError;
+        }
+        await bootstrapOrganization(client, name, display);
+        await refreshSupabase(client);
       },
       signup: async (email, password, fullName, orgName) => {
         setAuthError(null);

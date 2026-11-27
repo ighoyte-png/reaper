@@ -13,11 +13,13 @@ import {
   readUserViewPrefs,
   resolveDefaultStartPage,
 } from "@/lib/user-view-prefs";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { workspacePath } from "@/lib/paths";
 
 function RegisterForm() {
   const {
     signup,
+    loginWithGoogle,
     isAuthenticated,
     isPlatformOnly,
     ready,
@@ -33,6 +35,7 @@ function RegisterForm() {
   const [fullName, setFullName] = useState("");
   const [orgName, setOrgName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
   const [allowSignup, setAllowSignup] = useState(true);
@@ -124,6 +127,19 @@ function RegisterForm() {
     }
   }
 
+  async function onGoogle() {
+    setLocalError(null);
+    setGoogleBusy(true);
+    try {
+      await loginWithGoogle({ intent: "register" });
+    } catch (err) {
+      setLocalError(
+        err instanceof Error ? err.message : "Google sign-up failed",
+      );
+      setGoogleBusy(false);
+    }
+  }
+
   return (
     <div className="w-full max-w-md">
       <BrandLockup
@@ -165,7 +181,29 @@ function RegisterForm() {
               : "Create a workspace and start collaborating."}
           </p>
 
-          <form onSubmit={onSubmit} className="mt-4 space-y-3">
+          <div className="mt-4 space-y-3">
+            <GoogleSignInButton
+              label="Sign up with Google"
+              busy={googleBusy}
+              disabled={busy}
+              onClick={() => void onGoogle()}
+            />
+            <p className="text-center text-[11px] text-[var(--text-muted)]">
+              You’ll name your workspace after Google sign-in.
+            </p>
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-[var(--border)]" />
+              </div>
+              <div className="relative flex justify-center text-[11px]">
+                <span className="bg-[var(--page-bg)] px-2 text-[var(--text-muted)]">
+                  or email
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={onSubmit} className="mt-1 space-y-3">
             <label className="block text-xs text-[var(--text-muted)]">
               Full name
               <input
@@ -225,7 +263,7 @@ function RegisterForm() {
 
             <button
               type="submit"
-              disabled={busy}
+              disabled={busy || googleBusy}
               className="h-10 w-full rounded-md bg-[var(--accent)] text-sm font-medium text-[var(--accent-fg)] hover:opacity-90 disabled:opacity-60"
             >
               {busy ? "Creating…" : "Register"}

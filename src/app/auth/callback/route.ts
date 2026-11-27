@@ -2,21 +2,34 @@ import { createServerClient } from "@supabase/ssr";
 import { type EmailOtpType } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { safeAuthNextPath } from "@/lib/paths";
 
 /**
- * Completes email auth (recovery / invite / magic link).
+ * Completes email auth (recovery / invite / magic link) and OAuth (Google).
  *
  * Prefer `token_hash` + `type` (via customized Supabase email templates) —
- * that path does not need a PKCE code verifier. `?code=` still works when the
- * reset was started in this same browser (verifier cookie present).
+ * that path does not need a PKCE code verifier. `?code=` is used for OAuth /
+ * PKCE when the verifier cookie is present.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
-  const next = searchParams.get("next") || "/set-password";
-  const safeNext = next.startsWith("/") ? next : "/set-password";
+  const oauthError = searchParams.get("error");
+  const oauthDesc = searchParams.get("error_description");
+
+  if (oauthError) {
+    const msg = oauthDesc || oauthError || "Google sign-in failed";
+    return NextResponse.redirect(
+      `${origin}/login?error=${encodeURIComponent(msg)}`,
+    );
+  }
+
+  // Email templates default to set-password; OAuth defaults to continue.
+  const rawNext = searchParams.get("next");
+  const defaultNext = code ? "/auth/continue" : "/set-password";
+  const safeNext = safeAuthNextPath(rawNext) ?? defaultNext;
 
   if (!isSupabaseConfigured()) {
     return NextResponse.redirect(`${origin}/login`);
@@ -60,7 +73,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       // Same-browser PKCE: let the client exchange (it can read its own cookies).
       if (/code verifier/i.test(error.message)) {
-        const fallback = new URL(`${origin}/set-password`);
+        const fallback = new URL(`${origin}/auth/continue`);
         fallback.searchParams.set("code", code);
         return NextResponse.redirect(fallback);
       }

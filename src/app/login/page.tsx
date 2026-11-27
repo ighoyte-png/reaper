@@ -13,12 +13,14 @@ import {
   readUserViewPrefs,
   resolveDefaultStartPage,
 } from "@/lib/user-view-prefs";
+import { GoogleSignInButton } from "@/components/auth/google-sign-in-button";
 import { safeAuthNextPath, workspacePath } from "@/lib/paths";
 
 function LoginForm() {
   const {
     loginDemo,
     login,
+    loginWithGoogle,
     requestPasswordReset,
     isAuthenticated,
     isPlatformOnly,
@@ -34,6 +36,7 @@ function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
   const [allowWorkspaceSignup, setAllowWorkspaceSignup] = useState(true);
@@ -147,6 +150,22 @@ function LoginForm() {
     }
   }
 
+  async function onGoogle() {
+    setLocalError(null);
+    setGoogleBusy(true);
+    try {
+      await loginWithGoogle({
+        intent: "login",
+        next: searchParams.get("next"),
+      });
+    } catch (err) {
+      setLocalError(
+        err instanceof Error ? err.message : "Google sign-in failed",
+      );
+      setGoogleBusy(false);
+    }
+  }
+
   return (
     <div className="w-full max-w-md">
       <BrandLockup
@@ -175,7 +194,29 @@ function LoginForm() {
         <>
           <h1 className="mt-8 text-lg font-semibold">Sign in</h1>
 
-          <form onSubmit={onSubmit} className="mt-4 space-y-3">
+          <div className="mt-4 space-y-3">
+            <GoogleSignInButton
+              label="Continue with Google"
+              busy={googleBusy}
+              disabled={busy}
+              onClick={() => void onGoogle()}
+            />
+            <p className="text-center text-[11px] text-[var(--text-muted)]">
+              Invited? Use the same Google account email as the invite.
+            </p>
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-[var(--border)]" />
+              </div>
+              <div className="relative flex justify-center text-[11px]">
+                <span className="bg-[var(--page-bg)] px-2 text-[var(--text-muted)]">
+                  or email
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={onSubmit} className="mt-1 space-y-3">
             <label className="block text-xs text-[var(--text-muted)]">
               Email
               <input

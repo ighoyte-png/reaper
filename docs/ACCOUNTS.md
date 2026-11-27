@@ -22,10 +22,16 @@ Production stance: prefer **provision / invite-only** tenants, or public `/regis
 ## Public registration + approval
 
 - **On/off:** `app_settings.allow_workspace_signup` (login links to `/register` when on).
+- **Google:** `/login` and `/register` support Continue / Sign up with Google (see [`AUTH_GOOGLE.md`](AUTH_GOOGLE.md)). After OAuth, `/auth/continue` claims pending invites by email, then either enters the workspace or prompts for org name (register intent / signup open).
 - **Approval:** `app_settings.require_account_approval`. When on, bootstrap sets `organizations.approval_status = 'pending'`. Owner can sign in and sees `/pending-approval` / app-shell pending screen until a platform operator **Approves** or **Rejects**.
 - **Approve** sets `approved`, clears `disabled_at`, and applies `default_allowed_addons` to `organization_addon_allowlist`.
 - **Reject** sets `rejected` + `disabled_at` (+ optional reason).
 - `disabled_at` remains the operator kill-switch for already-approved accounts (distinct from pending/rejected UX).
+
+## Invites + Google
+
+- Invite the member’s Google address; they may set a password from the Auth invite **or** use **Continue with Google** with that same email.
+- Claim path (`/api/accounts/invites/claim`) runs on login/OAuth continue so they join the invited org instead of creating a new one.
 
 ## Addon allowlists
 
