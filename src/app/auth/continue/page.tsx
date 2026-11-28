@@ -178,8 +178,15 @@ function AuthContinueInner() {
   }, [phase, intent, allowSignup]);
 
   // Platform operators always land on /admin (drop leftover Enter memberships).
+  // One-shot: do not depend on `refresh` identity (it used to retrigger leave).
+  const platformLeaveDoneRef = useRef(false);
   useEffect(() => {
     if (!ready || (!isPlatformOnly && !isPlatformAdmin)) return;
+    if (platformLeaveDoneRef.current) {
+      if (isPlatformOnly || isPlatformAdmin) router.replace("/admin");
+      return;
+    }
+    platformLeaveDoneRef.current = true;
     let cancelled = false;
     void (async () => {
       if (isPlatformAdmin && !isPlatformOnly) {
@@ -195,7 +202,9 @@ function AuthContinueInner() {
     return () => {
       cancelled = true;
     };
-  }, [ready, isPlatformOnly, isPlatformAdmin, refresh, router]);
+    // refresh intentionally omitted — unstable identity caused leave/refresh loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot detach
+  }, [ready, isPlatformOnly, isPlatformAdmin, router]);
 
   // Route into workspace once store has org (after claim / completeOAuthRegistration).
   useEffect(() => {

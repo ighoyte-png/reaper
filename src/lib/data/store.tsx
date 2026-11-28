@@ -1013,6 +1013,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   /** Auth session with no membership — finish workspace on /auth/continue. */
   const [awaitingWorkspaceSetup, setAwaitingWorkspaceSetup] = useState(false);
   const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const platformAdminCacheRef = useRef<{
+    userId: string;
+    value: boolean;
+  } | null>(null);
+  const refreshInFlightRef = useRef<Promise<{
+    isPlatformAdmin: boolean;
+    platformOnly: boolean;
+  }> | null>(null);
   const supabaseRef = useRef<SupabaseClient | null>(null);
   const orgChannelRef = useRef<RealtimeChannel | null>(null);
   const orgChannelReadyRef = useRef(false);
@@ -1161,29 +1169,41 @@ export function DataProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshSupabase = useCallback(async (client: SupabaseClient) => {
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
+
+    const run = (async () => {
     const {
       data: { user },
     } = await client.auth.getUser();
     if (!user) {
+      platformAdminCacheRef.current = null;
       setPlatformOnly(false);
       setPlatformAdmin(false);
       setAwaitingWorkspaceSetup(false);
       setSessionEmail(null);
       setState(emptySupabaseState());
-      return;
+      return { isPlatformAdmin: false, platformOnly: false };
     }
 
     setSessionEmail(user.email?.trim() || null);
 
     let isPlatformAdminUser = false;
-    try {
-      const meRes = await fetch("/api/platform/me");
-      if (meRes.ok) {
-        const body = (await meRes.json()) as { isPlatformAdmin?: boolean };
-        isPlatformAdminUser = Boolean(body.isPlatformAdmin);
+    if (platformAdminCacheRef.current?.userId === user.id) {
+      isPlatformAdminUser = platformAdminCacheRef.current.value;
+    } else {
+      try {
+        const meRes = await fetch("/api/platform/me");
+        if (meRes.ok) {
+          const body = (await meRes.json()) as { isPlatformAdmin?: boolean };
+          isPlatformAdminUser = Boolean(body.isPlatformAdmin);
+        }
+      } catch {
+        /* treat as non-admin */
       }
-    } catch {
-      /* treat as non-admin */
+      platformAdminCacheRef.current = {
+        userId: user.id,
+        value: isPlatformAdminUser,
+      };
     }
     setPlatformAdmin(isPlatformAdminUser);
 
@@ -1290,7 +1310,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setAwaitingWorkspaceSetup(false);
       const workspace = await fetchWorkspace(client, user.id);
       await applyWorkspace(workspace);
-      return;
+      return { isPlatformAdmin: isPlatformAdminUser, platformOnly: false };
     }
 
     // No membership: allowlisted platform admins stay workspace-free.
@@ -1298,7 +1318,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setPlatformOnly(true);
       setAwaitingWorkspaceSetup(false);
       setState({ ...emptySupabaseState(), sessionProfileId: null });
-      return;
+      return { isPlatformAdmin: true, platformOnly: true };
     }
 
     // Public registration only (requires user_metadata.org_name).
@@ -1323,11 +1343,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ? prev
           : { ...emptySupabaseState(), sessionProfileId: null },
       );
-      return;
+      return { isPlatformAdmin: isPlatformAdminUser, platformOnly: false };
     }
     setAwaitingWorkspaceSetup(false);
     await applyWorkspace(workspace);
+    return { isPlatformAdmin: isPlatformAdminUser, platformOnly: false };
+    })();
+
+    refreshInFlightRef.current = run;
+    try {
+      return await run;
+    } finally {
+      if (refreshInFlightRef.current === run) refreshInFlightRef.current = null;
+    }
   }, []);
+
+  const refreshStable = useCallback(async () => {
+    if (mode !== "supabase") return;
+    const client = supabaseRef.current ?? createClient();
+    supabaseRef.current = client;
+    await refreshSupabase(client);
+  }, [mode, refreshSupabase]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1362,6 +1398,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         } = client.auth.onAuthStateChange(async (event, nextSession) => {
           if (cancelled) return;
           if (event === "SIGNED_OUT" || !nextSession?.user) {
+            platformAdminCacheRef.current = null;
+            refreshInFlightRef.current = null;
             setPlatformOnly(false);
             setPlatformAdmin(false);
             setAwaitingWorkspaceSetup(false);
@@ -3158,11 +3196,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setAuthError(null);
         patch((prev) => ({ ...prev, sessionProfileId: "profile-admin" }));
       },
-      refresh: async () => {
-        if (mode !== "supabase") return;
-        const client = supabaseRef.current ?? createClient();
-        await refreshSupabase(client);
-      },
+      refresh: refreshStable,
       inviteDemoMember: (personId, email) => {
         const profileId = uid("profile");
         patch((prev) => {
@@ -3241,26 +3275,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
           setAuthError(error.message);
           throw error;
         }
-        await refreshSupabase(client);
+        // SIGNED_IN also triggers refresh; single-flight dedupes the overlap.
+        const loaded = await refreshSupabase(client);
 
         // Platform operators always return to /admin — drop leftover Enter memberships.
-        let isAdmin = false;
-        try {
-          const meRes = await fetch("/api/platform/me");
-          if (meRes.ok) {
-            const body = (await meRes.json()) as { isPlatformAdmin?: boolean };
-            isAdmin = Boolean(body.isPlatformAdmin);
+        if (loaded.isPlatformAdmin) {
+          if (!loaded.platformOnly) {
+            try {
+              await fetch("/api/platform/leave", { method: "POST" });
+            } catch {
+              /* non-fatal */
+            }
+            await refreshSupabase(client);
           }
-        } catch {
-          /* ignore */
-        }
-        if (isAdmin) {
-          try {
-            await fetch("/api/platform/leave", { method: "POST" });
-          } catch {
-            /* non-fatal */
-          }
-          await refreshSupabase(client);
           return;
         }
 
@@ -3270,6 +3297,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!user) {
           throw new Error("Signed in, but no user session was returned.");
         }
+        if (loaded.platformOnly) return;
         const workspace = await fetchWorkspace(client, user.id);
         if (!workspace.sessionProfileId) {
           const message =
@@ -3538,6 +3566,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
         const client = supabaseRef.current ?? createClient();
         await client.auth.signOut();
+        platformAdminCacheRef.current = null;
+        refreshInFlightRef.current = null;
         setPlatformOnly(false);
         setPlatformAdmin(false);
         setAwaitingWorkspaceSetup(false);
@@ -7246,7 +7276,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       withOrg,
       runRemote,
       runRemoteSoft,
-      refreshSupabase,
+      refreshStable,
       noteLocalWrite,
       orgTasksStatus,
       orgMilestonesStatus,
